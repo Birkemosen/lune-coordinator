@@ -1,0 +1,58 @@
+{
+  "ok": true,
+  "data": {
+    "heat_demand": {
+      "critical_zone": 3,
+      "critical_opening_ratio": 0.95,
+      "saturated_s": 1250,
+      "demanding_zones": 1,
+      "headroom": false,
+      "recommendation": "raise"
+    },
+    "zones": [
+      {
+        "zone": 1,
+        "name": "Living A",
+        "friendly_name": "Living A",
+        "temperature_c": 21.0,
+        "setpoint_c": 21.5,
+        "valve_pct": 40,
+        "state": "DEMAND",
+        "fresh": true,
+        "group_primary": 1,
+        "group_members": [1, 2],
+        "opening_ratio": 0.40,
+        "recommendation": "hold"
+      },
+      {
+        "zone": 2,
+        "name": "Living B",
+        "friendly_name": "Living B",
+        "temperature_c": 21.1,
+        "setpoint_c": 21.5,
+        "valve_pct": 40,
+        "state": "SYNC",
+        "fresh": true,
+        "group_primary": 1,
+        "group_members": [1, 2],
+        "opening_ratio": 0.40,
+        "recommendation": "hold"
+      },
+      {
+        "zone": 3,
+        "name": "Office",
+        "friendly_name": "Office",
+        "temperature_c": 19.5,
+        "setpoint_c": 21.0,
+        "valve_pct": 95,
+        "state": "DEMAND",
+        "fresh": true,
+        "group_primary": 3,
+        "group_members": [3],
+        "opening_ratio": 0.95,
+        "saturated_s": 1250,
+        "recommendation": "raise"
+      }
+    ]
+  }
+}

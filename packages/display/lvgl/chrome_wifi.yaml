@@ -1,0 +1,123 @@
+# Chrome WiFi icon: five concentric arcs, filled by RSSI (0-5).
+obj:
+  id: ${id}
+  x: ${x}
+  y: ${y}
+  width: 32
+  height: 24
+  bg_opa: 0%
+  border_width: 0
+  pad_all: 0
+  scrollable: false
+  clickable: false
+  widgets:
+    - arc:
+        id: ${id}_0
+        x: 12
+        y: 16
+        width: 8
+        height: 8
+        adjustable: false
+        min_value: 0
+        max_value: 100
+        value: 100
+        start_angle: 205deg
+        end_angle: 335deg
+        bg_opa: 0%
+        arc_width: 2
+        arc_color: ${lt_color_control_border}
+        indicator:
+          arc_width: 2
+          arc_color: ${lt_color_control_border}
+        knob:
+          bg_opa: 0%
+          pad_all: 0
+        clickable: false
+    - arc:
+        id: ${id}_1
+        x: 9
+        y: 13
+        width: 14
+        height: 14
+        adjustable: false
+        min_value: 0
+        max_value: 100
+        value: 100
+        start_angle: 205deg
+        end_angle: 335deg
+        bg_opa: 0%
+        arc_width: 2
+        arc_color: ${lt_color_control_border}
+        indicator:
+          arc_width: 2
+          arc_color: ${lt_color_control_border}
+        knob:
+          bg_opa: 0%
+          pad_all: 0
+        clickable: false
+    - arc:
+        id: ${id}_2
+        x: 6
+        y: 10
+        width: 20
+        height: 20
+        adjustable: false
+        min_value: 0
+        max_value: 100
+        value: 100
+        start_angle: 205deg
+        end_angle: 335deg
+        bg_opa: 0%
+        arc_width: 2
+        arc_color: ${lt_color_control_border}
+        indicator:
+          arc_width: 2
+          arc_color: ${lt_color_control_border}
+        knob:
+          bg_opa: 0%
+          pad_all: 0
+        clickable: false
+    - arc:
+        id: ${id}_3
+        x: 3
+        y: 7
+        width: 26
+        height: 26
+        adjustable: false
+        min_value: 0
+        max_value: 100
+        value: 100
+        start_angle: 205deg
+        end_angle: 335deg
+        bg_opa: 0%
+        arc_width: 3
+        arc_color: ${lt_color_control_border}
+        indicator:
+          arc_width: 3
+          arc_color: ${lt_color_control_border}
+        knob:
+          bg_opa: 0%
+          pad_all: 0
+        clickable: false
+    - arc:
+        id: ${id}_4
+        x: 0
+        y: 4
+        width: 32
+        height: 32
+        adjustable: false
+        min_value: 0
+        max_value: 100
+        value: 100
+        start_angle: 205deg
+        end_angle: 335deg
+        bg_opa: 0%
+        arc_width: 3
+        arc_color: ${lt_color_ok}
+        indicator:
+          arc_width: 3
+          arc_color: ${lt_color_ok}
+        knob:
+          bg_opa: 0%
+          pad_all: 0
+        clickable: false

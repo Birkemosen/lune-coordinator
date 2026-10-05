@@ -1,0 +1,126 @@
+# Lune Design System · vægskærm (mørkt tema).
+# Farver/fonte fra docs/display/theme — tilpasset ESPHome 2026.9.
+# Styles: packages/display/lvgl/lune_theme_styles.yaml (merges i lvgl_stability.yaml).
+
+substitutions:
+  lds_bg: "0x101010"
+  lds_card: "0x212019"
+  lds_raised: "0x292821"
+  lds_field: "0x191819"
+  lds_line: "0x313129"
+  lds_seg_off: "0x313129"
+  lds_fg: "0xF7F3EF"
+  lds_muted: "0xA5A29C"
+  lds_faint: "0x8C8A84"
+  lds_accent: "0xDE7131"
+  lds_accent_ink: "0xE6824A"
+  lds_on_accent: "0x101010"
+  lds_info: "0x6B9ECE"
+  lds_ok: "0x73B25A"
+  lds_warn: "0xCEAA42"
+  lds_danger: "0xD67973"
+  lds_violet: "0x9479CE"
+  lds_info_bg: "0x192029"
+  lds_ok_bg: "0x192819"
+  lds_warn_bg: "0x292419"
+  lds_danger_bg: "0x291819"
+  lds_violet_bg: "0x211C31"
+  lds_inv_bg: "0xF7F3EF"
+  lds_inv_fg: "0x101010"
+  # Light palette (dagtema — skiftes i runtime i trin 2)
+  lds_light_bg: "0xFFFBF7"
+  lds_light_card: "0xE6E3DE"
+  lds_light_raised: "0xD6D2CE"
+  lds_light_field: "0xFFFFFF"
+  lds_light_line: "0xC5C6BD"
+  lds_light_seg_off: "0xC5C6BD"
+  lds_light_fg: "0x101010"
+  lds_light_muted: "0x52514A"
+  lds_light_faint: "0x635D5A"
+  lds_light_accent: "0xE66108"
+  lds_light_accent_ink: "0xA53D08"
+  lds_light_on_accent: "0xFFFFFF"
+  lds_light_info: "0x21618C"
+  lds_light_ok: "0x296121"
+  lds_light_warn: "0x6B4D00"
+  lds_light_danger: "0xA53131"
+  lds_light_violet: "0x6341A5"
+  lds_light_info_bg: "0xCEDBDE"
+  lds_light_ok_bg: "0xCEDBC5"
+  lds_light_warn_bg: "0xDED7BD"
+  lds_light_danger_bg: "0xE6D2C5"
+  lds_light_violet_bg: "0xD6D2DE"
+  lds_light_inv_bg: "0x101010"
+  lds_light_inv_fg: "0xFFFBF7"
+  # Night/dvale (SCREENS.md — uden for paletten)
+  lds_night_bg: "0x000000"
+  lds_night_clock: "0x8C8A84"
+  lds_night_muted: "0x5A5853"
+  lds_night_call: "0x8A3F1C"
+  lds_night_fault: "0x8A4A47"
+  lds_night_idle: "0x2D2C27"
+
+font:
+  - file: { type: gfonts, family: Geist, weight: 500 }
+    id: lds_font_xs
+    size: 16
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: "æøåÆØÅéü°−·→←×²³–—…●‹›<>+"
+  - file: { type: gfonts, family: Geist, weight: 500 }
+    id: lds_font_sm
+    size: 20
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: "æøåÆØÅéü°−·→←×²³–—…●‹›<>+"
+  - file: { type: gfonts, family: Geist, weight: 500 }
+    id: lds_font_md
+    size: 24
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: "æøåÆØÅéü°−·→←×²³–—…●‹›<>+"
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_lg
+    size: 32
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: "æøåÆØÅéü°−·→←×²³–—…●‹›<>+"
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_xl
+    size: 48
+    bpp: 4
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: "æøåÆØÅéü°−·→←×²³–—…●‹›<>+"
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_2xl
+    size: 72
+    bpp: 4
+    glyphs: "0123456789,.°−-: "
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_hero
+    size: 144
+    bpp: 4
+    glyphs: "0123456789,.°−-: "
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_d28
+    size: 28
+    bpp: 4
+    glyphs: "0123456789,.°−-: /%C+"
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_d36
+    size: 36
+    bpp: 4
+    glyphs: "0123456789,.°−-: /%C+"
+  - file: { type: gfonts, family: Geist, weight: 600 }
+    id: lds_font_d44
+    size: 44
+    bpp: 4
+    glyphs: "0123456789,.°−-: /%C+"
+  - file: { type: gfonts, family: Geist, weight: 500 }
+    id: lds_font_d168
+    size: 168
+    bpp: 4
+    glyphs: "0123456789,.°−-: /%C+"
+
+# style_definitions: se packages/display/lvgl/lune_theme_styles.yaml
+# (holdes uden for packages' lvgl: for at undgå ekstra LVGL-instans).

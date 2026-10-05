@@ -1,0 +1,24 @@
+# Latin-extended Montserrat for room names (æøå, äöüß). Built-in LVGL
+# Montserrat is ASCII-only; numbers and Font Awesome stay on those fonts.
+font:
+  - file: "gfonts://Montserrat"
+    id: lune_latin_14
+    size: 14
+    bpp: 4
+    extras:
+      - file: "gfonts://Montserrat"
+        glyphs: "æøåÆØÅäöüßÄÖÜéèêëÉ"
+  - file: "gfonts://Montserrat"
+    id: lune_latin_16
+    size: 16
+    bpp: 4
+    extras:
+      - file: "gfonts://Montserrat"
+        glyphs: "æøåÆØÅäöüßÄÖÜéèêëÉ"
+  - file: "gfonts://Montserrat"
+    id: lune_latin_18
+    size: 18
+    bpp: 4
+    extras:
+      - file: "gfonts://Montserrat"
+        glyphs: "æøåÆØÅäöüßÄÖÜéèêëÉ"

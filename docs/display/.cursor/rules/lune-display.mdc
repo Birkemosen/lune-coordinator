@@ -1,0 +1,23 @@
+---
+description: Lune Touch vægskærm (LVGL 1024×600, RGB565) — designregler
+globs: ["**/*display*.yaml", "**/*lvgl*.yaml", "**/*lvgl*.{c,cpp,h}", "**/display/**"]
+alwaysApply: false
+---
+
+Du bygger Lune Touch' væghængte dashboard i LVGL. Facit for udseende er billederne i
+`docs/display/mockups/png/`, facit for mål og opbygning er `docs/display/SCREENS.md`,
+og reglerne står i `docs/display/DESIGN-display.md`.
+
+Altid:
+- Farver kun fra `docs/display/theme/lune_theme.yaml` (`${lds_*}`) eller `lune_theme.h` (`LDS_DARK_*`). Ingen andre hex-værdier; paletten er RGB565-præcis.
+- Fonte kun fra temaet (`lds_font_*`). Tal-fonte (`2xl`, `hero`, `d28`, `d36`, `d44`, `d168`) indeholder kun cifre og `, . ° − : /`.
+- Ingen gennemsigtighed til farveblanding, ingen gradienter, ingen skygger (`shadow_width: 0`).
+- Trykflader mindst 64×64; − / + 96. Mindste tekst 16 px.
+- Zonefelter altid i 6 kolonner pr. manifold; ingen scroll på oversigten. 1–2 manifolds = store felter, 3–4 = kompakte.
+- Farvebetydning: orange = varme, blå = vejr/sensor, grøn = ok, gul = halter efter mål, rød = fejl. Farve er aldrig eneste signal.
+- Tekster fra i18n-kataloget; zone- og manifoldnavne er brugerdata og oversættes ikke.
+
+Aldrig:
+- Indstillinger på skærmen ud over mål, forvalg, zone til/fra og nulstil fejl.
+- Modaler/dialoger; zone-skærmen er en fuld skærm (tileview), der lukker efter 60 s.
+- Kopiér ikke HTML/CSS fra `mockups/*.dc.html` direkte; brug den kun til at aflæse mål.

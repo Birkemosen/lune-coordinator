@@ -1,0 +1,10 @@
+{
+  "_comment": "PLACEHOLDER GET /api/physics. Replace with live capture (U3/U5).",
+  "disabled": true,
+  "heat_loss": null,
+  "tau_z1": null,
+  "tau_z2": null,
+  "passive_solar_z1": null,
+  "passive_solar_z2": null,
+  "zone2_active": false
+}

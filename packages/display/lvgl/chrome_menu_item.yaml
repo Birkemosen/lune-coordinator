@@ -1,0 +1,53 @@
+# One row in the persistent left nav rail (lvgl.rail-w). Forest marks the
+# selected destination; the 4px bar keeps selection from colour-alone.
+button:
+  id: ${id}
+  x: 0
+  y: ${y}
+  width: 180
+  height: 48
+  bg_color: ${lt_color_accent_forest}
+  bg_opa: 0%
+  border_width: 0
+  radius: 0
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - obj:
+        id: ${id}_bar
+        x: 0
+        y: 0
+        width: 4
+        height: 48
+        bg_color: ${lt_color_control_border}
+        bg_opa: 100%
+        border_width: 0
+        radius: 0
+        scrollable: false
+    - label:
+        id: ${id}_label
+        x: 16
+        y: 12
+        width: 120
+        height: 24
+        text: "${label}"
+        text_color: ${lt_color_text}
+        text_font: montserrat_18
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: ${id}_chevron
+        x: 136
+        y: 12
+        width: 32
+        height: 24
+        text: "${chevron}"
+        text_color: ${lt_color_text_muted}
+        text_font: montserrat_16
+        text_align: CENTER
+        bg_opa: 0%
+  on_click:
+    - lambda: |-
+        id(menu_open) = ${stay_open};
+        ${action}
+        id(touch_display_refresh_token).update();

@@ -1,0 +1,9 @@
+{
+  "_comment": "Schema-faithful Odin 1.x GET /api/debug reference fixture (U0). Learned physics fields for U3 migration comparison.",
+  "success": true,
+  "used_heat_loss": 0.185,
+  "used_thermal_mass": 18.7,
+  "hl_tm_product": 101.08,
+  "raw_hl_tm_product": 98.4,
+  "passive_solar_gain_factor": 0.35
+}

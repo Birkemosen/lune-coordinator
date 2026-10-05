@@ -1,0 +1,11 @@
+# OTA for Lune Touch
+# - platform esphome: CLI / HA native OTA (password-protected)
+# - platform web_server: browser POST /update on web_server_base (Service › Firmware)
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+  - platform: web_server
+
+safe_mode:
+  boot_is_good_after: 60s

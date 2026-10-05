@@ -1,0 +1,123 @@
+# Flat zone cell inside a manifold band. Full-cell hit target; no nested card
+# chrome. Runtime layout places cells in a 3×2 grid and resizes fonts.
+
+button:
+  id: dashboard_m${node}_z${zone}_button
+  x: ${x}
+  y: 0
+  width: 110
+  height: 108
+  bg_color: ${lt_color_surface}
+  bg_opa: 100%
+  border_width: 0
+  radius: 0
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - obj:
+        id: dashboard_m${node}_z${zone}_stripe
+        x: 90
+        y: 12
+        width: 10
+        height: 10
+        bg_color: ${lt_color_text_muted}
+        bg_opa: 100%
+        border_width: 0
+        radius: 5
+        scrollable: false
+    - label:
+        id: dashboard_m${node}_z${zone}_name_label
+        x: 10
+        y: 12
+        width: 76
+        height: 20
+        text: "Zone ${zone_human}"
+        text_color: ${lt_color_text}
+        text_font: lune_latin_16
+        long_mode: clip
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+    - label:
+        id: dashboard_m${node}_z${zone}_temperature_label
+        x: 10
+        y: 40
+        width: 76
+        height: 28
+        text: "--.- C"
+        text_color: ${lt_color_text}
+        text_font: montserrat_22
+        long_mode: clip
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+    - label:
+        id: dashboard_m${node}_z${zone}_setpoint_label
+        x: 10
+        y: 78
+        width: 76
+        height: 20
+        text: "\uF054 --.- C"
+        text_color: ${lt_color_text_muted}
+        text_font: montserrat_16
+        long_mode: clip
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+    - bar:
+        id: dashboard_m${node}_z${zone}_bar
+        x: 90
+        y: 20
+        width: 10
+        height: 78
+        min_value: 0
+        max_value: 5
+        value: 0
+        animated: false
+        bg_color: ${lt_color_separator}
+        radius: 5
+        indicator:
+          bg_color: ${lt_color_accent}
+          radius: 5
+    - obj:
+        id: dashboard_m${node}_z${zone}_tick_1
+        x: 90
+        y: 36
+        width: 10
+        height: 1
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+        border_width: 0
+    - obj:
+        id: dashboard_m${node}_z${zone}_tick_2
+        x: 90
+        y: 52
+        width: 10
+        height: 1
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+        border_width: 0
+    - obj:
+        id: dashboard_m${node}_z${zone}_tick_3
+        x: 90
+        y: 68
+        width: 10
+        height: 1
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+        border_width: 0
+    - obj:
+        id: dashboard_m${node}_z${zone}_tick_4
+        x: 90
+        y: 84
+        width: 10
+        height: 1
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+        border_width: 0
+  on_click:
+    - if:
+        condition:
+          lambda: return id(lune_touch_app).display_select_zone(${node}, ${zone});
+        then:
+          - lambda: |-
+              id(lune_touch_app).display_set_active_page(2);
+              id(zone_detail_keypad_buffer) = "";
+              id(touch_display_refresh_token).update();

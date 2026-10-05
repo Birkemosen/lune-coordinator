@@ -1,0 +1,146 @@
+# Zonefelt på oversigten (kompakt + stort i samme træ; layout styres i refresh).
+# TODO(trin2): gruppe-chrome (Z4–5 / member-kant) når display formaterer group-id.
+# TODO(trin2): mini-graf (chart) mangler 48-punkts historik — placeholder skjules.
+button:
+  id: page_home_zone_${node}_${zone}
+  hidden: true
+  x: 0
+  y: 0
+  width: 132
+  height: 77
+  bg_color: ${lds_raised}
+  bg_opa: COVER
+  border_width: 0
+  radius: 14
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - label:
+        id: page_home_zone_${node}_${zone}_zid
+        x: 12
+        y: 6
+        width: 28
+        height: 20
+        text: "Z${zone_human}"
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_zone_${node}_${zone}_name
+        x: 40
+        y: 6
+        width: 80
+        height: 20
+        text: ""
+        text_color: ${lds_fg}
+        text_font: lds_font_xs
+        long_mode: dot
+        bg_opa: 0%
+    - label:
+        id: page_home_zone_${node}_${zone}_temp
+        x: 12
+        y: 26
+        width: 72
+        height: 36
+        text: "--,-°"
+        text_color: ${lds_fg}
+        text_font: lds_font_d28
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_zone_${node}_${zone}_set
+        x: 84
+        y: 32
+        width: 40
+        height: 22
+        text: ""
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: clip
+        bg_opa: 0%
+    - obj:
+        id: page_home_zone_${node}_${zone}_chart
+        hidden: true
+        x: 12
+        y: 70
+        width: 108
+        height: 32
+        bg_opa: 0%
+        border_width: 0
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - obj:
+        id: page_home_zone_${node}_${zone}_seg0
+        x: 12
+        y: 64
+        width: 20
+        height: 5
+        bg_color: ${lds_seg_off}
+        bg_opa: COVER
+        border_width: 0
+        radius: 2
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - obj:
+        id: page_home_zone_${node}_${zone}_seg1
+        x: 35
+        y: 64
+        width: 20
+        height: 5
+        bg_color: ${lds_seg_off}
+        bg_opa: COVER
+        border_width: 0
+        radius: 2
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - obj:
+        id: page_home_zone_${node}_${zone}_seg2
+        x: 58
+        y: 64
+        width: 20
+        height: 5
+        bg_color: ${lds_seg_off}
+        bg_opa: COVER
+        border_width: 0
+        radius: 2
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - obj:
+        id: page_home_zone_${node}_${zone}_seg3
+        x: 81
+        y: 64
+        width: 20
+        height: 5
+        bg_color: ${lds_seg_off}
+        bg_opa: COVER
+        border_width: 0
+        radius: 2
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - obj:
+        id: page_home_zone_${node}_${zone}_seg4
+        x: 104
+        y: 64
+        width: 20
+        height: 5
+        bg_color: ${lds_seg_off}
+        bg_opa: COVER
+        border_width: 0
+        radius: 2
+        pad_all: 0
+        scrollable: false
+        clickable: false
+  on_click:
+    - lambda: |-
+        id(menu_open) = false;
+        id(zone_detail_keypad_buffer) = "";
+        if (id(lune_touch_app).display_select_zone(${node}, ${zone})) {
+          id(lune_touch_app).display_set_active_page(2);
+          id(touch_display_refresh_token).update();
+        }

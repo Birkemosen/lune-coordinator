@@ -1,0 +1,29 @@
+---
+description: Lune Design System 2 is the authority for Lune Touch web UI
+globs: web/touch-ui/**,web/design-system/**,packages/display/**,components/lune_touch_coordinator/lune_design_tokens.h
+alwaysApply: false
+---
+
+# Lune Design System 2 (web)
+
+When designing, building, or changing the Touch **web** dashboard, treat
+`web/design-system/` (`DESIGN.md`, `AGENTS.md`, `tokens/tokens.json`,
+`css/lune-ui.src.css`) as the authority. Build pages via `web/touch-ui/` after
+`examples/v6` patterns. Do not cite external platform guidelines.
+
+LVGL (`packages/display/`) still installs tokens from sibling `../lds` via
+`lds.yaml` / `make design-tokens` until that path is migrated.
+
+## Required (web)
+
+1. Use DS2 tokens and components only — no raw hex/px outside the scales.
+2. Shell: mode × scope radios, `section.view#v-{dash|conf}-{house|rN}`, panels.
+3. No sidebar, no modals, no JS navigation. Forms use `form.panel` + `data-save`.
+4. All strings from `web/touch-ui/i18n/`. Destructive actions behind `details.confirm`.
+5. Rebuild with `make touch-ui` (calls `lds_build.py config/touch.json`).
+
+## Do not
+
+- Nested cards, decorative glass/gradient chrome, network font fetches
+- Hand-editing `web/design-system/dist/**` or generated firmware embeds
+- Reintroducing the old SPA shell (`web/dashboard-src`)

@@ -1,0 +1,35 @@
+# Controller chip on the zone-detail overlay. Collapsed, only the selected
+# controller sits next to Z1-Z6. Tapping it folds the other V6 chips out above.
+button:
+  id: page_zone_detail_controller_${index}
+  hidden: true
+  x: 12
+  y: 520
+  width: 72
+  height: 64
+  bg_color: ${lt_color_text_faint}
+  bg_opa: 100%
+  border_width: 0
+  radius: 16
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - label:
+        id: page_zone_detail_controller_${index}_label
+        align: CENTER
+        text: "C${human}"
+        text_color: ${lt_color_text}
+        text_font: montserrat_22
+  on_click:
+    - lambda: |-
+        id(zone_detail_keypad_buffer) = "";
+        if (!id(controller_picker_open)) {
+          if (id(lune_touch_app).display_visible_node_count() > 1)
+            id(controller_picker_open) = true;
+        } else if (id(lune_touch_app).display_selected_node_index() == ${index}) {
+          id(controller_picker_open) = false;
+        } else {
+          id(controller_picker_open) = false;
+          id(lune_touch_app).display_select_controller(${index});
+        }
+        id(touch_display_refresh_token).update();

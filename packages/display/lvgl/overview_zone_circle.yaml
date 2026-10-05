@@ -1,0 +1,96 @@
+# Overview zone tile: status bar, small icon, name, temperature, unit.
+button:
+  id: page_home_zone_${node}_${zone}
+  hidden: true
+  x: 20
+  y: 20
+  width: 220
+  height: 72
+  bg_color: ${lt_color_bg}
+  bg_opa: 0%
+  border_width: 0
+  radius: 0
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - obj:
+        id: page_home_zone_${node}_${zone}_bar
+        x: 0
+        y: 8
+        width: 3
+        height: 56
+        radius: 2
+        bg_color: ${lt_color_separator}
+        bg_opa: 100%
+        border_width: 0
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - obj:
+        id: page_home_zone_${node}_${zone}_dot
+        x: 14
+        y: 10
+        width: 10
+        height: 10
+        radius: 5
+        bg_opa: 0%
+        border_width: 2
+        border_color: ${lt_color_text_muted}
+        pad_all: 0
+        scrollable: false
+        clickable: false
+    - label:
+        id: page_home_zone_${node}_${zone}_icon
+        hidden: true
+        x: 12
+        y: 8
+        width: 18
+        height: 18
+        text: ""
+        text_color: ${lt_color_text_muted}
+        text_font: montserrat_14
+        text_align: CENTER
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_zone_${node}_${zone}_name
+        x: 32
+        y: 6
+        width: 150
+        height: 20
+        text: "Z${zone_human}"
+        text_color: ${lt_color_text_muted}
+        text_font: lune_latin_14
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_zone_${node}_${zone}_temp
+        x: 12
+        y: 30
+        width: 160
+        height: 36
+        text: "--.-"
+        text_color: ${lt_color_text}
+        text_font: montserrat_22
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_zone_${node}_${zone}_set
+        x: 176
+        y: 42
+        width: 36
+        height: 20
+        text: "C"
+        text_color: ${lt_color_text_muted}
+        text_font: montserrat_14
+        text_align: RIGHT
+        long_mode: clip
+        bg_opa: 0%
+  on_click:
+    - lambda: |-
+        id(menu_open) = false;
+        id(zone_detail_keypad_buffer) = "";
+        if (id(lune_touch_app).display_select_zone(${node}, ${zone})) {
+          id(lune_touch_app).display_set_active_page(2);
+          id(touch_display_refresh_token).update();
+        }

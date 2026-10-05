@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none" role="img" aria-label="Lune">
+  <!-- Generated from LDS tokens.json by generate_tokens.py. Do not edit. -->
+    <defs>
+      <filter id="lm-card-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="10" result="blur"/>
+        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+      </filter>
+      <linearGradient id="lm-card-thermal" gradientUnits="userSpaceOnUse" x1="120" y1="175" x2="280" y2="175">
+        <stop offset="0%" stop-color="#FCD34D"/>
+        <stop offset="28%" stop-color="#F59E0B"/>
+        <stop offset="100%" stop-color="#10B981"/>
+      </linearGradient>
+      <linearGradient id="lm-card-metallic" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#1c1915"/>
+        <stop offset="100%" stop-color="#0c0b09"/>
+      </linearGradient>
+    </defs>
+    <rect width="400" height="400" fill="#0c0b09" rx="24"/>
+    <g stroke="url(#lm-card-thermal)" stroke-width="6.5" stroke-linecap="round" fill="none" opacity="0.95" filter="url(#lm-card-glow)">
+      <line x1="138.0" y1="175" x2="138.0" y2="278"/>
+      <line x1="162.8" y1="175" x2="162.8" y2="278"/>
+      <line x1="187.6" y1="175" x2="187.6" y2="278"/>
+      <line x1="212.4" y1="175" x2="212.4" y2="278"/>
+      <line x1="237.2" y1="175" x2="237.2" y2="278"/>
+      <line x1="262.0" y1="175" x2="262.0" y2="278"/>
+    </g>
+    <circle cx="200" cy="175" r="72" fill="#0c0b09"/>
+    <path d="M128 175A72 72 0 0 1 272 175" fill="none" stroke="url(#lm-card-thermal)" stroke-width="6.5" stroke-linecap="round" filter="url(#lm-card-glow)"/>
+    <circle cx="200" cy="175" r="56" fill="url(#lm-card-metallic)" stroke="#25221E" stroke-width="1.5"/>
+    <text x="200" y="183" fill="#FAF6EF" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="700" letter-spacing="2.8" text-anchor="middle">LUNE</text>
+</svg>

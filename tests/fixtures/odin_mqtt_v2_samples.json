@@ -1,0 +1,23 @@
+{
+  "_comment": "PLACEHOLDER MQTT samples for Odin 2.0 streams. Replace with live captures (U3).",
+  "disabled": true,
+  "streams": {
+    "odin/status": {"state": "online"},
+    "odin/solver/result/HP": {"note": "capture required"},
+    "prefix/commands/setpoint": {
+      "mode": "heat",
+      "soft_stop": false,
+      "decision_reason": "thermal_buffer",
+      "flow_target": 32.0,
+      "valid_until": 0
+    },
+    "prefix/telemetry": {
+      "defrost": false,
+      "thermal_w": 0,
+      "flow_rate": 0,
+      "return_temp": 0,
+      "hp_feed_temp": 0
+    }
+  },
+  "retained_messages_proven": false
+}

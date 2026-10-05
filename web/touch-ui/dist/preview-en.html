@@ -1,0 +1,2642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121210">
+<title>Lune Touch</title>
+<link rel="alternate" hreflang="da" href="/da/">
+<style>
+/* ==========================================================================
+   LUNE DESIGN SYSTEM 2 — fælles stylesheet for Lune V6 og Lune Touch
+   Bygget til Lune Touch af tools/lds_build.py — redigér css/lune-ui.src.css, ikke denne fil.
+   Regler og komponentbeskrivelser: DESIGN.md
+   --------------------------------------------------------------------------
+   Visuelt sprog
+   • Fra Apex: varme neutraler, dybde via baggrundskontrast i stedet for
+     rammer, pilleformede kontroller, orange KUN som fremhævning (lysende
+     niveau-segmenter, aktive tal), sort/hvid som primær handling.
+   • Fra bilskærme (Tesla/Škoda): store tal der kan læses på afstand,
+     få og faste kontroller, farve kun når noget kræver opmærksomhed,
+     og tilstandsskifteren i tommelfingerhøjde på mobil.
+
+   Navigationsmodel (ren CSS)
+     <input #m-* radio name=mode>   Dashboard / Konfiguration
+     <input #s-* radio name=scope>  Manifold (sys) eller zone Z1–Z6
+     <input #theme checkbox>        invertér OS-tema
+     <div .app> … </div>
+
+   Ingen sidebar. Zonestrimlen er både overblik og omfangs-navigation og
+   står i begge tilstande. Tilstanden er én pille: i toppen på web/tablet,
+   svævende i bunden på mobil (samme element, samme udseende).
+   ========================================================================== */
+
+@layer tokens, base, layout, components, state, utilities;
+
+
+/* ==========================================================================
+   1. TOKENS
+   ========================================================================== */
+@layer tokens {
+  /* @generated:tokens — skrives af tools/lds_build.py fra tokens/tokens.json. Redigér ikke her. */
+  .app {
+    color-scheme: light dark;
+    /* color.surface */
+    --bg: light-dark(#fbfaf8, #121210);
+    --card: light-dark(#e4e2da, #1e1e1b);
+    --raised: light-dark(#d7d5cc, #282824);
+    --field: light-dark(#ffffff, #1a1a17);
+    --border: light-dark(rgba(26,26,20,.16), rgba(245,245,240,.10));
+    --field-edge: light-dark(rgba(26,26,20,.24), rgba(245,245,240,.10));
+    --card-edge-c: light-dark(rgba(26,26,20,.08), transparent);
+    /* color.text */
+    --fg: light-dark(#161614, #f5f5f0);
+    --muted: light-dark(#55544f, #a3a39c);
+    --faint: light-dark(#66655f, #8d8d86);
+    /* color.inverse */
+    --inv-bg: var(--fg);
+    --inv-fg: var(--bg);
+    /* color.heat */
+    --accent: light-dark(#e8630a, #d96c2f);
+    --accent-ink: light-dark(#a63f08, #e8844a);
+    --accent-glow: light-dark(rgba(232,99,10,.35), rgba(217,108,47,.45));
+    --seg-off: light-dark(rgba(26,26,20,.15), rgba(245,245,240,.10));
+    --on-accent-ink: light-dark(#ffffff, #161614);
+    /* color.status */
+    --info: light-dark(#1f5f8b, #6ca0d0);
+    --ok: light-dark(#27611d, #74b55e);
+    --warn: light-dark(#6e4c00, #cca840);
+    --danger: light-dark(#a52f2f, #d97a76);
+    --violet: light-dark(#5f41a3, #9179ce);
+    --info-bg: light-dark(#cdd9dd, #18222b);
+    --ok-bg: light-dark(#d1dbc5, #1a2717);
+    --warn-bg: light-dark(#e1d5bf, #25221a);
+    --danger-bg: light-dark(#e7d2c7, #2a1716);
+    --violet-bg: light-dark(#d9d4dd, #211b31);
+    --focus: light-dark(rgba(232,99,10,.9), rgba(240,122,42,.9));
+    /* font */
+    --font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+    /* type */
+    --fs-xs: .6875rem;
+    --fs-sm: .8125rem;
+    --fs-md: .9375rem;
+    --fs-lg: 1.125rem;
+    --fs-xl: 1.5rem;
+    --fs-2xl: 2rem;
+    --fs-hero: 4rem;
+    --fs-panel: var(--fs-lg);
+    --fs-view: var(--fs-2xl);
+    /* space */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    /* radius */
+    --r-card: 16px;
+    --r-tile: 14px;
+    --r-field: 12px;
+    --r-pill: 999px;
+    /* size */
+    --hit: 44px;
+    --field-gap: var(--space-3);
+    --panel-pad: var(--space-5);
+    --panel-gap: var(--space-4);
+    --row-h: 40px;
+    --tile-h: auto;
+    --container: 1200px;
+    /* shadow */
+    --card-edge: 0 0 0 1px var(--card-edge-c);
+    /* motion */
+    --ease: cubic-bezier(.4,0,.2,1);
+    --dur: 200ms;
+  }
+  /* @end:tokens */
+}
+
+
+/* ==========================================================================
+   2. BASE
+   ========================================================================== */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; color-scheme: light dark; }
+  body { background: light-dark(#fbfaf8, #121210); }
+
+  .app {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--fg);
+    font: 400 var(--fs-md)/1.5 var(--font);
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+  .app :is(h1,h2,h3,h4) { font-weight: 600; line-height: 1.15; letter-spacing: -.01em; }
+  .app a { color: inherit; }
+  .app :is(button, input, select) { font: inherit; color: inherit; }
+  .app :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .app label, .app summary { -webkit-tap-highlight-color: transparent; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app *, .app *::before, .app *::after { transition: none !important; }
+  }
+}
+
+
+/* ==========================================================================
+   3. LAYOUT
+   ========================================================================== */
+@layer layout {
+
+  /* Én centreret container for header, strimmel og indhold (Apex max-w-6xl) */
+  .wrap {
+    width: 100%;
+    max-width: calc(var(--container) + 2 * var(--pad));
+    margin-inline: auto;
+    padding-inline: var(--pad);
+  }
+  .app { --pad: var(--space-5); }
+  @media (max-width: 767.98px) {
+    .app { --pad: var(--space-4); --panel-pad: var(--space-4); --fs-view: var(--fs-lg); }
+  }
+
+  /* ---- 3.1 Top: header + zonestrimmel, klæber sammen på web ----------- */
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  /* Mobil: ikke sticky, og ingen backdrop-filter — et filter på en forfader
+     ville gøre den svævende tilstands-pille relativ til .top i stedet for skærmen */
+  @media (max-width: 767.98px), (max-height: 600px) { .top { position: static; backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+  .header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 60px;
+    padding-top: max(var(--space-2), env(safe-area-inset-top));
+  }
+  .header > :last-child { justify-self: end; }
+
+  @media (max-width: 767.98px) {
+    .header { grid-template-columns: 1fr auto; min-height: 60px; }
+  }
+
+  /* ---- 3.2 Zonestrimmel ----------------------------------------------- */
+  /* Manifold + zoner deler skærmen i ens kolonner (samme bredde). */
+  .strip {
+    --strip-n: 6;                    /* antal zonefelter; sættes af config (V6: 6) */
+    display: grid;
+    grid-template-columns: repeat(calc(var(--strip-n) + 1), minmax(0, 1fr));
+    gap: var(--space-2);
+    padding-block: var(--space-1) var(--space-3);
+  }
+  @media (max-width: 599.98px) {
+    .strip { gap: 6px; }
+  }
+
+  /* Touch tiers: hus+manifolds + .substrip (≤190px / ≤150px@390). */
+  .strip.strip--tiers {
+    display: grid;
+    grid-template-columns: repeat(calc(var(--strip-n) + 1), minmax(0, 1fr));
+    gap: var(--space-2);
+    padding-block: var(--space-1) var(--space-2);
+  }
+  .strip.strip--tiers :is(.tile-sys, .tile-manifold) {
+    min-height: 0;
+    padding-block: var(--space-2);
+  }
+  .substrip {
+    display: none;
+    grid-template-columns: repeat(var(--sub-n, 6), minmax(0, 1fr));
+    gap: var(--space-2);
+    padding-block: 0 var(--space-2);
+  }
+  .tile.tile-manifold {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    align-items: start;
+    row-gap: 2px;
+    column-gap: var(--space-2);
+  }
+  .tile.tile-manifold .tile-id { grid-column: 1; grid-row: 1; }
+  .tile.tile-manifold .tile-name { grid-column: 2; grid-row: 1; min-width: 0; }
+  .tile.tile-manifold .tile-val {
+    grid-column: 1 / -1; grid-row: 2;
+    font-size: var(--fs-sm); font-weight: 500; color: var(--muted);
+  }
+  .tile.tile-manifold .mini {
+    grid-column: 1 / -1; grid-row: 3;
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 28px; margin-top: 2px;
+  }
+  .tile.tile-manifold .mini i {
+    flex: 1 1 0; min-width: 0; border-radius: 2px;
+    background: var(--accent); align-self: flex-end; min-height: 2px;
+  }
+  .tile.tile-manifold .mini i[data-level="0"] { height: 2px; background: var(--seg-off); }
+  .tile.tile-manifold .mini i[data-level="1"] { height: 20%; }
+  .tile.tile-manifold .mini i[data-level="2"] { height: 40%; }
+  .tile.tile-manifold .mini i[data-level="3"] { height: 60%; }
+  .tile.tile-manifold .mini i[data-level="4"] { height: 80%; }
+  .tile.tile-manifold .mini i[data-level="5"] { height: 100%; }
+  .tile.tile-manifold .mini i[data-state="fault"] {
+    background: var(--danger); height: 100%; min-height: 100%;
+  }
+  .tile.tile-manifold .mini i[data-state="blocked"] { background: var(--warn); height: 100%; min-height: 100%; }
+  .tile.tile-manifold .mini i[data-state="learning"] { background: var(--violet); }
+  .tile.tile-manifold .mini i[data-state="off"] { background: var(--seg-off); }
+  .tile.tile-manifold[data-state="fault"] .tile-id { color: var(--danger); }
+  .tile.tile-manifold.is-parent { box-shadow: inset 0 0 0 2px var(--fg); }
+
+  @media (max-width: 599.98px) {
+    .strip.strip--tiers {
+      gap: 6px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .strip.strip--tiers .tile-manifold {
+      grid-template-columns: 1fr; grid-template-rows: auto auto;
+      text-align: center; padding: 8px 6px 7px; border-radius: 10px;
+    }
+    .strip.strip--tiers .tile-manifold :is(.tile-name, .tile-val) { display: none; }
+    .strip.strip--tiers .tile-manifold .tile-id {
+      grid-column: 1; font-size: 10px; justify-self: center;
+    }
+    .strip.strip--tiers .tile-manifold .mini {
+      grid-column: 1; height: 22px; gap: 2px;
+    }
+    .substrip { gap: 6px; }
+  }
+
+  /* Touch: én V6-række pr. board (System + zoner) øverst på hus-dashboardet.
+     Samme felter som V6' strimmel; felterne er links til V6'ens egen side. */
+  .boards { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
+  .boards .strip { padding-block: 0; }
+  a.tile { text-decoration: none; }
+
+  /* ---- 3.3 Indhold ---------------------------------------------------- */
+  .content { padding-block: var(--space-5) var(--space-7); }
+  @media (max-width: 767.98px) {
+    /* plads til den svævende tilstands-pille */
+    .content { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  }
+
+  .view {
+    display: none;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--space-3);             /* Apex: gap-3 mellem kort */
+    align-items: stretch;            /* kort side om side får samme højde */
+    /* Sticky header + strip ≈ scroll-mål. Mobil sticky er slået fra. */
+    --section-scroll-margin: calc(var(--hit) + var(--space-7) + var(--space-6));
+  }
+  @media (max-width: 767.98px), (max-height: 600px) {
+    .view { --section-scroll-margin: var(--space-3); }
+  }
+  /* Kolonnespænd — bento-grid på 12 kolonner, alt fuld bredde < 900px */
+  .view > * { grid-column: span 12; }
+  @media (min-width: 900px) {
+    .view > .c4 { grid-column: span 4; }
+    .view > .c5 { grid-column: span 5; }
+    .view > .c6 { grid-column: span 6; }
+    .view > .c7 { grid-column: span 7; }
+    .view > .c8 { grid-column: span 8; }
+  }
+
+  .view-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-2) var(--space-3);
+  }
+  .view-head h2 { font-size: var(--fs-view); letter-spacing: -.03em; }
+  .view-head p  { color: var(--muted); }
+
+  /* ---- 3.4 Sektioner (kun Konfiguration) ------------------------------
+     Grupperer paneler under en overskrift. 3+ sektioner → .section-nav.
+     Kun Service/Udvikler må være details.section (lukket som standard).
+     Markup: h2.section-h > tekst + i.section-h-dot + i.section-h-line
+     Foldbar: summary.section-h > tekst + badge + i.section-h-dot + i.section-h-line
+     (chevron via summary::after). */
+  .section-nav {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-block: var(--space-2) var(--space-3);
+  }
+  .section-nav a {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--hit);
+    padding: 0 var(--space-4);
+    border-radius: var(--r-pill);
+    background: var(--card);
+    box-shadow: var(--card-edge);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--muted);
+  }
+  .section-nav a:hover { color: var(--fg); }
+  .section-nav a[data-dirty]::after,
+  .section-nav a[data-fault]::after {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--warn); flex: none;
+  }
+  .section-nav a[data-fault]::after { background: var(--danger); }
+
+  .section,
+  details.section {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 0;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    scroll-margin-top: var(--section-scroll-margin);
+  }
+
+  .section-h {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-6) 0 var(--space-3);
+    padding: 0;
+    min-height: var(--hit);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .section:first-of-type > .section-h,
+  details.section:first-of-type > .section-h,
+  .view-head + .section-nav + .section > .section-h,
+  .view-head + .section-nav + details.section > .section-h,
+  .view-head + .section > .section-h {
+    margin-top: 0;
+  }
+  .section-h-line {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--border);
+    min-width: var(--space-4);
+  }
+  .section-h-dot {
+    display: none;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--warn); flex: none;
+  }
+  .section[data-dirty] > .section-h .section-h-dot,
+  details.section[data-dirty] > .section-h .section-h-dot,
+  .section[data-fault] > .section-h .section-h-dot,
+  details.section[data-fault] > .section-h .section-h-dot {
+    display: block;
+  }
+  .section[data-fault] > .section-h .section-h-dot,
+  details.section[data-fault] > .section-h .section-h-dot {
+    background: var(--danger);
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--space-3);
+    align-items: stretch;
+  }
+  .section-grid > * { grid-column: span 12; min-width: 0; }
+  @media (min-width: 900px) {
+    .section-grid > .c4 { grid-column: span 4; }
+    .section-grid > .c5 { grid-column: span 5; }
+    .section-grid > .c6 { grid-column: span 6; }
+    .section-grid > .c7 { grid-column: span 7; }
+    .section-grid > .c8 { grid-column: span 8; }
+  }
+
+  /* Konfiguration: 1/2/3 lige spalter (< 900 / ≥ 900 / ≥ 1280 px). Paneler
+     har naturlig højde og stables oppefra (align-items: start) — ens højde
+     gælder kun Dashboard. cN = én spalte; uden cN, eller med .wide, spænder
+     elementet alle spalter (sektioner, sektionslinks, view-head). */
+  .view[id^="v-conf-"],
+  .view[id^="v-conf-"] .section-grid {
+    --conf-cols: 1;
+    grid-template-columns: repeat(var(--conf-cols), minmax(0, 1fr));
+    align-items: start;
+  }
+  .view[id^="v-conf-"] > *,
+  .view[id^="v-conf-"] .section-grid > * { grid-column: 1 / -1; }
+  @media (min-width: 900px) {
+    .view[id^="v-conf-"],
+    .view[id^="v-conf-"] .section-grid { --conf-cols: 2; }
+    .view[id^="v-conf-"] > :is(.c4, .c5, .c6, .c7, .c8):not(.wide),
+    .view[id^="v-conf-"] .section-grid > :is(.c4, .c5, .c6, .c7, .c8):not(.wide) { grid-column: auto; }
+  }
+  @media (min-width: 1280px) {
+    .view[id^="v-conf-"],
+    .view[id^="v-conf-"] .section-grid { --conf-cols: 3; }
+    /* Færre end tre én-spalte-paneler (cN uden .wide): to spalter, ingen tom tredje. */
+    .view[id^="v-conf-"]:not(:has(
+      > :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide)
+    )),
+    .view[id^="v-conf-"] .section-grid:not(:has(
+      > :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide)
+    )) { --conf-cols: 2; }
+  }
+
+  details.section > summary.section-h {
+    list-style: none;
+    cursor: pointer;
+  }
+  details.section > summary.section-h::-webkit-details-marker { display: none; }
+  details.section > summary.section-h::after {
+    content: "";
+    width: 7px; height: 7px; flex: none;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translateY(-2px);
+    transition: transform var(--dur) var(--ease);
+  }
+  details.section[open] > summary.section-h::after {
+    transform: rotate(225deg) translateY(-2px);
+  }
+
+  /* Legacy .section-head — midlertidig kompatibilitet */
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding-block: var(--space-4) var(--space-1);
+    margin: 0;
+  }
+  .section-head > span {
+    flex: none;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--muted);
+  }
+  .section-head::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--border);
+  }
+}
+
+
+/* ==========================================================================
+   4. KOMPONENTER
+   ========================================================================== */
+@layer components {
+
+  /* ---- 4.1 Enhedsvælger (logo + dropdown via <details>) --------------- */
+  .device { position: relative; justify-self: start; }
+  .device > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--hit);
+    padding: 0 var(--space-3) 0 var(--space-1);
+    border-radius: var(--r-pill);
+    list-style: none;
+    cursor: pointer;
+  }
+  .device > summary::-webkit-details-marker { display: none; }
+  .device > summary:hover { background: var(--card); }
+  .device svg.logo { width: 32px; height: 32px; flex: none; }
+  .device .name { display: grid; line-height: 1.2; }
+  .device .name b { font-weight: 600; }
+  .device .name small { font-size: var(--fs-xs); color: var(--muted); }
+  .device .caret { width: 8px; height: 8px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translateY(-3px); }
+
+  .device-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    min-width: 280px;
+    max-width: min(360px, calc(100vw - 2 * var(--pad)));
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--r-card);
+    background: var(--field);
+    box-shadow: 0 12px 40px rgba(0,0,0,.18), 0 0 0 1px var(--border);
+  }
+  /* Om enhed — identitet øverst; ingen driftshandlinger her */
+  .device-about {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: var(--r-field);
+    background: var(--card);
+  }
+  .device-about h3 {
+    margin: 0;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .device-about .kv { gap: var(--space-2); }
+  .device-about .btn { justify-self: start; }
+  .device-menu > nav {
+    display: grid;
+    gap: 2px;
+  }
+  .device-menu a {
+    display: grid;
+    grid-template-columns: 10px 1fr;
+    column-gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--r-field);
+    text-decoration: none;
+  }
+  .device-menu a:hover { background: var(--card); }
+  .device-menu a small { grid-column: 2; font-size: var(--fs-xs); color: var(--muted); }
+  .device-menu a i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  /* Enhed der ikke kan nås: grå prik (navn + IP står stadig ved siden af). */
+  .device-menu a[data-offline] i { background: var(--faint); }
+  .device-menu a[data-offline] { color: var(--muted); }
+  .device-menu a[aria-current] { background: var(--card); }
+
+  @media (max-width: 767.98px) { .device .name small { display: none; } }
+
+  /* ---- 4.2 Tilstands-pille (Dashboard | Konfiguration) ---------------
+     Web/tablet: midt i headeren. Mobil: svævende i bunden, i tommel-
+     fingerhøjde — samme komponent, samme udseende. */
+  .mode {
+    display: flex;
+    padding: 4px;
+    border-radius: var(--r-pill);
+    background: var(--card);
+  }
+  .mode label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: calc(var(--hit) - 4px);
+    padding: 0 var(--space-5);
+    border-radius: var(--r-pill);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .mode label:hover { color: var(--fg); }
+  .mode svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  @media (max-width: 767.98px) {
+    .mode {
+      position: fixed;
+      left: 50%;
+      bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+      z-index: 30;
+      transform: translateX(-50%);
+      background: color-mix(in srgb, var(--card) 88%, transparent);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.22);
+    }
+    .mode label { min-height: 48px; padding: 0 var(--space-4); }
+  }
+
+  /* Værktøjer i headerens højre side: sprog + tema */
+  .tools { display: flex; align-items: center; gap: var(--space-1); }
+
+  /* Sprogvælger — almindelige links til /en/ og /da/ (ingen JS).
+     Kun renderet når buildet indeholder mere end ét sprog. */
+  .lang { display: flex; padding: 3px; border-radius: var(--r-pill); background: var(--card); }
+  .lang a {
+    display: grid; place-items: center;
+    min-width: 36px; height: calc(var(--hit) - 10px); padding: 0 8px;
+    border-radius: var(--r-pill);
+    font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em;
+    color: var(--muted); text-decoration: none;
+  }
+  .lang a:hover { color: var(--fg); }
+  .lang a[aria-current] { background: var(--inv-bg); color: var(--inv-fg); }
+
+  /* Rund ikon-knap (tema) */
+  .icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: var(--hit);
+    height: var(--hit);
+    border-radius: var(--r-pill);
+    cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--card); }
+  .icon-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  /* ---- 4.3 Zonefelt ----------------------------------------------------
+     Struktur genbrugt fra V6-headeren. Valgt felt INVERTERES (Apex'
+     "inverted card") — tydeligt på afstand, uden at tilføje en farve. */
+  .tile {
+    position: relative;
+    min-width: 0;
+    min-height: var(--tile-h);
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    column-gap: var(--space-3);
+    align-items: center;
+    padding: 10px var(--space-3) 10px 10px;
+    border-radius: var(--r-tile);
+    background: var(--card);
+    box-shadow: var(--card-edge);
+    color: var(--fg);
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .tile:hover { background: var(--raised); }
+
+  .tile .lvl { grid-row: 1 / -1; align-self: stretch; display: grid; gap: 3px; }
+  .tile .lvl i { display: block; min-height: 7px; border-radius: 2px; background: var(--seg-off); }
+  .tile-id   { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+  .tile-name { font-size: var(--fs-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-val  { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Niveau 0–5 tænder segmenter nedefra (ventilåbning i trin á 20 %) */
+  .tile[data-level="1"] .lvl i:nth-child(n+5),
+  .tile[data-level="2"] .lvl i:nth-child(n+4),
+  .tile[data-level="3"] .lvl i:nth-child(n+3),
+  .tile[data-level="4"] .lvl i:nth-child(n+2),
+  .tile[data-level="5"] .lvl i { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+
+  /* Grupper: primær = hel kant, medlem = stiplet */
+  .tile[data-group="primary"] { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .tile[data-group="member"]  { outline: 1.5px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: -1.5px; }
+  .tile[data-group="member"] .tile-name { color: var(--muted); }
+
+  .tile[data-state="fault"] :is(.tile-id, .tile-val) { color: var(--danger); }
+  .tile[data-state="fault"] .lvl i:last-child { background: var(--danger); }
+  .tile[data-state="blocked"] :is(.tile-id, .tile-val) { color: var(--warn); }
+  .tile[data-state="blocked"] .lvl i:last-child { background: var(--warn); }
+  .tile[data-state="learning"] :is(.tile-id, .tile-val) { color: var(--violet); }
+  .tile[data-state="learning"][data-level="1"] .lvl i:nth-child(n+5),
+  .tile[data-state="learning"][data-level="2"] .lvl i:nth-child(n+4),
+  .tile[data-state="learning"][data-level="3"] .lvl i:nth-child(n+3),
+  .tile[data-state="learning"][data-level="4"] .lvl i:nth-child(n+2),
+  .tile[data-state="learning"][data-level="5"] .lvl i {
+    background: var(--violet);
+    box-shadow: none;
+  }
+  .tile[data-state="off"] { opacity: .5; }
+
+  /* Lader op: Touch har planlagt pladeopladning før vind/kulde (absorb åben).
+     Pil-skilt øverst til højre; "insufficient" = gulvet kan ikke nå det hele.
+     Står før læringsskiltet, så "mangler læring" vinder hvis begge gælder. */
+  .tile[data-charge]::after,
+  .tile-sys[data-lease="refused"]::after,
+  .tile-sys[data-lease="none"]::after {
+    content: "\2191";
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: var(--space-4);
+    height: var(--space-4);
+    border-radius: var(--r-pill);
+    background: var(--accent);
+    color: var(--bg);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .tile[data-charge="insufficient"]::after { background: var(--warn); }
+  /* System uden Touch-lease: V6 kører lokalt. Samme skilt, gult "!". */
+  .tile-sys[data-lease="refused"]::after,
+  .tile-sys[data-lease="none"]::after { content: "!"; background: var(--warn); }
+
+  /* Mangler læring: gult advarselsskilt øverst til højre. Farve er aldrig eneste signal. */
+  .tile[data-learn="needed"]::after {
+    content: "!";
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: var(--space-4);
+    height: var(--space-4);
+    border-radius: var(--r-pill);
+    background: var(--warn);
+    color: var(--bg);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  /* Valgt uden radio-state (server-renderet side eller JS): samme udtryk
+     som det genererede :checked-selektor-sæt i sektion 6. */
+  .tile.is-selected {
+    --seg-off: color-mix(in srgb, var(--inv-fg) 18%, transparent);
+    --muted:   color-mix(in srgb, var(--inv-fg) 60%, transparent);
+    background: var(--inv-bg);
+    color: var(--inv-fg);
+  }
+  .mode label.is-active { background: var(--inv-bg); color: var(--inv-fg); }
+
+  /* System-feltet: samme stak som zonefelter — .tile-id øverst (som Z1),
+     frem/retur som værdier under. ΔT hører til dashboard-visningen. */
+  .tile-sys {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    row-gap: 2px;
+    min-width: 0;
+    padding: 10px var(--space-3);
+  }
+  .tile-sys .tile-id {
+    white-space: normal;
+    line-height: 1.15;
+    overflow: visible;
+    text-overflow: unset;
+  }
+  .tile-sys .temps {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    line-height: 1.15;
+  }
+  .tile-sys .temp {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    min-width: 0;
+  }
+  .tile-sys .temp-lab {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .tile-sys .temp .tile-val {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Samme farvebetydning som trendgrafen: frem = varme, retur = sensor/vand. */
+  .tile-sys .temp.flow .temp-lab,
+  .tile-sys .temp.flow .tile-val { color: var(--accent-ink); }
+  .tile-sys .temp.ret .temp-lab,
+  .tile-sys .temp.ret .tile-val { color: var(--info); }
+  /* Uden måling: værdien er "—" og labelen er ikke farvet. */
+  .tile-sys .temp[data-empty] .temp-lab,
+  .tile-sys .temp[data-empty] .tile-val { color: var(--muted); }
+  .tile-sys .temp.ret .tile-val {
+    font-size: var(--fs-sm);
+    font-weight: 500;
+  }
+
+  /* Tablet: lidt strammere felter */
+  @media (max-width: 1023.98px) {
+    .tile { column-gap: var(--space-2); padding-right: var(--space-2); }
+    .tile-val { font-size: var(--fs-md); }
+  }
+  /* Mobil: zonefelt = ID + temperatur + niveaubjælken lagt NED som en
+     vandret række under (frigør bredde, så 6 zoner kan stå i én række
+     helt ned til 320px). Navnet står i overskriften under strimlen. */
+  @media (max-width: 599.98px) {
+    .tile { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; row-gap: 3px; padding: 8px 6px 7px; border-radius: 10px; text-align: center; }
+    .tile .lvl { grid-row: 3; grid-template-columns: repeat(5, 1fr); gap: 2px; margin-top: 2px; }
+    .tile .lvl i { min-height: 3px; }
+    /* Vandret: segment 1 (venstre) tændes først → vend rækkefølgen */
+    .tile .lvl { direction: rtl; }
+    .tile-name { display: none; }
+    .tile-id { font-size: 10px; }
+    .tile-val { font-size: var(--fs-sm); letter-spacing: -.03em; }
+
+    .tile-sys { padding: 8px 6px 7px; border-radius: 10px; }
+    .tile-sys .temp { justify-content: center; }
+    .tile-sys .temp.ret .tile-val { font-size: 10px; }
+  }
+
+  /* ---- 4.4 Panel (Apex standard card: ingen kant, kontrast som dybde) - */
+  /* Flex-kolonne: kortet strækkes til rækkens højde, og footeren med
+     gem-knappen skubbes altid ned i bunden, så knapperne flugter. */
+  .panel {
+    border-radius: var(--r-card);
+    background: var(--card);
+    box-shadow: var(--card-edge);
+    padding: var(--panel-pad);
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap);
+    container-type: inline-size;
+  }
+  .panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-3); }
+  @media (max-width: 599.98px) {
+    .panel-head p { order: 3; flex-basis: 100%; }     /* undertitel på egen linje */
+    .panel .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .panel-head h3 { font-size: var(--fs-panel); }
+  .panel-head p { color: var(--muted); font-size: var(--fs-sm); }
+  .panel-head .help-btn { align-self: center; }
+  .panel-head .badge { margin-left: auto; }
+  .panel-foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+
+  /* ---- Hjælp: ?-knap + native popover (klik/tryk, ikke hover) ---------
+     Desktop: forankret nær invoker via progressiv JS (flere ? kan dele
+     samme popover-id). Mobil: bundark. */
+  .help-btn {
+    position: relative;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--raised);
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .help-btn::after { content: ""; position: absolute; inset: -11px; } /* ~44 px trykflade */
+  .help-btn:hover { color: var(--fg); }
+  .help-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .help-pop {
+    /* Kæmp imod UA [popover] { inset:0; margin:auto }. Desktop: CSS anchor
+       hvor understøttet; ellers JS sætter top/left nær invoker. */
+    position: fixed;
+    inset: unset;
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: auto;
+    margin: 0;
+    max-width: 340px;
+    padding: var(--space-4);
+    border: 0;
+    border-radius: var(--r-field);
+    background: var(--field);
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    box-shadow: 0 12px 40px rgba(0,0,0,.2), 0 0 0 1px var(--border);
+  }
+  @supports (anchor-name: --x) {
+    .help-pop {
+      top: anchor(bottom);
+      left: anchor(left);
+      margin-top: var(--space-2);
+    }
+  }
+  .help-pop p { margin: 0 0 var(--space-3); }
+  .help-pop p:last-child { margin-bottom: 0; }
+  .help-pop a { color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
+  @media (max-width: 599.98px) {
+    .help-pop {
+      position-anchor: none;
+      inset: auto 0 0 0;
+      max-width: none;
+      top: auto !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      margin: 0 !important;
+      border-radius: var(--r-card) var(--r-card) 0 0;
+    }
+  }
+  .panel-foot .note { margin-right: auto; }
+
+  /* Inverteret panel: kun til det der kræver handling nu */
+  /* Tonede paneler (Apex "usage examples"): dæmpet baggrund + stærk tekst */
+  .panel.alert { background: var(--danger-bg); gap: var(--space-3); box-shadow: inset 3px 0 0 var(--danger); }
+  .panel.alert h3 { color: var(--danger); }
+  .panel.tone-info { background: var(--info-bg); box-shadow: inset 3px 0 0 var(--info); }
+  .panel.tone-info h3 { color: var(--info); }
+
+  /* Beskeder inde i et panel */
+  .msg { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-4); border-radius: var(--r-field); font-size: var(--fs-sm); }
+  .msg::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: currentColor; }
+  .msg b { font-weight: 600; }
+  .msg.info   { background: var(--info-bg);   color: var(--info); }
+  .msg.ok     { background: var(--ok-bg);     color: var(--ok); }
+  .msg.warn   { background: var(--warn-bg);   color: var(--warn); }
+  .msg.bad    { background: var(--danger-bg); color: var(--danger); }
+  .msg.violet { background: var(--violet-bg); color: var(--violet); }
+  .msg span { color: var(--fg); }
+
+  /* Resultat af Test læsning / Test afsendelse. Bliver stående; gemmes ikke. */
+  .test-result:empty { display: none; }
+  .test-result[data-state="running"] {
+    display: flex;
+    align-items: center;
+    min-height: var(--hit);
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  .test-result .msg span {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+
+  /* Underafsnit side om side når panelet er bredt nok */
+  .subs { display: grid; gap: var(--space-5) var(--space-6); }
+  @container (min-width: 560px) { .subs.cols-2 { grid-template-columns: 1fr 1fr; } }
+  .sub { display: grid; gap: var(--field-gap); align-content: start; min-width: 0; }
+  .subs.cols-2 > .sub {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-height: 100%;
+  }
+  .sub > h4 {
+    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+    font-size: var(--fs-sm); font-weight: 500; color: var(--muted);
+  }
+  .sub > h4 .badge { margin-left: auto; }
+  .sub > .actions:last-child { margin-top: auto; }
+  .note { font-size: var(--fs-sm); color: var(--muted); }
+
+  /* Monospace-id med kopiér (progressiv forstærkning) */
+  .mono { font-family: var(--font-mono); font-size: var(--fs-sm); word-break: break-all; }
+  .id-row {
+    display: flex; align-items: center; gap: var(--space-2);
+    min-width: 0;
+  }
+  .id-row .mono { flex: 1; min-width: 0; }
+  .btn.copy {
+    flex: 0 0 auto;
+    padding-inline: var(--space-3);
+    font-size: var(--fs-xs);
+  }
+
+  /* Ekspert-tuning bag et link */
+  .more > summary {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    min-height: var(--hit); list-style: none;
+    font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+  }
+  .more > summary::-webkit-details-marker { display: none; }
+  .more > summary::after {
+    content: ""; width: 7px; height: 7px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translateY(-2px); transition: transform var(--dur) var(--ease);
+  }
+  .more[open] > summary::after { transform: rotate(225deg) translateY(-2px); }
+  .more[open] > .subs { padding-top: var(--space-4); }
+
+  /* Tilstandsafhængige handlinger — vis kun det, der passer til data-state.
+     Skjul-reglen skal matche .btn-specificitet (ellers vinder display:inline-flex). */
+  [data-state] [data-show-when] { display: none; }
+  .btn[data-show-when] { --show-display: inline-flex; }
+  .msg[data-show-when] { --show-display: flex; }
+  .note[data-show-when],
+  p[data-show-when],
+  .hint[data-show-when] { --show-display: block; }
+  details[data-show-when] { --show-display: block; }
+  dl[data-show-when] { --show-display: grid; }
+  .actions[data-show-when] { --show-display: flex; }
+  [data-state="unpaired"]  [data-show-when~="unpaired"],
+  [data-state="approved"]  [data-show-when~="approved"],
+  [data-state="pending"]   [data-show-when~="pending"],
+  [data-state="error"]     [data-show-when~="error"] {
+    display: var(--show-display, block);
+  }
+
+  /* Badge (pille) */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: var(--r-pill);
+    background: var(--raised); color: var(--muted);
+    font-size: var(--fs-xs); font-weight: 500; white-space: nowrap;
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.hot { background: var(--accent-ink); color: var(--on-accent-ink); }
+  .badge.hot::before { background: currentColor; }
+  .badge.info   { color: var(--info);   background: var(--info-bg); }
+  .badge.ok     { color: var(--ok);     background: var(--ok-bg); }
+  .badge.warn   { color: var(--warn);   background: var(--warn-bg); }
+  .badge.bad    { color: var(--danger); background: var(--danger-bg); }
+  .badge.violet { color: var(--violet); background: var(--violet-bg); }
+
+  /* ---- 4.5 Tal ---------------------------------------------------------
+     Store tal, lille label under — ingen bokse (Apex metrics / Tesla). */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: var(--space-5) var(--space-4); }
+  .metric dd { order: -1; font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.03em; line-height: 1.1; }
+  .metric dd small { font-size: var(--fs-sm); font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .metric { display: flex; flex-direction: column; gap: 4px; }
+  .metric dt { font-size: var(--fs-sm); color: var(--muted); }
+
+  .kv { display: grid; font-size: var(--fs-sm); }
+  .kv > div { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: max(0px, (var(--row-h) - 20px) / 2) 0; border-bottom: 1px solid var(--border); }
+  .kv > div:last-child { border-bottom: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { font-weight: 500; text-align: right; }
+
+  /* Progress i Apex-stil: tynd bjælke (`--accent` varme, `.violet` læring) */
+  .bar { height: 4px; border-radius: var(--r-pill); background: var(--seg-off); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: var(--v, 0%); background: var(--accent); border-radius: inherit; }
+  .bar.violet > i { background: var(--violet); }
+  p.hint + .bar { margin-top: var(--space-2); }
+
+  /* Komfortliste med 24-timers sparklines -------------------------------
+     Hver række er et <label> for zonens scope-radio (klik åbner zonen).
+     Grafen er ren inline-SVG: fuld linje = temperatur, stiplet trappe =
+     mål, orange flade = afvigelsen imellem. ESP32'en (eller binderen)
+     skriver blot nye "points"-strenge — ingen chart-bibliotek.
+     Smalt panel: grafen under navnet. Bredt panel: på samme række. */
+  .comfort { display: grid; }
+  .comfort label {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas: "id name val" "id spark spark";
+    column-gap: var(--space-3);
+    row-gap: 6px;
+    align-items: center;
+    padding: 10px var(--space-2);
+    margin-inline: calc(-1 * var(--space-2));
+    border-radius: var(--r-field);
+    cursor: pointer;
+  }
+  .comfort label + label { border-top: 1px solid var(--border); }
+  .comfort label:hover { background: var(--raised); border-color: transparent; }
+  .comfort label:hover + label { border-color: transparent; }
+  .comfort .id    { grid-area: id; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+  .comfort .name  { grid-area: name; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .comfort .val   { grid-area: val; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; text-align: right; }
+  .comfort .val b { color: var(--fg); font-size: var(--fs-md); font-weight: 600; }
+  .comfort .spark { grid-area: spark; }
+  .comfort [data-state="fault"] :is(.id, .val) { color: var(--danger); }
+  .comfort [data-state="blocked"] :is(.id, .val) { color: var(--warn); }
+  .comfort [data-state="learning"] :is(.id, .val) { color: var(--violet); }
+
+  @container (min-width: 560px) {
+    .comfort label {
+      grid-template-columns: 40px minmax(90px, 140px) minmax(0, 1fr) 112px;  /* fast værdikolonne → graferne flugter */
+      grid-template-areas: "id name spark val";
+    }
+  }
+
+  .spark { display: block; width: 100%; height: 36px; overflow: visible; }
+  .spark .t { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .spark .g { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .spark .a { fill: light-dark(rgba(232,99,10,.24), rgba(217,108,47,.18)); }
+  [data-state="fault"] .spark .t { stroke: var(--danger); }
+  [data-state="fault"] .spark .a { fill: color-mix(in srgb, var(--danger) 22%, transparent); }
+
+  /* Fremløb/retur-trend i "Varme nu": fylder panelets bund, så kortet
+     står lige så højt som komfortlisten ved siden af uden tom luft */
+  .trend-wrap { margin-top: auto; }
+  .trend-wrap h4 { display: flex; align-items: center; }
+  .trend { display: block; width: 100%; height: 120px; overflow: visible; }
+  .trend .f  { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .trend .r  { fill: none; stroke: var(--info);   stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .trend .dt { fill: var(--accent); opacity: .14; }
+
+  /* Tom graf: figuren klapper sammen til én linje (.empty) ved siden af
+     overskriften. Binderen sætter data-empty på grafens beholder. Manglende
+     værdier vises som "—", aldrig 0. */
+  .empty { display: none; margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+  [data-empty] > .empty { display: block; }
+  [data-empty] :is(.trend, .spark, .zchart, .fc, .bars, .axis, .legend, .zchart-legend, .fc-legend, .bars-legend) { display: none; }
+  .sub[data-empty] { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+  .trend-wrap[data-empty] { margin-top: 0; }
+  /* Dashboard: et panel hvis bundgraf er tom, strækkes ikke til naboens højde. */
+  .panel:has(> .trend-wrap[data-empty]) { align-self: start; }
+
+  /* Zone 24 t + 6 t fremskrivning (halvtime). Akser/Nu/forklaring i HTML. */
+  .zchart {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    column-gap: var(--space-2);
+    row-gap: 6px;
+  }
+  .zchart-y {
+    display: flex; flex-direction: column; justify-content: space-between;
+    align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1;
+  }
+  .zchart-plot { position: relative; min-width: 0; height: 140px; cursor: crosshair; }
+  .zchart-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .zchart .gl { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .zchart .t  { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .zchart .g  { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .zchart .pb { fill: var(--info); opacity: .14; }
+  .zchart .pj { fill: none; stroke: var(--info); stroke-width: 1.6; stroke-dasharray: 4 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .zchart .past { fill: var(--card); opacity: .55; }
+  .zchart .now  { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .zchart-now {
+    position: absolute; top: -2px; left: var(--now, 80%);
+    transform: translateX(6px);
+    font-size: var(--fs-xs); font-weight: 600;
+  }
+  /* Mus-slider: stiplet lodret linje over plottet (HTML, så SVG-repaint ikke sletter den). */
+  .zchart-scrub {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    border-left: 1px dashed var(--fg);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .zchart-plot[data-scrubbing] .zchart-now { opacity: .45; }
+  .zchart-x {
+    grid-column: 2;
+    display: flex; justify-content: space-between;
+    font-size: var(--fs-xs); color: var(--faint);
+  }
+  .zchart-legend {
+    display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
+    font-size: var(--fs-xs); color: var(--muted); margin: var(--space-2) 0 0;
+  }
+  .zchart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .zchart-legend i { display: inline-block; width: 16px; }
+  .zchart-legend .lt { border-top: 2px solid var(--fg); }
+  .zchart-legend .lg { border-top: 1.5px dashed var(--muted); }
+  .zchart-legend .lp {
+    height: 8px;
+    background: color-mix(in srgb, var(--info) 22%, transparent);
+    border-top: 1.6px dashed var(--info);
+  }
+  @media (max-width: 599.98px) {
+    .zchart { grid-template-columns: 28px minmax(0, 1fr); }
+    .zchart-plot { height: 112px; }
+  }
+
+  /* .bars: plan vs reality */
+  .bars { display: grid; gap: var(--space-2); }
+  .bars-plot {
+    display: grid;
+    grid-template-columns: repeat(var(--bars-n, 12), minmax(0, 1fr));
+    align-items: end; gap: 4px; height: 88px;
+  }
+  .bars-plot .col {
+    display: grid; grid-template-columns: 1fr 1fr;
+    align-items: end; gap: 2px; height: 100%;
+  }
+  .bars-plot .col i {
+    display: block; width: 100%; border-radius: 2px 2px 0 0; min-height: 2px;
+  }
+  .bars-plot .col i.plan { background: var(--muted); opacity: .45; height: calc(var(--plan, 0) * 1%); }
+  .bars-plot .col i.act  { background: var(--accent); height: calc(var(--act, 0) * 1%); }
+  .bars-legend {
+    display: flex; flex-wrap: wrap; gap: var(--space-3);
+    font-size: var(--fs-xs); color: var(--muted);
+  }
+  .bars-legend i {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 2px; margin-right: 4px; vertical-align: -1px;
+  }
+  .bars-legend .lp { background: var(--muted); opacity: .45; }
+  .bars-legend .la { background: var(--accent); }
+
+  .axis { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); }
+  .legend .lf { border-top: 2px solid var(--accent); }
+  .legend .lr { border-top: 2px solid var(--info); }
+
+  /* ---- Vejrudsigt: ikoner + temperatur + vind på fælles tidsakse -----
+     Kun figurerne er SVG (strakt med preserveAspectRatio="none" og
+     non-scaling strokes). Alle tekster — akser, "Nu", ugedage — er HTML,
+     så de aldrig bliver forvrænget og altid følger temaets typografi.
+     Grid: [y-akse | plot], rækker: ikoner, temperatur, vind, x-akse. */
+  .fc {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    column-gap: var(--space-2);
+    row-gap: 6px;
+  }
+  .fc-icons, .fc-x { grid-column: 2; }
+  /* 24 kolonner á 3 t: hvert ikon centreres midt i sit tidsrum */
+  .fc-icons { display: grid; grid-template-columns: repeat(24, 1fr); justify-items: center; }
+  .fc-icons .ic { width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .fc-icons .sun    { stroke: var(--warn); }
+  .fc-icons .partly { stroke: var(--warn); }
+  .fc-icons .rain   { stroke: var(--info); }
+  .fc-icons .snow   { stroke: var(--info); }
+  .fc-icons .moon   { stroke: var(--muted); }
+  /* Ét ikon pr. time (data-hourly): antal kolonner = antal timer (--fc-cols). */
+  .fc-icons[data-hourly] { grid-template-columns: repeat(var(--fc-cols, 72), minmax(0, 1fr)); }
+  .fc-icons[data-hourly] .ic { width: 100%; max-width: 18px; height: 16px; }
+
+  /* .fc--dual: højre akse til en anden enhed (fx solindstråling W/m²). */
+  .fc.fc--dual { grid-template-columns: 32px minmax(0, 1fr) 44px; }
+  .fc--dual > :is(.fc-icons, .fc-x, .fc-plot, .fc-dirs) { grid-column: 2; }
+  .fc--dual > .fc-y { grid-column: 1; }
+  .fc--dual > .fc-y2 { grid-column: 3; }
+  .fc-y2 { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
+  .fc .sa { fill: var(--warn); opacity: .14; }
+  .fc .sl { fill: none; stroke: var(--warn); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  /* Vindretning under vindgrafen: pile hver 3. time (--fc-dirs kolonner). */
+  .fc-dirs { display: grid; grid-template-columns: repeat(var(--fc-dirs, 24), minmax(0, 1fr)); justify-items: center; color: var(--info); }
+  .fc-dirs .dir { margin: 0; width: 14px; height: 14px; }
+
+  .fc-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
+  .fc-plot { position: relative; min-width: 0; }
+  .fc-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .fc-temp { height: 150px; }
+  .fc-wind { height: 72px; margin-top: 6px; }
+
+  .fc .gl   { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .fc .day  { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+  .fc .pre  { fill: var(--accent); opacity: .12; }
+  .fc .tl   { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .fc .wa   { fill: var(--info); opacity: .18; }
+  .fc .wl   { fill: none; stroke: var(--info); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .fc .thr  { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .fc .past { fill: var(--card); opacity: .55; }     /* fortiden tones ned */
+  .fc .now  { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .fc-now {
+    position: absolute; top: -2px; left: var(--now);
+    transform: translateX(6px);
+    font-size: var(--fs-xs); font-weight: 600;
+  }
+
+  /* x-aksen: 13 mærker á 6 t, fordelt ligeligt med space-between */
+  .fc-x { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); }
+  .fc-x span { width: 0; display: flex; justify-content: center; white-space: nowrap; }
+  .fc-x span:first-child { justify-content: flex-start; }
+  .fc-x .d { color: var(--fg); font-weight: 600; }
+  /* Mærker på faste klokkeslæt (00/06/12/18): placeret med left i % af tidsaksen. */
+  .fc-x.fc-x--abs { position: relative; display: block; height: 1.4em; }
+  .fc-x.fc-x--abs span { position: absolute; top: 0; width: auto; transform: translateX(-50%); }
+
+  .fc-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: var(--fs-xs); color: var(--muted); }
+  .fc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .fc-legend i { display: inline-block; width: 16px; }
+  .fc-legend .lt   { border-top: 2px solid var(--fg); }
+  .fc-legend .lw   { height: 8px; background: color-mix(in srgb, var(--info) 30%, transparent); border-top: 2px solid var(--info); }
+  .fc-legend .lthr { border-top: 1px dashed var(--accent); }
+  .fc-legend .lpre { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .fc-legend .lsun { height: 8px; background: color-mix(in srgb, var(--warn) 22%, transparent); border-top: 1.2px solid var(--warn); }
+  .fc-legend .dir { margin: 0; color: var(--info); }
+  .fc-legend .lbar  { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 75%, transparent); }
+  .fc-legend .ldhw  { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--info) 70%, transparent); }
+  .fc-legend .lleg  { height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 75%, transparent) 0 3px, color-mix(in srgb, var(--info) 35%, transparent) 3px 6px); }
+  .fc-legend .llift { border-top: 3px solid var(--violet); border-radius: var(--r-pill); }
+  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: var(--accent); }
+  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: var(--warn); }
+
+  /* Plan (Lune Touch): 24 t frem fra nu. Venstre kolonne = spornavn, højre = tidsakse
+     (--a/--b = fra/til i timer fra nu). Øverste spor: Odin — planlagt varme som søjler
+     (--v = højde i %), Touch' løft af Odins komfortbånd som violet streg under.
+     Rumspor: forvarme (lys accent), opladning før vind/kulde (accent; gul = gulvet
+     kan ikke dække hele underskuddet). Farve er aldrig eneste signal: hvert segment
+     har title-tekst, og forklaringen står under grafen. */
+  .plan {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, 8rem) minmax(0, 1fr);
+    column-gap: var(--space-3);
+    row-gap: 6px;
+    align-items: center;
+  }
+  .plan-lab { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plan-lane {
+    position: relative;
+    height: 18px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+  }
+  .plan-lane--odin {
+    height: 64px;
+    margin-bottom: 6px;
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    align-items: end;
+    gap: 1px;
+    border-radius: 0;
+    background: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .plan-bar { height: calc(var(--v, 0) * 1%); background: color-mix(in srgb, var(--accent) 75%, transparent); border-radius: 2px 2px 0 0; }
+  .plan-bar[data-mode="dhw"] { background: color-mix(in srgb, var(--info) 70%, transparent); }
+  .plan-bar[data-mode="legionella"] {
+    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 75%, transparent) 0 3px,
+                                          color-mix(in srgb, var(--info) 35%, transparent) 3px 6px);
+  }
+  /* Y-akse for Odin-sporet: navn til venstre, kWh-mærker højrestillet ved sporet. */
+  .plan-lab--y { display: flex; align-items: stretch; justify-content: space-between; gap: var(--space-2); height: 64px; margin-bottom: 6px; }
+  .plan-lab--y > b { font-weight: inherit; align-self: center; }
+  .plan-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
+            font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1; }
+  .plan-y i { font-style: normal; }
+  .plan-lift, .plan-seg {
+    position: absolute;
+    left: calc(var(--a, 0) * 100% / 24);
+    width: calc((var(--b, 0) - var(--a, 0)) * 100% / 24);
+    border-radius: var(--r-pill);
+  }
+  .plan-lift { bottom: -6px; height: 3px; background: var(--violet); }
+  .plan-seg { top: 3px; bottom: 3px; }
+  .plan-seg[data-kind="preload"] { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .plan-seg[data-kind="charge"] { background: var(--accent); }
+  .plan-seg[data-kind="charge"][data-insufficient] { background: var(--warn); }
+  .plan-x { grid-column: 2; position: relative; height: 1.4em; font-size: var(--fs-xs); color: var(--faint); }
+  .plan-x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .plan-x span:first-child { transform: none; }
+  .plan-x .d { color: var(--fg); font-weight: 600; }
+  .plan-empty-lane { grid-column: 2; font-size: var(--fs-xs); color: var(--faint); }
+
+  /* Fordeling (.dist, Touch): omtrentlig andel af pumpens flow pr. manifold som
+     stablet bjælke (--w = andel i %), med en tynd bjælke pr. manifold for dens
+     zoner. Farve pr. manifold via data-i (0–3); rækkerne under bærer navn, % og
+     l/min, så farven aldrig er eneste signal. */
+  .dist { display: grid; gap: var(--space-3); }
+  .dist-bar {
+    display: flex; height: 22px; overflow: hidden;
+    border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+  }
+  .dist-bar--thin { height: 8px; }
+  .dist-seg { flex: 0 0 calc(var(--w, 0) * 1%); min-width: 0; background: var(--c, var(--accent)); }
+  .dist-seg + .dist-seg { box-shadow: inset 2px 0 0 var(--card, var(--bg)); }
+  [data-i="0"] { --c: var(--accent); }
+  [data-i="1"] { --c: var(--info); }
+  [data-i="2"] { --c: var(--violet); }
+  [data-i="3"] { --c: var(--ok); }
+  .dist-bar--thin .dist-seg { opacity: .75; }
+  .dist-rows {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+    gap: var(--space-2) var(--space-4); align-items: center; font-size: var(--fs-sm);
+  }
+  .dist-key { width: 10px; height: 10px; border-radius: 3px; background: var(--c, var(--accent)); }
+  .dist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dist-rows .num { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+  .dist-rows .dist-bar--thin { grid-column: 2 / -1; margin-top: -4px; }
+  .dist-note { font-size: var(--fs-xs); color: var(--faint); }
+
+  /* Slider: stiplet linje gennem begge grafer + aflæsning, følger mus/finger.
+     HTML (ikke SVG), så den ikke forvrænges. Binderen sætter left i px. */
+  .fc { position: relative; }
+  .fc-plot { cursor: crosshair; touch-action: pan-y; }
+  .fc-scrub {
+    position: absolute; top: 0; bottom: 0; width: 0;
+    border-left: 1px dashed var(--fg);
+    pointer-events: none; z-index: 1;
+  }
+  .fc-readout {
+    position: absolute; top: 0; z-index: 2;
+    display: grid; gap: 2px;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--r-field);
+    background: var(--raised);
+    font-size: var(--fs-xs); line-height: 1.3; white-space: nowrap;
+    pointer-events: none;
+    transform: translateX(var(--space-2));
+  }
+  .fc-readout.flip { transform: translateX(calc(-100% - var(--space-2))); }
+  .fc-readout b { font-weight: 600; }
+  .fc-readout .c-temp { color: var(--fg); }
+  .fc-readout .c-sun { color: var(--warn); }
+  .fc-readout .c-wind { color: var(--info); }
+  .fc[data-scrubbing] .fc-now { opacity: .45; }
+
+  /* Timeikoner på smalle skærme: hvert 3. (ikonerne beholder deres plads). */
+  @media (max-width: 899.98px) {
+    .fc-icons[data-hourly] > :not(:nth-child(3n+1)) { visibility: hidden; }
+  }
+
+  /* Vindpil: roteres efter retningen via --deg */
+  .dir { width: 16px; height: 16px; vertical-align: -2px; margin-left: 4px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; transform: rotate(var(--deg, 0deg)); }
+
+  @media (max-width: 599.98px) {
+    .fc { grid-template-columns: 26px minmax(0, 1fr); }
+    .fc-temp { height: 120px; }
+    .fc-wind { height: 56px; }
+    .fc-icons { grid-template-columns: repeat(12, 1fr); }
+    .fc-icons:not([data-hourly]) .ic:nth-child(even) { display: none; }   /* ikon hver 6. time */
+    .fc.fc--dual { grid-template-columns: 26px minmax(0, 1fr) 34px; }
+    .fc-dirs > :nth-child(even) { visibility: hidden; }
+    .fc-x span:not(.d):not(:first-child) { visibility: hidden; }  /* kun ugedage */
+    .fc-x span:nth-child(3), .fc-x span:nth-child(7), .fc-x span:nth-child(11) { visibility: visible; }
+  }
+
+  /* Signaturforklaring i panelhovedet */
+  .legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+  .legend i { display: inline-block; width: 14px; height: 0; margin-left: 6px; }
+  .legend .lt { border-top: 1.6px solid var(--fg); }
+  .legend .lg { border-top: 1px dashed var(--muted); }
+  @media (max-width: 599.98px) { .legend { display: none; } }
+
+  /* ---- 4.6 Klima-kontrol (Tesla-inspireret) ---------------------------
+     Kæmpe aktuel temperatur og målet mellem to store runde knapper. */
+  .climate { display: grid; gap: var(--space-5); }
+  /* På dashboardet strækkes panelet til naboen; klima-kontrollen fylder højden. */
+  .panel > .climate:has(> .now) { flex: 1 1 auto; align-content: space-evenly; }
+  .climate .now { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .9; }
+  .climate .now small { margin-left: .12em; font-size: var(--fs-xl); color: var(--muted); letter-spacing: 0; }
+  .climate .target {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) 56px;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .climate .target button {
+    width: 56px; height: 56px;
+    border: 0; border-radius: 50%;
+    background: var(--raised);
+    display: grid; place-items: center;
+    font-size: 1.2rem; line-height: 1;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .climate .target button:hover  { background: var(--border); }
+  .climate .target button:active { background: var(--inv-bg); color: var(--inv-fg); }
+  .climate .target button:disabled { opacity: .35; cursor: not-allowed; }
+  .climate .target .value { display: grid; justify-items: center; }
+  .climate .target .value small { font-size: var(--fs-xs); color: var(--muted); }
+  .climate .target input {
+    width: 5ch; border: 0; background: transparent; text-align: center;
+    font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -.03em;
+    -moz-appearance: textfield;
+  }
+  .climate .target input:focus { outline: 0; }
+  .climate .target input::-webkit-inner-spin-button,
+  .climate .target input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  @media (max-width: 767.98px) { .climate .now { font-size: 3.25rem; } }
+
+  /* ---- 4.7 Felter ------------------------------------------------------ */
+  .field { display: grid; gap: min(var(--space-2), var(--field-gap)); }
+  .field > label, .field > .label { font-size: var(--fs-sm); font-weight: 500; }
+  .field .hint { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--muted); margin-top: 2px; }
+  p.hint { font-size: var(--fs-xs); color: var(--muted); margin: 0; }
+  /* Label + kontrol på samme række. Kontrolbredde = aktiv halvdel af
+     2-valg-.seg (padding 4px+4px), så select/stepper/input flugter med
+     den hvide pille — ikke hele segløbet. */
+  .field.row {
+    grid-template-columns: minmax(0, 1fr) calc((100% - 8px) / 2);
+    align-items: center;
+    column-gap: var(--space-4);
+  }
+  .field.row > .input,
+  .field.row > .select,
+  .field.row > .stepper,
+  .field.row > .pair,
+  .field.row > .seg,
+  .field.row > .compass { width: 100%; min-width: 0; justify-self: stretch; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .pair.wide-first { grid-template-columns: 2fr 1fr; }
+
+  .input, .select {
+    width: 100%;
+    min-height: var(--hit);
+    padding: 0 var(--space-4);
+    border: 1px solid light-dark(rgba(26,26,20,.24), var(--border));
+    border-radius: var(--r-field);
+    background: var(--field);
+    font-size: 16px;
+  }
+  .input:focus, .select:focus { outline: 0; border-color: var(--fg); }
+  .input::placeholder { color: var(--faint); }
+  .input:user-invalid { border-color: var(--danger); }
+  /* Filvalg: native input[type=file] kan ikke centreres pålideligt.
+     `.file.input` er en label der ser ud som et felt; den rigtige input er .sr-only. */
+  label.file.input {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    cursor: pointer;
+  }
+  label.file.input:focus-within { border-color: var(--fg); }
+  .file-pick {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(var(--hit) - 2 * var(--space-2));
+    padding: 0 var(--space-4);
+    border-radius: var(--r-pill);
+    background: var(--raised);
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .file-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  .select {
+    appearance: none;
+    padding-right: 40px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+  }
+
+  /* Stepper — pille */
+  .stepper {
+    display: grid;
+    grid-template-columns: var(--hit) minmax(0, 1fr) var(--hit);
+    min-height: var(--hit);
+    border: 1px solid light-dark(rgba(26,26,20,.24), var(--border));
+    border-radius: var(--r-pill);
+    background: var(--field);
+    overflow: hidden;
+  }
+  .stepper:focus-within { border-color: var(--fg); }
+  .stepper button { border: 0; background: transparent; font-size: 1.2rem; cursor: pointer; touch-action: manipulation; }
+  .stepper button:hover { background: var(--card); }
+  .stepper button:active { background: var(--inv-bg); color: var(--inv-fg); }
+  .stepper .value { display: flex; align-items: center; justify-content: center; gap: 3px; }
+  .stepper input {
+    width: 5ch; border: 0; background: transparent; text-align: right;
+    font-size: 16px; font-weight: 600; -moz-appearance: textfield;
+  }
+  .stepper input:focus { outline: 0; }
+  .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .stepper .unit { font-size: var(--fs-sm); color: var(--muted); }
+  .stepper .unit:empty { display: none; }
+
+  /* Switch — "til" er inverteret (sort/hvid), ikke iOS-grøn */
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--hit); cursor: pointer; }
+  .switch-text { display: grid; }
+  .switch-text b { font-size: var(--fs-sm); font-weight: 500; }
+  .switch-text small { font-size: var(--fs-xs); color: var(--muted); }
+  .switch input {
+    appearance: none; flex: none; position: relative;
+    width: 52px; height: 30px; border-radius: var(--r-pill);
+    background: var(--raised); box-shadow: inset 0 0 0 1px var(--border);
+    cursor: pointer; transition: background var(--dur) var(--ease);
+  }
+  .switch input::after {
+    content: ""; position: absolute; top: 4px; left: 4px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--muted); transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .switch input:checked { background: var(--inv-bg); box-shadow: none; }
+  .switch input:checked::after { transform: translateX(22px); background: var(--inv-fg); }
+
+  .gated:has(> .switch input:not(:checked)) > .gated-body { opacity: .4; pointer-events: none; }
+
+  /* Heat-pump limits only apply in heat-pump mode (seg radios inside the form). */
+  form[data-save="heating"]:not(:has(input[name="heat_mode"][value="heat_pump"]:checked)) .hp-limits {
+    opacity: .4; pointer-events: none;
+  }
+
+  /* 2-probe layout: kun manifold frem/retur — skjul zone-returfelter og ekstra probes */
+  .app[data-probe-layout="2"] .zone-ret { display: none; }
+  .app[data-probe-layout="2"] .metric[data-probe]:not([data-probe="1"]):not([data-probe="2"]) {
+    display: none;
+  }
+
+  /* Segmenteret valg — pille, aktiv inverteret.
+     To mønstre: (1) radio inde i label (V6), (2) eksterne .state-radioer + label[for]
+     til typeafhængige felter (Touch varmekilde). Aktiv-stil for (2) genereres i lds_build. */
+  .seg { display: flex; min-height: var(--hit); padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
+  .seg label { flex: 1; display: grid; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: grid; place-items: center; padding: 0 var(--space-3); border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; text-align: center; }
+  .seg input:checked + span { background: var(--inv-bg); color: var(--inv-fg); }
+  .seg input:focus-visible + span { outline: 2px solid var(--focus); }
+
+  /* Type-fieldsets: ingen native fieldset-ramme */
+  fieldset.typed-fields,
+  fieldset.hs-fields {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+  }
+
+  /* Kompas for ydervægge */
+  .compass {
+    display: grid;
+    grid-template: ". n ." var(--hit) "w c e" var(--hit) ". s ." var(--hit) / var(--hit) var(--hit) var(--hit);
+    gap: 4px;
+  }
+  .compass .c { grid-area: c; border-radius: 50%; background: var(--raised); }
+  .compass label { display: grid; }
+  .compass [data-wall="n"] { grid-area: n; } .compass [data-wall="e"] { grid-area: e; }
+  .compass [data-wall="s"] { grid-area: s; } .compass [data-wall="w"] { grid-area: w; }
+  .compass input { position: absolute; opacity: 0; }
+  .compass span { display: grid; place-items: center; border-radius: var(--r-pill); background: var(--field); box-shadow: inset 0 0 0 1px var(--border); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); cursor: pointer; }
+  .compass input:checked + span { background: var(--accent-ink); box-shadow: none; color: var(--on-accent-ink); }
+  .compass input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* Tabel */
+  .table-wrap { overflow-x: auto; }
+  .name-edit { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .name-edit .input { flex: 1 1 auto; min-width: 0; }
+  .table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .table th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--border); }
+  .table td { padding: max(0px, (var(--row-h) - 20px) / 2) var(--space-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .table .num { text-align: right; }
+  /* Redigerbare tal i en tabel (fx Rum): smalle, højrestillede felter. */
+  .table td.num .input { width: calc(3 * var(--hit)); text-align: right; }
+  .table tr:last-child td { border-bottom: 0; }
+
+  /* ---- 4.8 Knapper — Apex-piller --------------------------------------- */
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    min-height: var(--hit); padding: 0 var(--space-5);
+    border: 0; border-radius: var(--r-pill);
+    background: var(--raised); color: var(--fg);
+    font-size: var(--fs-sm); font-weight: 500; text-decoration: none;
+    cursor: pointer; touch-action: manipulation;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .btn:hover { background: var(--inv-bg); color: var(--inv-fg); }
+  .btn.primary { background: var(--inv-bg); color: var(--inv-fg); }
+  .btn.primary:hover { background: color-mix(in srgb, var(--inv-bg) 85%, transparent); }
+  /* Clean: gem-knap synlig men neutral — aldrig disabled/skjult */
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary {
+    background: var(--raised); color: var(--muted);
+  }
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary:hover {
+    background: var(--raised); color: var(--muted);
+  }
+  form[data-js]:not([data-dirty]) > .panel-foot > button[type="reset"] { display: none; }
+  .panel-foot .foot-start { margin-right: auto; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; min-width: 0; }
+  .panel-foot > .save-status { margin-right: auto; }
+  .panel-foot .save-status { font-size: var(--fs-sm); color: var(--warn); }
+  .panel-foot .save-status:empty { display: none; }
+  form[data-state="error"] .panel-foot .save-status { color: var(--danger); }
+  .btn.primary[aria-busy="true"] { opacity: .7; cursor: wait; }
+  /* Dirty-prik (6 px) — `--warn`, aldrig eneste signal */
+  .field[data-dirty] > :is(label, .label)::after,
+  .switch[data-dirty] .switch-text > b::after,
+  .seg[data-dirty]::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    margin-left: var(--space-2);
+    border-radius: 50%;
+    background: var(--warn);
+    vertical-align: middle;
+  }
+  .seg[data-dirty]::before { margin-left: 0; margin-right: var(--space-2); }
+  .tile[data-dirty] .tile-id::after,
+  .mode label[data-dirty]::after {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    margin-left: var(--space-2);
+    border-radius: 50%;
+    background: var(--warn);
+    vertical-align: middle;
+  }
+  #m-conf:checked ~ .app .tile[data-dirty] .tile-id::after {
+    content: "";
+    color: transparent;
+    background: var(--warn);
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    font-weight: 400;
+  }
+  .autosave {
+    margin: var(--space-3) 0 0;
+    min-height: 1.25em;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    text-align: center;
+  }
+  .autosave:empty { display: none; }
+  .autosave .btn { min-height: calc(var(--hit) - 8px); padding: 0 var(--space-3); margin-left: var(--space-2); font-size: var(--fs-xs); }
+  .btn.danger { background: var(--danger-bg); color: var(--danger); }
+  .btn.danger:hover { background: var(--danger); color: var(--bg); }
+  .btn.danger-solid,
+  .btn.danger-solid:hover { background: var(--danger); color: var(--bg); }
+  .btn:disabled { opacity: .35; pointer-events: none; }
+  /* Knap på inverteret panel */
+  .panel.alert .btn { background: var(--danger); color: var(--bg); }
+  .panel.alert .btn:hover { background: var(--inv-bg); color: var(--inv-fg); }
+  form:has(:user-invalid) .btn.primary { opacity: .4; pointer-events: none; }
+
+  /* Bekræftelse: native popover i top-laget, så siden ikke flytter sig.
+     Uden script: centreret. Scriptet lægger den ved knappen og holder den
+     inde i vinduet. Under 600 px: ark fra bunden. */
+  .confirm-pop {
+    border: 0;
+    padding: var(--space-5);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--fg);
+    min-inline-size: calc(var(--space-7) * 6);
+    max-inline-size: min(calc(var(--space-7) * 7), calc(100vw - var(--space-6)));
+    max-block-size: calc(100dvh - var(--space-7));
+    overflow: auto;
+    box-shadow: var(--card-edge);
+  }
+  .confirm-pop::backdrop { background: rgb(0 0 0 / 25%); }
+  /* Uden lune-forms.js (Touch): markup kan forankre popoveren med inline
+     position-anchor; så placerer CSS den under knappen. */
+  @supports (anchor-name: --x) {
+    .confirm-pop[style*="position-anchor"] {
+      inset: auto;
+      margin: var(--space-2);
+      position-area: block-end center;
+      position-try-fallbacks: flip-block;
+    }
+  }
+  .confirm-pop:popover-open {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .confirm-pop .confirm-title {
+    margin: 0;
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .confirm-pop p {
+    margin: 0;
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+  }
+  .confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+  @media (max-width: 599.98px) {
+    .confirm-pop {
+      /* Ark fra bunden. Slår en eventuel inline-placering fra. */
+      position-anchor: none !important;
+      position-area: none !important;
+      inset: auto 0 0 0 !important;
+      top: auto !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      margin: 0 !important;
+      min-inline-size: 0 !important;
+      max-inline-size: none !important;
+      max-block-size: none;
+      width: auto !important;
+      border-radius: var(--r-card) var(--r-card) 0 0;
+      padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+    }
+    .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; }
+    .confirm-actions .btn { width: 100%; }
+  }
+
+  .log {
+    max-height: 240px; overflow: auto; padding: var(--space-4);
+    border-radius: var(--r-field); background: var(--raised);
+    font: var(--fs-xs)/1.7 "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap; color: var(--muted);
+  }
+  .log .info { color: var(--info); } .log .violet { color: var(--violet); } .log .bad { color: var(--danger); } .log .ok { color: var(--ok); }
+}
+
+
+/* ==========================================================================
+   5. STATE-INPUTS — skjulte men fokuserbare
+   ========================================================================== */
+@layer state {
+  .state { position: fixed; width: 1px; height: 1px; margin: -1px; opacity: 0; pointer-events: none; }
+}
+
+
+/* ==========================================================================
+   6. TILSTANDSREGLER — HTML-rækkefølge: m-* → s-* → #theme → .app
+   ========================================================================== */
+@layer state {
+
+  /* @generated:state — skrives af tools/lds_build.py ud fra projektets config
+     (liste af omfang). Indeholder: synlig visning pr. tilstand × omfang,
+     aktiv tilstands-pille og valgt zonefelt. Redigér ikke her. */
+  /* Aktiv tilstand: inverteret pille */
+  #m-dash:checked ~ .app .mode label[for="m-dash"],
+  #m-conf:checked ~ .app .mode label[for="m-conf"] { background: var(--inv-bg); color: var(--inv-fg); }
+  #m-dash:focus-visible ~ .app .mode label[for="m-dash"],
+  #m-conf:focus-visible ~ .app .mode label[for="m-conf"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* Delte visninger: house | manifold | zone × mode */
+  #m-dash:checked ~ #s-house:checked ~ .app #v-dash-house,
+  #m-conf:checked ~ #s-house:checked ~ .app #v-conf-house { display: grid; }
+  #m-dash:checked ~ input[data-kind="manifold"]:checked ~ .app #v-dash-manifold,
+  #m-conf:checked ~ input[data-kind="manifold"]:checked ~ .app #v-conf-manifold { display: grid; }
+  #m-dash:checked ~ input[data-kind="zone"]:checked ~ .app #v-dash-zone,
+  #m-conf:checked ~ input[data-kind="zone"]:checked ~ .app #v-conf-zone { display: grid; }
+
+  /* Valgt omfang: inverteret felt */
+  #s-house:checked ~ .app .tile[for="s-house"],
+  #s-m1:checked ~ .app .tile[for="s-m1"],
+  #s-m1z1:checked ~ .app .tile[for="s-m1z1"],
+  #s-m1z2:checked ~ .app .tile[for="s-m1z2"],
+  #s-m1z3:checked ~ .app .tile[for="s-m1z3"],
+  #s-m1z4:checked ~ .app .tile[for="s-m1z4"],
+  #s-m1z5:checked ~ .app .tile[for="s-m1z5"],
+  #s-m1z6:checked ~ .app .tile[for="s-m1z6"],
+  #s-m2:checked ~ .app .tile[for="s-m2"],
+  #s-m2z1:checked ~ .app .tile[for="s-m2z1"],
+  #s-m2z2:checked ~ .app .tile[for="s-m2z2"],
+  #s-m2z3:checked ~ .app .tile[for="s-m2z3"],
+  #s-m2z4:checked ~ .app .tile[for="s-m2z4"],
+  #s-m2z5:checked ~ .app .tile[for="s-m2z5"],
+  #s-m2z6:checked ~ .app .tile[for="s-m2z6"],
+  #s-m3:checked ~ .app .tile[for="s-m3"],
+  #s-m3z1:checked ~ .app .tile[for="s-m3z1"],
+  #s-m3z2:checked ~ .app .tile[for="s-m3z2"],
+  #s-m3z3:checked ~ .app .tile[for="s-m3z3"],
+  #s-m3z4:checked ~ .app .tile[for="s-m3z4"],
+  #s-m3z5:checked ~ .app .tile[for="s-m3z5"],
+  #s-m3z6:checked ~ .app .tile[for="s-m3z6"],
+  #s-m4:checked ~ .app .tile[for="s-m4"],
+  #s-m4z1:checked ~ .app .tile[for="s-m4z1"],
+  #s-m4z2:checked ~ .app .tile[for="s-m4z2"],
+  #s-m4z3:checked ~ .app .tile[for="s-m4z3"],
+  #s-m4z4:checked ~ .app .tile[for="s-m4z4"],
+  #s-m4z5:checked ~ .app .tile[for="s-m4z5"],
+  #s-m4z6:checked ~ .app .tile[for="s-m4z6"] {
+    --seg-off: color-mix(in srgb, var(--inv-fg) 18%, transparent);
+    --muted:   color-mix(in srgb, var(--inv-fg) 60%, transparent);
+    background: var(--inv-bg);
+    color: var(--inv-fg);
+  }
+  #s-house:focus-visible ~ .app .tile[for="s-house"],
+  #s-m1:focus-visible ~ .app .tile[for="s-m1"],
+  #s-m1z1:focus-visible ~ .app .tile[for="s-m1z1"],
+  #s-m1z2:focus-visible ~ .app .tile[for="s-m1z2"],
+  #s-m1z3:focus-visible ~ .app .tile[for="s-m1z3"],
+  #s-m1z4:focus-visible ~ .app .tile[for="s-m1z4"],
+  #s-m1z5:focus-visible ~ .app .tile[for="s-m1z5"],
+  #s-m1z6:focus-visible ~ .app .tile[for="s-m1z6"],
+  #s-m2:focus-visible ~ .app .tile[for="s-m2"],
+  #s-m2z1:focus-visible ~ .app .tile[for="s-m2z1"],
+  #s-m2z2:focus-visible ~ .app .tile[for="s-m2z2"],
+  #s-m2z3:focus-visible ~ .app .tile[for="s-m2z3"],
+  #s-m2z4:focus-visible ~ .app .tile[for="s-m2z4"],
+  #s-m2z5:focus-visible ~ .app .tile[for="s-m2z5"],
+  #s-m2z6:focus-visible ~ .app .tile[for="s-m2z6"],
+  #s-m3:focus-visible ~ .app .tile[for="s-m3"],
+  #s-m3z1:focus-visible ~ .app .tile[for="s-m3z1"],
+  #s-m3z2:focus-visible ~ .app .tile[for="s-m3z2"],
+  #s-m3z3:focus-visible ~ .app .tile[for="s-m3z3"],
+  #s-m3z4:focus-visible ~ .app .tile[for="s-m3z4"],
+  #s-m3z5:focus-visible ~ .app .tile[for="s-m3z5"],
+  #s-m3z6:focus-visible ~ .app .tile[for="s-m3z6"],
+  #s-m4:focus-visible ~ .app .tile[for="s-m4"],
+  #s-m4z1:focus-visible ~ .app .tile[for="s-m4z1"],
+  #s-m4z2:focus-visible ~ .app .tile[for="s-m4z2"],
+  #s-m4z3:focus-visible ~ .app .tile[for="s-m4z3"],
+  #s-m4z4:focus-visible ~ .app .tile[for="s-m4z4"],
+  #s-m4z5:focus-visible ~ .app .tile[for="s-m4z5"],
+  #s-m4z6:focus-visible ~ .app .tile[for="s-m4z6"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* Forælder-valgt: manifold når en af dens zoner er valgt */
+  input[data-kind="zone"][data-m="1"]:checked ~ .app .tile[for="s-m1"],
+  input[data-kind="zone"][data-m="2"]:checked ~ .app .tile[for="s-m2"],
+  input[data-kind="zone"][data-m="3"]:checked ~ .app .tile[for="s-m3"],
+  input[data-kind="zone"][data-m="4"]:checked ~ .app .tile[for="s-m4"] {
+    box-shadow: inset 0 0 0 2px var(--fg);
+    background: var(--card);
+    color: var(--fg);
+  }
+
+  /* Understrimmel synlig når manifold eller dens zone er valgt */
+  #s-m1:checked ~ .app .substrip[data-m="1"],
+  input[data-kind="zone"][data-m="1"]:checked ~ .app .substrip[data-m="1"] { display: grid; }
+  #s-m2:checked ~ .app .substrip[data-m="2"],
+  input[data-kind="zone"][data-m="2"]:checked ~ .app .substrip[data-m="2"] { display: grid; }
+  #s-m3:checked ~ .app .substrip[data-m="3"],
+  input[data-kind="zone"][data-m="3"]:checked ~ .app .substrip[data-m="3"] { display: grid; }
+  #s-m4:checked ~ .app .substrip[data-m="4"],
+  input[data-kind="zone"][data-m="4"]:checked ~ .app .substrip[data-m="4"] { display: grid; }
+
+  .strip.strip--tiers { --strip-n: 4; }
+
+  /* Typeafhængige felter (.typed-fields / .hs-fields) — uden :has() */
+  .typed-fields, .hs-fields { display: none; gap: var(--space-4); }
+  #hs-http:checked ~ .typed-fields[data-type="http"],
+  #hs-http:checked ~ .hs-fields[data-type="http"],
+  #hs-asgard:checked ~ .typed-fields[data-type="asgard"],
+  #hs-asgard:checked ~ .hs-fields[data-type="asgard"] { display: grid; }
+  /* .seg med eksterne .state-radioer — aktiv pille */
+  #hs-http:checked ~ .seg label[for="hs-http"] > span,
+  #hs-asgard:checked ~ .seg label[for="hs-asgard"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #hs-http:focus-visible ~ .seg label[for="hs-http"] > span,
+  #hs-asgard:focus-visible ~ .seg label[for="hs-asgard"] > span { outline: 2px solid var(--focus); }
+  /* Dashboard: skjul type-fremmed indhold */
+  [data-hs-type="http"] .hs-type-asgard { display: none; }
+  [data-hs-type="asgard"] .hs-type-http { display: none; }
+  /* @end:state */
+
+  /* I konfiguration viser zonefelterne en lille prik: "redigerer" */
+  #m-conf:checked ~ .app .strip:not(.strip--tiers) .tile:not(.tile-sys) .tile-id::after,
+  #m-conf:checked ~ .app .substrip .tile .tile-id::after { content: " ·"; color: var(--accent-ink); font-weight: 800; }
+
+  /* 6.4 Tema */
+  @media (prefers-color-scheme: dark)  { #theme:checked ~ .app { color-scheme: light; } }
+  @media (prefers-color-scheme: light) { #theme:checked ~ .app { color-scheme: dark; } }
+  .theme-btn .i-moon { display: none; }
+  @media (prefers-color-scheme: light) {
+    .theme-btn .i-sun { display: none; } .theme-btn .i-moon { display: block; }
+    #theme:checked ~ .app .theme-btn .i-sun { display: block; }
+    #theme:checked ~ .app .theme-btn .i-moon { display: none; }
+  }
+  @media (prefers-color-scheme: dark) {
+    #theme:checked ~ .app .theme-btn .i-sun { display: none; }
+    #theme:checked ~ .app .theme-btn .i-moon { display: block; }
+  }
+}
+
+
+/* ==========================================================================
+   7. TÆTHED
+   ========================================================================== */
+@layer utilities {
+  /* Tætheden følger inputtypen. Touch: 48 px (uændret). Mus på skærm ≥ 1024 px:
+     kompakt. .app[data-density="compact|comfortable"] tvinger tætheden.
+     Token-værdierne står i tokens.json → density.compact; lds_build.py udfolder
+     blokken herunder både under density.media og for [data-density="compact"].
+     Blokken er CSS-nesting relativt til .app — start hver regel med . eller &. */
+  @media (pointer: coarse) { .app { --hit: 48px; } }
+
+  /* Kompakt: genereret fra density i tokens.json + @compact-blokken */
+  @media (pointer: fine) and (min-width: 1024px) {
+  .app:not([data-density="comfortable"]) {
+    --hit: 32px;
+    --field-gap: 6px;
+    --panel-pad: 18px;
+    --panel-gap: 14px;
+    --fs-panel: 15px;
+    --fs-view: 26px;
+    --row-h: 36px;
+    --tile-h: 52px;
+    & .content { padding-block: var(--space-4) var(--space-6); }
+    & .view-head { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav a { padding-inline: var(--space-3); }
+    & .section-h { margin-bottom: var(--space-2); min-height: 0; }
+    & .section ~ .section > .section-h { margin-top: var(--space-5); }
+    & .mode label { padding-inline: var(--space-4); }
+    & .header { min-height: 48px; }
+
+    /* Zonefelt: ID + navn på én linje, værdi under (--tile-h). */
+    & .tile:not(.tile-manifold, .tile-sys) {
+      grid-template-columns: 10px auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      column-gap: var(--space-2);
+      padding-block: var(--space-1);
+      line-height: 1.2;
+    }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-id   { grid-column: 2; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-name { grid-column: 3; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-val  { grid-column: 2 / -1; grid-row: 2; }
+    & .tile .lvl { gap: 2px; }
+    & .tile .lvl i { min-height: 5px; }
+    & .tile-sys { padding-block: var(--space-1); line-height: 1.2; align-content: center; }
+    & .tile-sys .temps { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); }
+    & .strip.strip--tiers :is(.tile-sys, .tile-manifold) { padding-block: var(--space-1); }
+    & .tile.tile-manifold { line-height: 1.2; }
+    & .tile.tile-manifold .mini { height: 18px; }
+
+    /* Indhold i paneler */
+    & .subs { gap: var(--space-4) var(--space-5); }
+    & .msg { padding: var(--space-2) var(--space-3); }
+    & .metrics { gap: var(--space-4) var(--space-3); }
+    & .comfort label { padding-block: 6px; }
+    & .btn { padding-inline: var(--space-4); }
+    & .file-pick { min-height: calc(var(--hit) - 2 * var(--space-1)); }
+    & .more > summary { min-height: var(--hit); }
+
+    /* Kontroller: --hit = 32 px giver højden; skrift 16 px bevares (iPad med mus). */
+    & :is(.input, .select) { padding-inline: var(--space-3); }
+    & .select { padding-right: var(--space-6); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; }
+    & .switch input { width: 40px; height: 24px; }
+    & .switch input::after { top: 3px; left: 3px; width: 18px; height: 18px; }
+    & .switch input:checked::after { transform: translateX(16px); }
+    & .seg { justify-self: start; width: fit-content; max-width: 100%; }
+    & .seg label { flex: 1 1 auto; }
+    & .seg span { padding-inline: var(--space-4); }
+
+    /* .field.row: label ⟷ kontrol. Alle kontroller i en række har samme
+       bredde (--ctl-w = 5 × --hit = 160 px), så kolonnen flugter: input,
+       select, stepper; .seg har den som minimum. .w-lg (URL) står under
+       labelen i fuld bredde. .w-xs/.w-sm/.w-md er aliaser for --ctl-w. */
+    --ctl-w: calc(5 * var(--hit));
+    & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
+    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { justify-self: end; }
+    & .field.row > :is(.input, .select, .stepper) { width: var(--ctl-w); max-width: 100%; }
+    & .field.row > .seg { width: auto; min-width: var(--ctl-w); }
+    & .field.row > .input.w-lg { width: 100%; justify-self: stretch; }
+    & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
+    & .field:not(.row) > .input:not(.w-lg) { width: var(--ctl-w); max-width: 100%; }
+    /* Segment med label over (Ventiltype, Tilstand …): på én række i kompakt. */
+    & .field:not(.row):has(> .seg) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
+    & .field:not(.row) > .seg { justify-self: end; min-width: var(--ctl-w); }
+    /* En løs knap i et panel (fx «Genlær alle…») strækkes ikke. */
+    & :is(.panel, .sub) > .btn { align-self: flex-start; justify-self: start; }
+    /* Live-aflæsninger i Konfiguration: mindre tal end på Dashboard. */
+    & .view[id^="v-conf-"] .metric dd { font-size: var(--fs-lg); }
+    /* .field.row med en .pair (fx MAC + Scan): label over, parret i fuld bredde. */
+    & .field.row:has(> .pair) { grid-template-columns: minmax(0, 1fr); }
+    & .field.row > .pair { justify-self: stretch; width: 100%; }
+    /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
+    & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
+    & .pair > .field.row > .input { justify-self: stretch; width: 100%; }
+  
+  }
+  }
+  .app[data-density="compact"] {
+    --hit: 32px;
+    --field-gap: 6px;
+    --panel-pad: 18px;
+    --panel-gap: 14px;
+    --fs-panel: 15px;
+    --fs-view: 26px;
+    --row-h: 36px;
+    --tile-h: 52px;
+    & .content { padding-block: var(--space-4) var(--space-6); }
+    & .view-head { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav a { padding-inline: var(--space-3); }
+    & .section-h { margin-bottom: var(--space-2); min-height: 0; }
+    & .section ~ .section > .section-h { margin-top: var(--space-5); }
+    & .mode label { padding-inline: var(--space-4); }
+    & .header { min-height: 48px; }
+
+    /* Zonefelt: ID + navn på én linje, værdi under (--tile-h). */
+    & .tile:not(.tile-manifold, .tile-sys) {
+      grid-template-columns: 10px auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      column-gap: var(--space-2);
+      padding-block: var(--space-1);
+      line-height: 1.2;
+    }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-id   { grid-column: 2; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-name { grid-column: 3; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-val  { grid-column: 2 / -1; grid-row: 2; }
+    & .tile .lvl { gap: 2px; }
+    & .tile .lvl i { min-height: 5px; }
+    & .tile-sys { padding-block: var(--space-1); line-height: 1.2; align-content: center; }
+    & .tile-sys .temps { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); }
+    & .strip.strip--tiers :is(.tile-sys, .tile-manifold) { padding-block: var(--space-1); }
+    & .tile.tile-manifold { line-height: 1.2; }
+    & .tile.tile-manifold .mini { height: 18px; }
+
+    /* Indhold i paneler */
+    & .subs { gap: var(--space-4) var(--space-5); }
+    & .msg { padding: var(--space-2) var(--space-3); }
+    & .metrics { gap: var(--space-4) var(--space-3); }
+    & .comfort label { padding-block: 6px; }
+    & .btn { padding-inline: var(--space-4); }
+    & .file-pick { min-height: calc(var(--hit) - 2 * var(--space-1)); }
+    & .more > summary { min-height: var(--hit); }
+
+    /* Kontroller: --hit = 32 px giver højden; skrift 16 px bevares (iPad med mus). */
+    & :is(.input, .select) { padding-inline: var(--space-3); }
+    & .select { padding-right: var(--space-6); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; }
+    & .switch input { width: 40px; height: 24px; }
+    & .switch input::after { top: 3px; left: 3px; width: 18px; height: 18px; }
+    & .switch input:checked::after { transform: translateX(16px); }
+    & .seg { justify-self: start; width: fit-content; max-width: 100%; }
+    & .seg label { flex: 1 1 auto; }
+    & .seg span { padding-inline: var(--space-4); }
+
+    /* .field.row: label ⟷ kontrol. Alle kontroller i en række har samme
+       bredde (--ctl-w = 5 × --hit = 160 px), så kolonnen flugter: input,
+       select, stepper; .seg har den som minimum. .w-lg (URL) står under
+       labelen i fuld bredde. .w-xs/.w-sm/.w-md er aliaser for --ctl-w. */
+    --ctl-w: calc(5 * var(--hit));
+    & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
+    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { justify-self: end; }
+    & .field.row > :is(.input, .select, .stepper) { width: var(--ctl-w); max-width: 100%; }
+    & .field.row > .seg { width: auto; min-width: var(--ctl-w); }
+    & .field.row > .input.w-lg { width: 100%; justify-self: stretch; }
+    & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
+    & .field:not(.row) > .input:not(.w-lg) { width: var(--ctl-w); max-width: 100%; }
+    /* Segment med label over (Ventiltype, Tilstand …): på én række i kompakt. */
+    & .field:not(.row):has(> .seg) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
+    & .field:not(.row) > .seg { justify-self: end; min-width: var(--ctl-w); }
+    /* En løs knap i et panel (fx «Genlær alle…») strækkes ikke. */
+    & :is(.panel, .sub) > .btn { align-self: flex-start; justify-self: start; }
+    /* Live-aflæsninger i Konfiguration: mindre tal end på Dashboard. */
+    & .view[id^="v-conf-"] .metric dd { font-size: var(--fs-lg); }
+    /* .field.row med en .pair (fx MAC + Scan): label over, parret i fuld bredde. */
+    & .field.row:has(> .pair) { grid-template-columns: minmax(0, 1fr); }
+    & .field.row > .pair { justify-self: stretch; width: 100%; }
+    /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
+    & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
+    & .pair > .field.row > .input { justify-self: stretch; width: 100%; }
+  
+  }
+  .muted { color: var(--muted); } .accent { color: var(--accent-ink); }
+  .c-info { color: var(--info); } .c-ok { color: var(--ok); } .c-warn { color: var(--warn); } .c-bad { color: var(--danger); } .c-violet { color: var(--violet); }
+  :not(.badge):not(.msg).ok { color: var(--ok); } :not(.badge):not(.msg).bad { color: var(--danger); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  [hidden] { display: none !important; }
+}
+
+/* Note om Geist: fonten er første valg i --font, men hentes ikke.
+   Vil I have den, kan en latin-subset af Geist Variable (woff2, ca. 30 kB)
+   ligge i ESP32'ens flash og indlæses med @font-face + font-display: swap.
+   Uden den falder alt tilbage til systemfonten. */
+
+</style>
+</head>
+<body>
+
+<!-- TILSTAND — før .app -->
+<input class="state" type="radio" name="mode" id="m-dash" checked aria-label="Dashboard">
+<input class="state" type="radio" name="mode" id="m-conf" aria-label="Configuration">
+<input class="state" type="radio" name="scope" id="s-house" checked data-kind="house" aria-label="House" data-title="House" data-sub="4 controllers · 2 zones calling · 1 fault">
+<input class="state" type="checkbox" id="theme" aria-label="Toggle light/dark theme">
+
+<div class="app">
+  <div class="top">
+    <div class="wrap">
+      <header class="header">
+        <details class="device">
+          <summary><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg><span class="name"><b>Lune Touch</b><small data-bind="device.about.place">House coordinator</small></span><span class="caret" aria-hidden="true"></span></summary>
+          <div class="device-menu">
+            <section class="device-about" aria-labelledby="device-about-h">
+              <h3 id="device-about-h">About device</h3>
+              <dl class="kv">
+                <div><dt>Name</dt><dd data-bind="device.about.name">Lune Touch</dd></div>
+                <div><dt>Location</dt><dd data-bind="device.about.place">House coordinator</dd></div>
+                <div><dt>IP</dt><dd data-bind="device.about.ip">—</dd></div>
+                <div><dt>MAC</dt><dd data-bind="device.about.mac">—</dd></div>
+                <div><dt>Firmware</dt><dd data-bind="device.about.firmware">—</dd></div>
+                <div><dt>ESPHome</dt><dd data-bind="device.about.esphome">—</dd></div>
+                <div><dt>Uptime</dt><dd data-bind="device.about.uptime">—</dd></div>
+              </dl>
+              <button type="button" class="btn" data-action="copy-diag">Copy diagnostics</button>
+            </section>
+            <nav aria-label="Devices" data-bind-devices>
+              <a href="/" aria-current="page"><i></i>Lune Touch<small>this device</small></a>
+            </nav>
+          </div>
+        </details>
+        <nav class="mode" aria-label="Mode">
+          <label for="m-dash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.2"/></svg>Dashboard</label>
+          <label for="m-conf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Configuration</label>
+        </nav>
+        <div class="tools">
+          <nav class="lang" aria-label="Language"><a href="/en/" hreflang="en" lang="en" title="English" aria-current="true">EN</a><a href="/da/" hreflang="da" lang="da" title="Dansk">DA</a></nav>
+          <label class="icon-btn theme-btn" for="theme" title="Toggle light/dark theme">
+            <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>
+            <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+            <span class="sr-only">Toggle light/dark theme</span>
+          </label>
+        </div>
+      </header>
+      
+    </div>
+  </div>
+  <main class="content wrap">
+      <section class="view" id="v-dash-house" aria-labelledby="h-dash-house">
+        <header class="view-head"><h2 id="h-dash-house" data-bind="scope.title">House</h2><p data-bind="scope.sub">4 controllers · 2 zones calling · 1 fault</p></header>
+
+        <div class="panel alert" hidden>
+          <div class="panel-head"><h3>Heat source unreachable</h3></div>
+          <p class="note">Last push failed. House temperature is not updated until the connection works again.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="m-conf">Open heat source settings</label></div>
+        </div>
+
+        <div class="panel alert" data-bind-alert="board" hidden>
+          <div class="panel-head"><h3 data-bind="alert.boardTitle">V6 is unreachable</h3></div>
+          <p class="note">Zones from this controller stay on last known values until it answers again.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="m-conf">Open controllers</label></div>
+        </div>
+
+        <div class="boards" data-bind-boards aria-label="Lune V6 boards"></div>
+
+        <form class="panel c4" data-save="house-target">
+          <header class="panel-head"><h3>House climate</h3><span class="badge" data-bind="house.badge">Idle</span></header>
+          <div class="climate">
+            <div class="now" data-bind="house.temp">21.2<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Decrease house target temperature">−</button>
+              <label class="value"><small>Target</small><input type="number" inputmode="decimal" id="house_target" name="house_target" value="21.0" min="5" max="30" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Increase house target temperature">+</button>
+            </div>
+            <p class="autosave" aria-live="polite"></p>
+          </div>
+          <dl class="kv">
+            <div><dt>Coverage</dt><dd data-bind="house.coverage">0 / 0</dd></div>
+            <div><dt>Authority</dt><dd data-bind="house.authority">Touch</dd></div>
+            <div><dt>Outdoor</dt><dd data-bind="house.outdoor">8.4 °C</dd></div>
+          </dl>
+        </form>
+
+        <section class="panel c8" data-hs-type="asgard">
+          <header class="panel-head"><h3>Heat source</h3><span class="badge" data-bind="heat.badge">Waiting</span></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4 data-bind="dash.hsName">Asgard</h4>
+              <dl class="metrics">
+                <div class="metric"><dt>Weighted house temperature</dt><dd data-bind="heat.weighted">— <small>°C</small></dd></div>
+                <div class="metric"><dt>Comfort setpoint</dt><dd data-bind="heat.setpoint">— <small>°C</small></dd></div>
+              </dl>
+              <dl class="kv">
+                <div><dt>Last send</dt><dd data-bind="heat.lastPush">—</dd></div>
+                <div><dt>Comfort target role</dt><dd data-bind="dash.targetRole">—</dd></div>
+                <div><dt>Heat pump flow/return</dt><dd data-bind="dash.hpTemps">—</dd></div>
+              </dl>
+              <p class="note muted" data-bind="heat.sentNote" hidden></p>
+            </div>
+            <div class="sub" data-bind-show="dash.odin" hidden>
+              <h4>Odin</h4>
+              <dl class="kv">
+                <div><dt>Link</dt><dd data-bind="dash.odinLink">—</dd></div>
+                <div><dt>Drives the pump now</dt><dd data-bind="dash.odinDriver">—</dd></div>
+                <div><dt>This hour</dt><dd data-bind="dash.odinNow">—</dd></div>
+                <div><dt>Comfort schedule</dt><dd data-bind="dash.odinPlan">—</dd></div>
+              </dl>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="flow">
+          <header class="panel-head"><h3>Flow</h3><p>Circulation pump and approximate split per manifold</p></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Circulation pump</h4>
+              <dl class="metrics">
+                <div class="metric"><dt>Flow</dt><dd data-bind="pump.flow">— <small>l/min</small></dd></div>
+                <div class="metric"><dt>Head</dt><dd data-bind="pump.head">— <small>m</small></dd></div>
+                <div class="metric"><dt>Power</dt><dd data-bind="pump.power">— <small>W</small></dd></div>
+              </dl>
+              <dl class="kv">
+                <div><dt>Flow (m³/h)</dt><dd data-bind="pump.flowM3h">—</dd></div>
+                <div><dt>Host</dt><dd data-bind="pump.host">—</dd></div>
+              </dl>
+            </div>
+            <div class="sub">
+              <h4>Split per manifold</h4>
+              <div class="dist" data-bind-dist><p class="dist-note">—</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="plan">
+          <header class="panel-head"><h3>Heating plan</h3><p data-bind="planG.sub">Next 24 hours: Odin's planned heat and Touch's preheating and charging per room</p></header>
+          <p class="empty" data-bind-show="planG.empty">No plan yet – waiting for the forecast and Odin.</p>
+          <div class="plan" data-bind-plan aria-label="Heating plan for the next 24 hours"></div>
+          <p class="fc-legend" aria-hidden="true">
+            <span><i class="lbar"></i>Space heat (kWh heat)</span>
+            <span><i class="ldhw"></i>Hot water (kWh el)</span>
+            <span><i class="lleg"></i>Legionella (kWh el)</span>
+            <span><i class="llift"></i>Touch lifts Odin's comfort band</span>
+            <span><i class="lpre"></i>Preheat</span>
+            <span><i class="lch"></i>Charging before wind and cold</span>
+            <span><i class="lins"></i>Charging – the floor falls short</span>
+          </p>
+        </section>
+
+        <section class="panel" data-panel="forecast">
+          <header class="panel-head"><h3>Forecast</h3><p data-bind="fc.sub">72 hours · — · fetched —</p><span class="badge info" hidden>Preload +— °C</span></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Now</dt><dd data-bind="forecast.temp">— <small>°C</small></dd></div>
+            <div class="metric"><dt>Max wind 24 h</dt><dd data-bind="forecast.windmax">— <small>m/s</small></dd></div>
+            <div class="metric"><dt>Min. 72 h</dt><dd data-bind="forecast.tmin">— <small>°C</small></dd></div>
+          </dl>
+          <p class="empty">No forecast yet</p>
+          <!-- Weather icons and wind arrow, referenced by binder.js (<use href="#i-…">). -->
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+            <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 1 1 9.5 5a6 6 0 0 0 9.5 9.5z"/></symbol>
+            <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 18z"/></symbol>
+            <symbol id="i-partly" viewBox="0 0 24 24"><path d="M8 5V3.5M3.5 8H2M4.6 4.6l-1-1M11.4 4.6l1-1"/><path d="M5.4 10.4A3.5 3.5 0 0 1 11 6.6"/><path d="M9 19h8a3.5 3.5 0 0 0 0-7 4.8 4.8 0 0 0-9.2 1.3A2.9 2.9 0 0 0 9 19z"/></symbol>
+            <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
+            <symbol id="i-snow" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01"/></symbol>
+            <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 20V4M6 10l6-6 6 6"/></symbol>
+          </defs></svg>
+          <div class="fc fc--dual" style="--now:0%">
+            <div class="fc-icons" data-hourly aria-hidden="true"></div>
+            <div class="fc-y" aria-hidden="true"></div>
+            <div class="fc-plot fc-temp" role="img" aria-label="Outdoor temperature over the next 72 hours">
+              <svg viewBox="0 0 720 100" preserveAspectRatio="none" data-bind-fc="temp"><rect class="pre" x="0" y="0" width="0" height="100"/><polygon class="sa" points=""/><polyline class="sl" points=""/><rect class="past" x="0" y="0" width="0" height="100"/><polyline class="tl" points=""/><line class="now" x1="0" x2="0" y1="0" y2="100"/></svg>
+              <span class="fc-now">Now</span>
+            </div>
+            <div class="fc-y2" aria-hidden="true"></div>
+            <div class="fc-y" aria-hidden="true"></div>
+            <div class="fc-plot fc-wind" role="img" aria-label="Wind over the next 72 hours">
+              <svg viewBox="0 0 720 60" preserveAspectRatio="none" data-bind-fc="wind"><polygon class="wa" points=""/><polyline class="wl" points=""/><rect class="past" x="0" y="0" width="0" height="60"/><line class="now" x1="0" x2="0" y1="0" y2="60"/></svg>
+            </div>
+            <div class="fc-y2" aria-hidden="true"><span>m/s</span></div>
+            <div class="fc-dirs" aria-hidden="true"></div>
+            <div class="fc-x" aria-hidden="true"></div>
+            <span class="fc-scrub" hidden aria-hidden="true"></span>
+            <div class="fc-readout" hidden aria-hidden="true"></div>
+          </div>
+          <p class="fc-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature °C</span>
+            <span><i class="lsun"></i>Solar W/m²</span>
+            <span><i class="lw"></i>Wind m/s</span>
+            <span><svg class="dir" viewBox="0 0 24 24"><use href="#i-arrow"/></svg>Wind direction</span>
+            <span><i class="lpre"></i>Preload active</span>
+          </p>
+        </section>
+
+      </section>
+      <section class="view" id="v-conf-house" aria-labelledby="h-conf-house">
+        <header class="view-head"><h2 id="h-conf-house" data-bind="scope.title">House</h2><p data-bind="scope.sub">4 controllers · 2 zones calling · 1 fault</p></header>
+        <nav class="section-nav" aria-label="Sections">
+          <a href="#sec-setup">Setup</a>
+          <a href="#sec-heat">Heat and weather</a>
+          <a href="#sec-device">Device</a>
+          <a href="#sec-service">Service</a>
+        </nav>
+        <section class="section" id="sec-setup" aria-labelledby="sec-setup-h">
+          <h2 class="section-h" id="sec-setup-h">Setup<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel" data-save="add-node">
+          <header class="panel-head"><h3>Controllers</h3><p>V6 boards paired with this house</p><button class="help-btn" type="button" popovertarget="help-ctrl" style="anchor-name:--a-help-ctrl" aria-label="Help: Controllers">?</button></header>
+          <div id="help-ctrl" popover class="help-pop" style="position-anchor:--a-help-ctrl"><p>Pair and approve V6 boards for this house. Unapproved boards stay local and do not contribute rooms or heat calls.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#controllers">Read more</a></div>
+          <div class="table-wrap">
+            <table class="table" data-bind-nodes>
+              <thead><tr><th>Name</th><th>Hostname or IP</th><th>Status</th><th>Zones</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div data-bind-scan></div>
+          <details class="more">
+            <summary>+ Add manually</summary>
+            <div class="field"><label for="node_name">Name</label><input class="input" id="node_name" name="name" placeholder="Ground floor"></div>
+            <div class="field"><label for="node_host">Hostname or IP</label><input class="input" id="node_host" name="host" placeholder="lune-v6.local" inputmode="url"></div>
+          </details>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn" type="button" data-action="scan-nodes">Scan the network</button><span class="save-status" id="ss-add-node" aria-live="polite"></span></div><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Add controller</button></footer>
+        </form>
+          </div>
+        </section>
+
+        <section class="section" id="sec-heat" aria-labelledby="sec-heat-h">
+          <h2 class="section-h" id="sec-heat-h">Heat and weather<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel wide gated" data-save="heat-source">
+          <header class="panel-head"><h3>Heat source</h3><button class="help-btn" type="button" popovertarget="help-hs" style="anchor-name:--a-help-hs" aria-label="Help: Heat source">?</button></header>
+          <div id="help-hs" popover class="help-pop" style="position-anchor:--a-help-hs"><p>Direct connection to the heat source. Touch publishes weighted house temperature on an interval. Wrong host or templates block delivery.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#heat-source">Read more</a></div>
+          <label class="switch"><span class="switch-text"><b>Heat source enabled</b></span><input type="checkbox" role="switch" name="enabled" checked></label>
+          <div class="gated-body">
+            <input class="state" type="radio" name="hs_type" id="hs-http" value="http">
+            <input class="state" type="radio" name="hs_type" id="hs-asgard" value="asgard" checked>
+            <div class="seg" role="radiogroup" aria-label="Adapter type">
+              <label for="hs-http"><span>Generic HTTP</span></label>
+              <label for="hs-asgard"><span>Asgard</span></label>
+            </div>
+            <fieldset class="hs-fields typed-fields subs cols-2" data-type="http">
+              <div class="sub">
+                <h4>Connection</h4>
+                <div class="field row"><label for="http_host">Host</label><input class="input w-md" id="http_host" name="http_host" value="heat-bridge.local"></div>
+                <div class="field row"><label for="http_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="http_port" name="http_port" value="80" min="1" max="65535" step="1"></div>
+                <div class="field row"><label for="http_push_interval_s">Push interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease push interval">−</button><span class="value"><input type="number" inputmode="decimal" id="http_push_interval_s" name="http_push_interval_s" value="60" min="5" max="3600" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Increase push interval">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Mapping</h4>
+                <div class="field row"><label for="http_weighted_temperature_variable">Weighted temperature variable</label><input class="input w-md" id="http_weighted_temperature_variable" name="http_weighted_temperature_variable" value="temperature_feedback_z1"></div>
+                <div class="field row"><label for="write_url_template">Write URL template</label><input class="input w-lg" id="write_url_template" name="write_url_template" placeholder="http://{host}:{port}/{entity}/set?value={value}"></div>
+                <div class="field row"><label for="read_url_template">Read URL template</label><input class="input w-lg" id="read_url_template" name="read_url_template" placeholder="http://{host}:{port}/{entity}"></div>
+              </div>
+              <div class="sub">
+                <h4>Heat source inputs</h4>
+                <p class="hint">Most boilers and heat pumps without a room sensor regulate on return temperature or a weather curve. Fill in the inputs your source has – Touch sends the same house demand in that form.</p>
+                <div class="field row"><label for="target_url_template">Room target URL ({value} = °C)</label><input class="input w-lg" id="target_url_template" name="target_url_template" placeholder="http://{host}:{port}/target?value={value}"></div>
+                <div class="field row"><label for="heat_request_url_template">Heat request URL ({value} = 1/0)</label><input class="input w-lg" id="heat_request_url_template" name="heat_request_url_template" placeholder="http://{host}:{port}/heat?value={value}"></div>
+                <div class="field row"><label for="curve_offset_url_template">Curve offset URL ({value} = °C)</label><input class="input w-lg" id="curve_offset_url_template" name="curve_offset_url_template" placeholder="http://{host}:{port}/curve_offset?value={value}"></div>
+                <div class="field row"><label for="curve_gain">Curve offset per °C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease curve offset per °c">−</button><span class="value"><input type="number" inputmode="decimal" id="curve_gain" name="curve_gain" value="2.0" min="0.0" max="10.0" step="0.5"><span class="unit">°C/°C</span></span><button type="button" data-step="1" aria-label="Increase curve offset per °c">+</button></div></div>
+                <div class="field row"><label for="curve_max_offset_c">Max curve offset</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max curve offset">−</button><span class="value"><input type="number" inputmode="decimal" id="curve_max_offset_c" name="curve_max_offset_c" value="5.0" min="0.0" max="15.0" step="0.5"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase max curve offset">+</button></div></div>
+                <dl class="kv"><div><dt>House demand goes to</dt><dd data-bind="levers.state">—</dd></div></dl>
+              </div>
+              <div class="sub" data-bind-hs-delivery="http">
+                <h4>Sent to HTTP endpoint</h4>
+                <p class="mono" data-bind="hs.sent.url">—</p>
+                <div class="table-wrap"><table class="table">
+                  <thead><tr><th></th><th>Value</th><th>Target</th><th>Last send</th></tr></thead>
+                  <tbody>
+                    <tr><th>Weighted house temperature</th><td class="num" data-bind="hs.http.temp">—</td><td class="mono" data-bind="hs.http.entity">—</td><td data-bind="hs.http.when">—</td></tr>
+                  </tbody>
+                </table></div>
+                <details class="more">
+                  <summary>How is it calculated?</summary>
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>Zone</th><th>Temperature</th><th>Weight</th><th>Contribution</th></tr></thead>
+                    <tbody data-bind-weight-rows></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div class="sub">
+                <h4>Test</h4>
+                <div class="actions">
+                  <button class="btn" type="button" data-action="hs-test-read">Test read</button>
+                  <button class="btn" type="button" data-action="hs-test-push">Test send</button>
+                </div>
+                <div class="test-result" aria-live="polite"></div>
+              </div>
+            </fieldset>
+            <fieldset class="hs-fields typed-fields subs cols-2" data-type="asgard">
+              <div class="sub">
+                <h4>Connection</h4>
+                <div class="field row"><label for="asgard_host">Host</label><input class="input w-md" id="asgard_host" name="asgard_host" value="asgard.local"></div>
+                <div class="field row"><label for="asgard_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="asgard_port" name="asgard_port" value="80" min="1" max="65535" step="1"></div>
+                <div class="field row"><label for="asgard_push_interval_s">Push interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease push interval">−</button><span class="value"><input type="number" inputmode="decimal" id="asgard_push_interval_s" name="asgard_push_interval_s" value="60" min="5" max="3600" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Increase push interval">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>House temperature → Asgard</h4>
+                <p class="hint">The measured, weighted house temperature. It is never altered – Odin and Asgard learn from it. Sent while the V6s have granted Touch the lease.</p>
+                <div class="field row"><label for="asgard_weighted_temperature_variable">Asgard entity</label><input class="input w-md" id="asgard_weighted_temperature_variable" name="asgard_weighted_temperature_variable" value="Virtual Thermostat Input z1"></div>
+                <dl class="kv">
+                  <div><dt>Value</dt><dd data-bind="hs.asgard.temp">—</dd></div>
+                  <div><dt>Last send</dt><dd data-bind="hs.asgard.when">—</dd></div>
+                </dl>
+                <details class="more">
+                  <summary>How is it calculated?</summary>
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>Zone</th><th>Temperature</th><th>Weight</th><th>Contribution</th></tr></thead>
+                    <tbody data-bind-weight-rows></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div class="sub">
+                <h4>Comfort target → Asgard</h4>
+                <label class="switch"><span class="switch-text"><b>Sync comfort target</b><small>Recommended on – also with Odin. When Odin is in control the house target is sent unlifted as a backup, so Asgard has the right target if Odin stops.</small></span><input type="checkbox" role="switch" name="target_sync_enabled" checked></label>
+                <div class="field row"><label for="climate_entity">Asgard thermostat</label><input class="input w-md" id="climate_entity" name="climate_entity" value="Virtual Thermostat z1"></div>
+                <dl class="kv">
+                  <div><dt>Value</dt><dd data-bind="hs.asgard.setpoint">—</dd></div>
+                  <div><dt>Last send</dt><dd data-bind="hs.asgard.setpointWhen">—</dd></div>
+                  <div><dt>Comfort target role</dt><dd data-bind="dash.targetRole">—</dd></div>
+                </dl>
+              </div>
+              <div class="sub">
+                <h4>Test</h4>
+                <div class="actions">
+                  <button class="btn" type="button" data-action="hs-test-read">Test read</button>
+                  <button class="btn" type="button" data-action="hs-test-push">Test send</button>
+                </div>
+                <div class="test-result" aria-live="polite"></div>
+              </div>
+              <div class="sub">
+                <h4>Odin 2.0</h4>
+                <div class="field row"><label for="odin_host">Odin address</label><input class="input w-md" id="odin_host" name="odin_host" placeholder="192.168.1.20"></div>
+                <label class="switch"><span class="switch-text"><b>Odin plan ingestion</b><small>Uses Odin's heat windows for absorbing and preheating</small></span><input type="checkbox" role="switch" name="odin_plan_enabled" checked></label>
+                <label class="switch"><span class="switch-text"><b>Lift Odin's comfort schedule</b><small>Touch temporarily raises Odin's comfort band before wind and cold, and when a room lags. Your own schedule is written back afterwards, and Touch leaves it alone if you change it in Odin.</small></span><input type="checkbox" role="switch" name="odin_control_enabled"></label>
+                <div class="field row"><label for="odin_max_lift_c">Max lift</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max lift">−</button><span class="value"><input type="number" inputmode="decimal" id="odin_max_lift_c" name="odin_max_lift_c" value="1.5" min="0.3" max="3.0" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase max lift">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Odin status</h4>
+                <dl class="kv">
+                  <div><dt>Asgard → Odin</dt><dd data-bind="odin.link">—</dd></div>
+                  <div><dt>Comfort schedule</dt><dd data-bind="odin.state">—</dd></div>
+                  <div><dt>House demand goes to</dt><dd data-bind="odin.route">—</dd></div>
+                </dl>
+                <details class="more">
+                  <summary>MQTT (optional)</summary>
+                  <p class="hint">Reads Odin's plan and the pump telemetry straight from the broker, so a stopped Asgard is noticed sooner. Touch never publishes, and HTTP is still used if the broker goes away.</p>
+                  <label class="switch"><span class="switch-text"><b>Use MQTT</b></span><input type="checkbox" role="switch" name="mqtt_enabled"></label>
+                  <div class="field row"><label for="mqtt_host">Host</label><input class="input w-md" id="mqtt_host" name="mqtt_host" placeholder="192.168.1.10"></div>
+                  <div class="field row"><label for="mqtt_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="mqtt_port" name="mqtt_port" value="1883" min="1" max="65535"></div>
+                  <div class="field row"><label for="mqtt_username">User</label><input class="input w-md" id="mqtt_username" name="mqtt_username" autocomplete="off"></div>
+                  <div class="field row"><label for="mqtt_password">Password</label><input class="input w-md" type="password" id="mqtt_password" name="mqtt_password" autocomplete="new-password"></div>
+                  <div class="field row"><label for="mqtt_topic_prefix">Topic prefix</label><input class="input w-md" id="mqtt_topic_prefix" name="mqtt_topic_prefix" placeholder="hp/hp1"></div>
+                  <div class="field row"><label for="mqtt_hp_id">Heat pump id</label><input class="input w-xs" id="mqtt_hp_id" name="mqtt_hp_id" placeholder="hp1"></div>
+                </details>
+              </div>
+            </fieldset>
+          </div>
+          <footer class="panel-foot"><span class="save-status" id="ss-heat-source" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save heat source</button></footer>
+        </form>
+
+        <form class="panel wide" data-save="rooms">
+          <header class="panel-head"><h3>Rooms</h3><p>Settings Touch owns; walls, area and floor are set on each V6</p><button class="help-btn" type="button" popovertarget="help-rooms" style="anchor-name:--a-help-rooms" aria-label="Help: Rooms">?</button></header>
+          <div id="help-rooms" popover class="help-pop" style="position-anchor:--a-help-rooms"><p>Rooms counted in the weighted house temperature, their relative weight, and how strongly wind and sun shift weather preload. Walls, area and floor come from each V6.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#rooms">Read more</a></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Room</th><th>In house temperature</th><th class="num">Weight</th><th class="num">Wind</th><th class="num">Solar</th></tr></thead>
+            <tbody data-bind-room-rows><tr><td colspan="5" class="muted">—</td></tr></tbody>
+          </table></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-rooms" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save rooms</button></footer>
+        </form>
+
+        <form class="panel c5" data-save="circulation">
+          <header class="panel-head"><h3>Pump</h3><button class="help-btn" type="button" popovertarget="help-pump" style="anchor-name:--a-help-pump" aria-label="Help: Pump">?</button></header>
+          <div id="help-pump" popover class="help-pop" style="position-anchor:--a-help-pump"><p>Circulation pump host, port and ESPHome entities for flow, head and power on the house dashboard.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#pump">Read more</a></div>
+          <div class="field row"><label for="pump_host">Pump host</label><input class="input w-md" id="pump_host" name="host" value="" placeholder="alpha2go.local"></div>
+          <div class="field row"><label for="pump_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="pump_port" name="pump_port" value="80" min="1" max="65535" step="1"></div>
+          <div class="field row"><label for="pump_flow_entity">Flow entity</label><input class="input w-md" id="pump_flow_entity" name="flow_entity" value="pump_flow"></div>
+          <div class="field row"><label for="pump_head_entity">Head entity</label><input class="input w-md" id="pump_head_entity" name="head_entity" value="pump_head_pressure"></div>
+          <div class="field row"><label for="pump_power_entity">Power entity</label><input class="input w-md" id="pump_power_entity" name="power_entity" value="pump_power"></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-circulation" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save pump</button></footer>
+        </form>
+
+        <form class="panel c5" data-save="weather">
+          <header class="panel-head"><h3>Weather location</h3><button class="help-btn" type="button" popovertarget="help-weather" style="anchor-name:--a-help-weather" aria-label="Help: Weather location">?</button></header>
+          <div id="help-weather" popover class="help-pop" style="position-anchor:--a-help-weather"><p>Coordinates and max preload boost for forecast-driven room warm-up. Wrong location mis-times west/east exposure.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#weather">Read more</a></div>
+          <div class="pair">
+            <div class="field row"><label for="wx_lat">Latitude</label><input class="input w-sm" id="wx_lat" name="latitude" value="55.6761" inputmode="decimal"></div>
+            <div class="field row"><label for="wx_lon">Longitude</label><input class="input w-sm" id="wx_lon" name="longitude" value="12.5683" inputmode="decimal"></div>
+          </div>
+          <div class="field row"><label for="wx_boost">Max preload boost</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max preload boost">−</button><span class="value"><input type="number" inputmode="decimal" id="wx_boost" name="wx_boost" value="1.5" min="0" max="3" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase max preload boost">+</button></div></div>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn" type="button" data-action="wx-geo">Estimate from network</button><span class="save-status" id="ss-weather" aria-live="polite"></span></div><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save weather</button></footer>
+        </form>
+          </div>
+        </section>
+
+        <section class="section" id="sec-device" aria-labelledby="sec-device-h">
+          <h2 class="section-h" id="sec-device-h">Device<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel c4" data-save="settings">
+          <header class="panel-head"><h3>Identity</h3><button class="help-btn" type="button" popovertarget="help-identity" style="anchor-name:--a-help-identity" aria-label="Help: Identity">?</button></header>
+          <div id="help-identity" popover class="help-pop" style="position-anchor:--a-help-identity"><p>Device name and display idle time. Forecast location is kept when you reset the registry from Service.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#identity">Read more</a></div>
+          <div class="field row"><label for="dev_name">Device name</label><input class="input w-md" id="dev_name" name="name" value="House coordinator"></div>
+          <div class="field row"><label for="dev_idle">Display idle minutes</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease display idle minutes">−</button><span class="value"><input type="number" inputmode="decimal" id="dev_idle" name="dev_idle" value="5" min="0" max="120" step="1"><span class="unit">min</span></span><button type="button" data-step="1" aria-label="Increase display idle minutes">+</button></div></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-settings" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save identity</button></footer>
+        </form>
+
+        <form class="panel c4" data-save="firmware">
+          <header class="panel-head"><h3>Firmware</h3><button class="help-btn" type="button" popovertarget="help-firmware" style="anchor-name:--a-help-firmware" aria-label="Help: Firmware">?</button></header>
+          <div id="help-firmware" popover class="help-pop" style="position-anchor:--a-help-firmware"><p>Check for updates, install from the network, or upload a .bin. The device reboots when flashing finishes.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#firmware">Read more</a></div>
+          <dl class="kv">
+            <div><dt>Installed</dt><dd data-bind="fw.installed">—</dd></div>
+            <div><dt>Latest release</dt><dd data-bind="fw.latest">—</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn" type="submit" name="action" value="check">Check for update</button>
+            <button class="btn" type="submit" name="action" value="install" disabled>Install latest</button>
+          </div>
+          <div class="field"><label for="ota_file">Manual .bin upload</label><label class="input file" for="ota_file"><input class="sr-only" id="ota_file" name="ota_file" type="file" accept=".bin,.ota.bin"><span class="file-pick">Choose file</span><span class="file-name" data-empty="No file chosen">No file chosen</span></label></div>
+          <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload" disabled>Upload firmware</button></footer>
+        </form>
+
+        <form class="panel c4" data-save="backup">
+          <header class="panel-head"><h3>Backup</h3><button class="help-btn" type="button" popovertarget="help-backup" style="anchor-name:--a-help-backup" aria-label="Help: Backup">?</button></header>
+          <div id="help-backup" popover class="help-pop" style="position-anchor:--a-help-backup"><p>Export or import settings as JSON. Secrets are never included. Import overwrites coordinator settings on this device.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#backup">Read more</a></div>
+          <p class="note">Export settings as JSON. Secrets are never included.</p>
+          <div class="field"><label for="backup_file">Import file</label><label class="input file" for="backup_file"><input class="sr-only" id="backup_file" name="backup_file" type="file" accept="application/json,.json"><span class="file-pick">Choose file</span><span class="file-name" data-empty="No file chosen">No file chosen</span></label></div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="export">Export backup</button>
+            <button class="btn primary" type="submit" name="action" value="import" disabled>Import backup</button>
+          </footer>
+        </form>
+          </div>
+        </section>
+
+        <details class="section" id="sec-service">
+          <summary class="section-h">Service<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></summary>
+          <div class="section-grid">
+        <section class="panel">
+          <header class="panel-head"><h3>Service</h3><button class="help-btn" type="button" popovertarget="help-service" style="anchor-name:--a-help-service" aria-label="Help: Service">?</button></header>
+          <div id="help-service" popover class="help-pop" style="position-anchor:--a-help-service"><p>Commissioning notes, command log, live diagnostics and destructive registry reset. Restart and OTA stay here — not in the device menu.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#service">Read more</a></div>
+          <div class="sub">
+            <h4>Command log</h4>
+            <pre class="log" data-bind="log" aria-live="polite" lang="en">—</pre>
+          </div>
+          <div class="sub">
+            <h4>Diagnostics</h4>
+            <dl class="kv">
+              <div><dt>Controllers online</dt><dd data-bind="diag.nodes">—</dd></div>
+              <div><dt>Polling</dt><dd data-bind="diag.poll">—</dd></div>
+              <div><dt>Firmware slot</dt><dd data-bind="diag.ota">—</dd></div>
+            </dl>
+          </div>
+          <div class="actions">
+            <button class="btn danger" type="button" popovertarget="confirm-reset" style="anchor-name:--a-confirm-reset">Reset registry…</button>
+          </div>
+          <div id="confirm-reset" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-reset-t" aria-describedby="confirm-reset-d" style="position-anchor:--a-confirm-reset">
+            <p class="confirm-title" id="confirm-reset-t">Reset the registry now?</p>
+            <p id="confirm-reset-d">Clears controllers, rooms and command ledger. Forecast location is kept.</p>
+            <div class="confirm-actions">
+              <button class="btn" type="button" popovertarget="confirm-reset" popovertargetaction="hide" autofocus>Cancel</button>
+              <button class="btn danger-solid" type="button" data-action="reset-registry" popovertarget="confirm-reset" popovertargetaction="hide">Reset registry</button>
+            </div>
+          </div>
+        </section>
+          </div>
+        </details>
+      </section>
+  </main>
+</div>
+
+<script type="application/json" id="i18n">{"rt.savedOk":"Saved","rt.saveFailed":"Save failed","rt.saving":"Saving…","rt.unsaved.one":"{n} unsaved change","rt.unsaved.other":"{n} unsaved changes","rt.nothingToSave":"No changes to save","rt.leaveUnsaved":"You have unsaved changes.","rt.autoSaving":"Saving…","rt.autoSaved":"Saved","rt.autoFailed":"Not saved — try again","rt.retry":"Try again","rt.secondsAgo":"{n} s ago","rt.minutesAgo":"{n} min ago","rt.offline":"Offline","common.undo":"Undo","state.calling":"Calling for heat","state.idle":"Idle","state.fault":"Fault","state.off":"Not in use","tile.fault":"Fault","tile.off":"Off","badge.ok":"Ok","badge.warn":"Attention","badge.bad":"Fault","badge.calling":"Calling","common.on":"On","common.off":"Off","common.approve":"Approve","common.remove":"Remove","common.days":"days","common.faults":"{n} fault","common.noFaults":"no faults","device.this":"this device","device.copied":"Copied","device.copyDiag":"Copy diagnostics","dash.house.sub":"{manifolds} controllers · {calling} zones calling · {faults} fault","dash.manifold.sub":"{zones} zones · {calling} calling · {state}","dash.zone.sub":"{state} · target {target}°C","fc.sub":"72 hours · {model} · fetched {time}","alert.boardFault":"{board} is unreachable","ctrl.removeTitle":"Remove controller","ctrl.removeAsk":"Remove {name}?","ctrl.removeConfirm":"Remove {name}? Rooms mapped only to this board become empty.","ctrl.removeBtn":"Remove…","ctrl.removeDo":"Remove","ctrl.editName":"Edit name","ctrl.found":"Found","ctrl.addRow":"Add","ctrl.empty":"No controllers yet. Scan the network or add a hostname.","ctrl.host":"Hostname or IP","common.unnamed":"Unnamed","common.cancel":"Cancel","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Connected","heat.badge.bad":"Unreachable","heat.badge.off":"Off","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Not sent – switched off","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Testing…","hs.testReadOk":"Read OK · {time} · {code} · {ms} ms","hs.testPushOk":"Send OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C from {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Check host and port, and that the heat source is reachable.","hs.testCheckDns":"Check that the hostname resolves.","hs.testCheckHttp":"Check the endpoint and that the heat source answers.","hs.testStatus.failed":"Failed","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Address missing","hs.testReason.network":"No network","hs.testReason.endpoint":"Invalid endpoint","hs.testReason.notReady":"Heat source is not ready","hs.testReason.busy":"Busy","hs.testReason.rejected":"Rejected","status.trusted":"Approved","status.paired":"Waiting","status.unpaired":"Waiting","status.waiting":"Waiting","status.unreachable":"No connection","status.confirmed":"Confirmed","status.sent":"Sent","status.mismatch":"Mismatch","status.blocked":"Blocked","status.unknown":"Unknown","status.disabled":"Off","scope.title.house":"House","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Below target","house.at":"At target","house.above":"Above target","dash.house.sub.one":"{manifolds} controllers · {calling} zone calling · {faults} fault","fc.badge":"Preload +{v} °C","fc.windFrom":"from {dir}","fc.dirTitle":"{time}: {speed} m/s from {dir}","fc.sky.sun":"Sunny","fc.sky.partly":"Partly sunny","fc.sky.cloud":"Cloudy","fc.sky.rain":"Rain","fc.sky.snow":"Snow","fc.sky.moon":"Clear night","diag.pollOk":"OK","diag.pollFail":"{n} failed polls","rooms.includeAria":"Include {name} in house temperature","rooms.weightAria":"Weight for {name}","rooms.windAria":"Wind exposure for {name}","rooms.solarAria":"Solar gain for {name}","m.supplyShort":"Flow","m.returnShort":"Ret","strip.sub":"Zones on {name}","diag.ota.valid":"Confirmed","diag.ota.pending_verify":"Awaiting confirmation","diag.ota.new":"New, not started","diag.ota.invalid":"Rejected","diag.ota.aborted":"Rejected","diag.ota.undefined":"Factory image","hs.notSentLease":"Not sent – the V6s have not granted Touch the lease","hs.route.odin_schedule":"Odin's comfort schedule","hp.compOn":"compressor {hz} Hz","hp.compOff":"compressor off","flow.none":"No open loops – the pump runs at minimum flow.","flow.note":"Approximate: derived from valve openings. Pipe length to each manifold is not included.","flow.noteLpm":"Approximate: derived from valve openings and the pump flow. Pipe length to each manifold is not included.","flow.zoneTip":"{zone}: valve {v} % · {pct} % of the manifold","flow.closed":"closed","fc.now":"Now","role.reserve":"Backup – Odin is in control. Asgard uses the target (unlifted) if Odin stops.","role.reserveNow":"Backup – Odin drives the pump now. Asgard uses the target if Odin stops.","role.asgardNow":"Active – Asgard regulates itself right now and heats to the target.","role.offOdin":"Off – if Odin stops, Asgard uses its own setpoint. Turn sync on.","role.drives":"In control – Asgard heats to the target (+{c} °C when needed).","role.off":"Off – Asgard does not get the house target.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Heating {kw} kW","now.off":"Off","now.dhw":"Hot water","planG.odin":"Odin","planG.noOdin":"No Odin plan","planG.tip.heat":"{h} · space heat {kwh} kWh","planG.tip.dhw":"{h} · hot water {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Preheat +{c} °C","planG.tipCharge":"Charging +{c} °C","planG.tipInsufficient":"Charging +{c} °C – the floor cannot cover the whole shortfall","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Comfort band lifted +{c} °C","hs.mqttPasswordSet":"Saved – leave empty to keep it","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"connected","hs.mqttDisconnected":"not connected","strip.lease.refused":"V6 refused Touch's lease – running locally","strip.lease.none":"No Touch lease – running locally","strip.charge.now":"Charging the floor (+{c} °C) before wind and cold","strip.charge.insufficient":"Charging (+{c} °C) – the floor cannot cover the whole shortfall","hs.link.ok":"OK – Odin gets data and learns","hs.link.forwarder_off":"Asgard is not forwarding to Odin – Odin is not learning","hs.link.telemetry_stale":"Odin has no fresh telemetry ({s} min) – Odin is not learning","hs.link.no_room_temperature":"Odin gets no room temperature – Odin is not learning","hs.link.odin_unreachable":"Odin does not respond","hs.link.unknown":"Unknown","hs.odinStatus.disabled":"Off","hs.odinStatus.idle":"Waiting for the first check","hs.odinStatus.watching":"Watching – no lift now","hs.odinStatus.lifted":"Lifted +{c} °C from {h}:00 for {n} h","hs.odinStatus.yielded":"Paused – the schedule was changed in Odin","hs.odinStatus.rate_limited":"Waiting – at most one change per 20 min","hs.odinStatus.write_failed":"Could not write to Odin","hs.odinStatus.odin_unreachable":"Odin does not respond","hs.odinStatus.schedule_unreadable":"Odin's schedule could not be read","hs.odinStatus.clock_invalid":"Touch clock is not set","hs.odinWanted":"wanted +{c} °C from {h}:00 for {n} h","hs.route.virtual_thermostat":"Asgard's virtual thermostat (+{c} °C)","hs.route.generic":"Heat source inputs (+{c} °C)","hs.route.none":"None – Odin follows its own schedule","hs.leverState":"Target {t} °C · heat request {r} · curve +{c} °C","_dec":".","_walls":{"n":"N","e":"E","s":"S","w":"W"},"_lang":"en"}</script>
+<script>window.LUNE_TOUCH_MOCK=true;</script>
+<script src="ui.js" defer></script>
+<script>
+(function(){
+/* +/−, submit and dropdown close live in binder.js (one handler each). */
+window.addEventListener('hashchange',function(){var el=document.getElementById((location.hash||'').slice(1));if(el&&el.tagName==='DETAILS')el.open=true;});
+})();
+</script>
+</body>
+</html>

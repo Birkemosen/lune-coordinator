@@ -1,0 +1,942 @@
+# Zone fuldskærm (SCREENS.md Zone / ZoneFault).
+# Én delt pane (ikke 24 tileview-kopier — RAM); zone skiftes med ‹ › / swipe-områder.
+# TODO(trin3): Comfort/Eco/Nat findes ikke i datamodel — faste 22/20/18 som UI-forvalg.
+# TODO(trin3): 48-punkts historikgraf; zone til/fra mangler display-API (kun visning).
+# TODO(trin3): zone-retur °C og BLE-føler-label mangler display-bindere.
+obj:
+  id: page_zone_detail
+  hidden: true
+  x: 0
+  y: 0
+  width: 1024
+  height: 600
+  bg_color: ${lds_bg}
+  bg_opa: COVER
+  border_width: 0
+  radius: 0
+  pad_all: 0
+  scrollable: false
+  widgets:
+    # ---- Topbar ----
+    - button:
+        id: page_zone_back
+        x: 20
+        y: 16
+        width: 64
+        height: 64
+        bg_color: ${lds_raised}
+        bg_opa: COVER
+        border_width: 0
+        radius: CIRCLE
+        shadow_width: 0
+        pad_all: 0
+        widgets:
+          - label:
+              align: CENTER
+              text: "<"
+              text_color: ${lds_fg}
+              text_font: lds_font_lg
+        on_click:
+          - lambda: |-
+              id(zone_pending_dirty) = false;
+              id(zone_detail_keypad_open) = false;
+              id(zone_detail_keypad_buffer) = "";
+              id(lune_touch_app).display_set_active_page(0);
+              id(touch_display_refresh_token).update();
+    - label:
+        id: page_zone_name
+        x: 100
+        y: 18
+        width: 320
+        height: 44
+        text: "Zone"
+        text_color: ${lds_fg}
+        text_font: lds_font_lg
+        long_mode: dot
+        bg_opa: 0%
+    - label:
+        id: page_zone_sub
+        x: 100
+        y: 56
+        width: 320
+        height: 32
+        text: ""
+        text_color: ${lds_muted}
+        text_font: lds_font_sm
+        long_mode: clip
+        bg_opa: 0%
+    - obj:
+        id: page_zone_badge
+        x: 430
+        y: 32
+        width: 160
+        height: 32
+        bg_color: ${lds_accent_ink}
+        bg_opa: COVER
+        radius: CIRCLE
+        border_width: 0
+        pad_all: 0
+        widgets:
+          - label:
+              id: page_zone_badge_text
+              align: CENTER
+              text: "Kalder varme"
+              text_color: ${lds_on_accent}
+              text_font: lds_font_xs
+    - label:
+        id: page_zone_ordinal
+        x: 720
+        y: 34
+        width: 120
+        height: 28
+        text: "1 af 1"
+        text_color: ${lds_muted}
+        text_font: lds_font_sm
+        text_align: RIGHT
+        bg_opa: 0%
+    - button:
+        id: page_zone_prev
+        x: 860
+        y: 16
+        width: 64
+        height: 64
+        bg_color: ${lds_raised}
+        bg_opa: COVER
+        border_width: 0
+        radius: CIRCLE
+        shadow_width: 0
+        pad_all: 0
+        widgets:
+          - label:
+              align: CENTER
+              text: "<"
+              text_color: ${lds_fg}
+              text_font: lds_font_lg
+        on_click:
+          - lambda: |-
+              id(zone_pending_dirty) = false;
+              id(zone_preset_idx) = -1;
+              if (id(lune_touch_app).display_step_selected_zone(-1))
+                id(touch_display_refresh_token).update();
+    - button:
+        id: page_zone_next
+        x: 940
+        y: 16
+        width: 64
+        height: 64
+        bg_color: ${lds_raised}
+        bg_opa: COVER
+        border_width: 0
+        radius: CIRCLE
+        shadow_width: 0
+        pad_all: 0
+        widgets:
+          - label:
+              align: CENTER
+              text: ">"
+              text_color: ${lds_fg}
+              text_font: lds_font_lg
+        on_click:
+          - lambda: |-
+              id(zone_pending_dirty) = false;
+              id(zone_preset_idx) = -1;
+              if (id(lune_touch_app).display_step_selected_zone(1))
+                id(touch_display_refresh_token).update();
+
+    # ---- Left card ----
+    - obj:
+        id: page_zone_left
+        x: 16
+        y: 96
+        width: 560
+        height: 488
+        bg_color: ${lds_card}
+        bg_opa: COVER
+        border_width: 0
+        radius: 20
+        shadow_width: 0
+        pad_all: 0
+        scrollable: false
+        widgets:
+          - label:
+              x: 28
+              y: 24
+              width: 400
+              height: 28
+              text: "Rumtemperatur nu"
+              text_color: ${lds_muted}
+              text_font: lds_font_sm
+              bg_opa: 0%
+          - label:
+              id: page_zone_temp
+              x: 28
+              y: 56
+              width: 360
+              height: 160
+              text: "--,-"
+              text_color: ${lds_fg}
+              text_font: lds_font_hero
+              long_mode: clip
+              bg_opa: 0%
+          - label:
+              id: page_zone_temp_unit
+              x: 400
+              y: 140
+              width: 120
+              height: 56
+              text: "°C"
+              text_color: ${lds_muted}
+              text_font: lds_font_d44
+              bg_opa: 0%
+          - button:
+              id: page_zone_minus
+              x: 28
+              y: 240
+              width: 96
+              height: 96
+              bg_color: ${lds_raised}
+              bg_opa: COVER
+              border_width: 0
+              radius: CIRCLE
+              shadow_width: 0
+              pad_all: 0
+              widgets:
+                - label:
+                    align: CENTER
+                    text: "−"
+                    text_color: ${lds_fg}
+                    text_font: lds_font_lg
+              on_click:
+                - lambda: |-
+                    float t = id(zone_pending_target);
+                    if (!std::isfinite(t)) {
+                      std::string raw = id(lune_touch_app).display_zone_setpoint_text(
+                          id(lune_touch_app).display_selected_node_index(),
+                          id(lune_touch_app).display_selected_zone_index());
+                      char *end = nullptr;
+                      t = strtof(raw.c_str(), &end);
+                      if (end == raw.c_str()) t = 21.0f;
+                    }
+                    t = std::max(12.0f, std::min(28.0f, t - 0.5f));
+                    id(zone_pending_target) = t;
+                    id(zone_pending_dirty) = true;
+                    id(zone_last_adjust_ms) = millis();
+                    id(zone_preset_idx) = -1;
+                    id(touch_display_refresh_token).update();
+          - label:
+              x: 148
+              y: 248
+              width: 200
+              height: 28
+              text: "Mål"
+              text_color: ${lds_muted}
+              text_font: lds_font_sm
+              text_align: CENTER
+              bg_opa: 0%
+          - label:
+              id: page_zone_target
+              x: 148
+              y: 276
+              width: 160
+              height: 80
+              text: "--,-"
+              text_color: ${lds_fg}
+              text_font: lds_font_2xl
+              text_align: CENTER
+              long_mode: clip
+              bg_opa: 0%
+          - label:
+              x: 308
+              y: 300
+              width: 60
+              height: 40
+              text: "°C"
+              text_color: ${lds_muted}
+              text_font: lds_font_lg
+              bg_opa: 0%
+          - button:
+              id: page_zone_plus
+              x: 436
+              y: 240
+              width: 96
+              height: 96
+              bg_color: ${lds_raised}
+              bg_opa: COVER
+              border_width: 0
+              radius: CIRCLE
+              shadow_width: 0
+              pad_all: 0
+              widgets:
+                - label:
+                    align: CENTER
+                    text: "+"
+                    text_color: ${lds_fg}
+                    text_font: lds_font_lg
+              on_click:
+                - lambda: |-
+                    float t = id(zone_pending_target);
+                    if (!std::isfinite(t)) {
+                      std::string raw = id(lune_touch_app).display_zone_setpoint_text(
+                          id(lune_touch_app).display_selected_node_index(),
+                          id(lune_touch_app).display_selected_zone_index());
+                      char *end = nullptr;
+                      t = strtof(raw.c_str(), &end);
+                      if (end == raw.c_str()) t = 21.0f;
+                    }
+                    t = std::max(12.0f, std::min(28.0f, t + 0.5f));
+                    id(zone_pending_target) = t;
+                    id(zone_pending_dirty) = true;
+                    id(zone_last_adjust_ms) = millis();
+                    id(zone_preset_idx) = -1;
+                    id(touch_display_refresh_token).update();
+          - button:
+              id: page_zone_preset_0
+              x: 28
+              y: 380
+              width: 160
+              height: 64
+              bg_color: ${lds_raised}
+              bg_opa: COVER
+              border_width: 0
+              radius: CIRCLE
+              shadow_width: 0
+              pad_all: 0
+              widgets:
+                - label:
+                    align: CENTER
+                    text: "Komfort 22°"
+                    text_color: ${lds_fg}
+                    text_font: lds_font_sm
+              on_click:
+                - lambda: |-
+                    id(zone_pending_target) = 22.0f;
+                    id(zone_pending_dirty) = true;
+                    id(zone_last_adjust_ms) = millis();
+                    id(zone_preset_idx) = 0;
+                    id(touch_display_refresh_token).update();
+          - button:
+              id: page_zone_preset_1
+              x: 200
+              y: 380
+              width: 160
+              height: 64
+              bg_color: ${lds_raised}
+              bg_opa: COVER
+              border_width: 0
+              radius: CIRCLE
+              shadow_width: 0
+              pad_all: 0
+              widgets:
+                - label:
+                    align: CENTER
+                    text: "Eco 20°"
+                    text_color: ${lds_fg}
+                    text_font: lds_font_sm
+              on_click:
+                - lambda: |-
+                    id(zone_pending_target) = 20.0f;
+                    id(zone_pending_dirty) = true;
+                    id(zone_last_adjust_ms) = millis();
+                    id(zone_preset_idx) = 1;
+                    id(touch_display_refresh_token).update();
+          - button:
+              id: page_zone_preset_2
+              x: 372
+              y: 380
+              width: 160
+              height: 64
+              bg_color: ${lds_raised}
+              bg_opa: COVER
+              border_width: 0
+              radius: CIRCLE
+              shadow_width: 0
+              pad_all: 0
+              widgets:
+                - label:
+                    align: CENTER
+                    text: "Nat 18°"
+                    text_color: ${lds_fg}
+                    text_font: lds_font_sm
+              on_click:
+                - lambda: |-
+                    id(zone_pending_target) = 18.0f;
+                    id(zone_pending_dirty) = true;
+                    id(zone_last_adjust_ms) = millis();
+                    id(zone_preset_idx) = 2;
+                    id(touch_display_refresh_token).update();
+
+    # ---- Right card ----
+    - obj:
+        id: page_zone_right
+        x: 588
+        y: 96
+        width: 420
+        height: 488
+        bg_color: ${lds_card}
+        bg_opa: COVER
+        border_width: 0
+        radius: 20
+        shadow_width: 0
+        pad_all: 0
+        scrollable: false
+        widgets:
+          - obj:
+              id: page_zone_fault_box
+              hidden: true
+              x: 22
+              y: 18
+              width: 376
+              height: 120
+              bg_color: ${lds_danger_bg}
+              bg_opa: COVER
+              border_width: 0
+              radius: 16
+              pad_all: 0
+              widgets:
+                - label:
+                    id: page_zone_fault_title
+                    x: 18
+                    y: 14
+                    width: 340
+                    height: 28
+                    text: "Motorfejl"
+                    text_color: ${lds_danger}
+                    text_font: lds_font_md
+                    long_mode: clip
+                    bg_opa: 0%
+                - label:
+                    id: page_zone_fault_body
+                    x: 18
+                    y: 44
+                    width: 340
+                    height: 24
+                    text: "Tjek aktuator og endestop."
+                    text_color: ${lds_fg}
+                    text_font: lds_font_sm
+                    long_mode: clip
+                    bg_opa: 0%
+                - button:
+                    id: page_zone_fault_reset
+                    x: 18
+                    y: 68
+                    width: 340
+                    height: 48
+                    bg_color: ${lds_danger}
+                    bg_opa: COVER
+                    border_width: 0
+                    radius: 12
+                    shadow_width: 0
+                    pad_all: 0
+                    widgets:
+                      - label:
+                          align: CENTER
+                          text: "Nulstil fejl"
+                          text_color: ${lds_bg}
+                          text_font: lds_font_sm
+                    on_click:
+                      - lambda: |-
+                          id(lune_touch_app).display_reset_selected_motor_fault();
+                          id(touch_display_refresh_token).update();
+          - label:
+              id: page_zone_chart_title
+              x: 22
+              y: 18
+              width: 240
+              height: 28
+              text: "Sidste 24 timer"
+              text_color: ${lds_fg}
+              text_font: lds_font_sm
+              bg_opa: 0%
+          - label:
+              id: page_zone_chart_legend
+              x: 250
+              y: 18
+              width: 148
+              height: 28
+              text: "– temp  - - mål"
+              text_color: ${lds_muted}
+              text_font: lds_font_xs
+              text_align: RIGHT
+              bg_opa: 0%
+          - obj:
+              id: page_zone_chart
+              x: 22
+              y: 52
+              width: 376
+              height: 150
+              bg_color: ${lds_field}
+              bg_opa: COVER
+              border_width: 0
+              radius: 8
+              pad_all: 0
+              clickable: false
+              widgets:
+                - label:
+                    align: CENTER
+                    text: "−24 t · −12 t · nu"
+                    text_color: ${lds_faint}
+                    text_font: lds_font_xs
+          - label:
+              x: 22
+              y: 220
+              width: 160
+              height: 22
+              text: "Ventil"
+              text_color: ${lds_muted}
+              text_font: lds_font_xs
+              bg_opa: 0%
+          - label:
+              id: page_zone_valve
+              x: 22
+              y: 242
+              width: 160
+              height: 36
+              text: "-- %"
+              text_color: ${lds_fg}
+              text_font: lds_font_d28
+              bg_opa: 0%
+          - label:
+              x: 220
+              y: 220
+              width: 160
+              height: 22
+              text: "Retur"
+              text_color: ${lds_muted}
+              text_font: lds_font_xs
+              bg_opa: 0%
+          - label:
+              id: page_zone_return
+              x: 220
+              y: 242
+              width: 180
+              height: 36
+              text: "--,- °C"
+              text_color: ${lds_fg}
+              text_font: lds_font_d28
+              bg_opa: 0%
+          - label:
+              x: 22
+              y: 292
+              width: 160
+              height: 22
+              text: "Vejr-preload"
+              text_color: ${lds_muted}
+              text_font: lds_font_xs
+              bg_opa: 0%
+          - label:
+              id: page_zone_preload
+              x: 22
+              y: 314
+              width: 160
+              height: 36
+              text: "--,- °C"
+              text_color: ${lds_info}
+              text_font: lds_font_d28
+              bg_opa: 0%
+          - label:
+              x: 220
+              y: 292
+              width: 160
+              height: 22
+              text: "Føler"
+              text_color: ${lds_muted}
+              text_font: lds_font_xs
+              bg_opa: 0%
+          - label:
+              id: page_zone_sensor
+              x: 220
+              y: 314
+              width: 180
+              height: 36
+              text: "--"
+              text_color: ${lds_info}
+              text_font: lds_font_md
+              bg_opa: 0%
+          - label:
+              x: 22
+              y: 400
+              width: 200
+              height: 28
+              text: "Zone aktiv"
+              text_color: ${lds_fg}
+              text_font: lds_font_sm
+              bg_opa: 0%
+          - button:
+              id: page_zone_active
+              x: 300
+              y: 388
+              width: 96
+              height: 48
+              bg_color: ${lds_inv_bg}
+              bg_opa: COVER
+              border_width: 0
+              radius: CIRCLE
+              shadow_width: 0
+              pad_all: 0
+              widgets:
+                - label:
+                    id: page_zone_active_knob
+                    x: 52
+                    y: 8
+                    width: 32
+                    height: 32
+                    text: ""
+                    bg_color: ${lds_inv_fg}
+                    bg_opa: COVER
+                    radius: CIRCLE
+              on_click:
+                - lambda: |-
+                    // TODO(trin3): zone enable/disable mangler display-API.
+                    id(touch_display_refresh_token).update();
+
+    # Legacy stubs so older refresh/tests that still mention these ids compile.
+    - label:
+        id: page_zone_detail_room_label
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        text: ""
+        text_font: lds_font_xs
+        bg_opa: 0%
+    - label:
+        id: page_zone_detail_meta_label
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        text: ""
+        text_font: lds_font_xs
+        bg_opa: 0%
+    - label:
+        id: page_zone_detail_current_label
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        text: ""
+        text_font: lds_font_xs
+        bg_opa: 0%
+    - label:
+        id: page_zone_detail_target_label
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        text: ""
+        text_font: lds_font_xs
+        bg_opa: 0%
+    - button:
+        id: page_zone_detail_plus
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+    - button:
+        id: page_zone_detail_minus
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+    - button:
+        id: page_zone_detail_home
+        hidden: true
+        x: 952
+        y: 528
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        widgets:
+          - label:
+              text: "\uF015"
+              text_font: montserrat_22
+              bg_opa: 0%
+        on_click:
+          - lambda: |-
+              id(lune_touch_app).display_set_active_page(0);
+              id(touch_display_refresh_token).update();
+    - obj:
+        id: page_zone_detail_face
+        hidden: true
+        x: 388
+        y: 100
+        width: 248
+        height: 248
+        bg_opa: 0%
+        border_width: 0
+    - image:
+        id: page_zone_detail_halo
+        hidden: true
+        x: 312
+        y: 52
+        src: lune_halo_mark
+    - arc:
+        id: page_zone_detail_arc
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        min_value: 10
+        max_value: 30
+        value: 20
+        adjustable: false
+    - obj:
+        id: page_zone_detail_keypad
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+    - button:
+        id: page_zone_detail_prev
+        hidden: true
+        x: 0
+        y: 80
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        on_click:
+          - lambda: |-
+              if (id(lune_touch_app).display_step_selected_zone(-1))
+                id(touch_display_refresh_token).update();
+    - button:
+        id: page_zone_detail_next
+        hidden: true
+        x: 0
+        y: 80
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        on_click:
+          - lambda: |-
+              if (id(lune_touch_app).display_step_selected_zone(1))
+                id(touch_display_refresh_token).update();
+
+    - button:
+        id: page_zone_detail_controller_0
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_controller_0_label
+              text: "C1"
+              text_font: montserrat_22
+              bg_opa: 0%
+    - button:
+        id: page_zone_detail_controller_1
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_controller_1_label
+              text: "C2"
+              text_font: montserrat_22
+              bg_opa: 0%
+    - button:
+        id: page_zone_detail_controller_2
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_controller_2_label
+              text: "C3"
+              text_font: montserrat_22
+              bg_opa: 0%
+    - button:
+        id: page_zone_detail_controller_3
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_controller_3_label
+              text: "C4"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_chip_0
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_chip_0_label
+              text: "Z1"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_chip_1
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_chip_1_label
+              text: "Z2"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_chip_2
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_chip_2_label
+              text: "Z3"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_chip_3
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_chip_3_label
+              text: "Z4"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_chip_4
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_chip_4_label
+              text: "Z5"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_chip_5
+        hidden: true
+        x: 0
+        y: 520
+        width: 48
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 16
+        widgets:
+          - label:
+              id: page_zone_detail_chip_5_label
+              text: "Z6"
+              text_font: montserrat_22
+              bg_opa: 0%
+
+    - button:
+        id: page_zone_detail_boost
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        widgets:
+          - label:
+              text: "Boost 45 min"
+              text_font: lds_font_xs
+              bg_opa: 0%
+    - button:
+        id: page_zone_detail_away
+        hidden: true
+        x: 0
+        y: 0
+        width: 48
+        height: 48
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        widgets:
+          - label:
+              text: "Away 6 hours"
+              text_font: lds_font_xs
+              bg_opa: 0%

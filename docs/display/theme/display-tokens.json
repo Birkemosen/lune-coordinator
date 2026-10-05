@@ -1,0 +1,243 @@
+{
+  "display": {
+    "$note": "Vægskærm på Lune Touch: LVGL, 1024×600, RGB565. Farverne er de værdier skærmen faktisk kan vise (nærmeste 565-farve, perceptuelt valgt; neutrale grå håndplukket så de ikke får grønt/lilla stik). Ingen alfa: dæmpede flader er forblandede.",
+    "resolution": [
+      1024,
+      600
+    ],
+    "color_depth": 16,
+    "palette": {
+      "dark": {
+        "bg": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
+        "card": {
+          "hex": "#212019",
+          "rgb565": "0x2103"
+        },
+        "raised": {
+          "hex": "#292821",
+          "rgb565": "0x2944"
+        },
+        "field": {
+          "hex": "#191819",
+          "rgb565": "0x18C3"
+        },
+        "line": {
+          "hex": "#313129",
+          "rgb565": "0x3185"
+        },
+        "seg-off": {
+          "hex": "#313129",
+          "rgb565": "0x3185"
+        },
+        "fg": {
+          "hex": "#f7f3ef",
+          "rgb565": "0xF79D"
+        },
+        "muted": {
+          "hex": "#a5a29c",
+          "rgb565": "0xA513"
+        },
+        "faint": {
+          "hex": "#8c8a84",
+          "rgb565": "0x8C50"
+        },
+        "accent": {
+          "hex": "#de7131",
+          "rgb565": "0xDB86"
+        },
+        "accent-ink": {
+          "hex": "#e6824a",
+          "rgb565": "0xE409"
+        },
+        "on-accent": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
+        "info": {
+          "hex": "#6b9ece",
+          "rgb565": "0x6CF9"
+        },
+        "ok": {
+          "hex": "#73b25a",
+          "rgb565": "0x758B"
+        },
+        "warn": {
+          "hex": "#ceaa42",
+          "rgb565": "0xCD48"
+        },
+        "danger": {
+          "hex": "#d67973",
+          "rgb565": "0xD3CE"
+        },
+        "violet": {
+          "hex": "#9479ce",
+          "rgb565": "0x93D9"
+        },
+        "info-bg": {
+          "hex": "#192029",
+          "rgb565": "0x1905"
+        },
+        "ok-bg": {
+          "hex": "#192819",
+          "rgb565": "0x1943"
+        },
+        "warn-bg": {
+          "hex": "#292419",
+          "rgb565": "0x2923"
+        },
+        "danger-bg": {
+          "hex": "#291819",
+          "rgb565": "0x28C3"
+        },
+        "violet-bg": {
+          "hex": "#211c31",
+          "rgb565": "0x20E6"
+        },
+        "inv-bg": {
+          "hex": "#f7f3ef",
+          "rgb565": "0xF79D"
+        },
+        "inv-fg": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        }
+      },
+      "light": {
+        "bg": {
+          "hex": "#fffbf7",
+          "rgb565": "0xFFDE"
+        },
+        "card": {
+          "hex": "#e6e3de",
+          "rgb565": "0xE71B"
+        },
+        "raised": {
+          "hex": "#d6d2ce",
+          "rgb565": "0xD699"
+        },
+        "field": {
+          "hex": "#ffffff",
+          "rgb565": "0xFFFF"
+        },
+        "line": {
+          "hex": "#c5c6bd",
+          "rgb565": "0xC637"
+        },
+        "seg-off": {
+          "hex": "#c5c6bd",
+          "rgb565": "0xC637"
+        },
+        "fg": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
+        "muted": {
+          "hex": "#52514a",
+          "rgb565": "0x5289"
+        },
+        "faint": {
+          "hex": "#635d5a",
+          "rgb565": "0x62EB"
+        },
+        "accent": {
+          "hex": "#e66108",
+          "rgb565": "0xE301"
+        },
+        "accent-ink": {
+          "hex": "#a53d08",
+          "rgb565": "0xA1E1"
+        },
+        "on-accent": {
+          "hex": "#ffffff",
+          "rgb565": "0xFFFF"
+        },
+        "info": {
+          "hex": "#21618c",
+          "rgb565": "0x2311"
+        },
+        "ok": {
+          "hex": "#296121",
+          "rgb565": "0x2B04"
+        },
+        "warn": {
+          "hex": "#6b4d00",
+          "rgb565": "0x6A60"
+        },
+        "danger": {
+          "hex": "#a53131",
+          "rgb565": "0xA186"
+        },
+        "violet": {
+          "hex": "#6341a5",
+          "rgb565": "0x6214"
+        },
+        "info-bg": {
+          "hex": "#cedbde",
+          "rgb565": "0xCEDB"
+        },
+        "ok-bg": {
+          "hex": "#cedbc5",
+          "rgb565": "0xCED8"
+        },
+        "warn-bg": {
+          "hex": "#ded7bd",
+          "rgb565": "0xDEB7"
+        },
+        "danger-bg": {
+          "hex": "#e6d2c5",
+          "rgb565": "0xE698"
+        },
+        "violet-bg": {
+          "hex": "#d6d2de",
+          "rgb565": "0xD69B"
+        },
+        "inv-bg": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
+        "inv-fg": {
+          "hex": "#fffbf7",
+          "rgb565": "0xFFDE"
+        }
+      }
+    },
+    "type": {
+      "xs": 16,
+      "sm": 20,
+      "md": 24,
+      "lg": 32,
+      "xl": 48,
+      "2xl": 72,
+      "hero": 144
+    },
+    "type_digits_only": [
+      "2xl",
+      "hero"
+    ],
+    "size": {
+      "statusbar": 64,
+      "pad": 16,
+      "gap": 12,
+      "house_col": 296,
+      "hit": 64,
+      "hit_lg": 96,
+      "pill_h": 64,
+      "r_card": 20,
+      "r_tile": 14,
+      "r_tile_lg": 16,
+      "r_msg": 12,
+      "seg_w": 8,
+      "seg_gap": 3
+    },
+    "timing": {
+      "return_home_s": 60,
+      "dim_s": 120,
+      "night_from": "22:00",
+      "night_to": "06:00",
+      "refresh_s": 5
+    }
+  }
+}

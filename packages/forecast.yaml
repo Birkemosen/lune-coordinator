@@ -1,0 +1,17 @@
+# =============================================================================
+# Forecast Preload — on-device wind-aware per-zone preload ("Helios-lite")
+# =============================================================================
+# Fetches a 48 h Open-Meteo forecast over HTTPS and issues per-zone setpoint
+# preload offsets through the existing Helios command path (all per-zone safety
+# clamps apply). Auto-quiesces while an external Helios service is enabled.
+#
+# All HTTP I/O runs in a FreeRTOS task on Core 1 (same pattern as the Helios
+# and Asgard components). Kept as migration reference for the coordinator
+# implementation; V6 no longer exposes a Forecast card.
+# Contract: docs/forecast_preload.md
+# =============================================================================
+
+forecast:
+  id: forecast_id
+  zone_controller_id: hv6_zones
+  config_store_id: hv6_config
