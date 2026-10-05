@@ -549,6 +549,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                   {row("mqtt_password", T("hs.mqttPassword"), '<input class="input w-md" type="password" id="mqtt_password" name="mqtt_password" autocomplete="new-password">')}
                   {row("mqtt_topic_prefix", T("hs.mqttPrefix"), '<input class="input w-md" id="mqtt_topic_prefix" name="mqtt_topic_prefix" placeholder="hp/hp1">')}
                   {row("mqtt_hp_id", T("hs.mqttHpId"), '<input class="input w-xs" id="mqtt_hp_id" name="mqtt_hp_id" placeholder="hp1">')}
+                  <p class="hint" data-bind="hs.mqttStatus" aria-live="polite"></p>
                 </details>
               </div>
             </fieldset>
@@ -599,6 +600,19 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {row("dev_name", T("id.name"), f'<input class="input w-md" id="dev_name" name="name" value="{T("device.sample")}">')}
           {row("dev_idle", T("id.idle"), stepper("dev_idle", 5, 0, 120, 1, "min", T("id.idle"), dec=0))}
           {foot_save("settings", T("id.save"))}
+        </form>
+
+        <form class="panel c4" data-save="wifi">
+          <header class="panel-head"><h3>{T("wifi.title")}</h3>{help_btn("help-wifi", T("wifi.title"))}</header>
+          {help_pop("help-wifi", "help.wifi", "docs/Manual.md#wifi")}
+          <dl class="kv">
+            <div><dt>{T("wifi.current")}</dt><dd data-bind="wifi.current">—</dd></div>
+            <div><dt>{T("wifi.status")}</dt><dd data-bind="wifi.status">—</dd></div>
+          </dl>
+          {row("wifi_ssid", T("wifi.ssid"), '<input class="input w-md" id="wifi_ssid" name="ssid" maxlength="32" autocomplete="off" spellcheck="false">')}
+          {row("wifi_password", T("wifi.password"), '<input class="input w-md" type="password" id="wifi_password" name="password" maxlength="64" autocomplete="new-password">')}
+          <p class="hint">{T("wifi.hint")}</p>
+          {foot_save("wifi", T("wifi.save"))}
         </form>
 
         <form class="panel c4" data-save="firmware">
@@ -715,7 +729,10 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "hp.compOn", "hp.compOff", "flow.none", "flow.note", "flow.noteLpm", "flow.zoneTip", "flow.closed", "fc.now", "role.reserve", "role.reserveNow", "role.asgardNow", "role.offOdin", "role.drives", "role.off",
         "driver.odin", "driver.asgard", "now.heat", "now.off", "now.dhw", "planG.odin", "planG.noOdin",
         "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient", "planG.tipHeat", "planG.tipLift",
-        "hs.mqttPasswordSet", "hs.mqttState", "hs.mqttConnected", "hs.mqttDisconnected",
+        "hs.mqttPasswordSet", "hs.mqttState", "hs.mqttConnected", "hs.mqttDisconnected", "hs.mqttOff",
+        "ctrl.editHost", "ctrl.hostInvalid",
+        "wifi.connectedTo", "wifi.notConnected", "wifi.apActive", "wifi.sent", "wifi.needSsid",
+        "wifi.switch.pending", "wifi.switch.connected", "wifi.switch.reverted", "wifi.switch.failed",
         "strip.lease.refused", "strip.lease.none", "strip.charge.now", "strip.charge.insufficient",
         "hs.link.ok", "hs.link.forwarder_off", "hs.link.telemetry_stale", "hs.link.no_room_temperature",
         "hs.link.odin_unreachable", "hs.link.unknown", "hs.odinStatus.disabled", "hs.odinStatus.idle",

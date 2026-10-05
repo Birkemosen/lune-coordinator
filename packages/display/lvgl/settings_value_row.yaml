@@ -5,7 +5,7 @@ button:
   y: ${y}
   width: 696
   height: 56
-  bg_color: ${lt_color_control_bg}
+  bg_color: ${lds_raised}
   bg_opa: 100%
   border_width: 0
   radius: 10
@@ -19,7 +19,7 @@ button:
         width: 380
         height: 28
         text: "${label}"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_18
         long_mode: clip
         bg_opa: 0%
@@ -30,7 +30,7 @@ button:
         width: 272
         height: 28
         text: "${value}"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_18
         text_align: RIGHT
         long_mode: clip

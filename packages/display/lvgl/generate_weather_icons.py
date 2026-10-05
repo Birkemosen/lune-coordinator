@@ -16,7 +16,7 @@ SIZE = 32
 
 def token_rgb(name: str) -> tuple[int, int, int]:
     text = TOKENS.read_text()
-    match = re.search(rf"lt_color_{name}: \"0x([0-9A-Fa-f]{{6}})\"", text)
+    match = re.search(rf"lds_{name}: \"0x([0-9A-Fa-f]{{6}})\"", text)
     if not match:
         raise SystemExit(f"missing token {name}")
     value = int(match.group(1), 16)
@@ -118,34 +118,34 @@ def write(name: str, canvas: list[list[tuple[float, float, float, float]]]) -> N
 
 
 def paint_sun(canvas: list[list[tuple[float, float, float, float]]], cx: float, cy: float, scale: float) -> None:
-    solar = token_rgb("series_solar")
+    solar = token_rgb("warn")
     for i in range(8):
         stamp_ray(canvas, cx, cy, i * math.pi / 4, 7.2 * scale, 11.4 * scale, solar)
     stamp_circle(canvas, cx, cy, 6.2 * scale, solar)
 
 
 def paint_cloud(canvas: list[list[tuple[float, float, float, float]]], ox: float, oy: float) -> None:
-    cloud = token_rgb("text")
+    cloud = token_rgb("fg")
     stamp_circle(canvas, 10 + ox, 18 + oy, 6.2, cloud, 0.92)
     stamp_circle(canvas, 17 + ox, 16 + oy, 7.4, cloud, 0.95)
     stamp_circle(canvas, 23 + ox, 19 + oy, 5.6, cloud, 0.92)
 
 
 def paint_moon(canvas: list[list[tuple[float, float, float, float]]], cx: float, cy: float, scale: float) -> None:
-    text = token_rgb("text")
+    text = token_rgb("fg")
     stamp_circle(canvas, cx, cy, 9.2 * scale, text)
     stamp_disc_cut(canvas, cx + 5.5 * scale, cy - 3.5 * scale, 8.4 * scale)
 
 
 def paint_drops(canvas: list[list[tuple[float, float, float, float]]]) -> None:
-    drop = token_rgb("text")
+    drop = token_rgb("fg")
     for x, y in ((9.5, 24.5), (16.0, 27.5), (23.0, 24.8)):
         stamp_circle(canvas, x, y, 2.3, drop)
         stamp_circle(canvas, x + 0.2, y + 2.6, 1.6, drop)
 
 
 def paint_snow(canvas: list[list[tuple[float, float, float, float]]]) -> None:
-    text = token_rgb("text")
+    text = token_rgb("fg")
     for x, y in ((10.0, 26.0), (16.0, 28.5), (22.5, 25.5)):
         stamp_circle(canvas, x, y, 1.6, text)
         stamp_ray(canvas, x, y, 0.0, 1.4, 4.2, text)

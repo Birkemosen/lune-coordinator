@@ -153,11 +153,33 @@ void LuneTouchCoordinator::on_odin_mqtt_data_(const char *topic, const char *pay
 }
 
 void LuneTouchCoordinator::ensure_odin_mqtt_client_() {
-  if (!odin_mqtt_.enabled || odin_mqtt_.host[0] == '\0')
-    return;
 #if defined(USE_ESP32)
-  if (g_odin_mqtt_handle != nullptr)
+  // esp-mqtt copies broker, credentials and (via on-connect subscribe) topics
+  // when the client starts. Rebuild it whenever the saved settings differ from
+  // what it was started with, or MQTT was switched off — otherwise a rotated
+  // password or new broker only takes effect after a reboot.
+  static std::string g_started_with;
+  std::string wanted;
+  if (odin_mqtt_.enabled && odin_mqtt_.host[0] != '\0') {
+    char port[8];
+    std::snprintf(port, sizeof(port), "%u", static_cast<unsigned>(odin_mqtt_.port));
+    wanted.append(odin_mqtt_.host).append(1, '\x1f').append(port).append(1, '\x1f')
+        .append(odin_mqtt_.username).append(1, '\x1f')
+        .append(odin_mqtt_.password_set ? odin_mqtt_password_ : "").append(1, '\x1f')
+        .append(odin_mqtt_.topic_prefix).append(1, '\x1f').append(odin_mqtt_.hp_id);
+  }
+  if (g_odin_mqtt_handle != nullptr && wanted != g_started_with) {
+    ESP_LOGI(MQTT_TAG, wanted.empty() ? "MQTT disabled; stopping client"
+                                      : "MQTT settings changed; restarting client");
+    esp_mqtt_client_stop(g_odin_mqtt_handle);
+    esp_mqtt_client_destroy(g_odin_mqtt_handle);
+    g_odin_mqtt_handle = nullptr;
+    on_odin_mqtt_disconnected_(esphome::millis());
+    odin_mqtt_client_.reconnect_backoff_ms = 1000;
+  }
+  if (wanted.empty() || g_odin_mqtt_handle != nullptr)
     return;
+  g_started_with = wanted;
   esp_mqtt_client_config_t cfg{};
   char uri[128];
   std::snprintf(uri, sizeof(uri), "mqtt://%s:%u", odin_mqtt_.host,
@@ -175,8 +197,6 @@ void LuneTouchCoordinator::ensure_odin_mqtt_client_() {
   }
   esp_mqtt_client_register_event(g_odin_mqtt_handle, MQTT_EVENT_ANY, odin_mqtt_event_handler, this);
   esp_mqtt_client_start(g_odin_mqtt_handle);
-#else
-  (void) 0;
 #endif
 }
 

@@ -910,7 +910,7 @@ text_sensor:
             if (active_page == 3) {
               const auto paint_toggle = [](lv_obj_t *track, lv_obj_t *knob, bool on) {
                 lv_obj_set_style_bg_color(track,
-                    lv_color_hex(on ? ${lt_color_accent_forest} : ${lt_color_text_faint}), LV_PART_MAIN);
+                    lv_color_hex(on ? ${lds_ok} : ${lds_seg_off}), LV_PART_MAIN);
                 lv_obj_set_x(knob, on ? 36 : 4);
               };
               paint_toggle(id(page_settings_weather_track), id(page_settings_weather_knob),
@@ -1100,7 +1100,7 @@ lvgl:
               y: 0
               width: 1024
               height: 600
-              bg_color: ${lt_color_bg}
+              bg_color: ${lds_bg}
               bg_opa: 100%
               border_width: 0
               radius: 0
@@ -1113,7 +1113,7 @@ lvgl:
                     y: 52
                     width: 1024
                     height: 490
-                    bg_color: ${lt_color_bg}
+                    bg_color: ${lds_bg}
                     bg_opa: 100%
                     border_width: 0
                     radius: 0
@@ -1127,7 +1127,7 @@ lvgl:
                           width: 696
                           height: 36
                           text: "Settings"
-                          text_color: ${lt_color_text}
+                          text_color: ${lds_fg}
                           text_font: lune_latin_18
                           text_align: LEFT
                           long_mode: clip
@@ -1138,7 +1138,7 @@ lvgl:
                           width: 696
                           height: 24
                           text: "HEATING"
-                          text_color: ${lt_color_text_muted}
+                          text_color: ${lds_muted}
                           text_font: montserrat_14
                           long_mode: clip
                           bg_opa: 0%
@@ -1161,7 +1161,7 @@ lvgl:
                           y: 244
                           width: 696
                           height: 1
-                          bg_color: ${lt_color_separator}
+                          bg_color: ${lds_line}
                           bg_opa: 100%
                           border_width: 0
                           radius: 0
@@ -1173,7 +1173,7 @@ lvgl:
                           width: 696
                           height: 24
                           text: "DISPLAY"
-                          text_color: ${lt_color_text_muted}
+                          text_color: ${lds_muted}
                           text_font: montserrat_14
                           long_mode: clip
                           bg_opa: 0%

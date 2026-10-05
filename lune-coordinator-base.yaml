@@ -47,6 +47,7 @@ external_components:
       - ch422g
       - lune_touch_dashboard
       - lune_touch_coordinator
+      - lune_wifi
       - rpi_dpi_rgb
 
 logger:

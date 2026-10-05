@@ -526,6 +526,9 @@ class HouseModel {
   bool update_node_identity(size_t node_index, const char *pairing_fingerprint);
   bool update_node_trust(const char *node_id, NodeTrust trust);
   bool update_node_name(const char *node_id, const char *name);
+  // New address for a paired node; keeps trust, identity and zone bindings.
+  // At least one of hostname / fallback_ip must be non-empty.
+  int update_node_host(const char *node_id, const char *hostname, const char *fallback_ip);
   bool is_node_stale(size_t node_index, uint32_t now_ms) const;
 
   bool bind_zone(const char *room_id, const char *room_name, size_t node_index, size_t zone_index);

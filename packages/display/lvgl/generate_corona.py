@@ -23,7 +23,7 @@ FACE_DIAMETER = 260
 
 def token_rgb(name: str) -> tuple[int, int, int]:
     text = TOKENS.read_text()
-    match = re.search(rf"lt_color_{name}: \"0x([0-9A-Fa-f]{{6}})\"", text)
+    match = re.search(rf"lds_{name}: \"0x([0-9A-Fa-f]{{6}})\"", text)
     if not match:
         raise SystemExit(f"missing token {name}")
     value = int(match.group(1), 16)
@@ -56,7 +56,7 @@ def mix(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[flo
 
 def main() -> None:
     warm = token_rgb("accent")
-    cool = token_rgb("accent_forest")
+    cool = token_rgb("info")
     cx = cy = (SIZE - 1) / 2.0
     inner = FACE_DIAMETER / 2.0
     pixels = bytearray(SIZE * SIZE * 4)

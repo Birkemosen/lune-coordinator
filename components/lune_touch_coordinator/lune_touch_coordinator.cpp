@@ -438,6 +438,42 @@ void format_ipv4_(uint32_t host_order, char *out, size_t out_len) {
 // colons; treat that as the same identity and rewrite to canonical form.
 // Rebranded V6 firmware reports "lv6-<hex>"; it is the same identity, so the
 // prefix is dropped before the hex digits are read (stored ids stay "hv6-").
+bool is_ipv4_text_(const char *text) {
+  if (text == nullptr || text[0] == '\0')
+    return false;
+  int parts = 0;
+  const char *p = text;
+  while (true) {
+    if (!std::isdigit(static_cast<unsigned char>(*p)))
+      return false;
+    int value = 0;
+    int digits = 0;
+    while (std::isdigit(static_cast<unsigned char>(*p))) {
+      value = value * 10 + (*p - '0');
+      if (++digits > 3 || value > 255)
+        return false;
+      p++;
+    }
+    parts++;
+    if (*p == '\0')
+      return parts == 4;
+    if (*p != '.' || parts == 4)
+      return false;
+    p++;
+  }
+}
+
+bool is_hostname_text_(const char *text) {
+  if (text == nullptr || text[0] == '\0' || std::strlen(text) > 63)
+    return false;
+  for (const char *p = text; *p != '\0'; p++) {
+    const unsigned char c = static_cast<unsigned char>(*p);
+    if (!std::isalnum(c) && c != '-' && c != '.')
+      return false;
+  }
+  return true;
+}
+
 void canonicalize_pairing_fingerprint_(const char *raw, char *out, size_t out_len) {
   if (out == nullptr || out_len == 0)
     return;
@@ -1911,6 +1947,22 @@ void LuneTouchCoordinator::poll_task_() {
 
         lan_scan_due = lan_scan_requested_;
         lan_scan_requested_ = false;
+        // A paired V6 that stopped answering has most likely moved to a new IP;
+        // the LAN scan follows it by fingerprint. At most every 30 min, and not
+        // in the first 3 min after boot while nodes are still being polled.
+        if (!lan_scan_due && now > 3UL * 60UL * 1000UL &&
+            (auto_lan_scan_last_ms_ == 0 || now - auto_lan_scan_last_ms_ >= 30UL * 60UL * 1000UL)) {
+          for (size_t i = 0; i < model_.node_count(); i++) {
+            const auto *node = model_.node(i);
+            if (node != nullptr && node->trust != ::lune_touch::NodeTrust::UNPAIRED &&
+                node->pairing_fingerprint[0] != '\0' && model_.is_node_stale(i, now)) {
+              lan_scan_due = true;
+              auto_lan_scan_last_ms_ = now;
+              ESP_LOGI(TAG, "Node %s unreachable; scanning LAN for a moved V6", node->node_id);
+              break;
+            }
+          }
+        }
         node_refresh_requested_ = false;
 
         lease_due = authority_last_renew_ms_ == 0 || now - authority_last_renew_ms_ >= 30000UL;
@@ -7270,6 +7322,31 @@ bool LuneTouchCoordinator::add_node(const char *node_id, const char *hostname, c
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     return false;
   }
+  // Same V6 (fingerprint) at a new address: move the paired node instead of
+  // adding a second one, so trust and zone bindings survive a DHCP change.
+  if (pairing_fingerprint != nullptr && pairing_fingerprint[0] != '\0') {
+    for (size_t i = 0; i < model_.node_count(); i++) {
+      const auto *existing = model_.node(i);
+      if (existing == nullptr || existing->pairing_fingerprint[0] == '\0' ||
+          !pairing_fingerprints_match_(existing->pairing_fingerprint, pairing_fingerprint))
+        continue;
+      char existing_id[sizeof(existing->node_id)];
+      std::strncpy(existing_id, existing->node_id, sizeof(existing_id) - 1);
+      existing_id[sizeof(existing_id) - 1] = '\0';
+      rehome_node_locked_(i, hostname, fallback_ip);
+      give_state_lock_();
+      save_registry_();
+      char id_esc[48];
+      json_escape_(existing_id, id_esc, sizeof(id_esc));
+      snprintf(response, capacity, "{\"result\":\"moved\",\"node_id\":\"%s\",\"node_index\":%u}",
+               id_esc, static_cast<unsigned>(i));
+      char event[112];
+      snprintf(event, sizeof(event), "node %s moved to a new address", existing_id);
+      log_event_("info", "commissioning", event);
+      kick_task_(poll_task_handle_);
+      return true;
+    }
+  }
   const int index = model_.upsert_node(node_id, hostname, fallback_ip, "lune-v6", "unknown", ::lune_touch::NodeTrust::PAIRED);
   if (index < 0) {
     give_state_lock_();
@@ -7571,7 +7648,31 @@ void LuneTouchCoordinator::discover_v6_on_lan_() {
   if (found_count < MAX_LAN_CANDIDATES)
     flush_batch();
 
+  bool healed = false;
   if (take_state_lock_(250)) {
+    // A paired V6 that answers with its own fingerprint at a different IP has
+    // moved (DHCP, new router or WiFi password): follow it. Polling can't, since
+    // the stale address no longer answers or answers as another device.
+    for (uint8_t c = 0; c < found_count; c++) {
+      if (found[c].pairing_fingerprint[0] == '\0')
+        continue;
+      for (size_t i = 0; i < model_.node_count(); i++) {
+        const auto *node = model_.node(i);
+        if (node == nullptr || node->pairing_fingerprint[0] == '\0' ||
+            !pairing_fingerprints_match_(node->pairing_fingerprint, found[c].pairing_fingerprint))
+          continue;
+        const bool hostname_is_ip = node->hostname[0] == '\0' || is_ipv4_text_(node->hostname);
+        if (std::strcmp(node->fallback_ip, found[c].ip) == 0 &&
+            (!hostname_is_ip || node->hostname[0] == '\0' || std::strcmp(node->hostname, found[c].ip) == 0))
+          break;  // already there
+        char hostname[sizeof(node->hostname)];
+        std::strncpy(hostname, hostname_is_ip ? "" : node->hostname, sizeof(hostname) - 1);
+        hostname[sizeof(hostname) - 1] = '\0';
+        ESP_LOGI(TAG, "LAN scan: node %s moved to %s", node->node_id, found[c].ip);
+        healed |= rehome_node_locked_(i, hostname, found[c].ip);
+        break;
+      }
+    }
     lan_candidate_count_ = found_count;
     for (uint8_t i = 0; i < found_count; i++)
       lan_candidates_[i] = found[i];
@@ -7580,6 +7681,11 @@ void LuneTouchCoordinator::discover_v6_on_lan_() {
     give_state_lock_();
   }
   ESP_LOGI(TAG, "LAN scan finished, %u V6 candidate(s)", static_cast<unsigned>(found_count));
+  if (healed) {
+    save_registry_();
+    log_event_("info", "commissioning", "LAN scan updated a moved node's address");
+    kick_task_(poll_task_handle_);
+  }
 }
 
 bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
@@ -7662,6 +7768,75 @@ bool LuneTouchCoordinator::set_node_profile(const char *node_id, const char *nam
   char event[112];
   snprintf(event, sizeof(event), "renamed node %s", node_id);
   log_event_("info", "commissioning", event);
+  return true;
+}
+
+bool LuneTouchCoordinator::rehome_node_locked_(size_t index, const char *hostname,
+                                               const char *fallback_ip) {
+  const auto *node = model_.node(index);
+  if (node == nullptr || index >= ::lune_touch::MAX_NODES)
+    return false;
+  char node_id[sizeof(node->node_id)];
+  std::strncpy(node_id, node->node_id, sizeof(node_id) - 1);
+  node_id[sizeof(node_id) - 1] = '\0';
+  if (model_.update_node_host(node_id, hostname, fallback_ip) < 0)
+    return false;
+  // A remembered host would keep commands going to the old address.
+  node_last_success_host_[index][0] = '\0';
+  return true;
+}
+
+bool LuneTouchCoordinator::set_node_host(const char *node_id, const char *host, char *response,
+                                         size_t capacity) {
+  if (node_id == nullptr || node_id[0] == '\0') {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_not_found\"}");
+    return false;
+  }
+  const bool ip = is_ipv4_text_(host);
+  if (!ip && !is_hostname_text_(host)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_host\"}");
+    return false;
+  }
+  if (!take_state_lock_(250)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  int index = -1;
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    const auto *node = model_.node(i);
+    if (node != nullptr && std::strcmp(node->node_id, node_id) == 0) {
+      index = static_cast<int>(i);
+      break;
+    }
+  }
+  bool stored = false;
+  if (index >= 0) {
+    const auto *node = model_.node(static_cast<size_t>(index));
+    // An IP replaces both fields (a stale hostname would be tried first); a
+    // hostname keeps the last known IP as fallback — the poll refreshes it and
+    // the fingerprint check rejects a host that answers as another V6.
+    char keep_ip[sizeof(node->fallback_ip)];
+    std::strncpy(keep_ip, node->fallback_ip, sizeof(keep_ip) - 1);
+    keep_ip[sizeof(keep_ip) - 1] = '\0';
+    stored = ip ? rehome_node_locked_(static_cast<size_t>(index), "", host)
+                : rehome_node_locked_(static_cast<size_t>(index), host, keep_ip);
+  }
+  give_state_lock_();
+  if (!stored) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_not_found\"}");
+    return false;
+  }
+  save_registry_();
+  char node_id_esc[48];
+  char host_esc[136];
+  json_escape_(node_id, node_id_esc, sizeof(node_id_esc));
+  json_escape_(host, host_esc, sizeof(host_esc));
+  snprintf(response, capacity, "{\"result\":\"stored\",\"node_id\":\"%s\",\"host\":\"%s\"}",
+           node_id_esc, host_esc);
+  char event[128];
+  snprintf(event, sizeof(event), "node %s moved to %s", node_id, host);
+  log_event_("info", "commissioning", event);
+  kick_task_(poll_task_handle_);
   return true;
 }
 
@@ -8998,6 +9173,8 @@ bool LuneTouchCoordinator::set_heat_source_settings(
   std::strncpy(asgard_mode_, heat_source_.enabled ? "advisory" : "disabled", sizeof(asgard_mode_) - 1);
   asgard_mode_[sizeof(asgard_mode_) - 1] = '\0';
   save_settings_();
+  // Apply MQTT changes now: the Odin task rebuilds the client when they differ.
+  kick_task_(odin_task_handle_);
   char escaped_host[128];
   char escaped_variable[96];
   char escaped_write[256];
@@ -10264,11 +10441,11 @@ uint8_t LuneTouchCoordinator::display_zone_valve_pct(uint8_t node_index, uint8_t
 uint32_t LuneTouchCoordinator::display_zone_status_color(uint8_t node_index,
                                                          uint8_t physical_zone_index) const {
   if (!take_state_lock_(50))
-    return lune::tokens::kDisabled;
+    return lune::tokens::kFaint;
   const auto *node = model_.node(node_index);
   if (node == nullptr || !node->reachable || model_.is_node_stale(node_index, esphome::millis())) {
     give_state_lock_();
-    return lune::tokens::kDisabled;
+    return lune::tokens::kFaint;
   }
   if (node_index < ::lune_touch::MAX_NODES && node_telemetry_[node_index].has_motor_fault &&
       node_telemetry_[node_index].motor_fault) {
@@ -10286,14 +10463,14 @@ uint32_t LuneTouchCoordinator::display_zone_status_color(uint8_t node_index,
       break;
     }
   }
-  uint32_t color = lune::tokens::kDisabled;
+  uint32_t color = lune::tokens::kFaint;
   if (live == nullptr || !live->fresh)
-    color = live == nullptr ? lune::tokens::kDisabled : lune::tokens::kDanger;
+    color = live == nullptr ? lune::tokens::kFaint : lune::tokens::kDanger;
   else if (std::strcmp(live->status, "fault") == 0)
     color = lune::tokens::kDanger;
   else if (std::strcmp(live->status, "heat") == 0 || std::strcmp(live->status, "call") == 0 ||
            std::strcmp(live->status, "preheat") == 0)
-    color = lune::tokens::kWarn;
+    color = lune::tokens::kAccent;
   else {
     float temperature = NAN;
     float setpoint = NAN;
@@ -10307,7 +10484,7 @@ uint32_t LuneTouchCoordinator::display_zone_status_color(uint8_t node_index,
         std::fabs(temperature - setpoint) <= 0.5f)
       color = lune::tokens::kOk;
     else
-      color = lune::tokens::kDisabled;
+      color = lune::tokens::kFaint;
   }
   give_state_lock_();
   return color;
@@ -10316,7 +10493,7 @@ uint32_t LuneTouchCoordinator::display_zone_status_color(uint8_t node_index,
 std::string LuneTouchCoordinator::display_zone_status_icon(uint8_t node_index,
                                                            uint8_t physical_zone_index) const {
   const uint32_t color = display_zone_status_color(node_index, physical_zone_index);
-  if (color == lune::tokens::kWarn)
+  if (color == lune::tokens::kAccent)
     return DISPLAY_ICON_BARS;
   if (color == lune::tokens::kOk)
     return DISPLAY_ICON_OK;
@@ -10460,7 +10637,7 @@ std::string LuneTouchCoordinator::display_circulation_status_text() const {
 
 uint32_t LuneTouchCoordinator::display_circulation_status_color() const {
   if (!take_state_lock_(50))
-    return lune::tokens::kTextMuted;
+    return lune::tokens::kMuted;
   const CirculationUiStatus status =
       circulation_ui_status_(circulation_, esphome::millis(), CIRCULATION_STALE_MS);
   give_state_lock_();
@@ -10473,7 +10650,7 @@ uint32_t LuneTouchCoordinator::display_circulation_status_color() const {
     case CirculationUiStatus::Waiting:
     case CirculationUiStatus::Hidden:
     default:
-      return lune::tokens::kTextMuted;
+      return lune::tokens::kMuted;
   }
 }
 
@@ -10610,17 +10787,17 @@ uint8_t LuneTouchCoordinator::display_forecast_hour_sky(uint8_t index) const {
 
 uint32_t LuneTouchCoordinator::display_forecast_hour_color(uint8_t index) const {
   if (!take_state_lock_(50))
-    return lune::tokens::kDisabled;
+    return lune::tokens::kFaint;
   ForecastHourState hour{};
   const bool ok = forecast_display_hour_(forecast_hours_, forecast_hours_count_, index, &hour);
   give_state_lock_();
   if (!ok)
-    return lune::tokens::kDisabled;
+    return lune::tokens::kFaint;
   if (hour.temp_c < 0.0f)
-    return lune::tokens::kSeriesCool;
+    return lune::tokens::kInfo;
   if (hour.temp_c >= 10.0f)
-    return lune::tokens::kSeriesHeat;
-  return lune::tokens::kSeriesMeasured;
+    return lune::tokens::kAccent;
+  return lune::tokens::kFg;
 }
 
 std::string LuneTouchCoordinator::display_forecast_age_text() const {
@@ -10643,15 +10820,15 @@ std::string LuneTouchCoordinator::display_forecast_age_text() const {
 
 uint32_t LuneTouchCoordinator::display_forecast_age_color() const {
   if (!take_state_lock_(50))
-    return lune::tokens::kDisabled;
+    return lune::tokens::kFaint;
   const uint32_t fetched = forecast_last_fetch_ms_;
   give_state_lock_();
   if (fetched == 0)
-    return lune::tokens::kDisabled;
+    return lune::tokens::kFaint;
   const uint32_t age_ms = esphome::millis() - fetched;
   if (age_ms >= FORECAST_AUTO_FETCH_INTERVAL_MS)
     return lune::tokens::kWarn;
-  return lune::tokens::kAccent;
+  return lune::tokens::kInfo;
 }
 
 bool LuneTouchCoordinator::display_problem_visible() const {
@@ -10877,7 +11054,7 @@ uint32_t LuneTouchCoordinator::display_wifi_color() const {
       return lune::tokens::kOk;
     case 4:
     case 3:
-      return lune::tokens::kText;
+      return lune::tokens::kFg;
     default:
       return lune::tokens::kWarn;
   }

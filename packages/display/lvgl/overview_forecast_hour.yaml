@@ -96,7 +96,7 @@ obj:
         width: 76
         height: 22
         text: "--"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_16
         text_align: CENTER
         long_mode: clip
@@ -108,7 +108,7 @@ obj:
         width: 76
         height: 18
         text: "--"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip
@@ -119,7 +119,7 @@ obj:
         y: 82
         width: 60
         height: 1
-        bg_color: ${lt_color_separator}
+        bg_color: ${lds_line}
         bg_opa: 100%
         border_width: 0
         radius: 0
@@ -132,7 +132,7 @@ obj:
         width: 76
         height: 18
         text: "--:--"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip

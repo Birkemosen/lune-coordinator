@@ -66,6 +66,7 @@ class LuneTouchDashboard : public Component, public AsyncWebHandler {
   void send_error_(ApiRequest &api, int code, const char *err_code, const char *message);
   void send_write_result_(ApiRequest &api, bool accepted, int failure_code = 400);
   esp_err_t handle_raw_post_(httpd_req_t *request);
+  void write_wifi_json_(char *out, size_t capacity);
   static esp_err_t raw_post_handler_(httpd_req_t *request);
   bool lock_api_buffers_(uint32_t timeout_ms = 2000);
   void unlock_api_buffers_();

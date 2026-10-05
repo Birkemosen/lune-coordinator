@@ -332,6 +332,29 @@ static void test_remove_node_remaps_zones() {
   expect(!model.remove_node("missing"), "registry: reject missing node remove");
 }
 
+static void test_update_node_host_keeps_identity() {
+  HouseModel model;
+  model.upsert_node("192-168-1-20", "", "192.168.1.20", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.update_node_identity(0, "hv6-aabbccddeeff");
+  model.bind_zone("living", "Living", 0, 0);
+  model.mark_node_seen(0, 1000);
+
+  expect(model.update_node_host("192-168-1-20", "", "192.168.1.77") == 0, "host: move by IP");
+  const auto *node = model.node(0);
+  expect(node != nullptr && std::strcmp(node->fallback_ip, "192.168.1.77") == 0, "host: new IP stored");
+  expect(std::strcmp(node->node_id, "192-168-1-20") == 0, "host: node id unchanged");
+  expect(node->trust == NodeTrust::TRUSTED, "host: trust kept");
+  expect(std::strcmp(node->pairing_fingerprint, "hv6-aabbccddeeff") == 0, "host: fingerprint kept");
+  expect(!node->reachable, "host: reachability unknown until next poll");
+  expect(model.resolve_room("living").binding != nullptr, "host: zone binding kept");
+  expect(model.update_node_host("192-168-1-20", "hv6.local", "") == 0 &&
+             std::strcmp(model.node(0)->hostname, "hv6.local") == 0,
+         "host: move by hostname");
+  expect(model.update_node_host("192-168-1-20", "", "") < 0, "host: reject empty address");
+  expect(model.update_node_host("missing", "", "10.0.0.1") < 0, "host: reject unknown node");
+  expect(model.node_count() == 1, "host: no second node");
+}
+
 static void test_logical_room_multiple_loops() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
@@ -1342,6 +1365,7 @@ static void test_room_physics_contract_vectors() {
 
 int main() {
   test_node_staleness();
+  test_update_node_host_keeps_identity();
   test_node_unreachable_marks_zones_stale();
   test_node_trust_updates();
   test_zone_registry();

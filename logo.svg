@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none" role="img" aria-label="Lune">
-  <!-- Generated from LDS tokens.json by generate_tokens.py. Do not edit. -->
+  <!-- Generated from lune-design-system tokens/brand.json by tools/lds_display.py. Do not edit. -->
     <defs>
       <filter id="lm-card-glow" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur stdDeviation="10" result="blur"/>

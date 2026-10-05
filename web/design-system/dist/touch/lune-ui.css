@@ -1284,8 +1284,8 @@
   .fc-legend .ldhw  { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--info) 70%, transparent); }
   .fc-legend .lleg  { height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 75%, transparent) 0 3px, color-mix(in srgb, var(--info) 35%, transparent) 3px 6px); }
   .fc-legend .llift { border-top: 3px solid var(--violet); border-radius: var(--r-pill); }
-  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: var(--accent); }
-  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: var(--warn); }
+  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--accent-ink) 0 3px, color-mix(in srgb, var(--accent) 25%, transparent) 3px 6px); }
+  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--warn) 0 3px, color-mix(in srgb, var(--warn) 25%, transparent) 3px 6px); }
 
   /* Plan (Lune Touch): 24 t frem fra nu. Venstre kolonne = spornavn, højre = tidsakse
      (--a/--b = fra/til i timer fra nu). Øverste spor: Odin — planlagt varme som søjler
@@ -1339,8 +1339,15 @@
   .plan-lift { bottom: -6px; height: 3px; background: var(--violet); }
   .plan-seg { top: 3px; bottom: 3px; }
   .plan-seg[data-kind="preload"] { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  .plan-seg[data-kind="charge"] { background: var(--accent); }
-  .plan-seg[data-kind="charge"][data-insufficient] { background: var(--warn); }
+  /* Opladning er skraveret, så den ikke ligner Odins massive rumvarme-søjler. */
+  .plan-seg[data-kind="charge"] {
+    background: repeating-linear-gradient(135deg, var(--accent-ink) 0 3px,
+                                          color-mix(in srgb, var(--accent) 25%, transparent) 3px 6px);
+  }
+  .plan-seg[data-kind="charge"][data-insufficient] {
+    background: repeating-linear-gradient(135deg, var(--warn) 0 3px,
+                                          color-mix(in srgb, var(--warn) 25%, transparent) 3px 6px);
+  }
   .plan-x { grid-column: 2; position: relative; height: 1.4em; font-size: var(--fs-xs); color: var(--faint); }
   .plan-x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
   .plan-x span:first-child { transform: none; }
@@ -1417,8 +1424,7 @@
     .fc-icons:not([data-hourly]) .ic:nth-child(even) { display: none; }   /* ikon hver 6. time */
     .fc.fc--dual { grid-template-columns: 26px minmax(0, 1fr) 34px; }
     .fc-dirs > :nth-child(even) { visibility: hidden; }
-    .fc-x span:not(.d):not(:first-child) { visibility: hidden; }  /* kun ugedage */
-    .fc-x span:nth-child(3), .fc-x span:nth-child(7), .fc-x span:nth-child(11) { visibility: visible; }
+    :is(.fc-x, .plan-x) span.m { visibility: hidden; }  /* 3-timers mærker kun på bred skærm */
   }
 
   /* Signaturforklaring i panelhovedet */

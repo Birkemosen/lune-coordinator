@@ -99,6 +99,20 @@
         });
         return { result: 'stored', node_id: id };
       }
+      var mh = path.match(/^\/nodes\/([^/]+)\/host$/);
+      if (mh && body && body.host) {
+        var isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(body.host);
+        mockNodeList.forEach(function (n) {
+          if (n.id !== decodeURIComponent(mh[1])) return;
+          if (isIp) { n.ip = body.host; n.hostname = ''; } else n.hostname = body.host;
+        });
+        return { result: 'stored' };
+      }
+      if (path === '/wifi' && body && body.ssid) {
+        mockWifi = { ssid: mockWifi.ssid, connected: true, ap_active: false, 'switch': 'pending', target_ssid: body.ssid };
+        setTimeout(function () { mockWifi = { ssid: body.ssid, connected: true, ap_active: false, 'switch': 'connected', target_ssid: body.ssid }; }, 1500);
+        return mockWifi;
+      }
       var prof = path.match(/^\/nodes\/([^/]+)\/profile$/);
       if (prof && body && body.name) {
         mockNodeList.forEach(function (n) { if (n.id === decodeURIComponent(prof[1])) n.name = body.name; });
@@ -171,6 +185,8 @@
     }
   };
 
+  var mockWifi = { ssid: 'Hjemme', connected: true, ap_active: false, 'switch': 'none', target_ssid: '' };
+
   var mockNodeList = [
     { id: 'v6-a', name: 'Ground floor', hostname: 'lune-v6-a.local', ip: '192.168.1.110', trust_label: 'trusted', reachable: true, health: { mapped_zones: 6 }, lease: 'refused', runtime: { flow_c: 33.1, return_c: 29.9 } },
     { id: 'v6-b', name: '', device_name: '1. Sal', hostname: 'lune-v6-b.local', ip: '192.168.1.106', trust_label: 'trusted', reachable: true, health: { mapped_zones: 5 }, lease: 'granted', runtime: { flow_c: 31.4, return_c: 27.8 } },
@@ -221,6 +237,7 @@
     }
     if (path === '/nodes') return { nodes: mockNodeList };
     if (path === '/nodes/scan') return mockScan();
+    if (path === '/wifi') return mockWifi;
     if (path === '/strategy') {
       return { weighting: { basis: 'area' }, physical_house_temperature_c: 20.3, house_comfort_target_c: 20.5 };
     }
@@ -1157,7 +1174,7 @@
       var host = f.hostname || f.ip || '';
       return '<div class="field row"><span class="muted">' + esc(t('ctrl.found')) + '</span>' +
         '<span class="mono">' + esc(host) + '</span>' +
-        '<button class="btn" type="button" data-action="add-found" data-host="' + esc(host) + '">' + esc(t('ctrl.addRow')) + '</button></div>';
+        '<button class="btn" type="button" data-action="add-found" data-host="' + esc(host) + '" data-fp="' + esc(f.pairing_fingerprint || '') + '">' + esc(t('ctrl.addRow')) + '</button></div>';
     }).join('');
   }
 
@@ -1212,7 +1229,14 @@
         '<button class="btn" type="button" popovertarget="' + pop + '" popovertargetaction="hide">' + esc(t('common.cancel')) + '</button>' +
         '<button class="btn danger-solid" type="button" data-action="remove-node" data-id="' + esc(n.id) + '">' + esc(t('ctrl.removeDo')) + '</button>' +
         '</div></div>';
-      return '<tr data-node="' + esc(n.id) + '"><td>' + nameCell + '</td><td class="mono">' + esc(addr) +
+      // Address is editable: a V6 that got a new IP (DHCP, new router, WiFi
+      // password) keeps its trust and zones when it is moved here.
+      var addrCell = '<div class="name-edit">' +
+        '<span class="mono" data-name>' + esc(addr || '—') + '</span>' +
+        '<button type="button" class="icon-btn" data-action="edit-node-host" data-id="' + esc(n.id) + '" aria-label="' + esc(t('ctrl.editHost')) + '" title="' + esc(t('ctrl.editHost')) + '">' + PENCIL + '</button>' +
+        '<input class="input mono" hidden value="' + esc(addr) + '" placeholder="192.168.1.50" data-rehost="' + esc(n.id) + '" aria-label="' + esc(t('ctrl.editHost')) + '" autocomplete="off" spellcheck="false">' +
+        '</div>';
+      return '<tr data-node="' + esc(n.id) + '"><td>' + nameCell + '</td><td>' + addrCell +
         '</td><td><span class="badge' + (badge.cls ? ' ' + badge.cls : '') + '">' + esc(t(badge.key)) + '</span></td><td class="num">' +
         esc(String(zoneCountFor(n, index))) + '</td><td>' + remove + '</td></tr>';
     }).join('') || '<tr><td colspan="5" class="muted">' + esc(t('ctrl.empty')) + '</td></tr>';
@@ -1545,7 +1569,24 @@
     setIf('mqtt_hp_id', mq.hp_id || '');
     var pw = qs('#mqtt_password');
     if (pw) pw.placeholder = mq.password_set ? t('hs.mqttPasswordSet') : '';
+    // Saved is not connected: show what the client actually does.
+    setText('hs.mqttStatus', !mq.enabled ? t('hs.mqttOff')
+      : t('hs.mqttState', { s: mq.connected ? t('hs.mqttConnected')
+        : t('hs.mqttDisconnected') + (mq.last_error ? ' (' + mq.last_error + ')' : '') }));
     resnapForms(['heat-source']);
+  }
+
+  function applyWifi(w) {
+    if (!w) return;
+    setText('wifi.current', w.connected && w.ssid ? w.ssid : '—');
+    var sw = w['switch'];
+    var status = (sw && sw !== 'none')
+      ? t('wifi.switch.' + sw, { ssid: w.target_ssid || '' })
+      : (w.connected ? t('wifi.connectedTo') : (w.ap_active ? t('wifi.apActive') : t('wifi.notConnected')));
+    setText('wifi.status', status);
+    var ssidEl = qs('#wifi_ssid');
+    if (ssidEl && document.activeElement !== ssidEl && !ssidEl.value && w.ssid) ssidEl.value = w.ssid;
+    resnapForms(['wifi']);
   }
 
   function setShow(key, on) {
@@ -1606,11 +1647,11 @@
     for (var j = 0; j <= H; j++) {
       var hh = (start + j) % 24;
       if (j === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
-      if (hh % 6 !== 0 || j > H - 2) continue;
+      if (hh % 3 !== 0 || j < 2 || j > H - 2) continue;  // keep clear of the "Now" label
       var left = (j / H * 100).toFixed(2) + '%';
       x += hh === 0
         ? '<span class="d" style="left:' + left + '">' + esc(new Date(Date.now() + j * 3600000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
-        : '<span style="left:' + left + '">' + String(hh).padStart(2, '0') + '</span>';
+        : '<span' + (hh % 6 ? ' class="m"' : '') + ' style="left:' + left + '">' + String(hh).padStart(2, '0') + '</span>';
     }
     var html = '<span></span><div class="plan-x">' + x + '</div>';
     // Odin lane: planned energy per hour + Touch's lift of Odin's comfort band.
@@ -1928,7 +1969,8 @@
       dirs.innerHTML = dh;
     }
 
-    // x-axis on the clock (00/06/12/18): weekday at midnight, hour otherwise.
+    // x-axis on the clock every 3 h: weekday at midnight, hour otherwise.
+    // 03/09/15/21 are minor ticks (.m) that narrow screens hide.
     var xaxis = qs('.fc-x');
     if (xaxis && hours[0] && hours[0].timestamp_s) {
       var lang = (i18n._lang || document.documentElement.lang || 'en');
@@ -1936,13 +1978,13 @@
       var span = Math.max(hours.length - 1, 1);
       var h0 = new Date(t0 * 1000).getHours();
       var xs = '';
-      for (var j = (6 - (h0 % 6)) % 6; j <= span; j += 6) {
+      for (var j = (3 - (h0 % 3)) % 3; j <= span; j += 3) {
         var dd = new Date((t0 + j * 3600) * 1000);
         var hh = dd.getHours();
         var left = (j / span * 100).toFixed(2) + '%';
         xs += hh === 0
           ? '<span class="d" style="left:' + left + '">' + esc(dd.toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
-          : '<span style="left:' + left + '">' + String(hh).padStart(2, '0') + '</span>';
+          : '<span' + (hh % 6 ? ' class="m"' : '') + ' style="left:' + left + '">' + String(hh).padStart(2, '0') + '</span>';
       }
       xaxis.classList.add('fc-x--abs');
       xaxis.innerHTML = xs;
@@ -2218,7 +2260,7 @@
 
   async function refresh() {
     try {
-      var paths = ['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/plan', '/heat-source', '/heat-source/control', '/odin/mqtt', '/settings', '/diagnostics', '/commands'];
+      var paths = ['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/plan', '/heat-source', '/heat-source/control', '/odin/mqtt', '/settings', '/diagnostics', '/commands', '/wifi'];
       var results = await Promise.all(paths.map(function (p) {
         return get(p).then(function (v) { return { p: p, v: v }; }).catch(function () { return { p: p, v: null }; });
       }));
@@ -2234,6 +2276,7 @@
       applyHeatPlan(map['/plan']);
       applyHeatControl(map['/heat-source/control']);
       applyOdinMqtt(map['/odin/mqtt']);
+      applyWifi(map['/wifi']);
       applySettings(map['/settings']);
       applyDiagnostics(map['/diagnostics']);
       applyCommands(map['/commands']);
@@ -2629,6 +2672,21 @@
         });
       } else if (key === 'weather') {
         await post('/forecast/settings', { latitude: data.latitude, longitude: data.longitude, max_boost_c: data.wx_boost });
+      } else if (key === 'wifi') {
+        var ssid = String(data.ssid || '').trim();
+        if (!ssid) { formStatus(form, t('wifi.needSsid'), false); return; }
+        applyWifi(await post('/wifi', { ssid: ssid, password: data.password || '' }));
+        var pwEl = qs('#wifi_password');
+        if (pwEl) pwEl.value = '';
+        setText('wifi.status', t('wifi.sent'));
+        // Follow the switch; the page may drop while the radio reconnects.
+        var tries = 0;
+        var follow = setInterval(function () {
+          get('/wifi').then(function (w) {
+            applyWifi(w);
+            if (!w || w['switch'] !== 'pending' || ++tries > 30) clearInterval(follow);
+          }).catch(function () { if (++tries > 30) clearInterval(follow); });
+        }, 2000);
       } else if (key === 'settings') {
         var idleMin = Number(data.dev_idle);
         await post('/settings', {
@@ -2748,7 +2806,7 @@
         copyDiagnostics(btn);
         return;
       }
-      if (action === 'edit-node-name') { beginRename(btn); return; }
+      if (action === 'edit-node-name' || action === 'edit-node-host') { beginRename(btn); return; }
       if (action === 'scan-nodes') {
         btn.setAttribute('aria-busy', 'true');
         try {
@@ -2770,6 +2828,9 @@
       if (action === 'add-found') {
         var host = btn.getAttribute('data-host') || '';
         var foundPayload = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? { ip: host } : { hostname: host };
+        // With the fingerprint the Touch moves an already paired V6 instead of adding it twice.
+        var fp = btn.getAttribute('data-fp');
+        if (fp) foundPayload.pairing_fingerprint = fp;
         await post('/nodes', foundPayload);
         state.scanFound = (state.scanFound || []).filter(function (f) {
           return (f.hostname || f.ip) !== host;
@@ -2898,6 +2959,23 @@
     }
   }
 
+  async function commitHost(input) {
+    if (!input || input.dataset.saving) return;
+    var id = input.getAttribute('data-rehost');
+    var host = String(input.value || '').trim();
+    var node = state.nodes.find(function (n) { return String(n.id) === id; });
+    if (!host || (node && host === (node.ip || node.hostname || ''))) { applyNodes(state.nodes); return; }
+    input.dataset.saving = '1';
+    try {
+      await post('/nodes/' + encodeURIComponent(id) + '/host', { host: host });
+      refresh();
+    } catch (err) {
+      delete input.dataset.saving;
+      input.setAttribute('aria-invalid', 'true');
+      input.title = t('ctrl.hostInvalid');
+    }
+  }
+
   // Progressive enhancement: stepper, help placement, file name, dismiss device menu, save hook, actions
   var helpBtn = null;
   function placeHelp(pop, btn) {
@@ -2967,13 +3045,16 @@
 
   document.addEventListener('focusout', function (e) {
     var input = e.target;
-    if (!input || !input.getAttribute || !input.getAttribute('data-rename') || input.hidden) return;
-    commitRename(input);
+    if (!input || !input.getAttribute || input.hidden) return;
+    if (input.getAttribute('data-rename')) commitRename(input);
+    else if (input.getAttribute('data-rehost')) commitHost(input);
   });
   document.addEventListener('keydown', function (e) {
     var input = e.target;
-    if (!input || !input.getAttribute || !input.getAttribute('data-rename')) return;
-    if (e.key === 'Enter') { e.preventDefault(); commitRename(input); }
+    if (!input || !input.getAttribute) return;
+    var rename = input.getAttribute('data-rename'), rehost = input.getAttribute('data-rehost');
+    if (!rename && !rehost) return;
+    if (e.key === 'Enter') { e.preventDefault(); if (rename) commitRename(input); else commitHost(input); }
     if (e.key === 'Escape') { e.preventDefault(); applyNodes(state.nodes); }
   });
 
