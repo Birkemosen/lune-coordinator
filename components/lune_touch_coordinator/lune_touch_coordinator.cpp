@@ -563,29 +563,41 @@ void probe_tcp80_batch_(const uint32_t *ips, size_t count, uint32_t timeout_ms, 
     }
     fds[i] = fd;
   }
-  fd_set wait;
-  FD_ZERO(&wait);
-  int max_fd = -1;
-  for (size_t i = 0; i < count; i++) {
-    if (fds[i] < 0)
-      continue;
-    FD_SET(fds[i], &wait);
-    if (fds[i] > max_fd)
-      max_fd = fds[i];
-  }
-  if (max_fd >= 0) {
+  // Keep waiting until every socket has settled or the deadline passes: one
+  // select() returns as soon as any host answers (a refusal counts), which
+  // used to abandon the rest of the batch before they connected.
+  bool pending[kMaxBatch]{};
+  for (size_t i = 0; i < count; i++)
+    pending[i] = fds[i] >= 0;
+  const uint32_t start = esphome::millis();
+  while (true) {
+    fd_set wait;
+    FD_ZERO(&wait);
+    int max_fd = -1;
+    for (size_t i = 0; i < count; i++) {
+      if (!pending[i])
+        continue;
+      FD_SET(fds[i], &wait);
+      if (fds[i] > max_fd)
+        max_fd = fds[i];
+    }
+    const uint32_t elapsed = esphome::millis() - start;
+    if (max_fd < 0 || elapsed >= timeout_ms)
+      break;
+    const uint32_t left = timeout_ms - elapsed;
     timeval tv{};
-    tv.tv_sec = static_cast<time_t>(timeout_ms / 1000);
-    tv.tv_usec = static_cast<suseconds_t>((timeout_ms % 1000) * 1000);
-    if (::select(max_fd + 1, nullptr, &wait, nullptr, &tv) > 0) {
-      for (size_t i = 0; i < count; i++) {
-        if (fds[i] < 0 || !FD_ISSET(fds[i], &wait))
-          continue;
-        int err = 0;
-        socklen_t err_len = sizeof(err);
-        if (::getsockopt(fds[i], SOL_SOCKET, SO_ERROR, &err, &err_len) == 0 && err == 0)
-          open_out[i] = true;
-      }
+    tv.tv_sec = static_cast<time_t>(left / 1000);
+    tv.tv_usec = static_cast<suseconds_t>((left % 1000) * 1000);
+    if (::select(max_fd + 1, nullptr, &wait, nullptr, &tv) <= 0)
+      break;
+    for (size_t i = 0; i < count; i++) {
+      if (!pending[i] || !FD_ISSET(fds[i], &wait))
+        continue;
+      pending[i] = false;
+      int err = 0;
+      socklen_t err_len = sizeof(err);
+      if (::getsockopt(fds[i], SOL_SOCKET, SO_ERROR, &err, &err_len) == 0 && err == 0)
+        open_out[i] = true;
     }
   }
   for (size_t i = 0; i < count; i++) {

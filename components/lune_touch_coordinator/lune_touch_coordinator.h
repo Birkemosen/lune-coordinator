@@ -721,7 +721,8 @@ class LuneTouchCoordinator : public esphome::Component {
   // Weak IoT Wi-Fi + chunked V6 zones (up to ~8 KiB) needs more than the
   // default GET budget; EAGAIN / INCOMPLETE_DATA dominate otherwise.
   static constexpr uint32_t V6_HTTP_TIMEOUT_MS = 6000;
-  static constexpr uint32_t LAN_CONNECT_TIMEOUT_MS = 70;
+  // First contact over WiFi includes ARP; 70 ms missed V6s that answer in ~100-200 ms.
+  static constexpr uint32_t LAN_CONNECT_TIMEOUT_MS = 300;
   static constexpr uint32_t LAN_HTTP_TIMEOUT_MS = 500;
   static constexpr int LAN_CONNECT_BATCH = 8;
   static constexpr size_t MAX_LAN_CANDIDATES = ::lune_touch::MAX_NODES;
