@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121210">
+<title>Lune Touch</title>
+<link rel="alternate" hreflang="da" href="/da/">
+<link rel="stylesheet" href="/lune-ui.css?v=a43deca4a3">
+</head>
+<body>
+
+<!-- TILSTAND — før .app -->
+<input class="state" type="radio" name="mode" id="m-dash" checked aria-label="Dashboard">
+<input class="state" type="radio" name="mode" id="m-conf" aria-label="Configuration">
+<input class="state" type="radio" name="scope" id="s-house" checked data-kind="house" aria-label="House" data-title="House" data-sub="4 controllers · 2 zones calling · 1 fault">
+<input class="state" type="checkbox" id="theme" aria-label="Toggle light/dark theme">
+
+<div class="app">
+  <div class="top">
+    <div class="wrap">
+      <header class="header">
+        <details class="device">
+          <summary><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg><span class="name"><b>Lune Touch</b><small data-bind="device.about.place">House coordinator</small></span><span class="caret" aria-hidden="true"></span></summary>
+          <div class="device-menu">
+            <section class="device-about" aria-labelledby="device-about-h">
+              <h3 id="device-about-h">About device</h3>
+              <dl class="kv">
+                <div><dt>Name</dt><dd data-bind="device.about.name">Lune Touch</dd></div>
+                <div><dt>Location</dt><dd data-bind="device.about.place">House coordinator</dd></div>
+                <div><dt>IP</dt><dd data-bind="device.about.ip">—</dd></div>
+                <div><dt>MAC</dt><dd data-bind="device.about.mac">—</dd></div>
+                <div><dt>Firmware</dt><dd data-bind="device.about.firmware">—</dd></div>
+                <div><dt>ESPHome</dt><dd data-bind="device.about.esphome">—</dd></div>
+                <div><dt>Uptime</dt><dd data-bind="device.about.uptime">—</dd></div>
+              </dl>
+              <button type="button" class="btn" data-action="copy-diag">Copy diagnostics</button>
+            </section>
+            <nav aria-label="Devices" data-bind-devices>
+              <a href="/" aria-current="page"><i></i>Lune Touch<small>this device</small></a>
+            </nav>
+          </div>
+        </details>
+        <nav class="mode" aria-label="Mode">
+          <label for="m-dash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.2"/></svg>Dashboard</label>
+          <label for="m-conf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Configuration</label>
+        </nav>
+        <div class="tools">
+          <nav class="lang" aria-label="Language"><a href="/en/" hreflang="en" lang="en" title="English" aria-current="true">EN</a><a href="/da/" hreflang="da" lang="da" title="Dansk">DA</a></nav>
+          <label class="icon-btn theme-btn" for="theme" title="Toggle light/dark theme">
+            <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>
+            <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+            <span class="sr-only">Toggle light/dark theme</span>
+          </label>
+        </div>
+      </header>
+      
+    </div>
+  </div>
+  <main class="content wrap">
+      <section class="view" id="v-dash-house" aria-labelledby="h-dash-house">
+        <header class="view-head"><h2 id="h-dash-house" data-bind="scope.title">House</h2><p data-bind="scope.sub">4 controllers · 2 zones calling · 1 fault</p></header>
+
+        <div class="panel alert" hidden>
+          <div class="panel-head"><h3>Heat source unreachable</h3></div>
+          <p class="note">Last push failed. House temperature is not updated until the connection works again.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="m-conf">Open heat source settings</label></div>
+        </div>
+
+        <div class="panel alert" data-bind-alert="board" hidden>
+          <div class="panel-head"><h3 data-bind="alert.boardTitle">V6 is unreachable</h3></div>
+          <p class="note">Zones from this controller stay on last known values until it answers again.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="m-conf">Open controllers</label></div>
+        </div>
+
+        <div class="boards" data-bind-boards aria-label="Lune V6 boards"></div>
+
+        <form class="panel c4" data-save="house-target">
+          <header class="panel-head"><h3>House climate</h3><span class="badge" data-bind="house.badge">Idle</span></header>
+          <div class="climate">
+            <div class="now" data-bind="house.temp">21.2<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Decrease house target temperature">−</button>
+              <label class="value"><small>Target</small><input type="number" inputmode="decimal" id="house_target" name="house_target" value="21.0" min="5" max="30" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Increase house target temperature">+</button>
+            </div>
+            <p class="autosave" aria-live="polite"></p>
+          </div>
+          <dl class="kv">
+            <div><dt>Coverage</dt><dd data-bind="house.coverage">0 / 0</dd></div>
+            <div><dt>Authority</dt><dd data-bind="house.authority">Touch</dd></div>
+            <div><dt>Outdoor</dt><dd data-bind="house.outdoor">8.4 °C</dd></div>
+          </dl>
+        </form>
+
+        <section class="panel c8" data-hs-type="asgard">
+          <header class="panel-head"><h3>Heat source</h3><span class="badge" data-bind="heat.badge">Waiting</span></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4 data-bind="dash.hsName">Asgard</h4>
+              <dl class="metrics">
+                <div class="metric"><dt>Weighted house temperature</dt><dd data-bind="heat.weighted">— <small>°C</small></dd></div>
+                <div class="metric"><dt>Comfort setpoint</dt><dd data-bind="heat.setpoint">— <small>°C</small></dd></div>
+              </dl>
+              <dl class="kv">
+                <div><dt>Last send</dt><dd data-bind="heat.lastPush">—</dd></div>
+                <div><dt>Comfort target role</dt><dd data-bind="dash.targetRole">—</dd></div>
+                <div><dt>Heat pump flow/return</dt><dd data-bind="dash.hpTemps">—</dd></div>
+              </dl>
+              <p class="note muted" data-bind="heat.sentNote" hidden></p>
+            </div>
+            <div class="sub" data-bind-show="dash.odin" hidden>
+              <h4>Odin</h4>
+              <dl class="kv">
+                <div><dt>Link</dt><dd data-bind="dash.odinLink">—</dd></div>
+                <div><dt>Drives the pump now</dt><dd data-bind="dash.odinDriver">—</dd></div>
+                <div><dt>This hour</dt><dd data-bind="dash.odinNow">—</dd></div>
+                <div><dt>Comfort schedule</dt><dd data-bind="dash.odinPlan">—</dd></div>
+              </dl>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="flow">
+          <header class="panel-head"><h3>Flow</h3><p>Circulation pump and approximate split per manifold</p></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Circulation pump</h4>
+              <dl class="metrics">
+                <div class="metric"><dt>Flow</dt><dd data-bind="pump.flow">— <small>l/min</small></dd></div>
+                <div class="metric"><dt>Head</dt><dd data-bind="pump.head">— <small>m</small></dd></div>
+                <div class="metric"><dt>Power</dt><dd data-bind="pump.power">— <small>W</small></dd></div>
+              </dl>
+              <dl class="kv">
+                <div><dt>Flow (m³/h)</dt><dd data-bind="pump.flowM3h">—</dd></div>
+                <div><dt>Host</dt><dd data-bind="pump.host">—</dd></div>
+              </dl>
+            </div>
+            <div class="sub">
+              <h4>Split per manifold</h4>
+              <div class="dist" data-bind-dist><p class="dist-note">—</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="plan">
+          <header class="panel-head"><h3>Heating plan</h3><p data-bind="planG.sub">Next 24 hours: Odin's planned heat and Touch's preheating and charging per room</p></header>
+          <p class="empty" data-bind-show="planG.empty">No plan yet – waiting for the forecast and Odin.</p>
+          <div class="plan" data-bind-plan aria-label="Heating plan for the next 24 hours"></div>
+          <p class="fc-legend" aria-hidden="true">
+            <span><i class="lbar"></i>Space heat (kWh heat)</span>
+            <span><i class="ldhw"></i>Hot water (kWh el)</span>
+            <span><i class="lleg"></i>Legionella (kWh el)</span>
+            <span><i class="llift"></i>Touch lifts Odin's comfort band</span>
+            <span><i class="lpre"></i>Preheat</span>
+            <span><i class="lch"></i>Charging before wind and cold</span>
+            <span><i class="lins"></i>Charging – the floor falls short</span>
+          </p>
+        </section>
+
+        <section class="panel" data-panel="forecast">
+          <header class="panel-head"><h3>Forecast</h3><p data-bind="fc.sub">72 hours · — · fetched —</p><span class="badge info" hidden>Preload +— °C</span></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Now</dt><dd data-bind="forecast.temp">— <small>°C</small></dd></div>
+            <div class="metric"><dt>Max wind 24 h</dt><dd data-bind="forecast.windmax">— <small>m/s</small></dd></div>
+            <div class="metric"><dt>Min. 72 h</dt><dd data-bind="forecast.tmin">— <small>°C</small></dd></div>
+          </dl>
+          <p class="empty">No forecast yet</p>
+          <!-- Weather icons and wind arrow, referenced by binder.js (<use href="#i-…">). -->
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+            <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 1 1 9.5 5a6 6 0 0 0 9.5 9.5z"/></symbol>
+            <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 18z"/></symbol>
+            <symbol id="i-partly" viewBox="0 0 24 24"><path d="M8 5V3.5M3.5 8H2M4.6 4.6l-1-1M11.4 4.6l1-1"/><path d="M5.4 10.4A3.5 3.5 0 0 1 11 6.6"/><path d="M9 19h8a3.5 3.5 0 0 0 0-7 4.8 4.8 0 0 0-9.2 1.3A2.9 2.9 0 0 0 9 19z"/></symbol>
+            <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
+            <symbol id="i-snow" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01"/></symbol>
+            <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 20V4M6 10l6-6 6 6"/></symbol>
+          </defs></svg>
+          <div class="fc fc--dual" style="--now:0%">
+            <div class="fc-icons" data-hourly aria-hidden="true"></div>
+            <div class="fc-y" aria-hidden="true"></div>
+            <div class="fc-plot fc-temp" role="img" aria-label="Outdoor temperature over the next 72 hours">
+              <svg viewBox="0 0 720 100" preserveAspectRatio="none" data-bind-fc="temp"><rect class="pre" x="0" y="0" width="0" height="100"/><polygon class="sa" points=""/><polyline class="sl" points=""/><rect class="past" x="0" y="0" width="0" height="100"/><polyline class="tl" points=""/><line class="now" x1="0" x2="0" y1="0" y2="100"/></svg>
+              <span class="fc-now">Now</span>
+            </div>
+            <div class="fc-y2" aria-hidden="true"></div>
+            <div class="fc-y" aria-hidden="true"></div>
+            <div class="fc-plot fc-wind" role="img" aria-label="Wind over the next 72 hours">
+              <svg viewBox="0 0 720 60" preserveAspectRatio="none" data-bind-fc="wind"><polygon class="wa" points=""/><polyline class="wl" points=""/><rect class="past" x="0" y="0" width="0" height="60"/><line class="now" x1="0" x2="0" y1="0" y2="60"/></svg>
+            </div>
+            <div class="fc-y2" aria-hidden="true"><span>m/s</span></div>
+            <div class="fc-dirs" aria-hidden="true"></div>
+            <div class="fc-x" aria-hidden="true"></div>
+            <span class="fc-scrub" hidden aria-hidden="true"></span>
+            <div class="fc-readout" hidden aria-hidden="true"></div>
+          </div>
+          <p class="fc-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature °C</span>
+            <span><i class="lsun"></i>Solar W/m²</span>
+            <span><i class="lw"></i>Wind m/s</span>
+            <span><svg class="dir" viewBox="0 0 24 24"><use href="#i-arrow"/></svg>Wind direction</span>
+            <span><i class="lpre"></i>Preload active</span>
+          </p>
+        </section>
+
+      </section>
+      <section class="view" id="v-conf-house" aria-labelledby="h-conf-house">
+        <header class="view-head"><h2 id="h-conf-house" data-bind="scope.title">House</h2><p data-bind="scope.sub">4 controllers · 2 zones calling · 1 fault</p></header>
+        <nav class="section-nav" aria-label="Sections">
+          <a href="#sec-setup">Setup</a>
+          <a href="#sec-heat">Heat and weather</a>
+          <a href="#sec-device">Device</a>
+          <a href="#sec-service">Service</a>
+        </nav>
+        <section class="section" id="sec-setup" aria-labelledby="sec-setup-h">
+          <h2 class="section-h" id="sec-setup-h">Setup<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel" data-save="add-node">
+          <header class="panel-head"><h3>Controllers</h3><p>V6 boards paired with this house</p><button class="help-btn" type="button" popovertarget="help-ctrl" style="anchor-name:--a-help-ctrl" aria-label="Help: Controllers">?</button></header>
+          <div id="help-ctrl" popover class="help-pop" style="position-anchor:--a-help-ctrl"><p>Pair and approve V6 boards for this house. Unapproved boards stay local and do not contribute rooms or heat calls.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#controllers">Read more</a></div>
+          <div class="table-wrap">
+            <table class="table" data-bind-nodes>
+              <thead><tr><th>Name</th><th>Hostname or IP</th><th>Status</th><th>Zones</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div data-bind-scan></div>
+          <details class="more">
+            <summary>+ Add manually</summary>
+            <div class="field"><label for="node_name">Name</label><input class="input" id="node_name" name="name" placeholder="Ground floor"></div>
+            <div class="field"><label for="node_host">Hostname or IP</label><input class="input" id="node_host" name="host" placeholder="lune-v6.local" inputmode="url"></div>
+          </details>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn" type="button" data-action="scan-nodes">Scan the network</button><span class="save-status" id="ss-add-node" aria-live="polite"></span></div><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Add controller</button></footer>
+        </form>
+          </div>
+        </section>
+
+        <section class="section" id="sec-heat" aria-labelledby="sec-heat-h">
+          <h2 class="section-h" id="sec-heat-h">Heat and weather<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel wide gated" data-save="heat-source">
+          <header class="panel-head"><h3>Heat source</h3><button class="help-btn" type="button" popovertarget="help-hs" style="anchor-name:--a-help-hs" aria-label="Help: Heat source">?</button></header>
+          <div id="help-hs" popover class="help-pop" style="position-anchor:--a-help-hs"><p>Direct connection to the heat source. Touch publishes weighted house temperature on an interval. Wrong host or templates block delivery.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#heat-source">Read more</a></div>
+          <label class="switch"><span class="switch-text"><b>Heat source enabled</b></span><input type="checkbox" role="switch" name="enabled" checked></label>
+          <div class="gated-body">
+            <input class="state" type="radio" name="hs_type" id="hs-http" value="http">
+            <input class="state" type="radio" name="hs_type" id="hs-asgard" value="asgard" checked>
+            <div class="seg" role="radiogroup" aria-label="Adapter type">
+              <label for="hs-http"><span>Generic HTTP</span></label>
+              <label for="hs-asgard"><span>Asgard</span></label>
+            </div>
+            <fieldset class="hs-fields typed-fields subs cols-2" data-type="http">
+              <div class="sub">
+                <h4>Connection</h4>
+                <div class="field row"><label for="http_host">Host</label><input class="input w-md" id="http_host" name="http_host" value="heat-bridge.local"></div>
+                <div class="field row"><label for="http_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="http_port" name="http_port" value="80" min="1" max="65535" step="1"></div>
+                <div class="field row"><label for="http_push_interval_s">Push interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease push interval">−</button><span class="value"><input type="number" inputmode="decimal" id="http_push_interval_s" name="http_push_interval_s" value="60" min="5" max="3600" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Increase push interval">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Mapping</h4>
+                <div class="field row"><label for="http_weighted_temperature_variable">Weighted temperature variable</label><input class="input w-md" id="http_weighted_temperature_variable" name="http_weighted_temperature_variable" value="temperature_feedback_z1"></div>
+                <div class="field row"><label for="write_url_template">Write URL template</label><input class="input w-lg" id="write_url_template" name="write_url_template" placeholder="http://{host}:{port}/{entity}/set?value={value}"></div>
+                <div class="field row"><label for="read_url_template">Read URL template</label><input class="input w-lg" id="read_url_template" name="read_url_template" placeholder="http://{host}:{port}/{entity}"></div>
+              </div>
+              <div class="sub">
+                <h4>Heat source inputs</h4>
+                <p class="hint">Most boilers and heat pumps without a room sensor regulate on return temperature or a weather curve. Fill in the inputs your source has – Touch sends the same house demand in that form.</p>
+                <div class="field row"><label for="target_url_template">Room target URL ({value} = °C)</label><input class="input w-lg" id="target_url_template" name="target_url_template" placeholder="http://{host}:{port}/target?value={value}"></div>
+                <div class="field row"><label for="heat_request_url_template">Heat request URL ({value} = 1/0)</label><input class="input w-lg" id="heat_request_url_template" name="heat_request_url_template" placeholder="http://{host}:{port}/heat?value={value}"></div>
+                <div class="field row"><label for="curve_offset_url_template">Curve offset URL ({value} = °C)</label><input class="input w-lg" id="curve_offset_url_template" name="curve_offset_url_template" placeholder="http://{host}:{port}/curve_offset?value={value}"></div>
+                <div class="field row"><label for="curve_gain">Curve offset per °C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease curve offset per °c">−</button><span class="value"><input type="number" inputmode="decimal" id="curve_gain" name="curve_gain" value="2.0" min="0.0" max="10.0" step="0.5"><span class="unit">°C/°C</span></span><button type="button" data-step="1" aria-label="Increase curve offset per °c">+</button></div></div>
+                <div class="field row"><label for="curve_max_offset_c">Max curve offset</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max curve offset">−</button><span class="value"><input type="number" inputmode="decimal" id="curve_max_offset_c" name="curve_max_offset_c" value="5.0" min="0.0" max="15.0" step="0.5"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase max curve offset">+</button></div></div>
+                <dl class="kv"><div><dt>House demand goes to</dt><dd data-bind="levers.state">—</dd></div></dl>
+              </div>
+              <div class="sub" data-bind-hs-delivery="http">
+                <h4>Sent to HTTP endpoint</h4>
+                <p class="mono" data-bind="hs.sent.url">—</p>
+                <div class="table-wrap"><table class="table">
+                  <thead><tr><th></th><th>Value</th><th>Target</th><th>Last send</th></tr></thead>
+                  <tbody>
+                    <tr><th>Weighted house temperature</th><td class="num" data-bind="hs.http.temp">—</td><td class="mono" data-bind="hs.http.entity">—</td><td data-bind="hs.http.when">—</td></tr>
+                  </tbody>
+                </table></div>
+                <details class="more">
+                  <summary>How is it calculated?</summary>
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>Zone</th><th>Temperature</th><th>Weight</th><th>Contribution</th></tr></thead>
+                    <tbody data-bind-weight-rows></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div class="sub">
+                <h4>Test</h4>
+                <div class="actions">
+                  <button class="btn" type="button" data-action="hs-test-read">Test read</button>
+                  <button class="btn" type="button" data-action="hs-test-push">Test send</button>
+                </div>
+                <div class="test-result" aria-live="polite"></div>
+              </div>
+            </fieldset>
+            <fieldset class="hs-fields typed-fields subs cols-2" data-type="asgard">
+              <div class="sub">
+                <h4>Connection</h4>
+                <div class="field row"><label for="asgard_host">Host</label><input class="input w-md" id="asgard_host" name="asgard_host" value="asgard.local"></div>
+                <div class="field row"><label for="asgard_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="asgard_port" name="asgard_port" value="80" min="1" max="65535" step="1"></div>
+                <div class="field row"><label for="asgard_push_interval_s">Push interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease push interval">−</button><span class="value"><input type="number" inputmode="decimal" id="asgard_push_interval_s" name="asgard_push_interval_s" value="60" min="5" max="3600" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Increase push interval">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>House temperature → Asgard</h4>
+                <p class="hint">The measured, weighted house temperature. It is never altered – Odin and Asgard learn from it. Sent while the V6s have granted Touch the lease.</p>
+                <div class="field row"><label for="asgard_weighted_temperature_variable">Asgard entity</label><input class="input w-md" id="asgard_weighted_temperature_variable" name="asgard_weighted_temperature_variable" value="Virtual Thermostat Input z1"></div>
+                <dl class="kv">
+                  <div><dt>Value</dt><dd data-bind="hs.asgard.temp">—</dd></div>
+                  <div><dt>Last send</dt><dd data-bind="hs.asgard.when">—</dd></div>
+                </dl>
+                <details class="more">
+                  <summary>How is it calculated?</summary>
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>Zone</th><th>Temperature</th><th>Weight</th><th>Contribution</th></tr></thead>
+                    <tbody data-bind-weight-rows></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div class="sub">
+                <h4>Comfort target → Asgard</h4>
+                <label class="switch"><span class="switch-text"><b>Sync comfort target</b><small>Recommended on – also with Odin. When Odin is in control the house target is sent unlifted as a backup, so Asgard has the right target if Odin stops.</small></span><input type="checkbox" role="switch" name="target_sync_enabled" checked></label>
+                <div class="field row"><label for="climate_entity">Asgard thermostat</label><input class="input w-md" id="climate_entity" name="climate_entity" value="Virtual Thermostat z1"></div>
+                <dl class="kv">
+                  <div><dt>Value</dt><dd data-bind="hs.asgard.setpoint">—</dd></div>
+                  <div><dt>Last send</dt><dd data-bind="hs.asgard.setpointWhen">—</dd></div>
+                  <div><dt>Comfort target role</dt><dd data-bind="dash.targetRole">—</dd></div>
+                </dl>
+              </div>
+              <div class="sub">
+                <h4>Test</h4>
+                <div class="actions">
+                  <button class="btn" type="button" data-action="hs-test-read">Test read</button>
+                  <button class="btn" type="button" data-action="hs-test-push">Test send</button>
+                </div>
+                <div class="test-result" aria-live="polite"></div>
+              </div>
+              <div class="sub">
+                <h4>Odin 2.0</h4>
+                <div class="field row"><label for="odin_host">Odin address</label><input class="input w-md" id="odin_host" name="odin_host" placeholder="192.168.1.20"></div>
+                <label class="switch"><span class="switch-text"><b>Odin plan ingestion</b><small>Uses Odin's heat windows for absorbing and preheating</small></span><input type="checkbox" role="switch" name="odin_plan_enabled" checked></label>
+                <label class="switch"><span class="switch-text"><b>Lift Odin's comfort schedule</b><small>Touch temporarily raises Odin's comfort band before wind and cold, and when a room lags. Your own schedule is written back afterwards, and Touch leaves it alone if you change it in Odin.</small></span><input type="checkbox" role="switch" name="odin_control_enabled"></label>
+                <div class="field row"><label for="odin_max_lift_c">Max lift</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max lift">−</button><span class="value"><input type="number" inputmode="decimal" id="odin_max_lift_c" name="odin_max_lift_c" value="1.5" min="0.3" max="3.0" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase max lift">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Odin status</h4>
+                <dl class="kv">
+                  <div><dt>Asgard → Odin</dt><dd data-bind="odin.link">—</dd></div>
+                  <div><dt>Comfort schedule</dt><dd data-bind="odin.state">—</dd></div>
+                  <div><dt>House demand goes to</dt><dd data-bind="odin.route">—</dd></div>
+                </dl>
+                <details class="more">
+                  <summary>MQTT (optional)</summary>
+                  <p class="hint">Reads Odin's plan and the pump telemetry straight from the broker, so a stopped Asgard is noticed sooner. Touch never publishes, and HTTP is still used if the broker goes away.</p>
+                  <label class="switch"><span class="switch-text"><b>Use MQTT</b></span><input type="checkbox" role="switch" name="mqtt_enabled"></label>
+                  <div class="field row"><label for="mqtt_host">Host</label><input class="input w-md" id="mqtt_host" name="mqtt_host" placeholder="192.168.1.10"></div>
+                  <div class="field row"><label for="mqtt_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="mqtt_port" name="mqtt_port" value="1883" min="1" max="65535"></div>
+                  <div class="field row"><label for="mqtt_username">User</label><input class="input w-md" id="mqtt_username" name="mqtt_username" autocomplete="off"></div>
+                  <div class="field row"><label for="mqtt_password">Password</label><input class="input w-md" type="password" id="mqtt_password" name="mqtt_password" autocomplete="new-password"></div>
+                  <div class="field row"><label for="mqtt_topic_prefix">Topic prefix</label><input class="input w-md" id="mqtt_topic_prefix" name="mqtt_topic_prefix" placeholder="hp/hp1"></div>
+                  <div class="field row"><label for="mqtt_hp_id">Heat pump id</label><input class="input w-xs" id="mqtt_hp_id" name="mqtt_hp_id" placeholder="hp1"></div>
+                </details>
+              </div>
+            </fieldset>
+          </div>
+          <footer class="panel-foot"><span class="save-status" id="ss-heat-source" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save heat source</button></footer>
+        </form>
+
+        <form class="panel wide" data-save="rooms">
+          <header class="panel-head"><h3>Rooms</h3><p>Settings Touch owns; walls, area and floor are set on each V6</p><button class="help-btn" type="button" popovertarget="help-rooms" style="anchor-name:--a-help-rooms" aria-label="Help: Rooms">?</button></header>
+          <div id="help-rooms" popover class="help-pop" style="position-anchor:--a-help-rooms"><p>Rooms counted in the weighted house temperature, their relative weight, and how strongly wind and sun shift weather preload. Walls, area and floor come from each V6.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#rooms">Read more</a></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Room</th><th>In house temperature</th><th class="num">Weight</th><th class="num">Wind</th><th class="num">Solar</th></tr></thead>
+            <tbody data-bind-room-rows><tr><td colspan="5" class="muted">—</td></tr></tbody>
+          </table></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-rooms" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save rooms</button></footer>
+        </form>
+
+        <form class="panel c5" data-save="circulation">
+          <header class="panel-head"><h3>Pump</h3><button class="help-btn" type="button" popovertarget="help-pump" style="anchor-name:--a-help-pump" aria-label="Help: Pump">?</button></header>
+          <div id="help-pump" popover class="help-pop" style="position-anchor:--a-help-pump"><p>Circulation pump host, port and ESPHome entities for flow, head and power on the house dashboard.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#pump">Read more</a></div>
+          <div class="field row"><label for="pump_host">Pump host</label><input class="input w-md" id="pump_host" name="host" value="" placeholder="alpha2go.local"></div>
+          <div class="field row"><label for="pump_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="pump_port" name="pump_port" value="80" min="1" max="65535" step="1"></div>
+          <div class="field row"><label for="pump_flow_entity">Flow entity</label><input class="input w-md" id="pump_flow_entity" name="flow_entity" value="pump_flow"></div>
+          <div class="field row"><label for="pump_head_entity">Head entity</label><input class="input w-md" id="pump_head_entity" name="head_entity" value="pump_head_pressure"></div>
+          <div class="field row"><label for="pump_power_entity">Power entity</label><input class="input w-md" id="pump_power_entity" name="power_entity" value="pump_power"></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-circulation" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save pump</button></footer>
+        </form>
+
+        <form class="panel c5" data-save="weather">
+          <header class="panel-head"><h3>Weather location</h3><button class="help-btn" type="button" popovertarget="help-weather" style="anchor-name:--a-help-weather" aria-label="Help: Weather location">?</button></header>
+          <div id="help-weather" popover class="help-pop" style="position-anchor:--a-help-weather"><p>Coordinates and max preload boost for forecast-driven room warm-up. Wrong location mis-times west/east exposure.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#weather">Read more</a></div>
+          <div class="pair">
+            <div class="field row"><label for="wx_lat">Latitude</label><input class="input w-sm" id="wx_lat" name="latitude" value="55.6761" inputmode="decimal"></div>
+            <div class="field row"><label for="wx_lon">Longitude</label><input class="input w-sm" id="wx_lon" name="longitude" value="12.5683" inputmode="decimal"></div>
+          </div>
+          <div class="field row"><label for="wx_boost">Max preload boost</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max preload boost">−</button><span class="value"><input type="number" inputmode="decimal" id="wx_boost" name="wx_boost" value="1.5" min="0" max="3" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase max preload boost">+</button></div></div>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn" type="button" data-action="wx-geo">Estimate from network</button><span class="save-status" id="ss-weather" aria-live="polite"></span></div><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save weather</button></footer>
+        </form>
+          </div>
+        </section>
+
+        <section class="section" id="sec-device" aria-labelledby="sec-device-h">
+          <h2 class="section-h" id="sec-device-h">Device<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel c4" data-save="settings">
+          <header class="panel-head"><h3>Identity</h3><button class="help-btn" type="button" popovertarget="help-identity" style="anchor-name:--a-help-identity" aria-label="Help: Identity">?</button></header>
+          <div id="help-identity" popover class="help-pop" style="position-anchor:--a-help-identity"><p>Device name and display idle time. Forecast location is kept when you reset the registry from Service.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#identity">Read more</a></div>
+          <div class="field row"><label for="dev_name">Device name</label><input class="input w-md" id="dev_name" name="name" value="House coordinator"></div>
+          <div class="field row"><label for="dev_idle">Display idle minutes</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease display idle minutes">−</button><span class="value"><input type="number" inputmode="decimal" id="dev_idle" name="dev_idle" value="5" min="0" max="120" step="1"><span class="unit">min</span></span><button type="button" data-step="1" aria-label="Increase display idle minutes">+</button></div></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-settings" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save identity</button></footer>
+        </form>
+
+        <form class="panel c4" data-save="firmware">
+          <header class="panel-head"><h3>Firmware</h3><button class="help-btn" type="button" popovertarget="help-firmware" style="anchor-name:--a-help-firmware" aria-label="Help: Firmware">?</button></header>
+          <div id="help-firmware" popover class="help-pop" style="position-anchor:--a-help-firmware"><p>Check for updates, install from the network, or upload a .bin. The device reboots when flashing finishes.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#firmware">Read more</a></div>
+          <dl class="kv">
+            <div><dt>Installed</dt><dd data-bind="fw.installed">—</dd></div>
+            <div><dt>Latest release</dt><dd data-bind="fw.latest">—</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn" type="submit" name="action" value="check">Check for update</button>
+            <button class="btn" type="submit" name="action" value="install" disabled>Install latest</button>
+          </div>
+          <div class="field"><label for="ota_file">Manual .bin upload</label><label class="input file" for="ota_file"><input class="sr-only" id="ota_file" name="ota_file" type="file" accept=".bin,.ota.bin"><span class="file-pick">Choose file</span><span class="file-name" data-empty="No file chosen">No file chosen</span></label></div>
+          <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload" disabled>Upload firmware</button></footer>
+        </form>
+
+        <form class="panel c4" data-save="backup">
+          <header class="panel-head"><h3>Backup</h3><button class="help-btn" type="button" popovertarget="help-backup" style="anchor-name:--a-help-backup" aria-label="Help: Backup">?</button></header>
+          <div id="help-backup" popover class="help-pop" style="position-anchor:--a-help-backup"><p>Export or import settings as JSON. Secrets are never included. Import overwrites coordinator settings on this device.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#backup">Read more</a></div>
+          <p class="note">Export settings as JSON. Secrets are never included.</p>
+          <div class="field"><label for="backup_file">Import file</label><label class="input file" for="backup_file"><input class="sr-only" id="backup_file" name="backup_file" type="file" accept="application/json,.json"><span class="file-pick">Choose file</span><span class="file-name" data-empty="No file chosen">No file chosen</span></label></div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="export">Export backup</button>
+            <button class="btn primary" type="submit" name="action" value="import" disabled>Import backup</button>
+          </footer>
+        </form>
+          </div>
+        </section>
+
+        <details class="section" id="sec-service">
+          <summary class="section-h">Service<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></summary>
+          <div class="section-grid">
+        <section class="panel">
+          <header class="panel-head"><h3>Service</h3><button class="help-btn" type="button" popovertarget="help-service" style="anchor-name:--a-help-service" aria-label="Help: Service">?</button></header>
+          <div id="help-service" popover class="help-pop" style="position-anchor:--a-help-service"><p>Commissioning notes, command log, live diagnostics and destructive registry reset. Restart and OTA stay here — not in the device menu.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#service">Read more</a></div>
+          <div class="sub">
+            <h4>Command log</h4>
+            <pre class="log" data-bind="log" aria-live="polite" lang="en">—</pre>
+          </div>
+          <div class="sub">
+            <h4>Diagnostics</h4>
+            <dl class="kv">
+              <div><dt>Controllers online</dt><dd data-bind="diag.nodes">—</dd></div>
+              <div><dt>Polling</dt><dd data-bind="diag.poll">—</dd></div>
+              <div><dt>Firmware slot</dt><dd data-bind="diag.ota">—</dd></div>
+            </dl>
+          </div>
+          <div class="actions">
+            <button class="btn danger" type="button" popovertarget="confirm-reset" style="anchor-name:--a-confirm-reset">Reset registry…</button>
+          </div>
+          <div id="confirm-reset" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-reset-t" aria-describedby="confirm-reset-d" style="position-anchor:--a-confirm-reset">
+            <p class="confirm-title" id="confirm-reset-t">Reset the registry now?</p>
+            <p id="confirm-reset-d">Clears controllers, rooms and command ledger. Forecast location is kept.</p>
+            <div class="confirm-actions">
+              <button class="btn" type="button" popovertarget="confirm-reset" popovertargetaction="hide" autofocus>Cancel</button>
+              <button class="btn danger-solid" type="button" data-action="reset-registry" popovertarget="confirm-reset" popovertargetaction="hide">Reset registry</button>
+            </div>
+          </div>
+        </section>
+          </div>
+        </details>
+      </section>
+  </main>
+</div>
+
+<script type="application/json" id="i18n">{"rt.savedOk":"Saved","rt.saveFailed":"Save failed","rt.saving":"Saving…","rt.unsaved.one":"{n} unsaved change","rt.unsaved.other":"{n} unsaved changes","rt.nothingToSave":"No changes to save","rt.leaveUnsaved":"You have unsaved changes.","rt.autoSaving":"Saving…","rt.autoSaved":"Saved","rt.autoFailed":"Not saved — try again","rt.retry":"Try again","rt.secondsAgo":"{n} s ago","rt.minutesAgo":"{n} min ago","rt.offline":"Offline","common.undo":"Undo","state.calling":"Calling for heat","state.idle":"Idle","state.fault":"Fault","state.off":"Not in use","tile.fault":"Fault","tile.off":"Off","badge.ok":"Ok","badge.warn":"Attention","badge.bad":"Fault","badge.calling":"Calling","common.on":"On","common.off":"Off","common.approve":"Approve","common.remove":"Remove","common.days":"days","common.faults":"{n} fault","common.noFaults":"no faults","device.this":"this device","device.copied":"Copied","device.copyDiag":"Copy diagnostics","dash.house.sub":"{manifolds} controllers · {calling} zones calling · {faults} fault","dash.manifold.sub":"{zones} zones · {calling} calling · {state}","dash.zone.sub":"{state} · target {target}°C","fc.sub":"72 hours · {model} · fetched {time}","alert.boardFault":"{board} is unreachable","ctrl.removeTitle":"Remove controller","ctrl.removeAsk":"Remove {name}?","ctrl.removeConfirm":"Remove {name}? Rooms mapped only to this board become empty.","ctrl.removeBtn":"Remove…","ctrl.removeDo":"Remove","ctrl.editName":"Edit name","ctrl.found":"Found","ctrl.addRow":"Add","ctrl.empty":"No controllers yet. Scan the network or add a hostname.","ctrl.host":"Hostname or IP","common.unnamed":"Unnamed","common.cancel":"Cancel","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Connected","heat.badge.bad":"Unreachable","heat.badge.off":"Off","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Not sent – switched off","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Testing…","hs.testReadOk":"Read OK · {time} · {code} · {ms} ms","hs.testPushOk":"Send OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C from {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Check host and port, and that the heat source is reachable.","hs.testCheckDns":"Check that the hostname resolves.","hs.testCheckHttp":"Check the endpoint and that the heat source answers.","hs.testStatus.failed":"Failed","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Address missing","hs.testReason.network":"No network","hs.testReason.endpoint":"Invalid endpoint","hs.testReason.notReady":"Heat source is not ready","hs.testReason.busy":"Busy","hs.testReason.rejected":"Rejected","status.trusted":"Approved","status.paired":"Waiting","status.unpaired":"Waiting","status.waiting":"Waiting","status.unreachable":"No connection","status.confirmed":"Confirmed","status.sent":"Sent","status.mismatch":"Mismatch","status.blocked":"Blocked","status.unknown":"Unknown","status.disabled":"Off","scope.title.house":"House","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Below target","house.at":"At target","house.above":"Above target","dash.house.sub.one":"{manifolds} controllers · {calling} zone calling · {faults} fault","fc.badge":"Preload +{v} °C","fc.windFrom":"from {dir}","fc.dirTitle":"{time}: {speed} m/s from {dir}","fc.sky.sun":"Sunny","fc.sky.partly":"Partly sunny","fc.sky.cloud":"Cloudy","fc.sky.rain":"Rain","fc.sky.snow":"Snow","fc.sky.moon":"Clear night","diag.pollOk":"OK","diag.pollFail":"{n} failed polls","rooms.includeAria":"Include {name} in house temperature","rooms.weightAria":"Weight for {name}","rooms.windAria":"Wind exposure for {name}","rooms.solarAria":"Solar gain for {name}","m.supplyShort":"Flow","m.returnShort":"Ret","strip.sub":"Zones on {name}","diag.ota.valid":"Confirmed","diag.ota.pending_verify":"Awaiting confirmation","diag.ota.new":"New, not started","diag.ota.invalid":"Rejected","diag.ota.aborted":"Rejected","diag.ota.undefined":"Factory image","hs.notSentLease":"Not sent – the V6s have not granted Touch the lease","hs.route.odin_schedule":"Odin's comfort schedule","hp.compOn":"compressor {hz} Hz","hp.compOff":"compressor off","flow.none":"No open loops – the pump runs at minimum flow.","flow.note":"Approximate: derived from valve openings. Pipe length to each manifold is not included.","flow.noteLpm":"Approximate: derived from valve openings and the pump flow. Pipe length to each manifold is not included.","flow.zoneTip":"{zone}: valve {v} % · {pct} % of the manifold","flow.closed":"closed","fc.now":"Now","role.reserve":"Backup – Odin is in control. Asgard uses the target (unlifted) if Odin stops.","role.reserveNow":"Backup – Odin drives the pump now. Asgard uses the target if Odin stops.","role.asgardNow":"Active – Asgard regulates itself right now and heats to the target.","role.offOdin":"Off – if Odin stops, Asgard uses its own setpoint. Turn sync on.","role.drives":"In control – Asgard heats to the target (+{c} °C when needed).","role.off":"Off – Asgard does not get the house target.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Heating {kw} kW","now.off":"Off","now.dhw":"Hot water","planG.odin":"Odin","planG.noOdin":"No Odin plan","planG.tip.heat":"{h} · space heat {kwh} kWh","planG.tip.dhw":"{h} · hot water {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Preheat +{c} °C","planG.tipCharge":"Charging +{c} °C","planG.tipInsufficient":"Charging +{c} °C – the floor cannot cover the whole shortfall","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Comfort band lifted +{c} °C","hs.mqttPasswordSet":"Saved – leave empty to keep it","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"connected","hs.mqttDisconnected":"not connected","strip.lease.refused":"V6 refused Touch's lease – running locally","strip.lease.none":"No Touch lease – running locally","strip.charge.now":"Charging the floor (+{c} °C) before wind and cold","strip.charge.insufficient":"Charging (+{c} °C) – the floor cannot cover the whole shortfall","hs.link.ok":"OK – Odin gets data and learns","hs.link.forwarder_off":"Asgard is not forwarding to Odin – Odin is not learning","hs.link.telemetry_stale":"Odin has no fresh telemetry ({s} min) – Odin is not learning","hs.link.no_room_temperature":"Odin gets no room temperature – Odin is not learning","hs.link.odin_unreachable":"Odin does not respond","hs.link.unknown":"Unknown","hs.odinStatus.disabled":"Off","hs.odinStatus.idle":"Waiting for the first check","hs.odinStatus.watching":"Watching – no lift now","hs.odinStatus.lifted":"Lifted +{c} °C from {h}:00 for {n} h","hs.odinStatus.yielded":"Paused – the schedule was changed in Odin","hs.odinStatus.rate_limited":"Waiting – at most one change per 20 min","hs.odinStatus.write_failed":"Could not write to Odin","hs.odinStatus.odin_unreachable":"Odin does not respond","hs.odinStatus.schedule_unreadable":"Odin's schedule could not be read","hs.odinStatus.clock_invalid":"Touch clock is not set","hs.odinWanted":"wanted +{c} °C from {h}:00 for {n} h","hs.route.virtual_thermostat":"Asgard's virtual thermostat (+{c} °C)","hs.route.generic":"Heat source inputs (+{c} °C)","hs.route.none":"None – Odin follows its own schedule","hs.leverState":"Target {t} °C · heat request {r} · curve +{c} °C","_dec":".","_walls":{"n":"N","e":"E","s":"S","w":"W"},"_lang":"en"}</script>
+<script src="/ui.js?v=8bed3c8e1d" defer></script>
+<script>
+(function(){
+/* +/−, submit and dropdown close live in binder.js (one handler each). */
+window.addEventListener('hashchange',function(){var el=document.getElementById((location.hash||'').slice(1));if(el&&el.tagName==='DETAILS')el.open=true;});
+})();
+</script>
+</body>
+</html>

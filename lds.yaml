@@ -1,0 +1,13 @@
+# Lune Touch — LVGL token install from sibling ../lds.
+# Web UI (LDS2) is built separately via `make touch-ui` from web/design-system/;
+# it is not managed by this manifest (legacy generate_tokens.py requires kind+dest).
+schema: 1
+artifacts:
+  - kind: header
+    dest: components/lune_touch_coordinator/lune_design_tokens.h
+  - kind: yaml
+    dest: packages/display/lvgl/tokens.generated.yaml
+  - kind: brand-png
+    dest: packages/display/lvgl
+  - kind: logo
+    dest: logo.svg

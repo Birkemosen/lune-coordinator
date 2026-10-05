@@ -1,0 +1,16 @@
+{
+  "project": "Lune Touch",
+  "id": "touch",
+  "note": "Koordinator for 1–4 V6-boards. Hierarki: hus → manifold → zone. Delte visninger (house/manifold/zone). Varmekildetyper sættes ved build; første er standard. Type-id'er matcher UI/CSS; API bruger generic_http for http.",
+  "modes": ["dash", "conf"],
+  "tiers": true,
+  "shared_views": true,
+  "heat_source_types": ["http", "asgard"],
+  "manifolds": [
+    {"id": "m1", "label": "Manifold 1", "zones": 6},
+    {"id": "m2", "label": "Manifold 2", "zones": 6},
+    {"id": "m3", "label": "Manifold 3", "zones": 6},
+    {"id": "m4", "label": "Manifold 4", "zones": 6}
+  ],
+  "strip": {"variant": "tiers"}
+}

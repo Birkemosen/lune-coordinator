@@ -1,0 +1,186 @@
+# Statuslinje (h 64). Langt tryk på ur toggler dagtema (palette.light).
+# Label-højder = font_px + 12 for at undgå klipning af Geist descenders/line-gap.
+# Sky-indeks matcher display_forecast_hour_sky: 0 moon, 1 cloud, 2 partly, 3 sun,
+# 4 partly_night, 5 rain, 6 snow.
+# TODO(trin2): fejlpille bør vise «M1 · Z6 …: motorfejl» og åbne den zone.
+obj:
+  id: page_home_statusbar
+  x: 0
+  y: 0
+  width: 1024
+  height: 64
+  bg_opa: 0%
+  border_width: 0
+  pad_all: 0
+  scrollable: false
+  widgets:
+    - button:
+        id: page_home_clock_btn
+        x: 20
+        y: 0
+        width: 110
+        height: 64
+        bg_opa: 0%
+        border_width: 0
+        shadow_width: 0
+        radius: 0
+        pad_all: 0
+        widgets:
+          - label:
+              id: page_home_clock
+              x: 0
+              y: 10
+              width: 110
+              height: 44
+              text: "--:--"
+              text_color: ${lds_fg}
+              text_font: lds_font_lg
+              long_mode: clip
+              bg_opa: 0%
+        on_long_press:
+          - lambda: |-
+              id(overview_day_theme) = !id(overview_day_theme);
+              id(touch_display_refresh_token).update();
+    - label:
+        id: page_home_date
+        x: 138
+        y: 16
+        width: 220
+        height: 32
+        text: ""
+        text_color: ${lds_muted}
+        text_font: lds_font_sm
+        long_mode: clip
+        bg_opa: 0%
+    # Sky icons (one visible); indices match display_forecast_hour_sky
+    - image:
+        id: page_home_wx_sky_0
+        x: 368
+        y: 16
+        src: weather_sky_moon
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - image:
+        id: page_home_wx_sky_1
+        hidden: true
+        x: 368
+        y: 16
+        src: weather_sky_cloud
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - image:
+        id: page_home_wx_sky_2
+        hidden: true
+        x: 368
+        y: 16
+        src: weather_sky_partly
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - image:
+        id: page_home_wx_sky_3
+        hidden: true
+        x: 368
+        y: 16
+        src: weather_sky_sun
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - image:
+        id: page_home_wx_sky_4
+        hidden: true
+        x: 368
+        y: 16
+        src: weather_sky_partly_night
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - image:
+        id: page_home_wx_sky_5
+        hidden: true
+        x: 368
+        y: 16
+        src: weather_sky_rain
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - image:
+        id: page_home_wx_sky_6
+        hidden: true
+        x: 368
+        y: 16
+        src: weather_sky_snow
+        clickable: false
+        bg_opa: 0%
+        border_width: 0
+        outline_width: 0
+        shadow_width: 0
+    - label:
+        id: page_home_wx_temp
+        x: 408
+        y: 14
+        width: 100
+        height: 36
+        text: "--,- °C"
+        text_color: ${lds_fg}
+        text_font: lds_font_md
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_wx_wind
+        x: 512
+        y: 16
+        width: 110
+        height: 32
+        text: ""
+        text_color: ${lds_info}
+        text_font: lds_font_sm
+        long_mode: clip
+        bg_opa: 0%
+    - button:
+        id: page_home_fault_pill
+        hidden: true
+        x: 620
+        y: 8
+        width: 280
+        height: 48
+        bg_color: ${lds_danger_bg}
+        bg_opa: COVER
+        border_width: 0
+        radius: 24
+        pad_all: 0
+        shadow_width: 0
+        widgets:
+          - label:
+              id: page_home_fault_text
+              x: 16
+              y: 8
+              width: 248
+              height: 32
+              text: ""
+              text_color: ${lds_danger}
+              text_font: lds_font_sm
+              long_mode: dot
+              bg_opa: 0%
+        on_click:
+          - lambda: |-
+              // TODO(trin2): åbn den fejlende zone direkte når API eksponerer den.
+              id(problem_dismissed) = false;
+              id(touch_display_refresh_token).update();
+    - !include
+        file: chrome_wifi.yaml
+        vars: {id: page_home_wifi, x: 972, y: 20}

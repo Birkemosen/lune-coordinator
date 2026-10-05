@@ -1,0 +1,7 @@
+{
+  "_comment": "PLACEHOLDER — Odin 2.0 GET /api/forecast. Not a live capture. v2 adapter stays disabled (LUNE_ODIN_FORECAST_V2_ENABLED=0) until this file is replaced with a real capture and the indexing fixture test passes (U3/U4).",
+  "disabled": true,
+  "api_version": "2.0-placeholder",
+  "success": false,
+  "note": "Do not infer today_start_index + current_hour layout from this stub. Capture after upgrade, then enable."
+}

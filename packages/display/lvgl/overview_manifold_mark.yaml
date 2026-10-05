@@ -1,0 +1,12 @@
+# Landscape V6 mark for one live manifold row on Home.
+image:
+  id: page_home_ctrl_${index}_mark
+  src: lune_v6_mark
+  hidden: true
+  x: 196
+  y: 64
+  clickable: false
+  bg_opa: 0%
+  border_width: 0
+  outline_width: 0
+  shadow_width: 0

@@ -1,0 +1,56 @@
+# Flat manifold band inside the Zones content pane. Runtime refresh repositions
+# this band and its 3×2 zone cells by topology.
+
+obj:
+  id: dashboard_manifold_${node}_card
+  x: 0
+  y: ${y}
+  width: 823
+  height: 108
+  bg_color: ${lt_color_surface}
+  bg_opa: 100%
+  border_width: 0
+  radius: 0
+  pad_all: 0
+  scrollable: false
+  widgets:
+    - label:
+        id: dashboard_manifold_${node}_label
+        x: 12
+        y: 12
+        width: 120
+        height: 88
+        text: "Not connected"
+        text_color: ${lt_color_text}
+        text_font: lune_latin_16
+        long_mode: clip
+        bg_color: ${lt_color_surface}
+        bg_opa: 100%
+    - obj:
+        x: 136
+        y: 8
+        width: 1
+        height: 92
+        bg_color: ${lt_color_separator}
+        bg_opa: 100%
+        border_width: 0
+        radius: 0
+        scrollable: false
+    - !include
+        file: manifold_zone_cell.yaml
+        vars: {node: "${node}", zone: 0, zone_human: 1, x: 148}
+    - !include
+        file: manifold_zone_cell.yaml
+        vars: {node: "${node}", zone: 1, zone_human: 2, x: 270}
+    - !include
+        file: manifold_zone_cell.yaml
+        vars: {node: "${node}", zone: 2, zone_human: 3, x: 392}
+    - !include
+        file: manifold_zone_cell.yaml
+        vars: {node: "${node}", zone: 3, zone_human: 4, x: 514}
+    - !include
+        file: manifold_zone_cell.yaml
+        vars: {node: "${node}", zone: 4, zone_human: 5, x: 636}
+    - !include
+        file: manifold_zone_cell.yaml
+        vars: {node: "${node}", zone: 5, zone_human: 6, x: 758}

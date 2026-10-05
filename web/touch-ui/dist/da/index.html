@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121210">
+<title>Lune Touch</title>
+<link rel="alternate" hreflang="en" href="/en/">
+<link rel="stylesheet" href="/lune-ui.css?v=a43deca4a3">
+</head>
+<body>
+
+<!-- TILSTAND — før .app -->
+<input class="state" type="radio" name="mode" id="m-dash" checked aria-label="Dashboard">
+<input class="state" type="radio" name="mode" id="m-conf" aria-label="Konfiguration">
+<input class="state" type="radio" name="scope" id="s-house" checked data-kind="house" aria-label="Hus" data-title="Hus" data-sub="4 styringer · 2 zoner kalder · 1 fejl">
+<input class="state" type="checkbox" id="theme" aria-label="Skift lys/mørk tema">
+
+<div class="app">
+  <div class="top">
+    <div class="wrap">
+      <header class="header">
+        <details class="device">
+          <summary><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg><span class="name"><b>Lune Touch</b><small data-bind="device.about.place">Huskoordinator</small></span><span class="caret" aria-hidden="true"></span></summary>
+          <div class="device-menu">
+            <section class="device-about" aria-labelledby="device-about-h">
+              <h3 id="device-about-h">Om enhed</h3>
+              <dl class="kv">
+                <div><dt>Navn</dt><dd data-bind="device.about.name">Lune Touch</dd></div>
+                <div><dt>Placering</dt><dd data-bind="device.about.place">Huskoordinator</dd></div>
+                <div><dt>IP</dt><dd data-bind="device.about.ip">—</dd></div>
+                <div><dt>MAC</dt><dd data-bind="device.about.mac">—</dd></div>
+                <div><dt>Firmware</dt><dd data-bind="device.about.firmware">—</dd></div>
+                <div><dt>ESPHome</dt><dd data-bind="device.about.esphome">—</dd></div>
+                <div><dt>Oppetid</dt><dd data-bind="device.about.uptime">—</dd></div>
+              </dl>
+              <button type="button" class="btn" data-action="copy-diag">Kopiér diagnostik</button>
+            </section>
+            <nav aria-label="Enheder" data-bind-devices>
+              <a href="/" aria-current="page"><i></i>Lune Touch<small>denne enhed</small></a>
+            </nav>
+          </div>
+        </details>
+        <nav class="mode" aria-label="Tilstand">
+          <label for="m-dash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.2"/></svg>Dashboard</label>
+          <label for="m-conf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Konfiguration</label>
+        </nav>
+        <div class="tools">
+          <nav class="lang" aria-label="Sprog"><a href="/en/" hreflang="en" lang="en" title="English">EN</a><a href="/da/" hreflang="da" lang="da" title="Dansk" aria-current="true">DA</a></nav>
+          <label class="icon-btn theme-btn" for="theme" title="Skift lys/mørk tema">
+            <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>
+            <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+            <span class="sr-only">Skift lys/mørk tema</span>
+          </label>
+        </div>
+      </header>
+      
+    </div>
+  </div>
+  <main class="content wrap">
+      <section class="view" id="v-dash-house" aria-labelledby="h-dash-house">
+        <header class="view-head"><h2 id="h-dash-house" data-bind="scope.title">Hus</h2><p data-bind="scope.sub">4 styringer · 2 zoner kalder · 1 fejl</p></header>
+
+        <div class="panel alert" hidden>
+          <div class="panel-head"><h3>Varmekilde utilgængelig</h3></div>
+          <p class="note">Seneste skrivning mislykkedes. Hustemperaturen opdateres ikke før forbindelsen virker igen.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="m-conf">Åbn varmekildeindstillinger</label></div>
+        </div>
+
+        <div class="panel alert" data-bind-alert="board" hidden>
+          <div class="panel-head"><h3 data-bind="alert.boardTitle">V6 svarer ikke</h3></div>
+          <p class="note">Zoner fra denne styring beholder seneste værdier, indtil den svarer igen.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="m-conf">Åbn styringer</label></div>
+        </div>
+
+        <div class="boards" data-bind-boards aria-label="Lune V6-styringer"></div>
+
+        <form class="panel c4" data-save="house-target">
+          <header class="panel-head"><h3>Husklima</h3><span class="badge" data-bind="house.badge">I ro</span></header>
+          <div class="climate">
+            <div class="now" data-bind="house.temp">21,2<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk husets måltemperatur">−</button>
+              <label class="value"><small>Mål</small><input type="number" inputmode="decimal" id="house_target" name="house_target" value="21.0" min="5" max="30" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv husets måltemperatur">+</button>
+            </div>
+            <p class="autosave" aria-live="polite"></p>
+          </div>
+          <dl class="kv">
+            <div><dt>Dækning</dt><dd data-bind="house.coverage">0 / 0</dd></div>
+            <div><dt>Autoritet</dt><dd data-bind="house.authority">Touch</dd></div>
+            <div><dt>Ude</dt><dd data-bind="house.outdoor">8,4 °C</dd></div>
+          </dl>
+        </form>
+
+        <section class="panel c8" data-hs-type="asgard">
+          <header class="panel-head"><h3>Varmekilde</h3><span class="badge" data-bind="heat.badge">Venter</span></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4 data-bind="dash.hsName">Asgard</h4>
+              <dl class="metrics">
+                <div class="metric"><dt>Vægtet hustemperatur</dt><dd data-bind="heat.weighted">— <small>°C</small></dd></div>
+                <div class="metric"><dt>Komfort-setpunkt</dt><dd data-bind="heat.setpoint">— <small>°C</small></dd></div>
+              </dl>
+              <dl class="kv">
+                <div><dt>Seneste afsendelse</dt><dd data-bind="heat.lastPush">—</dd></div>
+                <div><dt>Komfortmålets rolle</dt><dd data-bind="dash.targetRole">—</dd></div>
+                <div><dt>Varmepumpe frem/retur</dt><dd data-bind="dash.hpTemps">—</dd></div>
+              </dl>
+              <p class="note muted" data-bind="heat.sentNote" hidden></p>
+            </div>
+            <div class="sub" data-bind-show="dash.odin" hidden>
+              <h4>Odin</h4>
+              <dl class="kv">
+                <div><dt>Forbindelse</dt><dd data-bind="dash.odinLink">—</dd></div>
+                <div><dt>Styrer pumpen nu</dt><dd data-bind="dash.odinDriver">—</dd></div>
+                <div><dt>Denne time</dt><dd data-bind="dash.odinNow">—</dd></div>
+                <div><dt>Komfortplan</dt><dd data-bind="dash.odinPlan">—</dd></div>
+              </dl>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="flow">
+          <header class="panel-head"><h3>Flow</h3><p>Cirkulationspumpe og omtrentlig fordeling pr. manifold</p></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Cirkulationspumpe</h4>
+              <dl class="metrics">
+                <div class="metric"><dt>Flow</dt><dd data-bind="pump.flow">— <small>l/min</small></dd></div>
+                <div class="metric"><dt>Løftehøjde</dt><dd data-bind="pump.head">— <small>m</small></dd></div>
+                <div class="metric"><dt>Effekt</dt><dd data-bind="pump.power">— <small>W</small></dd></div>
+              </dl>
+              <dl class="kv">
+                <div><dt>Flow (m³/h)</dt><dd data-bind="pump.flowM3h">—</dd></div>
+                <div><dt>Vært</dt><dd data-bind="pump.host">—</dd></div>
+              </dl>
+            </div>
+            <div class="sub">
+              <h4>Fordeling pr. manifold</h4>
+              <div class="dist" data-bind-dist><p class="dist-note">—</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="plan">
+          <header class="panel-head"><h3>Opvarmningsplan</h3><p data-bind="planG.sub">Næste 24 timer: Odins planlagte varme og Touch' forvarme og opladning pr. rum</p></header>
+          <p class="empty" data-bind-show="planG.empty">Ingen plan endnu – venter på vejrudsigt og Odin.</p>
+          <div class="plan" data-bind-plan aria-label="Opvarmningsplan for de næste 24 timer"></div>
+          <p class="fc-legend" aria-hidden="true">
+            <span><i class="lbar"></i>Rumvarme (kWh varme)</span>
+            <span><i class="ldhw"></i>Varmt vand (kWh el)</span>
+            <span><i class="lleg"></i>Legionella (kWh el)</span>
+            <span><i class="llift"></i>Touch løfter Odins komfortbånd</span>
+            <span><i class="lpre"></i>Forvarme</span>
+            <span><i class="lch"></i>Opladning før vind og kulde</span>
+            <span><i class="lins"></i>Opladning – gulvet når det ikke helt</span>
+          </p>
+        </section>
+
+        <section class="panel" data-panel="forecast">
+          <header class="panel-head"><h3>Vejrudsigt</h3><p data-bind="fc.sub">72 timer · — · hentet —</p><span class="badge info" hidden>Preload +— °C</span></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Nu</dt><dd data-bind="forecast.temp">— <small>°C</small></dd></div>
+            <div class="metric"><dt>Maks. vind 24 t</dt><dd data-bind="forecast.windmax">— <small>m/s</small></dd></div>
+            <div class="metric"><dt>Min. 72 t</dt><dd data-bind="forecast.tmin">— <small>°C</small></dd></div>
+          </dl>
+          <p class="empty">Ingen vejrudsigt endnu</p>
+          <!-- Weather icons and wind arrow, referenced by binder.js (<use href="#i-…">). -->
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+            <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 1 1 9.5 5a6 6 0 0 0 9.5 9.5z"/></symbol>
+            <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 18z"/></symbol>
+            <symbol id="i-partly" viewBox="0 0 24 24"><path d="M8 5V3.5M3.5 8H2M4.6 4.6l-1-1M11.4 4.6l1-1"/><path d="M5.4 10.4A3.5 3.5 0 0 1 11 6.6"/><path d="M9 19h8a3.5 3.5 0 0 0 0-7 4.8 4.8 0 0 0-9.2 1.3A2.9 2.9 0 0 0 9 19z"/></symbol>
+            <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
+            <symbol id="i-snow" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01"/></symbol>
+            <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 20V4M6 10l6-6 6 6"/></symbol>
+          </defs></svg>
+          <div class="fc fc--dual" style="--now:0%">
+            <div class="fc-icons" data-hourly aria-hidden="true"></div>
+            <div class="fc-y" aria-hidden="true"></div>
+            <div class="fc-plot fc-temp" role="img" aria-label="Udetemperatur de næste 72 timer">
+              <svg viewBox="0 0 720 100" preserveAspectRatio="none" data-bind-fc="temp"><rect class="pre" x="0" y="0" width="0" height="100"/><polygon class="sa" points=""/><polyline class="sl" points=""/><rect class="past" x="0" y="0" width="0" height="100"/><polyline class="tl" points=""/><line class="now" x1="0" x2="0" y1="0" y2="100"/></svg>
+              <span class="fc-now">Nu</span>
+            </div>
+            <div class="fc-y2" aria-hidden="true"></div>
+            <div class="fc-y" aria-hidden="true"></div>
+            <div class="fc-plot fc-wind" role="img" aria-label="Vind de næste 72 timer">
+              <svg viewBox="0 0 720 60" preserveAspectRatio="none" data-bind-fc="wind"><polygon class="wa" points=""/><polyline class="wl" points=""/><rect class="past" x="0" y="0" width="0" height="60"/><line class="now" x1="0" x2="0" y1="0" y2="60"/></svg>
+            </div>
+            <div class="fc-y2" aria-hidden="true"><span>m/s</span></div>
+            <div class="fc-dirs" aria-hidden="true"></div>
+            <div class="fc-x" aria-hidden="true"></div>
+            <span class="fc-scrub" hidden aria-hidden="true"></span>
+            <div class="fc-readout" hidden aria-hidden="true"></div>
+          </div>
+          <p class="fc-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperatur °C</span>
+            <span><i class="lsun"></i>Sol W/m²</span>
+            <span><i class="lw"></i>Vind m/s</span>
+            <span><svg class="dir" viewBox="0 0 24 24"><use href="#i-arrow"/></svg>Vindretning</span>
+            <span><i class="lpre"></i>Preload aktiv</span>
+          </p>
+        </section>
+
+      </section>
+      <section class="view" id="v-conf-house" aria-labelledby="h-conf-house">
+        <header class="view-head"><h2 id="h-conf-house" data-bind="scope.title">Hus</h2><p data-bind="scope.sub">4 styringer · 2 zoner kalder · 1 fejl</p></header>
+        <nav class="section-nav" aria-label="Sektioner">
+          <a href="#sec-setup">Opsætning</a>
+          <a href="#sec-heat">Varme og vejr</a>
+          <a href="#sec-device">Enhed</a>
+          <a href="#sec-service">Service</a>
+        </nav>
+        <section class="section" id="sec-setup" aria-labelledby="sec-setup-h">
+          <h2 class="section-h" id="sec-setup-h">Opsætning<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel" data-save="add-node">
+          <header class="panel-head"><h3>Styringer</h3><p>V6-boards parret med huset</p><button class="help-btn" type="button" popovertarget="help-ctrl" style="anchor-name:--a-help-ctrl" aria-label="Hjælp: Styringer">?</button></header>
+          <div id="help-ctrl" popover class="help-pop" style="position-anchor:--a-help-ctrl"><p>Par og godkend V6-boards til huset. Ugodkendte boards forbliver lokale og bidrager ikke med rum eller varmkalde.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#controllers">Læs mere</a></div>
+          <div class="table-wrap">
+            <table class="table" data-bind-nodes>
+              <thead><tr><th>Navn</th><th>Værtsnavn eller IP</th><th>Status</th><th>Zoner</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div data-bind-scan></div>
+          <details class="more">
+            <summary>+ Tilføj manuelt</summary>
+            <div class="field"><label for="node_name">Navn</label><input class="input" id="node_name" name="name" placeholder="Ground floor"></div>
+            <div class="field"><label for="node_host">Værtsnavn eller IP</label><input class="input" id="node_host" name="host" placeholder="lune-v6.local" inputmode="url"></div>
+          </details>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn" type="button" data-action="scan-nodes">Scan netværket</button><span class="save-status" id="ss-add-node" aria-live="polite"></span></div><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Tilføj styring</button></footer>
+        </form>
+          </div>
+        </section>
+
+        <section class="section" id="sec-heat" aria-labelledby="sec-heat-h">
+          <h2 class="section-h" id="sec-heat-h">Varme og vejr<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel wide gated" data-save="heat-source">
+          <header class="panel-head"><h3>Varmekilde</h3><button class="help-btn" type="button" popovertarget="help-hs" style="anchor-name:--a-help-hs" aria-label="Hjælp: Varmekilde">?</button></header>
+          <div id="help-hs" popover class="help-pop" style="position-anchor:--a-help-hs"><p>Direkte forbindelse til varmekilden. Touch sender vægtet hustemperatur med et interval. Forkert vært eller skabeloner blokerer levering.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#heat-source">Læs mere</a></div>
+          <label class="switch"><span class="switch-text"><b>Varmekilde aktiveret</b></span><input type="checkbox" role="switch" name="enabled" checked></label>
+          <div class="gated-body">
+            <input class="state" type="radio" name="hs_type" id="hs-http" value="http">
+            <input class="state" type="radio" name="hs_type" id="hs-asgard" value="asgard" checked>
+            <div class="seg" role="radiogroup" aria-label="Adaptertype">
+              <label for="hs-http"><span>Generic HTTP</span></label>
+              <label for="hs-asgard"><span>Asgard</span></label>
+            </div>
+            <fieldset class="hs-fields typed-fields subs cols-2" data-type="http">
+              <div class="sub">
+                <h4>Forbindelse</h4>
+                <div class="field row"><label for="http_host">Vært</label><input class="input w-md" id="http_host" name="http_host" value="heat-bridge.local"></div>
+                <div class="field row"><label for="http_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="http_port" name="http_port" value="80" min="1" max="65535" step="1"></div>
+                <div class="field row"><label for="http_push_interval_s">Sendeinterval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk sendeinterval">−</button><span class="value"><input type="number" inputmode="decimal" id="http_push_interval_s" name="http_push_interval_s" value="60" min="5" max="3600" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Hæv sendeinterval">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Mapping</h4>
+                <div class="field row"><label for="http_weighted_temperature_variable">Vægtet temperaturvariabel</label><input class="input w-md" id="http_weighted_temperature_variable" name="http_weighted_temperature_variable" value="temperature_feedback_z1"></div>
+                <div class="field row"><label for="write_url_template">Skriv-URL-skabelon</label><input class="input w-lg" id="write_url_template" name="write_url_template" placeholder="http://{host}:{port}/{entity}/set?value={value}"></div>
+                <div class="field row"><label for="read_url_template">Læse-URL-skabelon</label><input class="input w-lg" id="read_url_template" name="read_url_template" placeholder="http://{host}:{port}/{entity}"></div>
+              </div>
+              <div class="sub">
+                <h4>Varmekildens input</h4>
+                <p class="hint">De fleste kedler og varmepumper uden rumføler styrer på returtemperatur eller en vejrkurve. Udfyld de input, din kilde har – Touch sender det samme husbehov i den form.</p>
+                <div class="field row"><label for="target_url_template">Rummål-URL ({value} = °C)</label><input class="input w-lg" id="target_url_template" name="target_url_template" placeholder="http://{host}:{port}/target?value={value}"></div>
+                <div class="field row"><label for="heat_request_url_template">Varmebehov-URL ({value} = 1/0)</label><input class="input w-lg" id="heat_request_url_template" name="heat_request_url_template" placeholder="http://{host}:{port}/heat?value={value}"></div>
+                <div class="field row"><label for="curve_offset_url_template">Kurveforskydning-URL ({value} = °C)</label><input class="input w-lg" id="curve_offset_url_template" name="curve_offset_url_template" placeholder="http://{host}:{port}/curve_offset?value={value}"></div>
+                <div class="field row"><label for="curve_gain">Kurveforskydning pr. °C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk kurveforskydning pr. °c">−</button><span class="value"><input type="number" inputmode="decimal" id="curve_gain" name="curve_gain" value="2.0" min="0.0" max="10.0" step="0.5"><span class="unit">°C/°C</span></span><button type="button" data-step="1" aria-label="Hæv kurveforskydning pr. °c">+</button></div></div>
+                <div class="field row"><label for="curve_max_offset_c">Maks. kurveforskydning</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk maks. kurveforskydning">−</button><span class="value"><input type="number" inputmode="decimal" id="curve_max_offset_c" name="curve_max_offset_c" value="5.0" min="0.0" max="15.0" step="0.5"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Hæv maks. kurveforskydning">+</button></div></div>
+                <dl class="kv"><div><dt>Husets behov sendes til</dt><dd data-bind="levers.state">—</dd></div></dl>
+              </div>
+              <div class="sub" data-bind-hs-delivery="http">
+                <h4>Sendes til HTTP-endpoint</h4>
+                <p class="mono" data-bind="hs.sent.url">—</p>
+                <div class="table-wrap"><table class="table">
+                  <thead><tr><th></th><th>Værdi</th><th>Mål</th><th>Seneste afsendelse</th></tr></thead>
+                  <tbody>
+                    <tr><th>Vægtet hustemperatur</th><td class="num" data-bind="hs.http.temp">—</td><td class="mono" data-bind="hs.http.entity">—</td><td data-bind="hs.http.when">—</td></tr>
+                  </tbody>
+                </table></div>
+                <details class="more">
+                  <summary>Hvordan beregnes den?</summary>
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>Zone</th><th>Temperatur</th><th>Vægt</th><th>Bidrag</th></tr></thead>
+                    <tbody data-bind-weight-rows></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div class="sub">
+                <h4>Test</h4>
+                <div class="actions">
+                  <button class="btn" type="button" data-action="hs-test-read">Test læsning</button>
+                  <button class="btn" type="button" data-action="hs-test-push">Test afsendelse</button>
+                </div>
+                <div class="test-result" aria-live="polite"></div>
+              </div>
+            </fieldset>
+            <fieldset class="hs-fields typed-fields subs cols-2" data-type="asgard">
+              <div class="sub">
+                <h4>Forbindelse</h4>
+                <div class="field row"><label for="asgard_host">Vært</label><input class="input w-md" id="asgard_host" name="asgard_host" value="asgard.local"></div>
+                <div class="field row"><label for="asgard_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="asgard_port" name="asgard_port" value="80" min="1" max="65535" step="1"></div>
+                <div class="field row"><label for="asgard_push_interval_s">Sendeinterval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk sendeinterval">−</button><span class="value"><input type="number" inputmode="decimal" id="asgard_push_interval_s" name="asgard_push_interval_s" value="60" min="5" max="3600" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Hæv sendeinterval">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Hustemperatur → Asgard</h4>
+                <p class="hint">Den målte, vægtede hustemperatur. Den ændres aldrig – Odin og Asgard lærer af den. Sendes, mens V6'erne har givet Touch lease.</p>
+                <div class="field row"><label for="asgard_weighted_temperature_variable">Asgard-enhed</label><input class="input w-md" id="asgard_weighted_temperature_variable" name="asgard_weighted_temperature_variable" value="Virtual Thermostat Input z1"></div>
+                <dl class="kv">
+                  <div><dt>Værdi</dt><dd data-bind="hs.asgard.temp">—</dd></div>
+                  <div><dt>Seneste afsendelse</dt><dd data-bind="hs.asgard.when">—</dd></div>
+                </dl>
+                <details class="more">
+                  <summary>Hvordan beregnes den?</summary>
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>Zone</th><th>Temperatur</th><th>Vægt</th><th>Bidrag</th></tr></thead>
+                    <tbody data-bind-weight-rows></tbody>
+                  </table></div>
+                </details>
+              </div>
+              <div class="sub">
+                <h4>Komfortmål → Asgard</h4>
+                <label class="switch"><span class="switch-text"><b>Synkroniser komfortmål</b><small>Anbefales slået til – også med Odin. Når Odin styrer, sendes husets mål uløftet som reserve, så Asgard har det rigtige mål, hvis Odin stopper.</small></span><input type="checkbox" role="switch" name="target_sync_enabled" checked></label>
+                <div class="field row"><label for="climate_entity">Asgard-termostat</label><input class="input w-md" id="climate_entity" name="climate_entity" value="Virtual Thermostat z1"></div>
+                <dl class="kv">
+                  <div><dt>Værdi</dt><dd data-bind="hs.asgard.setpoint">—</dd></div>
+                  <div><dt>Seneste afsendelse</dt><dd data-bind="hs.asgard.setpointWhen">—</dd></div>
+                  <div><dt>Komfortmålets rolle</dt><dd data-bind="dash.targetRole">—</dd></div>
+                </dl>
+              </div>
+              <div class="sub">
+                <h4>Test</h4>
+                <div class="actions">
+                  <button class="btn" type="button" data-action="hs-test-read">Test læsning</button>
+                  <button class="btn" type="button" data-action="hs-test-push">Test afsendelse</button>
+                </div>
+                <div class="test-result" aria-live="polite"></div>
+              </div>
+              <div class="sub">
+                <h4>Odin 2.0</h4>
+                <div class="field row"><label for="odin_host">Odin-adresse</label><input class="input w-md" id="odin_host" name="odin_host" placeholder="192.168.1.20"></div>
+                <label class="switch"><span class="switch-text"><b>Odin-plan</b><small>Bruger Odins varmevinduer til opsugning og forvarme</small></span><input type="checkbox" role="switch" name="odin_plan_enabled" checked></label>
+                <label class="switch"><span class="switch-text"><b>Løft Odins komfortplan</b><small>Touch hæver midlertidigt Odins komfortbånd før vind og kulde, og når et rum halter. Din egen plan skrives tilbage bagefter, og Touch rører den ikke, hvis du ændrer den i Odin.</small></span><input type="checkbox" role="switch" name="odin_control_enabled"></label>
+                <div class="field row"><label for="odin_max_lift_c">Maks. løft</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk maks. løft">−</button><span class="value"><input type="number" inputmode="decimal" id="odin_max_lift_c" name="odin_max_lift_c" value="1.5" min="0.3" max="3.0" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Hæv maks. løft">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Odin-status</h4>
+                <dl class="kv">
+                  <div><dt>Asgard → Odin</dt><dd data-bind="odin.link">—</dd></div>
+                  <div><dt>Komfortplan</dt><dd data-bind="odin.state">—</dd></div>
+                  <div><dt>Husets behov sendes til</dt><dd data-bind="odin.route">—</dd></div>
+                </dl>
+                <details class="more">
+                  <summary>MQTT (valgfri)</summary>
+                  <p class="hint">Læser Odins plan og pumpens telemetri direkte fra brokeren. Det giver hurtigere opdagelse, hvis Asgard holder op med at sende. Touch publicerer aldrig, og HTTP bruges stadig, hvis brokeren forsvinder.</p>
+                  <label class="switch"><span class="switch-text"><b>Brug MQTT</b></span><input type="checkbox" role="switch" name="mqtt_enabled"></label>
+                  <div class="field row"><label for="mqtt_host">Vært</label><input class="input w-md" id="mqtt_host" name="mqtt_host" placeholder="192.168.1.10"></div>
+                  <div class="field row"><label for="mqtt_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="mqtt_port" name="mqtt_port" value="1883" min="1" max="65535"></div>
+                  <div class="field row"><label for="mqtt_username">Bruger</label><input class="input w-md" id="mqtt_username" name="mqtt_username" autocomplete="off"></div>
+                  <div class="field row"><label for="mqtt_password">Adgangskode</label><input class="input w-md" type="password" id="mqtt_password" name="mqtt_password" autocomplete="new-password"></div>
+                  <div class="field row"><label for="mqtt_topic_prefix">Topic-præfiks</label><input class="input w-md" id="mqtt_topic_prefix" name="mqtt_topic_prefix" placeholder="hp/hp1"></div>
+                  <div class="field row"><label for="mqtt_hp_id">Varmepumpe-id</label><input class="input w-xs" id="mqtt_hp_id" name="mqtt_hp_id" placeholder="hp1"></div>
+                </details>
+              </div>
+            </fieldset>
+          </div>
+          <footer class="panel-foot"><span class="save-status" id="ss-heat-source" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem varmekilde</button></footer>
+        </form>
+
+        <form class="panel wide" data-save="rooms">
+          <header class="panel-head"><h3>Rum</h3><p>Indstillinger Touch ejer; vægge, areal og gulv sættes på hver V6</p><button class="help-btn" type="button" popovertarget="help-rooms" style="anchor-name:--a-help-rooms" aria-label="Hjælp: Rum">?</button></header>
+          <div id="help-rooms" popover class="help-pop" style="position-anchor:--a-help-rooms"><p>Hvilke rum der tæller i den vægtede hustemperatur, deres indbyrdes vægt, og hvor meget vind og sol flytter vejr-forvarmningen. Vægge, areal og gulv kommer fra hver V6.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#rooms">Læs mere</a></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Rum</th><th>I hustemperatur</th><th class="num">Vægt</th><th class="num">Vind</th><th class="num">Sol</th></tr></thead>
+            <tbody data-bind-room-rows><tr><td colspan="5" class="muted">—</td></tr></tbody>
+          </table></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-rooms" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem rum</button></footer>
+        </form>
+
+        <form class="panel c5" data-save="circulation">
+          <header class="panel-head"><h3>Pumpe</h3><button class="help-btn" type="button" popovertarget="help-pump" style="anchor-name:--a-help-pump" aria-label="Hjælp: Pumpe">?</button></header>
+          <div id="help-pump" popover class="help-pop" style="position-anchor:--a-help-pump"><p>Cirkulationspumpens vært, port og ESPHome-entiteter til flow, løftehøjde og effekt på hus-dashboardet.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#pump">Læs mere</a></div>
+          <div class="field row"><label for="pump_host">Pumpe-vært</label><input class="input w-md" id="pump_host" name="host" value="" placeholder="alpha2go.local"></div>
+          <div class="field row"><label for="pump_port">Port</label><input class="input w-xs" type="number" inputmode="numeric" id="pump_port" name="pump_port" value="80" min="1" max="65535" step="1"></div>
+          <div class="field row"><label for="pump_flow_entity">Flow-entitet</label><input class="input w-md" id="pump_flow_entity" name="flow_entity" value="pump_flow"></div>
+          <div class="field row"><label for="pump_head_entity">Tryk-entitet</label><input class="input w-md" id="pump_head_entity" name="head_entity" value="pump_head_pressure"></div>
+          <div class="field row"><label for="pump_power_entity">Effekt-entitet</label><input class="input w-md" id="pump_power_entity" name="power_entity" value="pump_power"></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-circulation" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem pumpe</button></footer>
+        </form>
+
+        <form class="panel c5" data-save="weather">
+          <header class="panel-head"><h3>Vejrplacering</h3><button class="help-btn" type="button" popovertarget="help-weather" style="anchor-name:--a-help-weather" aria-label="Hjælp: Vejrplacering">?</button></header>
+          <div id="help-weather" popover class="help-pop" style="position-anchor:--a-help-weather"><p>Koordinater og max preload-boost til vejrstyret forvarmning. Forkert placering mistimer øst/vest-eksponering.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#weather">Læs mere</a></div>
+          <div class="pair">
+            <div class="field row"><label for="wx_lat">Breddegrad</label><input class="input w-sm" id="wx_lat" name="latitude" value="55.6761" inputmode="decimal"></div>
+            <div class="field row"><label for="wx_lon">Længdegrad</label><input class="input w-sm" id="wx_lon" name="longitude" value="12.5683" inputmode="decimal"></div>
+          </div>
+          <div class="field row"><label for="wx_boost">Maks. preload-boost</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk maks. preload-boost">−</button><span class="value"><input type="number" inputmode="decimal" id="wx_boost" name="wx_boost" value="1.5" min="0" max="3" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Hæv maks. preload-boost">+</button></div></div>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn" type="button" data-action="wx-geo">Estimer fra netværk</button><span class="save-status" id="ss-weather" aria-live="polite"></span></div><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem vejr</button></footer>
+        </form>
+          </div>
+        </section>
+
+        <section class="section" id="sec-device" aria-labelledby="sec-device-h">
+          <h2 class="section-h" id="sec-device-h">Enhed<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel c4" data-save="settings">
+          <header class="panel-head"><h3>Identitet</h3><button class="help-btn" type="button" popovertarget="help-identity" style="anchor-name:--a-help-identity" aria-label="Hjælp: Identitet">?</button></header>
+          <div id="help-identity" popover class="help-pop" style="position-anchor:--a-help-identity"><p>Enhedsnavn og display-idle. Vejrplacering bevares, når du nulstiller registret under Service.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#identity">Læs mere</a></div>
+          <div class="field row"><label for="dev_name">Enhedsnavn</label><input class="input w-md" id="dev_name" name="name" value="Huskoordinator"></div>
+          <div class="field row"><label for="dev_idle">Display idle minutter</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk display idle minutter">−</button><span class="value"><input type="number" inputmode="decimal" id="dev_idle" name="dev_idle" value="5" min="0" max="120" step="1"><span class="unit">min</span></span><button type="button" data-step="1" aria-label="Hæv display idle minutter">+</button></div></div>
+          <footer class="panel-foot"><span class="save-status" id="ss-settings" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem identitet</button></footer>
+        </form>
+
+        <form class="panel c4" data-save="firmware">
+          <header class="panel-head"><h3>Firmware</h3><button class="help-btn" type="button" popovertarget="help-firmware" style="anchor-name:--a-help-firmware" aria-label="Hjælp: Firmware">?</button></header>
+          <div id="help-firmware" popover class="help-pop" style="position-anchor:--a-help-firmware"><p>Søg efter opdateringer, installer fra netværket, eller upload en .bin. Enheden genstarter, når flash er færdig.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#firmware">Læs mere</a></div>
+          <dl class="kv">
+            <div><dt>Installeret</dt><dd data-bind="fw.installed">—</dd></div>
+            <div><dt>Seneste udgivelse</dt><dd data-bind="fw.latest">—</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn" type="submit" name="action" value="check">Søg efter opdatering</button>
+            <button class="btn" type="submit" name="action" value="install" disabled>Installer seneste</button>
+          </div>
+          <div class="field"><label for="ota_file">Manuel .bin-upload</label><label class="input file" for="ota_file"><input class="sr-only" id="ota_file" name="ota_file" type="file" accept=".bin,.ota.bin"><span class="file-pick">Vælg fil</span><span class="file-name" data-empty="Ingen fil valgt">Ingen fil valgt</span></label></div>
+          <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload" disabled>Upload firmware</button></footer>
+        </form>
+
+        <form class="panel c4" data-save="backup">
+          <header class="panel-head"><h3>Sikkerhedskopi</h3><button class="help-btn" type="button" popovertarget="help-backup" style="anchor-name:--a-help-backup" aria-label="Hjælp: Sikkerhedskopi">?</button></header>
+          <div id="help-backup" popover class="help-pop" style="position-anchor:--a-help-backup"><p>Eksportér eller importér indstillinger som JSON. Hemmeligheder medtages aldrig. Import overskriver koordinator-indstillinger på denne enhed.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#backup">Læs mere</a></div>
+          <p class="note">Eksportér indstillinger som JSON. Hemmeligheder medtages aldrig.</p>
+          <div class="field"><label for="backup_file">Importfil</label><label class="input file" for="backup_file"><input class="sr-only" id="backup_file" name="backup_file" type="file" accept="application/json,.json"><span class="file-pick">Vælg fil</span><span class="file-name" data-empty="Ingen fil valgt">Ingen fil valgt</span></label></div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="export">Eksportér kopi</button>
+            <button class="btn primary" type="submit" name="action" value="import" disabled>Importér kopi</button>
+          </footer>
+        </form>
+          </div>
+        </section>
+
+        <details class="section" id="sec-service">
+          <summary class="section-h">Service<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></summary>
+          <div class="section-grid">
+        <section class="panel">
+          <header class="panel-head"><h3>Service</h3><button class="help-btn" type="button" popovertarget="help-service" style="anchor-name:--a-help-service" aria-label="Hjælp: Service">?</button></header>
+          <div id="help-service" popover class="help-pop" style="position-anchor:--a-help-service"><p>Idriftsættelsesnoter, kommandolog, live-diagnostik og destruktiv registret-nulstilling. Genstart og OTA ligger her — ikke i enhedsmenuen.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#service">Læs mere</a></div>
+          <div class="sub">
+            <h4>Kommandolog</h4>
+            <pre class="log" data-bind="log" aria-live="polite" lang="en">—</pre>
+          </div>
+          <div class="sub">
+            <h4>Diagnostik</h4>
+            <dl class="kv">
+              <div><dt>Styringer online</dt><dd data-bind="diag.nodes">—</dd></div>
+              <div><dt>Polling</dt><dd data-bind="diag.poll">—</dd></div>
+              <div><dt>Firmware-slot</dt><dd data-bind="diag.ota">—</dd></div>
+            </dl>
+          </div>
+          <div class="actions">
+            <button class="btn danger" type="button" popovertarget="confirm-reset" style="anchor-name:--a-confirm-reset">Nulstil register…</button>
+          </div>
+          <div id="confirm-reset" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-reset-t" aria-describedby="confirm-reset-d" style="position-anchor:--a-confirm-reset">
+            <p class="confirm-title" id="confirm-reset-t">Nulstil registret nu?</p>
+            <p id="confirm-reset-d">Sletter styringer, rum og kommandolog. Vejrplacering bevares.</p>
+            <div class="confirm-actions">
+              <button class="btn" type="button" popovertarget="confirm-reset" popovertargetaction="hide" autofocus>Annullér</button>
+              <button class="btn danger-solid" type="button" data-action="reset-registry" popovertarget="confirm-reset" popovertargetaction="hide">Nulstil register</button>
+            </div>
+          </div>
+        </section>
+          </div>
+        </details>
+      </section>
+  </main>
+</div>
+
+<script type="application/json" id="i18n">{"rt.savedOk":"Gemt","rt.saveFailed":"Gem fejlede","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt — prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{n} s siden","rt.minutesAgo":"{n} min siden","rt.offline":"Offline","common.undo":"Fortryd","state.calling":"Kalder på varme","state.idle":"I ro","state.fault":"Fejl","state.off":"Ikke i brug","tile.fault":"Fejl","tile.off":"Fra","badge.ok":"Ok","badge.warn":"Opmerk","badge.bad":"Fejl","badge.calling":"Kalder","common.on":"Til","common.off":"Fra","common.approve":"Godkend","common.remove":"Fjern","common.days":"dage","common.faults":"{n} fejl","common.noFaults":"ingen fejl","device.this":"denne enhed","device.copied":"Kopieret","device.copyDiag":"Kopiér diagnostik","dash.house.sub":"{manifolds} styringer · {calling} zoner kalder · {faults} fejl","dash.manifold.sub":"{zones} zoner · {calling} kalder · {state}","dash.zone.sub":"{state} · mål {target}°C","fc.sub":"72 timer · {model} · hentet {time}","alert.boardFault":"{board} svarer ikke","ctrl.removeTitle":"Fjern styring","ctrl.removeAsk":"Fjern {name}?","ctrl.removeConfirm":"Fjern {name}? Rum der kun er mappet hertil bliver tomme.","ctrl.removeBtn":"Fjern…","ctrl.removeDo":"Fjern","ctrl.editName":"Redigér navn","ctrl.found":"Fundet","ctrl.addRow":"Tilføj","ctrl.empty":"Ingen styringer endnu. Scan netværket eller tilføj et værtsnavn.","ctrl.host":"Værtsnavn eller IP","common.unnamed":"Unavngivet","common.cancel":"Annullér","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Forbundet","heat.badge.bad":"Utilgængelig","heat.badge.off":"Slået fra","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Sendes ikke – slået fra","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Tester…","hs.testReadOk":"Læsning OK · {time} · {code} · {ms} ms","hs.testPushOk":"Afsendelse OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C fra {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Tjek host og port, og at varmekilden kan nås.","hs.testCheckDns":"Tjek at værtsnavnet kan slås op.","hs.testCheckHttp":"Tjek endpoint, og at varmekilden svarer.","hs.testStatus.failed":"Fejl","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Adresse mangler","hs.testReason.network":"Intet netværk","hs.testReason.endpoint":"Ugyldigt endpoint","hs.testReason.notReady":"Varmekilde er ikke klar","hs.testReason.busy":"Optaget","hs.testReason.rejected":"Afvist","status.trusted":"Godkendt","status.paired":"Venter","status.unpaired":"Venter","status.waiting":"Venter","status.unreachable":"Ingen forbindelse","status.confirmed":"Bekræftet","status.sent":"Sendt","status.mismatch":"Afviger","status.blocked":"Blokeret","status.unknown":"Ukendt","status.disabled":"Slået fra","scope.title.house":"Hus","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Under mål","house.at":"Ved mål","house.above":"Over mål","dash.house.sub.one":"{manifolds} styringer · {calling} zone kalder · {faults} fejl","fc.badge":"Preload +{v} °C","fc.windFrom":"fra {dir}","fc.dirTitle":"{time}: {speed} m/s fra {dir}","fc.sky.sun":"Sol","fc.sky.partly":"Delvis sol","fc.sky.cloud":"Skyet","fc.sky.rain":"Regn","fc.sky.snow":"Sne","fc.sky.moon":"Klar nat","diag.pollOk":"OK","diag.pollFail":"{n} fejlede polls","rooms.includeAria":"Medregn {name} i hustemperatur","rooms.weightAria":"Vægt for {name}","rooms.windAria":"Vindpåvirkning for {name}","rooms.solarAria":"Solindfald for {name}","m.supplyShort":"Frem","m.returnShort":"Ret","strip.sub":"Zoner på {name}","diag.ota.valid":"Bekræftet","diag.ota.pending_verify":"Afventer bekræftelse","diag.ota.new":"Ny, ikke startet","diag.ota.invalid":"Afvist","diag.ota.aborted":"Afvist","diag.ota.undefined":"Fabriksimage","hs.notSentLease":"Ikke sendt – V6 har ikke givet Touch lease","hs.route.odin_schedule":"Odins komfortplan","hp.compOn":"kompressor {hz} Hz","hp.compOff":"kompressor slukket","flow.none":"Ingen åbne sløjfer – pumpen kører på minimumsflow.","flow.note":"Omtrentlig: beregnet ud fra ventilåbningen. Rørlængde frem til hver manifold er ikke med.","flow.noteLpm":"Omtrentlig: beregnet ud fra ventilåbningen og pumpens flow. Rørlængde frem til hver manifold er ikke med.","flow.zoneTip":"{zone}: ventil {v} % · {pct} % af manifolden","flow.closed":"lukket","fc.now":"Nu","role.reserve":"Reserve – Odin styrer. Asgard bruger målet (uløftet), hvis Odin stopper.","role.reserveNow":"Reserve – Odin styrer pumpen nu. Asgard bruger målet, hvis Odin stopper.","role.asgardNow":"Aktiv – Asgard styrer selv lige nu og varmer efter målet.","role.offOdin":"Fra – stopper Odin, bruger Asgard sit eget setpunkt. Slå synkronisering til.","role.drives":"Styrer – Asgard varmer efter målet (+{c} °C ved behov).","role.off":"Fra – Asgard får ikke husets mål.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Varmer {kw} kW","now.off":"Slukket","now.dhw":"Varmt vand","planG.odin":"Odin","planG.noOdin":"Ingen Odin-plan","planG.tip.heat":"{h} · rumvarme {kwh} kWh","planG.tip.dhw":"{h} · varmt vand {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Forvarme +{c} °C","planG.tipCharge":"Opladning +{c} °C","planG.tipInsufficient":"Opladning +{c} °C – gulvet kan ikke dække hele underskuddet","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Komfortbånd løftet +{c} °C","hs.mqttPasswordSet":"Gemt – lad feltet stå tomt for at beholde den","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"forbundet","hs.mqttDisconnected":"ikke forbundet","strip.lease.refused":"V6 afviste Touch-lease – kører lokalt","strip.lease.none":"Ingen Touch-lease – kører lokalt","strip.charge.now":"Lader gulvet op (+{c} °C) før vind og kulde","strip.charge.insufficient":"Lader op (+{c} °C) – gulvet kan ikke dække hele underskuddet","hs.link.ok":"OK – Odin får data og lærer","hs.link.forwarder_off":"Asgard sender ikke til Odin – Odin lærer ikke","hs.link.telemetry_stale":"Odin får ikke frisk telemetri ({s} min) – Odin lærer ikke","hs.link.no_room_temperature":"Odin får ingen rumtemperatur – Odin lærer ikke","hs.link.odin_unreachable":"Odin svarer ikke","hs.link.unknown":"Ukendt","hs.odinStatus.disabled":"Fra","hs.odinStatus.idle":"Venter på første kontrol","hs.odinStatus.watching":"Overvåger – intet løft nu","hs.odinStatus.lifted":"Løftet +{c} °C fra kl. {h}:00 i {n} t","hs.odinStatus.yielded":"På pause – planen er ændret i Odin","hs.odinStatus.rate_limited":"Venter – højst én ændring pr. 20 min","hs.odinStatus.write_failed":"Kunne ikke skrive til Odin","hs.odinStatus.odin_unreachable":"Odin svarer ikke","hs.odinStatus.schedule_unreadable":"Odins plan kunne ikke læses","hs.odinStatus.clock_invalid":"Touch-uret er ikke sat","hs.odinWanted":"ønsket +{c} °C fra kl. {h}:00 i {n} t","hs.route.virtual_thermostat":"Asgards virtuelle termostat (+{c} °C)","hs.route.generic":"Varmekildens input (+{c} °C)","hs.route.none":"Ingen – Odin styrer efter sin egen plan","hs.leverState":"Mål {t} °C · varmebehov {r} · kurve +{c} °C","_dec":",","_walls":{"n":"N","e":"Ø","s":"S","w":"V"},"_lang":"da"}</script>
+<script src="/ui.js?v=8bed3c8e1d" defer></script>
+<script>
+(function(){
+/* +/−, submit and dropdown close live in binder.js (one handler each). */
+window.addEventListener('hashchange',function(){var el=document.getElementById((location.hash||'').slice(1));if(el&&el.tagName==='DETAILS')el.open=true;});
+})();
+</script>
+</body>
+</html>

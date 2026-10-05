@@ -1,0 +1,29 @@
+# Physical Z1-Z6 chip for the selected Lune V6 controller. Runtime layout
+# places this next to the controller chips as [C1|...|Cx] [Z1|...|Z6].
+button:
+  id: page_zone_detail_chip_${index}
+  hidden: true
+  x: 12
+  y: 520
+  width: 72
+  height: 64
+  bg_color: ${lt_color_text_faint}
+  bg_opa: 100%
+  border_width: 0
+  radius: 16
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - label:
+        id: page_zone_detail_chip_${index}_label
+        align: CENTER
+        text: "Z${human}"
+        text_color: ${lt_color_text}
+        text_font: montserrat_22
+  on_click:
+    - lambda: |-
+        id(zone_detail_keypad_buffer) = "";
+        id(controller_picker_open) = false;
+        if (id(lune_touch_app).display_select_zone(
+                id(lune_touch_app).display_selected_node_index(), ${index}))
+          id(touch_display_refresh_token).update();

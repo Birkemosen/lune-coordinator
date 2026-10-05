@@ -1,0 +1,90 @@
+# Manifold-række: HEAD + 6 zonefelter. Højde/bredde sættes i refresh (kompakt/stort).
+obj:
+  id: page_home_mrow_${node}
+  hidden: true
+  x: 16
+  y: 178
+  width: 992
+  height: 95
+  bg_color: ${lds_card}
+  bg_opa: COVER
+  border_width: 0
+  radius: 20
+  pad_all: 0
+  shadow_width: 0
+  scrollable: false
+  widgets:
+    - label:
+        id: page_home_mrow_${node}_name
+        x: 12
+        y: 12
+        width: 120
+        height: 24
+        text: "Manifold"
+        text_color: ${lds_fg}
+        text_font: lds_font_sm
+        long_mode: dot
+        bg_opa: 0%
+    - label:
+        id: page_home_mrow_${node}_mid
+        x: 12
+        y: 34
+        width: 120
+        height: 20
+        text: "M${human}"
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_mrow_${node}_flow
+        x: 12
+        y: 52
+        width: 120
+        height: 20
+        text: "--,-° → --,-°"
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_mrow_${node}_dt
+        hidden: true
+        x: 12
+        y: 68
+        width: 120
+        height: 20
+        text: ""
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_mrow_${node}_status
+        x: 12
+        y: 70
+        width: 120
+        height: 20
+        text: ""
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: clip
+        bg_opa: 0%
+    - !include
+        file: home_zone_tile.yaml
+        vars: {node: "${node}", zone: 0, zone_human: 1}
+    - !include
+        file: home_zone_tile.yaml
+        vars: {node: "${node}", zone: 1, zone_human: 2}
+    - !include
+        file: home_zone_tile.yaml
+        vars: {node: "${node}", zone: 2, zone_human: 3}
+    - !include
+        file: home_zone_tile.yaml
+        vars: {node: "${node}", zone: 3, zone_human: 4}
+    - !include
+        file: home_zone_tile.yaml
+        vars: {node: "${node}", zone: 4, zone_human: 5}
+    - !include
+        file: home_zone_tile.yaml
+        vars: {node: "${node}", zone: 5, zone_human: 6}

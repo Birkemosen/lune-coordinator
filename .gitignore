@@ -1,0 +1,17 @@
+graphify-out/
+.code-review-graph/
+tests/dashboard/.stamp_version_tmp.yaml
+.cache/
+.tools/
+.gitnexus/
+.gitnexus
+.vscode/
+.idea/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+__pycache__/

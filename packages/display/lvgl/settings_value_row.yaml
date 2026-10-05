@@ -1,0 +1,41 @@
+# Settings row that shows a value and cycles it on tap. No chevron: no submenu.
+button:
+  id: ${id}
+  x: 24
+  y: ${y}
+  width: 696
+  height: 56
+  bg_color: ${lt_color_control_bg}
+  bg_opa: 100%
+  border_width: 0
+  radius: 10
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - label:
+        id: ${id}_label
+        x: 16
+        y: 14
+        width: 380
+        height: 28
+        text: "${label}"
+        text_color: ${lt_color_text}
+        text_font: montserrat_18
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: ${id}_value
+        x: 400
+        y: 14
+        width: 272
+        height: 28
+        text: "${value}"
+        text_color: ${lt_color_text_muted}
+        text_font: montserrat_18
+        text_align: RIGHT
+        long_mode: clip
+        bg_opa: 0%
+  on_click:
+    - lambda: |-
+        ${action}
+        id(touch_display_refresh_token).update();

@@ -1,0 +1,12 @@
+{
+  "project": "Lune V6",
+  "id": "v6",
+  "note": "6-zoners manifold-controller. System-omfanget er manifolden.",
+  "modes": ["dash", "conf"],
+  "scopes": [
+    {"id": "sys", "kind": "system", "label": "Manifold"},
+    {"id": "z1", "kind": "zone"}, {"id": "z2", "kind": "zone"}, {"id": "z3", "kind": "zone"},
+    {"id": "z4", "kind": "zone"}, {"id": "z5", "kind": "zone"}, {"id": "z6", "kind": "zone"}
+  ],
+  "strip": {"variant": "default"}
+}

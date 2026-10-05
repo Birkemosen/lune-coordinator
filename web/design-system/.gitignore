@@ -1,0 +1,11 @@
+.DS_Store
+*.zip
+.code-review-graph/
+.gitnexus
+__pycache__/
+*.pyc
+.venv/
+.python-version
+
+# Local build noise (committed dist/ is the release artifact for consumers)
+*.log

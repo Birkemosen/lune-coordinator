@@ -1,0 +1,54 @@
+# Full-row toggle. The 56px row is the hit target; the track is visual only.
+button:
+  id: ${id}
+  x: 24
+  y: ${y}
+  width: 696
+  height: 56
+  bg_color: ${lt_color_control_bg}
+  bg_opa: 100%
+  border_width: 0
+  radius: 10
+  pad_all: 0
+  shadow_width: 0
+  widgets:
+    - label:
+        id: ${id}_label
+        x: 16
+        y: 14
+        width: 500
+        height: 28
+        text: "${label}"
+        text_color: ${lt_color_text}
+        text_font: montserrat_18
+        long_mode: clip
+        bg_opa: 0%
+    - obj:
+        id: ${id}_track
+        x: 608
+        y: 8
+        width: 72
+        height: 40
+        bg_color: ${lt_color_text_faint}
+        bg_opa: 100%
+        border_width: 0
+        radius: 20
+        pad_all: 0
+        scrollable: false
+        widgets:
+          - obj:
+              id: ${id}_knob
+              x: 4
+              y: 4
+              width: 32
+              height: 32
+              bg_color: ${lt_color_text}
+              bg_opa: 100%
+              border_width: 0
+              radius: 16
+              pad_all: 0
+              scrollable: false
+  on_click:
+    - lambda: |-
+        ${action}
+        id(touch_display_refresh_token).update();

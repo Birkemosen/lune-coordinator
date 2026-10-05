@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lune Touch UI preview</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    a { display: inline-block; margin: 0.5rem 1rem 0.5rem 0; }
+    code { background: #f0f0f0; padding: 0.1em 0.35em; }
+  </style>
+</head>
+<body>
+  <h1>Lune Touch UI preview</h1>
+  <p>Build with <code>make touch-ui</code>, then open a preview page (CSS inlined, mock API via binder):</p>
+  <p>
+    <a href="touch-ui/dist/preview-en.html">English preview</a>
+    <a href="touch-ui/dist/preview-da.html">Danish preview</a>
+  </p>
+  <p>To exercise the live binder against mock data, open a preview and set <code>window.LUNE_TOUCH_MOCK = true</code> in the console before load, or append the script below in DevTools.</p>
+  <script>
+    // Enable mock mode for local file:// or static hosting without the device API.
+    window.LUNE_TOUCH_MOCK = true;
+  </script>
+</body>
+</html>

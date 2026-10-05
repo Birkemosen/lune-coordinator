@@ -1,0 +1,4 @@
+lune_touch_dashboard:
+  id: lune_touch_dashboard_id
+  coordinator_id: lune_touch_app
+  ui_dist: ../web/touch-ui/dist
