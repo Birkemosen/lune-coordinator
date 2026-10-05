@@ -7,7 +7,7 @@ button:
   y: 520
   width: 72
   height: 64
-  bg_color: ${lt_color_text_faint}
+  bg_color: ${lds_raised}
   bg_opa: 100%
   border_width: 0
   radius: 16
@@ -18,7 +18,7 @@ button:
         id: page_zone_detail_controller_${index}_label
         align: CENTER
         text: "C${human}"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_22
   on_click:
     - lambda: |-

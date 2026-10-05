@@ -9,7 +9,7 @@ Du bygger Lune Touch' væghængte dashboard i LVGL. Facit for udseende er billed
 og reglerne står i `docs/display/DESIGN-display.md`.
 
 Altid:
-- Farver kun fra `docs/display/theme/lune_theme.yaml` (`${lds_*}`) eller `lune_theme.h` (`LDS_DARK_*`). Ingen andre hex-værdier; paletten er RGB565-præcis.
+- Farver kun fra `packages/display/lvgl/tokens.generated.yaml` (`${lds_*}`), `lune_theme.h` (`LDS_DARK_*`) eller `lune_design_tokens.h` (`lune::tokens::k*`) — alle genereret fra `../lune-design-system` med `make design-tokens`. Ingen andre hex-værdier; paletten er RGB565-præcis.
 - Fonte kun fra temaet (`lds_font_*`). Tal-fonte (`2xl`, `hero`, `d28`, `d36`, `d44`, `d168`) indeholder kun cifre og `, . ° − : /`.
 - Ingen gennemsigtighed til farveblanding, ingen gradienter, ingen skygger (`shadow_width: 0`).
 - Trykflader mindst 64×64; − / + 96. Mindste tekst 16 px.

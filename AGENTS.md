@@ -3,7 +3,7 @@
 Web-dashboardet følger **Lune Design System 2** i `web/design-system/`.
 Den fulde begrundelse står i `web/design-system/DESIGN.md`.
 
-LVGL-displayet (`packages/display/`) bruger stadig søskende-repoet `../lds` via `make design-tokens` indtil videre.
+LVGL-displayet (`packages/display/`) får tema, C++-farver og brand-mærker fra søskende-repoet `../lune-design-system` (`display` i `tokens/tokens.json`) via `make design-tokens`. Ret aldrig de genererede filer i hånden.
 
 ## Altid (web)
 - Byg UI med komponenterne i `web/design-system/css/lune-ui.src.css`. Find den nærmeste eksisterende komponent, før du laver en ny.

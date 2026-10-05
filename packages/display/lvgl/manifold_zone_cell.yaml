@@ -7,7 +7,7 @@ button:
   y: 0
   width: 110
   height: 108
-  bg_color: ${lt_color_surface}
+  bg_color: ${lds_card}
   bg_opa: 100%
   border_width: 0
   radius: 0
@@ -20,7 +20,7 @@ button:
         y: 12
         width: 10
         height: 10
-        bg_color: ${lt_color_text_muted}
+        bg_color: ${lds_muted}
         bg_opa: 100%
         border_width: 0
         radius: 5
@@ -32,10 +32,10 @@ button:
         width: 76
         height: 20
         text: "Zone ${zone_human}"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: lune_latin_16
         long_mode: clip
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
     - label:
         id: dashboard_m${node}_z${zone}_temperature_label
@@ -44,10 +44,10 @@ button:
         width: 76
         height: 28
         text: "--.- C"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_22
         long_mode: clip
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
     - label:
         id: dashboard_m${node}_z${zone}_setpoint_label
@@ -56,10 +56,10 @@ button:
         width: 76
         height: 20
         text: "\uF054 --.- C"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_16
         long_mode: clip
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
     - bar:
         id: dashboard_m${node}_z${zone}_bar
@@ -71,10 +71,10 @@ button:
         max_value: 5
         value: 0
         animated: false
-        bg_color: ${lt_color_separator}
+        bg_color: ${lds_line}
         radius: 5
         indicator:
-          bg_color: ${lt_color_accent}
+          bg_color: ${lds_accent}
           radius: 5
     - obj:
         id: dashboard_m${node}_z${zone}_tick_1
@@ -82,7 +82,7 @@ button:
         y: 36
         width: 10
         height: 1
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
         border_width: 0
     - obj:
@@ -91,7 +91,7 @@ button:
         y: 52
         width: 10
         height: 1
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
         border_width: 0
     - obj:
@@ -100,7 +100,7 @@ button:
         y: 68
         width: 10
         height: 1
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
         border_width: 0
     - obj:
@@ -109,7 +109,7 @@ button:
         y: 84
         width: 10
         height: 1
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
         border_width: 0
   on_click:

@@ -45,8 +45,8 @@ AUTO_PORT := $(strip $(shell ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLA
 SERIAL_PORT := $(if $(PORT),$(PORT),$(AUTO_PORT))
 SECRETS_LINK ?= configurations/secrets.yaml
 DESIGN_DIR ?= $(firstword $(wildcard \
-	$(abspath $(CURDIR)/../lds) \
-	$(abspath $(ROOT_ABS)/../lds) \
+	$(abspath $(CURDIR)/../lune-design-system) \
+	$(abspath $(ROOT_ABS)/../lune-design-system) \
 ))
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(CURDIR)
@@ -99,7 +99,7 @@ help:
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make touch-ui         Build Lune Touch web UI (Design System 2)"
 	@echo "  make test             Run host tests"
-	@echo "  make design-tokens    Install LVGL LDS tokens from ../lds"
+	@echo "  make design-tokens    Install LVGL theme, C++ tokens and brand marks from ../lune-design-system"
 	@echo "  make design-verify    Check committed LDS artifacts (LVGL)"
 	@echo "  make test-forecast    Run forecast preload-model tests"
 	@echo "  make test-coordinator Run coordinator model tests"
@@ -316,18 +316,18 @@ touch-ui:
 dashboard-build: touch-ui
 
 design-tokens:
-	@if [ ! -f "$(LDS_DIR)/generate_tokens.py" ]; then \
-	  echo "LDS checkout not found at $(LDS_DIR)"; \
+	@if [ ! -f "$(LDS_DIR)/tools/lds_display.py" ]; then \
+	  echo "lune-design-system checkout not found at $(LDS_DIR)"; \
 	  exit 1; \
 	fi
-	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist
+	$(PYTHON) $(LDS_DIR)/tools/lds_display.py --install $(LDS_CONSUMER)
 
 design-verify:
-	@if [ ! -f "$(LDS_DIR)/generate_tokens.py" ]; then \
-	  echo "WARNING: LDS checkout not found at $(LDS_DIR), skipping"; \
-	  exit 0; \
+	@if [ ! -f "$(LDS_DIR)/tools/lds_display.py" ]; then \
+	  echo "WARNING: lune-design-system checkout not found at $(LDS_DIR), skipping"; \
+	else \
+	  $(PYTHON) $(LDS_DIR)/tools/lds_display.py --install $(LDS_CONSUMER) --check; \
 	fi
-	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist --check
 
 clean:
 	rm -f $(FORECAST_OUT) $(COORDINATOR_OUT)

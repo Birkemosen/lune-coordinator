@@ -500,6 +500,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
                       const char *confirmation, char *response, size_t capacity);
   bool set_node_profile(const char *node_id, const char *name, char *response, size_t capacity);
+  // Point a paired node at a new address. `host` is an IPv4 address or a hostname.
+  bool set_node_host(const char *node_id, const char *host, char *response, size_t capacity);
   bool remove_node(const char *node_id, const char *confirmation, char *response, size_t capacity);
   bool reset_registry(const char *confirmation, char *response, size_t capacity);
   bool bind_room(const char *room_id, const char *room_name, size_t node_index, size_t zone_index,
@@ -757,6 +759,7 @@ class LuneTouchCoordinator : public esphome::Component {
   TaskHandle_t lan_scan_task_handle_{nullptr};
   bool node_refresh_requested_{false};
   bool lan_scan_requested_{false};
+  uint32_t auto_lan_scan_last_ms_{0};
   char lan_discovery_[24]{"not_run"};
   uint8_t lan_candidate_count_{0};
   struct LanScanCandidate {
@@ -785,6 +788,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool preload_gain_scale_init_{false};
   char last_poll_error_[80]{};
   char node_last_success_host_[::lune_touch::MAX_NODES][64]{};
+  // Caller holds the state lock. Moves node `index` to a new address.
+  bool rehome_node_locked_(size_t index, const char *hostname, const char *fallback_ip);
   char node_last_failure_[::lune_touch::MAX_NODES][80]{};
   // Label reported by the V6 itself (/api/v1/zones device_name/location). Runtime
   // only — not persisted; the UI shows it when the board has no Touch-side name.

@@ -20,7 +20,7 @@ obj:
         width: 4
         height: 24
         radius: 2
-        bg_color: ${lt_color_thermal_return}
+        bg_color: ${lds_info}
         bg_opa: 100%
         border_width: 0
         pad_all: 0
@@ -33,7 +33,7 @@ obj:
         width: 4
         height: 24
         radius: 2
-        bg_color: ${lt_color_thermal_supply}
+        bg_color: ${lds_accent}
         bg_opa: 100%
         border_width: 0
         pad_all: 0

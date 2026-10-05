@@ -6,7 +6,7 @@ button:
   y: ${y}
   width: 180
   height: 48
-  bg_color: ${lt_color_accent_forest}
+  bg_color: ${lds_ok}
   bg_opa: 0%
   border_width: 0
   radius: 0
@@ -19,7 +19,7 @@ button:
         y: 0
         width: 4
         height: 48
-        bg_color: ${lt_color_control_border}
+        bg_color: ${lds_line}
         bg_opa: 100%
         border_width: 0
         radius: 0
@@ -31,7 +31,7 @@ button:
         width: 120
         height: 24
         text: "${label}"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_18
         long_mode: clip
         bg_opa: 0%
@@ -42,7 +42,7 @@ button:
         width: 32
         height: 24
         text: "${chevron}"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_16
         text_align: CENTER
         bg_opa: 0%

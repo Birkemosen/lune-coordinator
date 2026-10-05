@@ -12,6 +12,13 @@
 #if defined(USE_ESP32)
 #include <esp_heap_caps.h>
 #endif
+#include "esphome/components/wifi/wifi_component.h"
+#ifdef USE_LUNE_WIFI
+#include "esphome/components/lune_wifi/lune_wifi.h"
+#endif
+#ifdef USE_CAPTIVE_PORTAL
+#include "esphome/components/captive_portal/captive_portal.h"
+#endif
 
 namespace esphome {
 namespace lune_touch_dashboard {
@@ -446,9 +453,35 @@ void LuneTouchDashboard::unlock_api_buffers_() {
 #endif
 }
 
+void LuneTouchDashboard::write_wifi_json_(char *out, size_t capacity) {
+  JsonDocument doc;
+  auto *wifi = wifi::global_wifi_component;
+  char ssid[wifi::SSID_BUFFER_SIZE]{};
+  if (wifi != nullptr && wifi->is_connected())
+    wifi->wifi_ssid_to(ssid);
+  doc["ssid"] = ssid;
+  doc["connected"] = wifi != nullptr && wifi->is_connected();
+  doc["ap_active"] = wifi != nullptr && wifi->is_ap_active();
+#ifdef USE_LUNE_WIFI
+  if (auto *lw = lune_wifi::global_lune_wifi) {
+    doc["switch"] = lw->result_label();
+    doc["target_ssid"] = lw->target_ssid();
+  }
+#endif
+  if (serializeJson(doc, out, capacity) >= capacity && capacity > 2)
+    std::snprintf(out, capacity, "{}");
+}
+
 bool LuneTouchDashboard::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
+#ifdef USE_CAPTIVE_PORTAL
+  // In the fallback AP the stock captive portal (network list + password form)
+  // must win "/"; it is registered after this handler.
+  if (url == "/" && captive_portal::global_captive_portal != nullptr &&
+      captive_portal::global_captive_portal->is_active())
+    return false;
+#endif
   if (url == "/" || is_ui_asset_url(url.c_str()))
     return true;
   return strncmp(url.c_str(), API_PREFIX, API_PREFIX_LEN) == 0 &&
@@ -726,6 +759,11 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/wifi") == 0) {
+      write_wifi_json_(data_buf_, DATA_BUF_SIZE);
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/nodes/scan") == 0) {
       if (coordinator_)
         coordinator_->write_node_scan_json(data_buf_, DATA_BUF_SIZE);
@@ -947,6 +985,16 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     const bool accepted = coordinator_->set_node_trust(node_id, trust, confirm,
                                                        data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 404);
+  } else if (strncmp(path, "/nodes/", 7) == 0 && strstr(path, "/host") != nullptr) {
+    char node_id[32]{};
+    if (!extract_middle_segment(path, "/nodes/", "/host", node_id, sizeof(node_id))) {
+      send_error_(api, 404, "unknown_route", "Unknown node host route");
+      return;
+    }
+    char host[72]{};
+    parse_text_param(api, api.json_body, "host", host, sizeof(host));
+    const bool accepted = coordinator_->set_node_host(node_id, host, data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, 400);
   } else if (strstr(path, "/profile") != nullptr) {
     char node_id[32]{};
     if (!extract_middle_segment(path, "/nodes/", "/profile", node_id, sizeof(node_id))) {
@@ -1398,6 +1446,27 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
                                                      has_display_idle_timeout, display_idle_timeout_s,
                                                      data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/wifi") == 0) {
+#ifdef USE_LUNE_WIFI
+    char ssid[33]{};
+    char password[65]{};
+    parse_text_param(api, api.json_body, "ssid", ssid, sizeof(ssid));
+    parse_text_param(api, api.json_body, "password", password, sizeof(password));
+    auto *lw = lune_wifi::global_lune_wifi;
+    if (ssid[0] == '\0') {
+      send_error_(api, 400, "invalid_ssid", "SSID is required");
+    } else if (lw == nullptr || lw->result() == lune_wifi::SwitchResult::PENDING) {
+      send_error_(api, 409, "busy", "A WiFi change is already running");
+    } else {
+      // Reply first: the switch drops this connection. WiFi calls belong on the main loop.
+      std::string s_ssid(ssid), s_password(password);
+      this->defer([lw, s_ssid, s_password]() { lw->request_switch(s_ssid, s_password); });
+      write_wifi_json_(data_buf_, DATA_BUF_SIZE);
+      send_ok_(api, data_buf_);
+    }
+#else
+    send_error_(api, 501, "unsupported", "Runtime WiFi is not in this build");
+#endif
   } else if (strcmp(path, "/display/wake") == 0) {
     const bool accepted = coordinator_->request_display_wake(data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
@@ -1425,11 +1494,27 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
   }
 }
 
+namespace {
+// AsyncWebServer::request_post_handler is protected; a using-declaration in a
+// derived type exposes it so non-API POSTs can go back to ESPHome.
+struct EsphomePostHandler : web_server_idf::AsyncWebServer {
+  using web_server_idf::AsyncWebServer::request_post_handler;
+};
+}  // namespace
+
 esp_err_t LuneTouchDashboard::raw_post_handler_(httpd_req_t *request) {
   auto *dashboard = static_cast<LuneTouchDashboard *>(request->user_ctx);
   if (dashboard == nullptr) {
     httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Dashboard unavailable");
     return ESP_OK;
+  }
+  // This handler replaces ESPHome's catch-all POST. Everything outside the API
+  // (browser OTA POST /update, other AsyncWebHandlers) goes back to ESPHome's
+  // dispatcher, which expects its AsyncWebServer in user_ctx.
+  if (strncmp(request->uri, API_PREFIX, API_PREFIX_LEN) != 0 &&
+      dashboard->base_ != nullptr && dashboard->base_->get_server() != nullptr) {
+    request->user_ctx = dashboard->base_->get_server();
+    return EsphomePostHandler::request_post_handler(request);
   }
   return dashboard->handle_raw_post_(request);
 }

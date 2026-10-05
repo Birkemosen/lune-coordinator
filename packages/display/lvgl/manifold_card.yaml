@@ -7,7 +7,7 @@ obj:
   y: ${y}
   width: 823
   height: 108
-  bg_color: ${lt_color_surface}
+  bg_color: ${lds_card}
   bg_opa: 100%
   border_width: 0
   radius: 0
@@ -21,17 +21,17 @@ obj:
         width: 120
         height: 88
         text: "Not connected"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: lune_latin_16
         long_mode: clip
-        bg_color: ${lt_color_surface}
+        bg_color: ${lds_card}
         bg_opa: 100%
     - obj:
         x: 136
         y: 8
         width: 1
         height: 92
-        bg_color: ${lt_color_separator}
+        bg_color: ${lds_line}
         bg_opa: 100%
         border_width: 0
         radius: 0

@@ -11,8 +11,10 @@ When designing, building, or changing the Touch **web** dashboard, treat
 `css/lune-ui.src.css`) as the authority. Build pages via `web/touch-ui/` after
 `examples/v6` patterns. Do not cite external platform guidelines.
 
-LVGL (`packages/display/`) still installs tokens from sibling `../lds` via
-`lds.yaml` / `make design-tokens` until that path is migrated.
+LVGL (`packages/display/`) gets its theme (`lune_theme.h`, `tokens.generated.yaml`),
+`lune_design_tokens.h` and brand marks from sibling `../lune-design-system`
+(`display` in `tokens/tokens.json`, `tokens/brand.json`) via `lds.yaml` /
+`make design-tokens` (`tools/lds_display.py`). Never hand-edit those files.
 
 ## Required (web)
 

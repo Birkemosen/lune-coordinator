@@ -62,14 +62,14 @@ rg -F 'hidden: true' "$display" >/dev/null
 ! rg -F 'id: chrome_menu_panel' "$display"
 ! rg -F 'id: nav_home' "$display"
 ! rg -F 'id: nav_settings' "$display"
-rg -F 'lt_color_control_bg' packages/display/lvgl/tokens.generated.yaml >/dev/null
+rg -F 'lds_raised' packages/display/lvgl/tokens.generated.yaml >/dev/null
 ! rg -F 'id: chrome_brand_lockup' "$display"
 ! rg -F 'text: "TOUCH"' "$display"
 rg -F 'text: "\uF013"' "$display" >/dev/null
 rg -F 'id: page_settings_pane' "$display" >/dev/null
 ! rg -F 'id: page_settings_card' "$display"
-rg -F 'bg_color: ${lt_color_text_faint}' "$zone_chip" >/dev/null
-rg -F 'bg_color: ${lt_color_text_faint}' "$controller_chip" >/dev/null
+rg -F 'bg_color: ${lds_raised}' "$zone_chip" >/dev/null
+rg -F 'bg_color: ${lds_raised}' "$controller_chip" >/dev/null
 rg -F 'display_set_weather_compensation_enabled' "$display" >/dev/null
 rg -F 'display_set_heat_source_enabled' "$display" >/dev/null
 rg -F 'display_cycle_idle_timeout' "$display" >/dev/null
@@ -393,7 +393,8 @@ for file in "$display" "$manifold" "$zone_cell" "$zone_chip" "$controller_chip" 
     exit 1
   fi
 done
-rg -F 'lt_color_accent' "$tokens" >/dev/null
+rg -F 'lds_accent' "$tokens" >/dev/null
+! rg -F 'lt_color_' packages/display
 rg -F 'lune_design_tokens.h' "$preview" >/dev/null
 
 # Every button declares width and height of at least 48.

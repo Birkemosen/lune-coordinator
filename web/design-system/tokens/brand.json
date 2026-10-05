@@ -1,0 +1,74 @@
+{
+  "$note": "Brand-mærker (seksrørs-halo). Geometri og farver til tools/lds_brand.py. Flyttet fra Birkemosen/lds 2026-10-05; værdierne er uændrede.",
+  "color": {
+    "neutral": {
+      "dark": {
+        "bg": "#000000",
+        "surface": "#0c0b09",
+        "surface-raised": "rgba(255,236,210,.05)",
+        "text": "#f4efe6",
+        "text-strong": "#faf6ef",
+        "text-muted": "rgba(232,220,200,.62)",
+        "text-faint": "rgba(210,196,176,.45)",
+        "border": "rgba(232,214,188,.12)",
+        "separator": "rgba(232,214,188,.10)",
+        "separator-soft": "rgba(232,214,188,.06)",
+        "control-bg": "#14110e",
+        "control-border": "rgba(232,214,188,.16)",
+        "control-bg-hover": "rgba(255,236,210,.07)"
+      }
+    },
+    "thermal": {
+      "supply": "#FCD34D",
+      "heat": "#F59E0B",
+      "return": "#10B981",
+      "heat-stop": 28
+    },
+    "pipe": {
+      "calling": "#F59E0B",
+      "idle": "#10B981",
+      "unused": "rgba(232,214,188,.20)"
+    },
+    "metallic": {
+      "top": "#1c1915",
+      "bottom": "#0c0b09",
+      "rim": "#25221E",
+      "word": "#FAF6EF"
+    }
+  },
+  "brand": {
+    "cx": 200,
+    "cy": 175,
+    "halo-r": 72,
+    "cut-r": 72,
+    "disc-r": 56,
+    "stroke": 6.5,
+    "disc-stroke": 1.5,
+    "pipe-xs": [
+      138,
+      162.8,
+      187.6,
+      212.4,
+      237.2,
+      262
+    ],
+    "pipe-from": 175,
+    "pipe-to": 278,
+    "lockup-scale": 0.8,
+    "lockup-cut-r": 58,
+    "lockup-disc-r": 50,
+    "lune-size": 24,
+    "lune-tracking": 2.8,
+    "lune-y": 183,
+    "v6-size": 40,
+    "v6-tracking": 0.4,
+    "v6-y": 188,
+    "viewBox-portrait": "110 90 180 210",
+    "viewBox-landscape": "118 100 202 150",
+    "viewBox-lockup": "142 118 154 114",
+    "lockup-width": 80,
+    "lockup-height": 59,
+    "manifold-width": 108,
+    "manifold-height": 80
+  }
+}

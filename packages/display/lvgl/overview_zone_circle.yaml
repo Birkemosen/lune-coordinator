@@ -6,7 +6,7 @@ button:
   y: 20
   width: 220
   height: 72
-  bg_color: ${lt_color_bg}
+  bg_color: ${lds_bg}
   bg_opa: 0%
   border_width: 0
   radius: 0
@@ -20,7 +20,7 @@ button:
         width: 3
         height: 56
         radius: 2
-        bg_color: ${lt_color_separator}
+        bg_color: ${lds_line}
         bg_opa: 100%
         border_width: 0
         pad_all: 0
@@ -35,7 +35,7 @@ button:
         radius: 5
         bg_opa: 0%
         border_width: 2
-        border_color: ${lt_color_text_muted}
+        border_color: ${lds_muted}
         pad_all: 0
         scrollable: false
         clickable: false
@@ -47,7 +47,7 @@ button:
         width: 18
         height: 18
         text: ""
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip
@@ -59,7 +59,7 @@ button:
         width: 150
         height: 20
         text: "Z${zone_human}"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: lune_latin_14
         long_mode: clip
         bg_opa: 0%
@@ -70,7 +70,7 @@ button:
         width: 160
         height: 36
         text: "--.-"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_22
         long_mode: clip
         bg_opa: 0%
@@ -81,7 +81,7 @@ button:
         width: 36
         height: 20
         text: "C"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: RIGHT
         long_mode: clip

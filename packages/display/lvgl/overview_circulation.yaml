@@ -19,7 +19,7 @@ obj:
         width: 3
         height: 340
         radius: 2
-        bg_color: ${lt_color_ok}
+        bg_color: ${lds_ok}
         bg_opa: 100%
         border_width: 0
         pad_all: 0
@@ -32,7 +32,7 @@ obj:
         width: 60
         height: 24
         text: "P"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_16
         text_align: CENTER
         long_mode: clip
@@ -44,7 +44,7 @@ obj:
         width: 60
         height: 20
         text: "OK"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip
@@ -56,7 +56,7 @@ obj:
         width: 60
         height: 24
         text: "--.-"
-        text_color: ${lt_color_series_heat}
+        text_color: ${lds_accent}
         text_font: montserrat_16
         text_align: CENTER
         long_mode: clip
@@ -68,7 +68,7 @@ obj:
         width: 60
         height: 16
         text: "L/min"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip
@@ -80,7 +80,7 @@ obj:
         width: 60
         height: 24
         text: "--.-"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_16
         text_align: CENTER
         long_mode: clip
@@ -92,7 +92,7 @@ obj:
         width: 60
         height: 16
         text: "m"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip
@@ -104,7 +104,7 @@ obj:
         width: 60
         height: 24
         text: "--"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_16
         text_align: CENTER
         long_mode: clip
@@ -116,7 +116,7 @@ obj:
         width: 60
         height: 16
         text: "W"
-        text_color: ${lt_color_text_muted}
+        text_color: ${lds_muted}
         text_font: montserrat_14
         text_align: CENTER
         long_mode: clip

@@ -25,10 +25,10 @@ obj:
         end_angle: 335deg
         bg_opa: 0%
         arc_width: 2
-        arc_color: ${lt_color_control_border}
+        arc_color: ${lds_line}
         indicator:
           arc_width: 2
-          arc_color: ${lt_color_control_border}
+          arc_color: ${lds_line}
         knob:
           bg_opa: 0%
           pad_all: 0
@@ -47,10 +47,10 @@ obj:
         end_angle: 335deg
         bg_opa: 0%
         arc_width: 2
-        arc_color: ${lt_color_control_border}
+        arc_color: ${lds_line}
         indicator:
           arc_width: 2
-          arc_color: ${lt_color_control_border}
+          arc_color: ${lds_line}
         knob:
           bg_opa: 0%
           pad_all: 0
@@ -69,10 +69,10 @@ obj:
         end_angle: 335deg
         bg_opa: 0%
         arc_width: 2
-        arc_color: ${lt_color_control_border}
+        arc_color: ${lds_line}
         indicator:
           arc_width: 2
-          arc_color: ${lt_color_control_border}
+          arc_color: ${lds_line}
         knob:
           bg_opa: 0%
           pad_all: 0
@@ -91,10 +91,10 @@ obj:
         end_angle: 335deg
         bg_opa: 0%
         arc_width: 3
-        arc_color: ${lt_color_control_border}
+        arc_color: ${lds_line}
         indicator:
           arc_width: 3
-          arc_color: ${lt_color_control_border}
+          arc_color: ${lds_line}
         knob:
           bg_opa: 0%
           pad_all: 0
@@ -113,10 +113,10 @@ obj:
         end_angle: 335deg
         bg_opa: 0%
         arc_width: 3
-        arc_color: ${lt_color_ok}
+        arc_color: ${lds_ok}
         indicator:
           arc_width: 3
-          arc_color: ${lt_color_ok}
+          arc_color: ${lds_ok}
         knob:
           bg_opa: 0%
           pad_all: 0

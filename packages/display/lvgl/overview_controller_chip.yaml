@@ -6,7 +6,7 @@ obj:
   y: 64
   width: 80
   height: 80
-  bg_color: ${lt_color_control_bg}
+  bg_color: ${lds_raised}
   bg_opa: 0%
   border_width: 0
   radius: 0
@@ -20,7 +20,7 @@ obj:
         width: 80
         height: 20
         text: "C${human}"
-        text_color: ${lt_color_text}
+        text_color: ${lds_fg}
         text_font: montserrat_16
         long_mode: clip
         bg_opa: 0%
@@ -31,7 +31,7 @@ obj:
         width: 20
         height: 22
         text: "\uF077"
-        text_color: ${lt_color_series_heat}
+        text_color: ${lds_accent}
         text_font: montserrat_16
         text_align: CENTER
         bg_opa: 0%
@@ -42,7 +42,7 @@ obj:
         width: 60
         height: 22
         text: "--.-"
-        text_color: ${lt_color_series_heat}
+        text_color: ${lds_accent}
         text_font: montserrat_16
         long_mode: clip
         bg_opa: 0%
@@ -53,7 +53,7 @@ obj:
         width: 20
         height: 22
         text: "\uF078"
-        text_color: ${lt_color_series_cool}
+        text_color: ${lds_info}
         text_font: montserrat_16
         text_align: CENTER
         bg_opa: 0%
@@ -64,7 +64,7 @@ obj:
         width: 60
         height: 22
         text: "--.-"
-        text_color: ${lt_color_series_cool}
+        text_color: ${lds_info}
         text_font: montserrat_16
         long_mode: clip
         bg_opa: 0%

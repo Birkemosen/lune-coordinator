@@ -236,6 +236,25 @@ bool HouseModel::update_node_name(const char *node_id, const char *name) {
   return false;
 }
 
+int HouseModel::update_node_host(const char *node_id, const char *hostname, const char *fallback_ip) {
+  if (node_id == nullptr || node_id[0] == '\0')
+    return -1;
+  const bool has_hostname = hostname != nullptr && hostname[0] != '\0';
+  const bool has_ip = fallback_ip != nullptr && fallback_ip[0] != '\0';
+  if (!has_hostname && !has_ip)
+    return -1;
+  for (size_t i = 0; i < node_count_; i++) {
+    if (!same_text_(nodes_[i].node_id, node_id))
+      continue;
+    copy_text_(nodes_[i].hostname, sizeof(nodes_[i].hostname), hostname);
+    copy_text_(nodes_[i].fallback_ip, sizeof(nodes_[i].fallback_ip), fallback_ip);
+    // Unknown until the next poll proves the new address.
+    nodes_[i].reachable = false;
+    return static_cast<int>(i);
+  }
+  return -1;
+}
+
 bool HouseModel::remove_node(const char *node_id) {
   if (node_id == nullptr || node_id[0] == '\0')
     return false;
