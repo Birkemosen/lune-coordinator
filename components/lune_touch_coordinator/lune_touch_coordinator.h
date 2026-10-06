@@ -350,23 +350,41 @@ struct OdinMqttState {
 };
 
 // Energy price → Odin (energy_price.h): configuration + push status.
+/// Odin's own price settings as last read from /dashboard/state (odin task).
+/// The ENTSO-E token itself is never kept — only whether Odin has one.
+struct OdinPriceView {
+  bool known{false};
+  char price_mode[12]{};
+  char price_source[16]{};
+  char ec_bzn[12]{};
+  float fixed_price{NAN};
+  bool token_set{false};
+  uint32_t read_ms{0};
+};
+
 struct PriceState {
   lune_touch_price::Config cfg{};
   lune_touch_price::SchedulerState sched{};
   bool push_requested{false};
   bool run_pending{false};
   lune_touch_price::Due due{lune_touch_price::Due::NONE};
-  /// Odin price_source write still owed: 0 none, 1 "api", 2 "energy_charts".
-  uint8_t source_pending{0};
-  uint32_t source_last_try_ms{0};
+  /// Odin settings write still owed: 0 none, 1 apply cfg (Touch: price_source
+  /// api; Odin model: its own price settings), 2 restore "energy_charts".
+  uint8_t odin_write_pending{0};
+  uint32_t odin_write_last_try_ms{0};
+  /// ENTSO-E token entered for Odin, held until it has been written there.
+  bool odin_token_pending{false};
   char odin_source[16]{"unknown"};
+  OdinPriceView odin{};
   uint32_t last_fetch_ok_ms{0};
   int64_t last_push_ok_epoch{0};
   int64_t last_attempt_epoch{0};
   uint8_t hours_pushed{0};
   float fx{NAN};
+  char spot_used[16]{};  ///< spot source of the last computed day
+  bool spot_fallback{false};
   bool grid_from_cache{false};
-  bool energinet_from_cache{false};
+  bool system_from_cache{false};
   char last_reason[12]{};
   char last_error[48]{};
 };
@@ -389,20 +407,31 @@ struct PriceRuntime {
   char payload[640]{};
 };
 
-/// POST /prices/settings: null / NAN / has_* false = unchanged.
+/// POST /prices/settings: null / empty / NAN / has_* false = unchanged.
 struct PriceSettingsUpdate {
   bool has_enabled{false};
   bool enabled{false};
-  const char *area{nullptr};
+  const char *model{nullptr};
+  const char *zone{nullptr};
+  const char *spot_source{nullptr};
+  float spot_fixed_eur{NAN};
+  const char *currency{nullptr};
+  float fx{NAN};
   const char *grid_source{nullptr};
   const char *grid_gln{nullptr};
   const char *grid_code{nullptr};
   const char *grid_schedule{nullptr};
-  const char *energinet_source{nullptr};
-  float energinet_fixed_dkk{NAN};
-  float elafgift_dkk{NAN};
-  float markup_dkk{NAN};
+  const char *system_source{nullptr};
+  float system_fixed{NAN};
+  float energy_tax{NAN};
+  float markup{NAN};
   float vat_pct{NAN};
+  const char *odin_mode{nullptr};
+  const char *odin_source{nullptr};
+  float odin_fixed_price{NAN};
+  /// ENTSO-E token: non-empty = replace; `clear_token` = forget it.
+  const char *entsoe_token{nullptr};
+  bool clear_token{false};
 };
 
 struct OdinPhysicsState {
@@ -631,6 +660,8 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_prices_json(char *buffer, size_t capacity) const;
   bool set_price_settings(const PriceSettingsUpdate &update, char *response, size_t capacity);
   bool request_price_push(char *response, size_t capacity);
+  /// "Apply zone defaults": energy tax, VAT, currency/FX and sources for a zone (not saved).
+  void write_price_zone_defaults_json(const char *zone, char *buffer, size_t capacity) const;
   bool request_heat_source_test_read(char *response, size_t capacity);
   bool request_heat_source_test_push(char *response, size_t capacity);
   bool set_circulation_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
@@ -1009,6 +1040,14 @@ class LuneTouchCoordinator : public esphome::Component {
   bool fetch_https_(const char *url, char *body, size_t capacity, int *status, char *error, size_t error_len);
   bool fetch_datahub_series_(const char *gln, const char *codes_json, char *body, size_t capacity,
                              char *error, size_t error_len);
+  /// Spot for today+tomorrow into price_rt_->samples (calculation currency).
+  /// Returns the sample count; *used names the source that answered.
+  size_t fetch_spot_(const lune_touch_price::Config &cfg, int today, char *body, size_t capacity,
+                     const char **used, bool *fallback, float *fx, char *error, size_t error_len);
+  bool write_odin_price_settings_(uint8_t what, const lune_touch_price::Config &cfg, bool send_token,
+                                  char *error, size_t error_len);
+  /// ENTSO-E security token (write-only; never returned by any GET).
+  char entsoe_token_[64]{};
 };
 
 }  // namespace lune_touch_coordinator

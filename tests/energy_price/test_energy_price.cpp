@@ -6,10 +6,33 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
 
 using namespace lune_touch_price;
 
 static bool near(double a, double b, double eps = 1e-4) { return std::fabs(a - b) < eps; }
+
+static std::string fixture(const char *name) {
+  std::ifstream f(std::string("tests/energy_price/fixtures/") + name, std::ios::binary);
+  assert(f.good() && "run from the repo root (make test-energy-price)");
+  std::stringstream ss;
+  ss << f.rdbuf();
+  return ss.str();
+}
+
+// Europe/Copenhagen in October 2026 before the 25th: CEST = UTC+2.
+static bool cest(int64_t epoch, int *ymd, int *hour) {
+  const int64_t local = epoch + 2 * 3600;
+  int y;
+  unsigned m, d;
+  const int64_t days = local / 86400;
+  civil_from_days(days, &y, &m, &d);
+  *ymd = make_ymd(y, static_cast<int>(m), static_cast<int>(d));
+  *hour = static_cast<int>((local - days * 86400) / 3600);
+  return true;
+}
 
 static std::string spot_body_for_day(int ymd, int hours, double base_dkk_mwh, bool repeat_hour2) {
   // 15-minute records with local TimeDK strings, like DayAheadPrices.
@@ -95,7 +118,7 @@ int main() {
     const SpotDay day = aggregate_spot_day(samples, n, 20261006);
     assert(day.complete && day.hours_with_data == 24);
     // Quarters base+h*10+{0,1,2,3} → mean base+h*10+1.5 DKK/MWh.
-    assert(near(day.dkk_kwh[0], 1.0015) && near(day.dkk_kwh[17], 1.1715));
+    assert(near(day.kwh[0], 1.0015) && near(day.kwh[17], 1.1715));
     assert(near(spot_fx(samples, n), 7.4625, 1e-3));
     // Tomorrow is absent from the body.
     assert(!aggregate_spot_day(samples, n, 20261007).complete);
@@ -107,7 +130,7 @@ int main() {
     assert(n == 92);
     const SpotDay day = aggregate_spot_day(samples, n, 20260329);
     assert(day.complete && day.hours_with_data == 23);
-    assert(near(day.dkk_kwh[2], day.dkk_kwh[1]));
+    assert(near(day.kwh[2], day.kwh[1]));
   }
   {
     // Autumn DST (25 h): 02:xx twice — all 8 quarters average into hour 2.
@@ -117,7 +140,7 @@ int main() {
     const SpotDay day = aggregate_spot_day(samples, n, 20261025);
     assert(day.complete);
     // (520+521+522+523 + 1500+1501+1502+1503)/8 = 1011.5 DKK/MWh
-    assert(near(day.dkk_kwh[2], 1.0115));
+    assert(near(day.kwh[2], 1.0115));
   }
   {
     // Half a day is not enough; nulls are skipped; cap is respected.
@@ -185,13 +208,13 @@ int main() {
   // --- all-in formula --------------------------------------------------------
   Config cfg{};
   // spot 1.07 + tariff 0.077 + energinet 0.115 + elafgift 0.008 + markup 0 = 1.270 DKK, × 1.25 VAT
-  assert(near(all_in_dkk(1.07f, 0.077f, 0.115f, cfg), 1.5875));
-  cfg.markup_dkk = 0.05f;
+  assert(near(all_in(1.07f, 0.077f, 0.115f, cfg), 1.5875));
+  cfg.markup = 0.05f;
   cfg.vat_pct = 0.0f;
-  assert(near(all_in_dkk(1.07f, 0.077f, 0.115f, cfg), 1.32));
+  assert(near(all_in(1.07f, 0.077f, 0.115f, cfg), 1.32));
   cfg = Config{};
   // Negative spot is allowed (the all-in can go below the taxes).
-  assert(near(all_in_dkk(-0.2f, 0.0f, 0.0f, cfg), (-0.2 + 0.008) * 1.25));
+  assert(near(all_in(-0.2f, 0.0f, 0.0f, cfg), (-0.2 + 0.008) * 1.25));
 
   // € conversion, 4 decimals.
   assert(near(to_eur(1.5875f, 7.4625f), 0.2127));
@@ -256,8 +279,141 @@ int main() {
   assert(valid_gln("5790000610976") && !valid_gln("57900006109") && !valid_gln("57900006109x6"));
   assert(valid_charge_code("TNT1009") && valid_charge_code("40000") && !valid_charge_code("a\"b") &&
          !valid_charge_code(""));
-  Area area{};
-  assert(parse_area("DK2", &area) && area == Area::DK2 && !parse_area("SE3", &area));
+
+  // --- zones / EIC / defaults ------------------------------------------------
+  assert(ZONE_COUNT == 37);
+  assert(find_zone("NL") && std::strcmp(find_zone("NL")->eic, "10YNL----------L") == 0);
+  assert(find_zone("IT-NORTH") == find_zone("IT-North"));
+  assert(std::strcmp(find_zone("SE1")->eic, "10Y1001A1001A44P") == 0);
+  assert(std::strcmp(find_zone("SE4")->eic, "10Y1001A1001A47J") == 0);
+  assert(std::strcmp(find_zone("DE-LU")->eic, "10Y1001A1001A82H") == 0);
+  assert(std::strcmp(find_zone("DE-AT-LU")->eic, "10Y1001A1001A63L") == 0);
+  assert(std::strcmp(find_zone("EE")->eic, "10Y1001A1001A39I") == 0);
+  assert(std::strcmp(find_zone("NO5")->eic, "10Y1001A1001A48H") == 0);
+  assert(std::strcmp(find_zone_by_eic("10Y1001A1001A73I")->id, "IT-North") == 0);
+  assert(find_zone("XX") == nullptr && find_zone_by_eic("10YXX") == nullptr);
+  // Every EIC Odin's firmware knows maps to exactly one zone.
+  for (size_t i = 0; i < ZONE_COUNT; i++)
+    for (size_t j = i + 1; j < ZONE_COUNT; j++)
+      assert(std::strcmp(ZONES[i].eic, ZONES[j].eic) != 0 && std::strcmp(ZONES[i].id, ZONES[j].id) != 0);
+  assert(zone_is_dk("DK1") && zone_is_dk("dk2") && !zone_is_dk("SE3"));
+  {
+    const ZoneDefaults dk = zone_defaults("DK1");
+    assert(dk.known && dk.spot_source == SpotSource::EDS && std::strcmp(dk.currency, "DKK") == 0);
+    assert(near(dk.energy_tax, 0.008) && near(dk.vat_pct, 25) && dk.grid_source == GridSource::DATAHUB &&
+           dk.system_source == SystemSource::DATAHUB);
+    const ZoneDefaults nl = zone_defaults("NL");
+    assert(std::strcmp(nl.currency, "EUR") == 0 && near(nl.fx, 1) && near(nl.energy_tax, 0.109) && near(nl.vat_pct, 21));
+    assert(nl.spot_source == SpotSource::ENERGY_CHARTS && nl.grid_source == GridSource::NONE &&
+           nl.system_source == SystemSource::FIXED && near(nl.system_fixed, 0));
+    const ZoneDefaults cz = zone_defaults("CZ");  // € tax converted to CZK
+    assert(std::strcmp(cz.currency, "CZK") == 0 && near(cz.energy_tax, 0.028 * 24.3, 1e-3) && near(cz.vat_pct, 21));
+    const ZoneDefaults se = zone_defaults("SE3");
+    assert(std::strcmp(se.currency, "SEK") == 0 && near(se.energy_tax, 0) && near(se.vat_pct, 25));
+    const ZoneDefaults fi = zone_defaults("FI");
+    assert(near(fi.vat_pct, 25.5) && near(fi.energy_tax, 0.023));
+    const ZoneDefaults unknown = zone_defaults("XX");
+    assert(!unknown.known && std::strcmp(unknown.currency, "EUR") == 0 && near(unknown.energy_tax, 0) &&
+           near(unknown.vat_pct, 21));
+  }
+  // --- names ------------------------------------------------------------------
+  {
+    SpotSource ss{};
+    assert(parse_spot_source("entsoe", &ss) && ss == SpotSource::ENTSOE && !parse_spot_source("x", &ss));
+    Model m{};
+    assert(parse_model("odin", &m) && m == Model::ODIN && std::strcmp(model_name(Model::TOUCH), "touch") == 0);
+    OdinSource os{};
+    assert(parse_odin_source("energy_charts", &os) && os == OdinSource::ENERGY_CHARTS);
+    assert(std::strcmp(spot_source_name(SpotSource::FIXED), "fixed") == 0);
+  }
+
+  // --- currency / FX ----------------------------------------------------------
+  {
+    Config c{};
+    std::strcpy(c.currency, "EUR");
+    c.fx = 7.46f;
+    assert(near(config_fx(c), 1.0));  // EUR ignores the rate
+    std::strcpy(c.currency, "SEK");
+    c.fx = 11.0f;
+    assert(near(config_fx(c), 11.0));
+    // SE3: spot 50 €/MWh = 0.55 SEK/kWh; + grid 0.3 + tax 0.4 SEK; 25 % VAT → 1.5625 SEK = 0.142 €.
+    c.energy_tax = 0.4f; c.markup = 0.0f; c.vat_pct = 25.0f;
+    const float total = all_in(50.0f * 11.0f / 1000.0f, 0.3f, 0.0f, c);
+    assert(near(total, 1.5625) && near(to_eur(total, config_fx(c)), 0.1420));
+    // EDS with a non-DKK currency re-prices from EUR.
+    SpotSample sm[2];
+    sm[0].mwh = 746.0f; sm[0].eur_mwh = 100.0f;
+    sm[1].mwh = 746.0f; sm[1].eur_mwh = NAN;
+    reprice_from_eur(sm, 1, 1.0f);
+    assert(near(sm[0].mwh, 100.0));
+  }
+
+  // --- Energy-Charts (recorded payloads) ----------------------------------------
+  {
+    const std::string nl = fixture("energy_charts_nl_2026-10-06.json");
+    auto sink = make_sink(samples, MAX_SPOT_SAMPLES, 1.0f, cest);
+    assert(parse_energy_charts(nl.c_str(), nl.size(), sink) == 96 && sink.n == 96);
+    assert(samples[0].ymd == 20261006 && samples[0].hour == 0 && near(samples[0].eur_mwh, 165.27, 1e-3));
+    const SpotDay day = aggregate_spot_day(samples, sink.n, 20261006);
+    assert(day.complete && day.hours_with_data == 24);
+    // Hour 0 = mean of the first four quarters /1000.
+    assert(near(day.kwh[0], (165.27 + 157.47 + 152.03 + 148.83) / 4000.0));
+    assert(!aggregate_spot_day(samples, sink.n, 20261007).complete);
+
+    // Two days, DK1, priced in DKK at 7.46.
+    const std::string dk = fixture("energy_charts_dk1_2026-10-04_05.json");
+    auto dks = make_sink(samples, MAX_SPOT_SAMPLES, 7.46f, cest);
+    assert(parse_energy_charts(dk.c_str(), dk.size(), dks) == 192);
+    const SpotDay d4 = aggregate_spot_day(samples, dks.n, 20261004);
+    const SpotDay d5 = aggregate_spot_day(samples, dks.n, 20261005);
+    assert(d4.complete && d5.complete);
+    assert(near(samples[0].mwh, 205.46 * 7.46, 0.01));
+    // Nulls are skipped; an error body yields nothing.
+    const char *gappy = "{\"unix_seconds\":[1791237600,1791238500,1791239400],\"price\":[10.5,null,-3.25],\"unit\":\"EUR / MWh\"}";
+    std::vector<double> got;
+    assert(parse_energy_charts(gappy, std::strlen(gappy), [&](int64_t, double v) { got.push_back(v); }) == 2);
+    assert(got.size() == 2 && near(got[1], -3.25));
+    const char *err = "'XX' is not the code for an available bidding zone.";
+    assert(parse_energy_charts(err, std::strlen(err), [](int64_t, double) {}) == 0);
+    // Sink cap is respected.
+    auto tiny = make_sink(samples, 3, 1.0f, cest);
+    parse_energy_charts(nl.c_str(), nl.size(), tiny);
+    assert(tiny.n == 3);
+  }
+
+  // --- ENTSO-E XML --------------------------------------------------------------
+  {
+    int64_t e = 0;
+    assert(parse_iso_utc("2026-10-05T22:00Z", &e) && e == 1791237600LL);
+    char ts[16];
+    format_entsoe_time(1791237600LL, ts, sizeof(ts));
+    assert(std::strcmp(ts, "202610052200") == 0);
+
+    // PT60M, positions 3 and 4 left out (A03: repeat position 2).
+    const std::string h = fixture("entsoe_nl_pt60m.xml");
+    auto sink = make_sink(samples, MAX_SPOT_SAMPLES, 1.0f, cest);
+    assert(parse_entsoe_xml(h.c_str(), h.size(), sink) == 24 && sink.n == 24);
+    const SpotDay day = aggregate_spot_day(samples, sink.n, 20261006);
+    assert(day.complete);
+    assert(near(day.kwh[0], 0.100) && near(day.kwh[1], 0.101) && near(day.kwh[2], 0.101) &&
+           near(day.kwh[3], 0.101) && near(day.kwh[4], 0.104) && near(day.kwh[23], 0.123));
+
+    // PT60M and PT15M side by side: the 15-minute series wins and averages to hours;
+    // the omitted last quarter repeats the one before.
+    const std::string q = fixture("entsoe_nl_pt15m_pt60m.xml");
+    auto qs = make_sink(samples, MAX_SPOT_SAMPLES, 1.0f, cest);
+    assert(parse_entsoe_xml(q.c_str(), q.size(), qs) == 96);
+    const SpotDay qd = aggregate_spot_day(samples, qs.n, 20261006);
+    assert(qd.complete);
+    assert(near(qd.kwh[0], (200 + 201 + 202 + 203) / 4000.0));
+    assert(near(qd.kwh[23], (292 + 293 + 294 + 294) / 4000.0));
+    for (size_t i = 0; i < HOURS; i++) assert(qd.kwh[i] < 0.5);  // never the 999 €/MWh PT60M series
+
+    // Acknowledgement (no data / bad token) → nothing.
+    const std::string ack = fixture("entsoe_ack_no_data.xml");
+    assert(parse_entsoe_xml(ack.c_str(), ack.size(), [](int64_t, double) {}) == 0);
+    assert(parse_entsoe_xml("", 0, [](int64_t, double) {}) == 0);
+  }
 
   std::printf("energy_price: all tests passed\n");
   return 0;

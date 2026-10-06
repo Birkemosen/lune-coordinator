@@ -898,6 +898,17 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strncmp(path, "/prices/zone-defaults/", 22) == 0) {
+      // "Apply zone defaults" in the price panel: values only, nothing is saved.
+      char zone[16]{};
+      strncpy(zone, path + 22, sizeof(zone) - 1);
+      if (coordinator_)
+        coordinator_->write_price_zone_defaults_json(zone, data_buf_, DATA_BUF_SIZE);
+      else
+        snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/prices") == 0) {
       if (coordinator_)
         coordinator_->write_prices_json(data_buf_, DATA_BUF_SIZE);
@@ -1423,38 +1434,62 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
         has_curve ? curve_tmpl : nullptr, curve_gain, curve_max, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/prices/settings") == 0) {
-    // Energy price → Odin. Absent keys are unchanged. grid_schedule is a JSON
-    // string like Odin's sched_ui ([{"h":0,"v":0.077},...]); a JSON body may
-    // also send it as an array.
+    // Energy price → Odin. Absent/empty keys are unchanged. grid_schedule is a
+    // JSON string like Odin's sched_ui ([{"h":0,"v":0.077},...]); a JSON body
+    // may also send it as an array. entsoe_token is write-only.
     lune_touch_coordinator::PriceSettingsUpdate update;
     uint32_t enabled = 0;
     update.has_enabled = parse_uint_param(api, api.json_body, "enabled", &enabled);
     update.enabled = enabled != 0;
-    char area[8]{};
-    char grid_source[16]{};
-    char grid_gln[24]{};
-    char grid_code[32]{};
-    char energinet_source[16]{};
+    char model[8]{}, zone[16]{}, spot_source[16]{}, currency[8]{}, grid_source[16]{}, grid_gln[24]{};
+    char grid_code[32]{}, system_source[16]{}, odin_mode[12]{}, odin_source[16]{}, token[72]{};
     char schedule[768]{};
-    parse_text_param(api, api.json_body, "area", area, sizeof(area));
+    parse_text_param(api, api.json_body, "model", model, sizeof(model));
+    parse_text_param(api, api.json_body, "zone", zone, sizeof(zone));
+    if (zone[0] == '\0')
+      parse_text_param(api, api.json_body, "area", zone, sizeof(zone));  // v1 name
+    parse_text_param(api, api.json_body, "spot_source", spot_source, sizeof(spot_source));
+    parse_text_param(api, api.json_body, "currency", currency, sizeof(currency));
     parse_text_param(api, api.json_body, "grid_source", grid_source, sizeof(grid_source));
     parse_text_param(api, api.json_body, "grid_gln", grid_gln, sizeof(grid_gln));
     parse_text_param(api, api.json_body, "grid_code", grid_code, sizeof(grid_code));
-    parse_text_param(api, api.json_body, "energinet_source", energinet_source, sizeof(energinet_source));
+    parse_text_param(api, api.json_body, "system_source", system_source, sizeof(system_source));
+    if (system_source[0] == '\0')
+      parse_text_param(api, api.json_body, "energinet_source", system_source, sizeof(system_source));
+    parse_text_param(api, api.json_body, "odin_mode", odin_mode, sizeof(odin_mode));
+    parse_text_param(api, api.json_body, "odin_source", odin_source, sizeof(odin_source));
+    parse_text_param(api, api.json_body, "entsoe_token", token, sizeof(token));
     parse_text_param(api, api.json_body, "grid_schedule", schedule, sizeof(schedule));
     if (schedule[0] == '\0' && api.json_body != nullptr && (*api.json_body)["grid_schedule"].is<JsonArrayConst>())
       serializeJson((*api.json_body)["grid_schedule"], schedule, sizeof(schedule));
-    update.area = area;
+    uint32_t clear_token = 0;
+    parse_uint_param(api, api.json_body, "clear_token", &clear_token);
+    update.clear_token = clear_token != 0;
+    update.model = model;
+    update.zone = zone;
+    update.spot_source = spot_source;
+    update.currency = currency;
     update.grid_source = grid_source;
     update.grid_gln = grid_gln;
     update.grid_code = grid_code;
-    update.energinet_source = energinet_source;
     update.grid_schedule = schedule;
-    parse_float_param(api, api.json_body, "energinet_fixed_dkk", &update.energinet_fixed_dkk);
-    parse_float_param(api, api.json_body, "elafgift_dkk", &update.elafgift_dkk);
-    parse_float_param(api, api.json_body, "markup_dkk", &update.markup_dkk);
-    parse_float_param(api, api.json_body, "vat_pct", &update.vat_pct);
+    update.system_source = system_source;
+    update.odin_mode = odin_mode;
+    update.odin_source = odin_source;
+    update.entsoe_token = token;
+    auto num = [&](const char *name, const char *legacy, float *out) {
+      if (!parse_float_param(api, api.json_body, name, out) && legacy != nullptr)
+        parse_float_param(api, api.json_body, legacy, out);
+    };
+    num("fx", nullptr, &update.fx);
+    num("spot_fixed_eur", nullptr, &update.spot_fixed_eur);
+    num("system_fixed", "energinet_fixed_dkk", &update.system_fixed);
+    num("energy_tax", "elafgift_dkk", &update.energy_tax);
+    num("markup", "markup_dkk", &update.markup);
+    num("vat_pct", nullptr, &update.vat_pct);
+    num("odin_fixed_price", nullptr, &update.odin_fixed_price);
     const bool accepted = coordinator_->set_price_settings(update, data_buf_, DATA_BUF_SIZE);
+    memset(token, 0, sizeof(token));
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/prices/push") == 0) {
     const bool accepted = coordinator_->request_price_push(data_buf_, DATA_BUF_SIZE);

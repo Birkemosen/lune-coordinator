@@ -125,30 +125,46 @@
         return { result: 'stored' };
       }
       if (path === '/prices/settings' && body) {
-        var wasOn = mockPrices.enabled;
-        if (body.enabled != null) mockPrices.enabled = body.enabled === '1' || body.enabled === true;
-        if (body.area) mockPrices.area = body.area;
-        if (body.grid_source) mockPrices.grid.source = body.grid_source;
-        if (body.grid_gln) mockPrices.grid.gln = body.grid_gln;
-        if (body.grid_code) mockPrices.grid.code = body.grid_code;
-        if (body.grid_schedule) { try { mockPrices.grid.schedule = JSON.parse(body.grid_schedule); } catch (e) {} }
-        if (body.energinet_source) mockPrices.energinet.source = body.energinet_source;
-        if (body.energinet_fixed_dkk != null) mockPrices.energinet.fixed_dkk = Number(body.energinet_fixed_dkk);
-        if (body.elafgift_dkk != null) mockPrices.elafgift_dkk = Number(body.elafgift_dkk);
-        if (body.markup_dkk != null) mockPrices.markup_dkk = Number(body.markup_dkk);
-        if (body.vat_pct != null) mockPrices.vat_pct = Number(body.vat_pct);
-        if (mockPrices.enabled !== wasOn) mockPrices.status.odin_source = mockPrices.enabled ? 'api' : 'energy_charts';
-        mockPrices.status.state = mockPrices.enabled ? 'ok' : 'disabled';
-        return { result: 'saved', enabled: mockPrices.enabled, push_queued: mockPrices.enabled };
+        var mp = mockPrices, wasPush = mp.enabled && mp.model === 'touch';
+        var str = function (k) { return body[k] != null && body[k] !== '' ? String(body[k]) : null; };
+        if (body.enabled != null) mp.enabled = body.enabled === '1' || body.enabled === true;
+        if (str('model')) mp.model = str('model');
+        if (str('zone')) { mp.zone = str('zone'); mp.dk = /^DK[12]$/.test(mp.zone); }
+        if (str('spot_source')) mp.spot.source = str('spot_source');
+        if (str('spot_fixed_eur')) mp.spot.fixed_eur = Number(body.spot_fixed_eur);
+        if (str('currency')) mp.currency = str('currency');
+        if (str('fx')) mp.fx = Number(body.fx);
+        if (str('grid_source')) mp.grid.source = str('grid_source');
+        if (str('grid_gln')) mp.grid.gln = str('grid_gln');
+        if (str('grid_code')) mp.grid.code = str('grid_code');
+        if (str('grid_schedule')) { try { mp.grid.schedule = JSON.parse(body.grid_schedule); } catch (e) {} }
+        if (str('system_source')) mp.system.source = str('system_source');
+        if (str('system_fixed')) mp.system.fixed = Number(body.system_fixed);
+        ['energy_tax', 'markup', 'vat_pct'].forEach(function (k) { if (str(k)) mp[k] = Number(body[k]); });
+        if (str('odin_mode')) mp.odin.mode = str('odin_mode');
+        if (str('odin_source')) mp.odin.source = str('odin_source');
+        if (str('odin_fixed_price')) mp.odin.fixed_price = Number(body.odin_fixed_price);
+        if (str('entsoe_token')) mp.entsoe_token_set = true;
+        var pushes = mp.enabled && mp.model === 'touch';
+        if (mp.enabled && mp.model === 'odin') {
+          mp.odin.current = { known: true, price_mode: mp.odin.mode, price_source: mp.odin.source, ec_bzn: mp.zone,
+            fixed_price: mp.odin.fixed_price, token_set: mp.odin.current.token_set || !!str('entsoe_token'), age_s: 1 };
+        } else if (pushes) mp.odin.current.price_source = 'api';
+        else if (wasPush) mp.odin.current.price_source = 'energy_charts';
+        mp.status.state = !mp.enabled ? 'disabled' : (pushes ? 'ok' : 'odin');
+        mp.status.pushes = pushes;
+        return { result: 'saved', enabled: mp.enabled, model: mp.model, push_queued: pushes };
       }
       if (path === '/prices/push') {
         if (!mockPrices.enabled) throw new Error('disabled');
-        mockPrices.status.state = 'running';
+        var st0 = mockPrices.status;
+        st0.state = 'running';
         setTimeout(function () {
-          mockPrices.status.state = 'ok';
-          mockPrices.status.reason = 'request';
-          mockPrices.status.last_push_epoch = Math.floor(Date.now() / 1000);
-          mockPrices.status.last_attempt_epoch = mockPrices.status.last_push_epoch;
+          st0.state = mockPrices.model === 'touch' ? 'ok' : 'odin';
+          st0.reason = 'request';
+          st0.last_attempt_epoch = Math.floor(Date.now() / 1000);
+          if (mockPrices.model === 'touch') st0.last_push_epoch = st0.last_attempt_epoch;
+          st0.odin_write_pending = false;
         }, 1800);
         return { result: 'queued' };
       }
@@ -219,35 +235,42 @@
   var mockPrices = (function () {
     var spot = [1.0687, 1.1007, 1.1199, 1.1162, 1.1288, 1.2298, 1.5392, 1.7849, 1.8631, 1.5656, 1.3057, 1.0951,
       1.0252, 0.9895, 1.0431, 1.1543, 1.4143, 1.8572, 2.5288, 2.85, 2.2129, 1.8561, 1.6844, 1.5644];
-    var grid = [], en = [], total = [];
+    var grid = [], sys = [], total = [];
     for (var h = 0; h < 24; h++) {
       grid.push(h < 6 ? 0.0769 : (h >= 17 && h < 21 ? 0.6922 : 0.2307));
-      en.push(0.115);
-      total.push(Math.round((spot[h] + grid[h] + en[h] + 0.008) * 1.25 * 10000) / 10000);
+      sys.push(0.115);
+      total.push(Math.round((spot[h] + grid[h] + sys[h] + 0.008) * 1.25 * 10000) / 10000);
     }
     var d = new Date();
     var p2 = function (n) { return n < 10 ? '0' + n : String(n); };
     var now = Math.floor(Date.now() / 1000);
     return {
-      available: true, enabled: true, area: 'DK1',
+      available: true, enabled: true, model: 'touch', zone: 'DK1', dk: true,
+      spot: { source: 'eds', fixed_eur: 0.1 }, currency: 'DKK', fx: 7.46,
       grid: { source: 'datahub', gln: '5790000610976', code: 'TNT1009',
         schedule: [{ h: 0, v: 0.077 }, { h: 6, v: 0.231 }, { h: 17, v: 0.692 }, { h: 21, v: 0.231 }] },
-      energinet: { source: 'datahub', fixed_dkk: 0.115 },
-      elafgift_dkk: 0.008, markup_dkk: 0, vat_pct: 25, odin_host_set: true,
-      status: { state: 'ok', reason: 'day_ahead', odin_source: 'api', source_pending: false, last_fetch_age_s: 240,
-        last_push_epoch: now - 240, last_attempt_epoch: now - 240, hours_pushed: 24, fx: 7.4736,
-        grid_from_cache: false, energinet_from_cache: false, last_error: '' },
+      system: { source: 'datahub', fixed: 0.115 },
+      energy_tax: 0.008, markup: 0, vat_pct: 25, entsoe_token_set: false, odin_host_set: true,
+      odin: { mode: 'dynamic', source: 'energy_charts', fixed_price: 0.25,
+        current: { known: true, price_mode: 'dynamic', price_source: 'api', ec_bzn: 'DK1', fixed_price: 0.25, token_set: true, age_s: 60 } },
+      status: { state: 'ok', pushes: true, reason: 'day_ahead', odin_source: 'api', odin_write_pending: false,
+        last_fetch_age_s: 240, last_push_epoch: now - 240, last_attempt_epoch: now - 240, hours_pushed: 24, fx: 7.4736,
+        spot_used: 'eds', spot_fallback: false, grid_from_cache: false, system_from_cache: false, last_error: '' },
       today: { date: d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()),
-        spot: spot, grid: grid, energinet: en, total: total },
+        spot: spot, grid: grid, system: sys, total: total },
       tomorrow: null
     };
   })();
 
-  var mockNodeList = [
-    { id: 'v6-a', name: 'Ground floor', hostname: 'lune-v6-a.local', ip: '192.168.1.110', trust_label: 'trusted', reachable: true, health: { mapped_zones: 6 }, lease: 'refused', runtime: { flow_c: 33.1, return_c: 29.9 } },
-    { id: 'v6-b', name: '', device_name: '1. Sal', hostname: 'lune-v6-b.local', ip: '192.168.1.106', trust_label: 'trusted', reachable: true, health: { mapped_zones: 5 }, lease: 'granted', runtime: { flow_c: 31.4, return_c: 27.8 } },
-    { id: 'v6-c', name: 'Workshop', hostname: 'lune-v6-c.local', ip: '192.168.1.120', trust_label: 'paired', reachable: false, health: { mapped_zones: 0 }, runtime: { flow_c: null, return_c: null } }
-  ];
+  // Subset of energy_price.h's zone table for the preview's "Apply zone defaults".
+  var mockZoneDefaults = {
+    DK1: ['eds', 'DKK', 7.46, 0.008, 25, 'datahub', 'datahub', 0.115],
+    DK2: ['eds', 'DKK', 7.46, 0.008, 25, 'datahub', 'datahub', 0.115],
+    NL: ['energy_charts', 'EUR', 1, 0.109, 21, 'none', 'fixed', 0],
+    'DE-LU': ['energy_charts', 'EUR', 1, 0.041, 19, 'none', 'fixed', 0],
+    SE3: ['energy_charts', 'SEK', 11, 0, 25, 'none', 'fixed', 0],
+    NO1: ['energy_charts', 'NOK', 11.7, 0, 25, 'none', 'fixed', 0]
+  };
 
   function mockScan() {
     return {
@@ -295,6 +318,12 @@
     if (path === '/nodes/scan') return mockScan();
     if (path === '/wifi') return mockWifi;
     if (path === '/prices') return JSON.parse(JSON.stringify(mockPrices));
+    var zd = path.match(/^\/prices\/zone-defaults\/(.+)$/);
+    if (zd) {
+      var zid = decodeURIComponent(zd[1]), r = mockZoneDefaults[zid];
+      if (!r) return { zone: zid, known: false, spot_source: 'energy_charts', currency: 'EUR', fx: 1, energy_tax: 0, vat_pct: 21, grid_source: 'none', system_source: 'fixed', system_fixed: 0 };
+      return { zone: zid, known: true, spot_source: r[0], currency: r[1], fx: r[2], energy_tax: r[3], vat_pct: r[4], grid_source: r[5], system_source: r[6], system_fixed: r[7] };
+    }
     if (path === '/strategy') {
       return { weighting: { basis: 'area' }, physical_house_temperature_c: 20.3, house_comfort_target_c: 20.5 };
     }
@@ -1636,6 +1665,34 @@
   /* ---- Elpris til Odin ---- */
   function priceForm() { return qs('form.panel[data-save="prices"]'); }
 
+  function priceCur() {
+    var sel = qs('#price_currency');
+    return (sel && sel.value) || ((state.prices || {}).currency) || 'DKK';
+  }
+
+  // Units that follow the calculation currency; DK-only sources (Energi Data
+  // Service, DataHub) only exist for DK1/DK2.
+  function priceSyncForm() {
+    var f = priceForm();
+    if (!f) return;
+    var unit = priceCur() + '/kWh';
+    qsa('[data-price-unit]', f).forEach(function (u) { u.textContent = unit; });
+    qsa('[data-price-cur]', f).forEach(function (u) { u.textContent = priceCur(); });
+    var zone = (qs('#price_zone') || {}).value || 'DK1';
+    var dk = /^DK[12]$/.test(zone);
+    qsa('[data-dk-only]', f).forEach(function (lab) {
+      lab.hidden = !dk;
+      var r = document.getElementById(lab.getAttribute('for'));
+      if (!dk && r && r.checked) {
+        var alt = { 'ss-eds': 'ss-energy_charts', 'gt-datahub': 'gt-schedule', 'en-datahub': 'en-fixed' }[r.id];
+        var a = alt && document.getElementById(alt);
+        if (a) { a.checked = true; a.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+    });
+    var dkNote = qs('[data-bind="price.dkNote"]');
+    if (dkNote) dkNote.hidden = !dk;
+  }
+
   function priceSchedRows(list) {
     var body = qs('[data-bind-price-sched]');
     if (!body) return;
@@ -1677,10 +1734,12 @@
     if (e === 'spot_incomplete') return t('price.err.spot_incomplete');
     if (e === 'no_odin_host') return t('price.err.no_odin_host');
     if (e === 'clock_invalid') return t('price.err.clock');
+    if (/datahub_dk_only|eds_dk_only/.test(e)) return t('price.err.datahub_dk_only');
+    if (/no_token/.test(e)) return t('price.err.no_token');
     if (/^spot_/.test(e)) return t('price.err.spot');
     if (/^grid_/.test(e)) return t('price.err.grid');
-    if (/^energinet_/.test(e)) return t('price.err.energinet');
-    if (/^odin_/.test(e)) return t('price.err.odin');
+    if (/^system_/.test(e)) return t('price.err.energinet');
+    if (/^odin_|_http_/.test(e)) return t('price.err.odin');
     return t('price.err.other');
   }
 
@@ -1690,6 +1749,12 @@
     return new Date(epoch * 1000).toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   }
 
+  function priceSourceText(src) {
+    if (src === 'api' || src === 'energy_charts') return t('price.odinMode.' + src);
+    if (src === 'entsoe' || src === 'fixed') return t('price.odinMode.' + src);
+    return t('price.odinMode.unknown');
+  }
+
   function applyPrices(p) {
     if (!p || p.available === false) return;
     state.prices = p;
@@ -1697,19 +1762,30 @@
     var stKey = st.state || (p.enabled ? 'waiting' : 'disabled');
     qsa('[data-bind="price.badge"]').forEach(function (b) {
       b.textContent = t('price.state.' + stKey);
-      b.className = stKey === 'ok' ? 'badge ok' : (stKey === 'error' ? 'badge bad' : (stKey === 'disabled' ? 'badge' : 'badge warn'));
+      b.className = stKey === 'ok' || stKey === 'odin' ? 'badge ok' : (stKey === 'error' ? 'badge bad' : (stKey === 'disabled' ? 'badge' : 'badge warn'));
     });
     setText('price.lastPush', st.last_push_epoch ? t('price.lastPushValue', { time: priceWhen(st.last_push_epoch) }) : '—');
     setText('price.hours', st.hours_pushed ? t('price.hoursValue', { n: st.hours_pushed }) : '—');
-    setText('price.odinMode', st.source_pending ? t('price.odinMode.pending') : t('price.odinMode.' + (st.odin_source === 'api' || st.odin_source === 'energy_charts' ? st.odin_source : 'unknown')));
+    var used = st.spot_used ? t('price.spotUsed.' + st.spot_used) : '—';
+    setText('price.spotUsed', st.spot_used && st.spot_fallback ? t('price.spotFallback', { src: used }) : used);
+    setText('price.odinMode', st.odin_write_pending ? t('price.odinMode.pending') : priceSourceText(st.odin_source));
     setText('price.problem', stKey === 'error' ? priceErrText(st.last_error) : '—');
     var notes = [];
     if (!p.odin_host_set) notes.push(t('price.noOdinHost'));
-    if (st.grid_from_cache || st.energinet_from_cache) notes.push(t('price.cached'));
+    if (st.grid_from_cache || st.system_from_cache) notes.push(t('price.cached'));
     setText('price.note', notes.join(' '));
+
+    // Odin's own settings as Odin reports them (its token only as set / not set).
+    var oc = ((p.odin || {}).current) || {};
+    var srcText = !oc.known ? '—' : (oc.price_mode === 'fixed' ? t('price.odinMode.fixed') : priceSourceText(oc.price_source));
+    setText('price.odin.mode', srcText);
+    setText('price.odin.zone', oc.known && oc.ec_bzn ? oc.ec_bzn : '—');
+    setBind('price.odin.fixed', oc.known && oc.fixed_price != null ? esc(num(oc.fixed_price, 3)) + ' <small>€/kWh</small>' : '—');
+    setText('price.odin.token', oc.known ? t(oc.token_set ? 'price.tokenSet' : 'price.tokenUnset') : '—');
 
     // Today's all-in price: muted bars (price is not heat) + figures in HTML.
     var day = p.today;
+    var cur = p.currency || 'DKK';
     var plot = qs('[data-bind-price-bars]');
     var total = (day && day.total) || [];
     if (plot) {
@@ -1718,10 +1794,11 @@
       plot.innerHTML = total.length ? total.map(function (v, h) {
         var pct = max > 0 ? Math.max(2, Math.round(Math.max(0, Number(v)) / max * 100)) : 0;
         return '<div class="col"><i class="plan" style="--plan:' + pct + '" title="' +
-          esc(t('price.atHour', { v: num(v, 2) + ' ' + t('price.unitDkk'), h: String(h).padStart(2, '0') })) + '"></i></div>';
+          esc(t('price.atHour', { v: num(v, 2) + ' ' + cur + '/kWh', h: String(h).padStart(2, '0') })) + '"></i></div>';
       }).join('') : '';
     }
-    var unit = ' <small>' + esc(t('price.unitDkk')) + '</small>';
+    setText('price.inclAll', t('price.inclAll', { cur: cur }));
+    var unit = ' <small>' + esc(cur) + '/kWh</small>';
     if (total.length === 24) {
       var lo = 0, hi = 0, peak = 0;
       for (var h = 1; h < 24; h++) {
@@ -1731,13 +1808,15 @@
       for (var k = 17; k < 21; k++) peak += Number(total[k]) / 4;
       var hh = function (x) { return String(x).padStart(2, '0'); };
       setBind('price.now', esc(num(total[new Date().getHours()], 2)) + unit);
-      setText('price.min', t('price.atHour', { v: num(total[lo], 2) + ' ' + t('price.unitDkk'), h: hh(lo) }));
-      setText('price.max', t('price.atHour', { v: num(total[hi], 2) + ' ' + t('price.unitDkk'), h: hh(hi) }));
+      setText('price.min', t('price.atHour', { v: num(total[lo], 2) + ' ' + cur + '/kWh', h: hh(lo) }));
+      setText('price.max', t('price.atHour', { v: num(total[hi], 2) + ' ' + cur + '/kWh', h: hh(hi) }));
       setBind('price.peak', esc(num(peak, 2)) + unit);
     } else {
       setText('price.now', t('price.noData'));
       ['price.min', 'price.max', 'price.peak'].forEach(function (k2) { setText(k2, '—'); });
     }
+    var tok = qs('#price_token');
+    if (tok) tok.placeholder = p.entsoe_token_set ? t('price.tokenSaved') : '';
 
     // Settings: never overwrite what the user is editing.
     var f = priceForm();
@@ -1756,30 +1835,70 @@
       var el = f.querySelector('[name="' + name + '"]');
       if (el && document.activeElement !== el && val != null) el.value = dec != null ? Number(val).toFixed(dec) : val;
     }
-    var g = p.grid || {}, e = p.energinet || {};
-    check('area', p.area || 'DK1');
+    var g = p.grid || {}, sy = p.system || {}, sp = p.spot || {}, o = p.odin || {};
+    check('model', p.model || 'touch');
+    setIf('zone', p.zone || 'DK1');
+    check('spot_source', sp.source || 'eds');
+    setIf('spot_fixed_eur', sp.fixed_eur, 3);
+    setIf('currency', p.currency || 'DKK');
+    setIf('fx', p.fx != null ? Math.round(p.fx * 10000) / 10000 : null);
     check('grid_source', g.source || 'datahub');
-    check('energinet_source', e.source || 'datahub');
+    check('system_source', sy.source || 'datahub');
     setIf('grid_gln', g.gln || '');
     setIf('grid_code', g.code || '');
-    setIf('energinet_fixed_dkk', e.fixed_dkk, 3);
-    setIf('elafgift_dkk', p.elafgift_dkk, 3);
-    setIf('markup_dkk', p.markup_dkk, 3);
-    setIf('vat_pct', p.vat_pct, 0);
+    setIf('system_fixed', sy.fixed, 3);
+    setIf('energy_tax', p.energy_tax, 3);
+    setIf('markup', p.markup, 3);
+    setIf('vat_pct', p.vat_pct, 1);
+    check('odin_mode', o.mode || 'dynamic');
+    check('odin_source', o.source || 'energy_charts');
+    setIf('odin_fixed_price', o.fixed_price, 3);
+    var tok = f.querySelector('input[name="entsoe_token"]');
+    if (tok) tok.value = '';
     var sched = g.schedule || [];
     var hidden = f.querySelector('input[name="grid_schedule"]');
     if (hidden) hidden.value = JSON.stringify(sched.map(function (b) { return { h: b.h, v: b.v }; }));
     priceSchedRows(sched);
+    priceSyncForm();
     resnapForms(['prices']);
   }
 
-  async function runPricePush(btn) {
-    var box = qs('[data-bind-price-result]');
+  async function applyZoneDefaults() {
+    var f = priceForm();
+    if (!f) return;
+    var zone = (qs('#price_zone') || {}).value || 'DK1';
+    var d = await get('/prices/zone-defaults/' + encodeURIComponent(zone));
+    function check(name, val) {
+      var r = f.querySelector('input[name="' + name + '"][value="' + val + '"]');
+      if (r && !r.checked) { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+    function put(name, val, dec) {
+      var el = f.querySelector('[name="' + name + '"]');
+      if (!el || val == null) return;
+      el.value = dec != null ? Number(val).toFixed(dec) : val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    check('spot_source', d.spot_source);
+    put('currency', d.currency);
+    put('fx', Math.round(d.fx * 10000) / 10000);
+    put('energy_tax', d.energy_tax, 3);
+    put('vat_pct', d.vat_pct, 1);
+    check('grid_source', d.grid_source);
+    check('system_source', d.system_source);
+    if (d.system_source === 'fixed') put('system_fixed', d.system_fixed, 3);
+    priceSyncForm();
+    setText('price.defaultsNote', t(d.known ? 'price.defaultsApplied' : 'price.defaultsUnknown', { zone: zone }));
+  }
+
+  // Push (Touch model) or write Odin's settings (Odin model), then follow GET /prices.
+  async function runPricePush(btn, odinWrite) {
+    var box = qs(odinWrite ? '[data-bind-price-odin-result]' : '[data-bind-price-result]');
     function paint(ok, l1, l2) {
       if (!box) return;
       box.removeAttribute('data-state');
       box.innerHTML = '<div class="msg ' + (ok ? 'ok' : 'bad') + '"><span><b>' + esc(l1) + '</b>' + esc(l2) + '</span></div>';
     }
+    var fail = odinWrite ? 'price.odinWriteFail' : 'price.pushFail';
     if (box) { box.setAttribute('data-state', 'running'); box.textContent = t('price.state.running'); }
     btn.setAttribute('aria-busy', 'true');
     var before = ((state.prices || {}).status || {}).last_attempt_epoch || 0;
@@ -1788,23 +1907,28 @@
         await post('/prices/push', {});
       } catch (e) {
         var p0 = state.prices || {};
-        paint(false, t('price.pushFail', { time: clockNow() }),
+        paint(false, t(fail, { time: clockNow() }),
           !p0.enabled ? t('price.pushDisabled') : (!p0.odin_host_set ? t('price.noOdinHost') : t('price.err.other')));
         return;
       }
-      // Touch fetches over HTTPS and posts to Odin on its own task; follow the status.
       for (var i = 0; i < 25; i++) {
         await new Promise(function (r) { setTimeout(r, 2000); });
         var p = await get('/prices').catch(function () { return null; });
         if (!p) continue;
         var s2 = p.status || {};
+        if (odinWrite) {
+          if (s2.odin_write_pending) continue;
+          applyPrices(p);
+          paint(true, t('price.odinWriteOk', { time: clockNow() }), priceSourceText(((p.odin || {}).current || {}).price_source));
+          return;
+        }
         if (s2.state === 'running' || !(s2.last_attempt_epoch > before)) continue;
         applyPrices(p);
         if (s2.state === 'ok') paint(true, t('price.pushOk', { time: clockNow() }), t('price.pushOkBody', { n: s2.hours_pushed || 24 }));
-        else paint(false, t('price.pushFail', { time: clockNow() }), priceErrText(s2.last_error) || t('price.err.other'));
+        else paint(false, t(fail, { time: clockNow() }), priceErrText(s2.last_error) || t('price.err.other'));
         return;
       }
-      paint(false, t('price.pushFail', { time: clockNow() }), t('price.pushPending'));
+      paint(false, t(fail, { time: clockNow() }), t('price.pushPending'));
     } finally {
       btn.removeAttribute('aria-busy');
     }
@@ -1812,6 +1936,20 @@
 
   document.addEventListener('input', function (e) {
     if (e.target && e.target.closest && e.target.closest('[data-bind-price-sched]')) priceSchedSync();
+  });
+  document.addEventListener('change', function (e) {
+    var n = e.target && e.target.id;
+    if (n !== 'price_zone' && n !== 'price_currency') return;
+    if (n === 'price_currency') {
+      // A new currency starts from its default rate (still editable).
+      var opt = e.target.selectedOptions && e.target.selectedOptions[0];
+      var fx = qs('#fx');
+      if (opt && fx && opt.getAttribute('data-fx')) {
+        fx.value = Number(opt.getAttribute('data-fx'));
+        fx.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    priceSyncForm();
   });
   // Fortryd restores HTML defaults; put the saved price settings back instead.
   document.addEventListener('reset', function (e) {
@@ -2917,19 +3055,32 @@
       } else if (key === 'prices') {
         priceSchedSync();
         var hiddenSched = form.querySelector('input[name="grid_schedule"]');
-        await post('/prices/settings', {
+        var pricePayload = {
           enabled: data.enabled ? '1' : '0',
-          area: data.area || 'DK1',
-          grid_source: data.grid_source || 'datahub',
+          model: data.model || 'touch',
+          zone: data.zone || 'DK1',
+          spot_source: data.spot_source || 'eds',
+          spot_fixed_eur: data.spot_fixed_eur,
+          currency: data.currency || 'DKK',
+          fx: data.fx,
+          grid_source: data.grid_source || 'none',
           grid_gln: String(data.grid_gln || '').trim(),
           grid_code: String(data.grid_code || '').trim(),
           grid_schedule: hiddenSched ? hiddenSched.value : '',
-          energinet_source: data.energinet_source || 'datahub',
-          energinet_fixed_dkk: data.energinet_fixed_dkk,
-          elafgift_dkk: data.elafgift_dkk,
-          markup_dkk: data.markup_dkk,
-          vat_pct: data.vat_pct
-        });
+          system_source: data.system_source || 'fixed',
+          system_fixed: data.system_fixed,
+          energy_tax: data.energy_tax,
+          markup: data.markup,
+          vat_pct: data.vat_pct,
+          odin_mode: data.odin_mode || 'dynamic',
+          odin_source: data.odin_source || 'energy_charts',
+          odin_fixed_price: data.odin_fixed_price
+        };
+        var token = String(data.entsoe_token || '').trim();
+        if (token) pricePayload.entsoe_token = token;
+        await post('/prices/settings', pricePayload);
+        var tokEl = form.querySelector('input[name="entsoe_token"]');
+        if (tokEl) tokEl.value = '';
       } else if (key === 'weather') {
         await post('/forecast/settings', { latitude: data.latitude, longitude: data.longitude, max_boost_c: data.wx_boost });
       } else if (key === 'wifi') {
@@ -3062,7 +3213,9 @@
     var action = btn.getAttribute('data-action');
     var id = btn.getAttribute('data-id');
     try {
-      if (action === 'price-push') { await runPricePush(btn); return; }
+      if (action === 'price-push') { await runPricePush(btn, false); return; }
+      if (action === 'price-odin-write') { await runPricePush(btn, true); return; }
+      if (action === 'price-zone-defaults') { await applyZoneDefaults(); return; }
       if (action === 'price-sched-add') {
         var cur = priceSchedRead();
         var used = {};

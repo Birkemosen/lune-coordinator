@@ -6,7 +6,7 @@
   "tiers": true,
   "shared_views": true,
   "heat_source_types": ["http", "asgard"],
-  "typed_groups": {"gt": ["datahub", "schedule", "none"], "en": ["datahub", "fixed"]},
+  "typed_groups": {"pm": ["odin", "touch"], "om": ["dynamic", "fixed"], "ss": ["eds", "energy_charts", "entsoe", "fixed"], "gt": ["datahub", "schedule", "none"], "en": ["datahub", "fixed"]},
   "manifolds": [
     {"id": "m1", "label": "Manifold 1", "zones": 6},
     {"id": "m2", "label": "Manifold 2", "zones": 6},

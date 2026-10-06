@@ -1949,6 +1949,36 @@
   [data-hs-type="http"] .hs-type-asgard { display: none; }
   [data-hs-type="asgard"] .hs-type-http { display: none; }
 
+  /* Typeafhængige felter: gruppe 'pm' */
+  #pm-odin:checked ~ .typed-fields[data-type="odin"],
+  #pm-touch:checked ~ .typed-fields[data-type="touch"] { display: grid; }
+  #pm-odin:checked ~ .seg label[for="pm-odin"] > span,
+  #pm-touch:checked ~ .seg label[for="pm-touch"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #pm-odin:focus-visible ~ .seg label[for="pm-odin"] > span,
+  #pm-touch:focus-visible ~ .seg label[for="pm-touch"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'om' */
+  #om-dynamic:checked ~ .typed-fields[data-type="dynamic"],
+  #om-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #om-dynamic:checked ~ .seg label[for="om-dynamic"] > span,
+  #om-fixed:checked ~ .seg label[for="om-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #om-dynamic:focus-visible ~ .seg label[for="om-dynamic"] > span,
+  #om-fixed:focus-visible ~ .seg label[for="om-fixed"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'ss' */
+  #ss-eds:checked ~ .typed-fields[data-type="eds"],
+  #ss-energy_charts:checked ~ .typed-fields[data-type="energy_charts"],
+  #ss-entsoe:checked ~ .typed-fields[data-type="entsoe"],
+  #ss-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #ss-eds:checked ~ .seg label[for="ss-eds"] > span,
+  #ss-energy_charts:checked ~ .seg label[for="ss-energy_charts"] > span,
+  #ss-entsoe:checked ~ .seg label[for="ss-entsoe"] > span,
+  #ss-fixed:checked ~ .seg label[for="ss-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #ss-eds:focus-visible ~ .seg label[for="ss-eds"] > span,
+  #ss-energy_charts:focus-visible ~ .seg label[for="ss-energy_charts"] > span,
+  #ss-entsoe:focus-visible ~ .seg label[for="ss-entsoe"] > span,
+  #ss-fixed:focus-visible ~ .seg label[for="ss-fixed"] > span { outline: 2px solid var(--focus); }
+
   /* Typeafhængige felter: gruppe 'gt' */
   #gt-datahub:checked ~ .typed-fields[data-type="datahub"],
   #gt-schedule:checked ~ .typed-fields[data-type="schedule"],
@@ -2548,19 +2578,86 @@
 
         <form class="panel wide gated" data-save="prices">
           <header class="panel-head"><h3>Electricity price to Odin</h3><span class="badge" data-bind="price.badge">Off</span><button class="help-btn" type="button" popovertarget="help-price" style="anchor-name:--a-help-price" aria-label="Help: Electricity price to Odin">?</button></header>
-          <div id="help-price" popover class="help-pop" style="position-anchor:--a-help-price"><p>Odin plans the heat pump on the electricity price. Its built-in Danish price leaves out the grid tariff, which sets the shape of the day. Touch fetches the spot price and tariffs, adds taxes and VAT and sends the hourly price to Odin after 14:15 (tomorrow's prices) and just after midnight. Odin is set to use these prices while this is on.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#electricity-price-to-odin">Read more</a></div>
-          <label class="switch"><span class="switch-text"><b>Send prices to Odin</b><small>Touch works out the all-in price; Odin plans heating on it</small></span><input type="checkbox" role="switch" name="enabled"></label>
-          <div class="gated-body">
+          <div id="help-price" popover class="help-pop" style="position-anchor:--a-help-price"><p>Odin plans the heat pump on the electricity price. “Odin fetches itself”: Touch only sets Odin's own price settings (spot from Energy-Charts or ENTSO-E plus Odin's energy tax and VAT per zone, or a fixed price). “Touch calculates”: Touch fetches spot and tariffs, adds tax, markup and VAT in your currency and sends the hourly price to Odin after 14:15 and just after midnight – use it where Odin's table is incomplete, e.g. Denmark (grid tariff, 2026 elafgift).</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#electricity-price-to-odin">Read more</a></div>
+          <label class="switch"><span class="switch-text"><b>Manage Odin's electricity price</b><small>Touch sets up Odin's own price, or calculates the price and sends it</small></span><input type="checkbox" role="switch" name="enabled"></label>
+          <div class="gated-body"><div class="subs">
+            <input class="state" type="radio" name="model" id="pm-odin" value="odin">
+            <input class="state" type="radio" name="model" id="pm-touch" value="touch" checked>
+            <div class="seg" role="radiogroup" aria-label="Price model" style="justify-self:start">
+              <label for="pm-odin"><span>Odin fetches itself</span></label>
+              <label for="pm-touch"><span>Touch calculates</span></label>
+            </div>
             <div class="subs cols-2">
               <div class="sub">
-                <h4>Spot price and taxes</h4>
-                <div class="seg" role="radiogroup" aria-label="Price area">
-                  <label><input type="radio" name="area" value="DK1" checked><span>DK1 (west)</span></label>
-                  <label><input type="radio" name="area" value="DK2"><span>DK2 (east)</span></label>
+                <h4>Price zone</h4>
+                <div class="field row"><label for="price_zone">Bidding zone</label><select class="select" id="price_zone" name="zone"><optgroup label="Benelux"><option value="NL">NL</option><option value="BE">BE</option></optgroup><optgroup label="Germany, Austria, Switzerland"><option value="DE-LU">DE-LU</option><option value="DE-AT-LU">DE-AT-LU</option><option value="AT">AT</option><option value="CH">CH</option></optgroup><optgroup label="France and Iberia"><option value="FR">FR</option><option value="ES">ES</option><option value="PT">PT</option></optgroup><optgroup label="British Isles"><option value="GB">GB</option><option value="IE">IE</option></optgroup><optgroup label="Scandinavia and Finland"><option value="DK1" selected>DK1</option><option value="DK2">DK2</option><option value="FI">FI</option><option value="SE1">SE1</option><option value="SE2">SE2</option><option value="SE3">SE3</option><option value="SE4">SE4</option><option value="NO1">NO1</option><option value="NO2">NO2</option><option value="NO3">NO3</option><option value="NO4">NO4</option><option value="NO5">NO5</option></optgroup><optgroup label="Eastern Europe"><option value="PL">PL</option><option value="CZ">CZ</option><option value="SK">SK</option><option value="HU">HU</option><option value="RO">RO</option><option value="BG">BG</option><option value="SI">SI</option><option value="HR">HR</option><option value="EE">EE</option><option value="LT">LT</option><option value="LV">LV</option><option value="GR">GR</option><option value="RS">RS</option></optgroup><optgroup label="Italy"><option value="IT-North">IT-North</option></optgroup></select></div>
+                <div class="field row"><label for="price_token">ENTSO-E token</label><input class="input w-md" type="password" id="price_token" name="entsoe_token" autocomplete="new-password" spellcheck="false" maxlength="63"></div>
+                <p class="hint">Only needed for ENTSO-E (free at transparency.entsoe.eu). It is stored but never shown again; in “Odin fetches itself” it is also written to Odin.</p>
+              </div>
+            </div>
+            <fieldset class="typed-fields subs cols-2" data-type="odin">
+              <div class="sub">
+                <h4>Odin's own price</h4>
+                <input class="state" type="radio" name="odin_mode" id="om-dynamic" value="dynamic" checked>
+                <input class="state" type="radio" name="odin_mode" id="om-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="Odin's price mode">
+                  <label for="om-dynamic"><span>Spot price</span></label>
+                  <label for="om-fixed"><span>Fixed price</span></label>
                 </div>
-                <div class="field row"><label for="elafgift_dkk">Electricity tax</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease electricity tax">−</button><span class="value"><input type="number" inputmode="decimal" id="elafgift_dkk" name="elafgift_dkk" value="0.008" min="0" max="2" step="0.001"><span class="unit">DKK/kWh</span></span><button type="button" data-step="1" aria-label="Increase electricity tax">+</button></div></div>
-                <div class="field row"><label for="markup_dkk">Supplier markup</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease supplier markup">−</button><span class="value"><input type="number" inputmode="decimal" id="markup_dkk" name="markup_dkk" value="0.000" min="-1" max="5" step="0.01"><span class="unit">DKK/kWh</span></span><button type="button" data-step="1" aria-label="Increase supplier markup">+</button></div></div>
-                <div class="field row"><label for="vat_pct">VAT</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease vat">−</button><span class="value"><input type="number" inputmode="decimal" id="vat_pct" name="vat_pct" value="25" min="0" max="50" step="1"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Increase vat">+</button></div></div>
+                <fieldset class="typed-fields" data-type="dynamic">
+                  <div class="seg" role="radiogroup" aria-label="Odin's spot source">
+                    <label><input type="radio" name="odin_source" value="energy_charts" checked><span>Energy-Charts</span></label>
+                    <label><input type="radio" name="odin_source" value="entsoe"><span>ENTSO-E</span></label>
+                  </div>
+                  <p class="hint">Odin adds its own energy tax and VAT for the zone and switches to the other source if one fails.</p>
+                </fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  <div class="field row"><label for="odin_fixed_price">Fixed price</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease fixed price">−</button><span class="value"><input type="number" inputmode="decimal" id="odin_fixed_price" name="odin_fixed_price" value="0.250" min="0" max="5" step="0.01"><span class="unit">€/kWh</span></span><button type="button" data-step="1" aria-label="Increase fixed price">+</button></div></div>
+                </fieldset>
+                <p class="hint" data-bind="price.dkNote">For DK1/DK2 Odin's tax is outdated (0.10 €/kWh instead of the 2026 elafgift of 0.008 DKK) and it has no grid tariff – choose “Touch calculates”.</p>
+              </div>
+              <div class="sub">
+                <h4>Odin now</h4>
+                <dl class="kv">
+                  <div><dt>Price source</dt><dd data-bind="price.odin.mode">—</dd></div>
+                  <div><dt>Zone</dt><dd data-bind="price.odin.zone">—</dd></div>
+                  <div><dt>Fixed price</dt><dd data-bind="price.odin.fixed">—</dd></div>
+                  <div><dt>ENTSO-E token</dt><dd data-bind="price.odin.token">—</dd></div>
+                </dl>
+                <div class="actions"><button class="btn" type="button" data-action="price-odin-write">Write to Odin now</button></div>
+                <div class="test-result" data-bind-price-odin-result aria-live="polite"></div>
+              </div>
+            </fieldset>
+            <fieldset class="typed-fields subs cols-2" data-type="touch">
+              <div class="sub">
+                <h4>Spot price</h4>
+                <input class="state" type="radio" name="spot_source" id="ss-eds" value="eds" checked>
+                <input class="state" type="radio" name="spot_source" id="ss-energy_charts" value="energy_charts">
+                <input class="state" type="radio" name="spot_source" id="ss-entsoe" value="entsoe">
+                <input class="state" type="radio" name="spot_source" id="ss-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="Spot price source">
+                  <label for="ss-eds" data-dk-only><span>Energi Data Service</span></label>
+                  <label for="ss-energy_charts"><span>Energy-Charts</span></label>
+                  <label for="ss-entsoe"><span>ENTSO-E</span></label>
+                  <label for="ss-fixed"><span>Fixed</span></label>
+                </div>
+                <fieldset class="typed-fields" data-type="eds"><p class="hint">Denmark only. Prices in DKK and EUR; the exchange rate comes from the same data.</p></fieldset>
+                <fieldset class="typed-fields" data-type="energy_charts"><p class="hint">Free, every zone. Uses ENTSO-E instead if Energy-Charts fails and a token is set.</p></fieldset>
+                <fieldset class="typed-fields" data-type="entsoe"><p class="hint">Needs the ENTSO-E token above. Uses Energy-Charts instead if ENTSO-E fails.</p></fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  <div class="field row"><label for="spot_fixed_eur">Fixed spot price</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease fixed spot price">−</button><span class="value"><input type="number" inputmode="decimal" id="spot_fixed_eur" name="spot_fixed_eur" value="0.100" min="-1" max="5" step="0.01"><span class="unit">€/kWh</span></span><button type="button" data-step="1" aria-label="Increase fixed spot price">+</button></div></div>
+                </fieldset>
+              </div>
+              <div class="sub">
+                <h4>Currency and taxes</h4>
+                <div class="field row"><label for="price_currency">Currency</label><select class="select" id="price_currency" name="currency"><option value="EUR" data-fx="1.0">EUR</option><option value="DKK" data-fx="7.46" selected>DKK</option><option value="SEK" data-fx="11.0">SEK</option><option value="NOK" data-fx="11.7">NOK</option><option value="CHF" data-fx="0.94">CHF</option><option value="PLN" data-fx="4.25">PLN</option><option value="CZK" data-fx="24.3">CZK</option><option value="HUF" data-fx="395.0">HUF</option><option value="RON" data-fx="5.08">RON</option><option value="BGN" data-fx="1.95583">BGN</option><option value="GBP" data-fx="0.86">GBP</option><option value="RSD" data-fx="117.2">RSD</option></select></div>
+                <div class="field row"><label for="fx">Exchange rate<span class="hint">Currency per euro. Ignored for EUR; Energi Data Service in DKK uses its own rate.</span></label><input class="input w-sm" type="number" inputmode="decimal" id="fx" name="fx" value="7.46" min="0.01" max="10000" step="any"></div>
+                <div class="field row"><label for="energy_tax">Energy tax</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease energy tax">−</button><span class="value"><input type="number" inputmode="decimal" id="energy_tax" name="energy_tax" value="0.008" min="0" max="500" step="0.001"><span class="unit" data-price-cur>DKK</span></span><button type="button" data-step="1" aria-label="Increase energy tax">+</button></div></div>
+                <div class="field row"><label for="markup">Supplier markup</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease supplier markup">−</button><span class="value"><input type="number" inputmode="decimal" id="markup" name="markup" value="0.000" min="-100" max="500" step="0.01"><span class="unit" data-price-cur>DKK</span></span><button type="button" data-step="1" aria-label="Increase supplier markup">+</button></div></div>
+                <div class="field row"><label for="vat_pct">VAT</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease vat">−</button><span class="value"><input type="number" inputmode="decimal" id="vat_pct" name="vat_pct" value="25.0" min="0" max="50" step="0.5"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Increase vat">+</button></div></div>
+                <div class="actions"><button class="btn" type="button" data-action="price-zone-defaults">Apply zone defaults</button></div>
+                <p class="hint">Amounts are per kWh, excl. VAT.</p>
+                <p class="hint" data-bind="price.defaultsNote" aria-live="polite">Fills in currency, rate, energy tax, VAT and sources for the zone (Odin's table; Denmark gets the 2026 rates). Nothing changes until you save.</p>
               </div>
               <div class="sub">
                 <h4>Grid tariff</h4>
@@ -2568,7 +2665,7 @@
                 <input class="state" type="radio" name="grid_source" id="gt-schedule" value="schedule">
                 <input class="state" type="radio" name="grid_source" id="gt-none" value="none">
                 <div class="seg" role="radiogroup" aria-label="Grid tariff source">
-                  <label for="gt-datahub"><span>DataHub</span></label>
+                  <label for="gt-datahub" data-dk-only><span>DataHub</span></label>
                   <label for="gt-schedule"><span>Own schedule</span></label>
                   <label for="gt-none"><span>None</span></label>
                 </div>
@@ -2579,7 +2676,7 @@
                 </fieldset>
                 <fieldset class="typed-fields" data-type="schedule">
                   <div class="table-wrap"><table class="table">
-                    <thead><tr><th>From</th><th class="num">DKK/kWh</th><th></th></tr></thead>
+                    <thead><tr><th>From</th><th class="num" data-price-unit>DKK/kWh</th><th></th></tr></thead>
                     <tbody data-bind-price-sched></tbody>
                   </table></div>
                   <input type="hidden" name="grid_schedule" value='[{"h":0,"v":0.077},{"h":6,"v":0.231},{"h":17,"v":0.692},{"h":21,"v":0.231}]'>
@@ -2591,18 +2688,19 @@
                 </fieldset>
               </div>
               <div class="sub">
-                <h4>Energinet tariffs</h4>
-                <input class="state" type="radio" name="energinet_source" id="en-datahub" value="datahub" checked>
-                <input class="state" type="radio" name="energinet_source" id="en-fixed" value="fixed">
-                <div class="seg" role="radiogroup" aria-label="Energinet tariff source">
-                  <label for="en-datahub"><span>DataHub</span></label>
+                <h4>System and transmission tariff</h4>
+                <input class="state" type="radio" name="system_source" id="en-datahub" value="datahub" checked>
+                <input class="state" type="radio" name="system_source" id="en-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="System tariff source">
+                  <label for="en-datahub" data-dk-only><span>DataHub</span></label>
                   <label for="en-fixed"><span>Fixed</span></label>
                 </div>
                 <fieldset class="typed-fields" data-type="datahub">
-                  <p class="hint">Transmission and system tariff from DataHub (2026: 0.115 DKK/kWh in total).</p>
+                  <p class="hint">Energinet's transmission and system tariff from DataHub (2026: 0.115 DKK/kWh in total).</p>
                 </fieldset>
                 <fieldset class="typed-fields" data-type="fixed">
-                  <div class="field row"><label for="energinet_fixed_dkk">Energinet tariffs</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease energinet tariffs">−</button><span class="value"><input type="number" inputmode="decimal" id="energinet_fixed_dkk" name="energinet_fixed_dkk" value="0.115" min="-1" max="5" step="0.001"><span class="unit">DKK/kWh</span></span><button type="button" data-step="1" aria-label="Increase energinet tariffs">+</button></div></div>
+                  <div class="field row"><label for="system_fixed">Tariff</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease tariff">−</button><span class="value"><input type="number" inputmode="decimal" id="system_fixed" name="system_fixed" value="0.115" min="-100" max="500" step="0.001"><span class="unit" data-price-cur>DKK</span></span><button type="button" data-step="1" aria-label="Increase tariff">+</button></div></div>
+                  <p class="hint">Excl. VAT. Use 0 if it is not billed separately.</p>
                 </fieldset>
               </div>
               <div class="sub">
@@ -2610,6 +2708,7 @@
                 <dl class="kv">
                   <div><dt>Last sent</dt><dd data-bind="price.lastPush">—</dd></div>
                   <div><dt>Hours sent</dt><dd data-bind="price.hours">—</dd></div>
+                  <div><dt>Spot from</dt><dd data-bind="price.spotUsed">—</dd></div>
                   <div><dt>Odin price source</dt><dd data-bind="price.odinMode">—</dd></div>
                   <div><dt>Problem</dt><dd data-bind="price.problem">—</dd></div>
                 </dl>
@@ -2621,7 +2720,7 @@
                 <h4>Today's price</h4>
                 <div class="bars" style="--bars-n:24"><div class="bars-plot" data-bind-price-bars></div>
                   <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
-                <p class="hint">All-in price in DKK/kWh incl. tariffs, taxes and VAT.</p>
+                <p class="hint" data-bind="price.inclAll">All-in price in DKK/kWh incl. tariffs, taxes and VAT.</p>
                 <dl class="kv">
                   <div><dt>Now</dt><dd data-bind="price.now">—</dd></div>
                   <div><dt>Cheapest hour</dt><dd data-bind="price.min">—</dd></div>
@@ -2629,8 +2728,8 @@
                   <div><dt>Average 17–21</dt><dd data-bind="price.peak">—</dd></div>
                 </dl>
               </div>
-            </div>
-          </div>
+            </fieldset>
+          </div></div>
           <footer class="panel-foot"><span class="save-status" id="ss-prices" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save price settings</button></footer>
         </form>
 
@@ -2756,7 +2855,7 @@
   </main>
 </div>
 
-<script type="application/json" id="i18n">{"rt.savedOk":"Saved","rt.saveFailed":"Save failed","rt.saving":"Saving…","rt.unsaved.one":"{n} unsaved change","rt.unsaved.other":"{n} unsaved changes","rt.nothingToSave":"No changes to save","rt.leaveUnsaved":"You have unsaved changes.","rt.autoSaving":"Saving…","rt.autoSaved":"Saved","rt.autoFailed":"Not saved — try again","rt.retry":"Try again","rt.secondsAgo":"{n} s ago","rt.minutesAgo":"{n} min ago","rt.offline":"Offline","common.undo":"Undo","state.calling":"Calling for heat","state.idle":"Idle","state.fault":"Fault","state.off":"Not in use","tile.fault":"Fault","tile.off":"Off","badge.ok":"Ok","badge.warn":"Attention","badge.bad":"Fault","badge.calling":"Calling","common.on":"On","common.off":"Off","common.approve":"Approve","common.remove":"Remove","common.days":"days","common.faults":"{n} fault","common.noFaults":"no faults","device.this":"this device","device.copied":"Copied","device.copyDiag":"Copy diagnostics","dash.house.sub":"{manifolds} controllers · {calling} zones calling · {faults} fault","dash.manifold.sub":"{zones} zones · {calling} calling · {state}","dash.zone.sub":"{state} · target {target}°C","fc.sub":"72 hours · {model} · fetched {time}","alert.boardFault":"{board} is unreachable","ctrl.removeTitle":"Remove controller","ctrl.removeAsk":"Remove {name}?","ctrl.removeConfirm":"Remove {name}? Rooms mapped only to this board become empty.","ctrl.removeBtn":"Remove…","ctrl.removeDo":"Remove","ctrl.editName":"Edit name","ctrl.found":"Found","ctrl.addRow":"Add","ctrl.empty":"No controllers yet. Scan the network or add a hostname.","ctrl.host":"Hostname or IP","common.unnamed":"Unnamed","common.cancel":"Cancel","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Connected","heat.badge.bad":"Unreachable","heat.badge.off":"Off","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Not sent – switched off","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Testing…","hs.testReadOk":"Read OK · {time} · {code} · {ms} ms","hs.testPushOk":"Send OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C from {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Check host and port, and that the heat source is reachable.","hs.testCheckDns":"Check that the hostname resolves.","hs.testCheckHttp":"Check the endpoint and that the heat source answers.","hs.testStatus.failed":"Failed","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Address missing","hs.testReason.network":"No network","hs.testReason.endpoint":"Invalid endpoint","hs.testReason.notReady":"Heat source is not ready","hs.testReason.busy":"Busy","hs.testReason.rejected":"Rejected","status.trusted":"Approved","status.paired":"Waiting","status.unpaired":"Waiting","status.waiting":"Waiting","status.unreachable":"No connection","status.confirmed":"Confirmed","status.sent":"Sent","status.mismatch":"Mismatch","status.blocked":"Blocked","status.unknown":"Unknown","status.disabled":"Off","scope.title.house":"House","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Below target","house.at":"At target","house.above":"Above target","dash.house.sub.one":"{manifolds} controllers · {calling} zone calling · {faults} fault","fc.badge":"Preload +{v} °C","fc.windFrom":"from {dir}","fc.dirTitle":"{time}: {speed} m/s from {dir}","fc.sky.sun":"Sunny","fc.sky.partly":"Partly sunny","fc.sky.cloud":"Cloudy","fc.sky.rain":"Rain","fc.sky.snow":"Snow","fc.sky.moon":"Clear night","diag.pollOk":"OK","diag.pollFail":"{n} failed polls","rooms.includeAria":"Include {name} in house temperature","rooms.weightAria":"Weight for {name}","rooms.windAria":"Wind exposure for {name}","rooms.solarAria":"Solar gain for {name}","m.supplyShort":"Flow","m.returnShort":"Ret","strip.sub":"Zones on {name}","diag.ota.valid":"Confirmed","diag.ota.pending_verify":"Awaiting confirmation","diag.ota.new":"New, not started","diag.ota.invalid":"Rejected","diag.ota.aborted":"Rejected","diag.ota.undefined":"Factory image","hs.notSentLease":"Not sent – the V6s have not granted Touch the lease","hs.route.odin_schedule":"Odin's comfort schedule","hp.compOn":"compressor {hz} Hz","hp.compOff":"compressor off","flow.none":"No open loops – the pump runs at minimum flow.","flow.note":"Approximate: derived from valve openings. Pipe length to each manifold is not included.","flow.noteLpm":"Approximate: derived from valve openings and the pump flow. Pipe length to each manifold is not included.","flow.zoneTip":"{zone}: valve {v} % · {pct} % of the manifold","flow.closed":"closed","fc.now":"Now","role.reserve":"Backup – Odin is in control. Asgard uses the target (unlifted) if Odin stops.","role.reserveNow":"Backup – Odin drives the pump now. Asgard uses the target if Odin stops.","role.asgardNow":"Active – Asgard regulates itself right now and heats to the target.","role.offOdin":"Off – if Odin stops, Asgard uses its own setpoint. Turn sync on.","role.drives":"In control – Asgard heats to the target (+{c} °C when needed).","role.off":"Off – Asgard does not get the house target.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Heating {kw} kW","now.off":"Off","now.dhw":"Hot water","planG.odin":"Odin","planG.noOdin":"No Odin plan","planG.tip.heat":"{h} · space heat {kwh} kWh","planG.tip.dhw":"{h} · hot water {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Preheat +{c} °C","planG.tipCharge":"Charging +{c} °C","planG.tipInsufficient":"Charging +{c} °C – the floor cannot cover the whole shortfall","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Comfort band lifted +{c} °C","hs.mqttPasswordSet":"Saved – leave empty to keep it","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"connected","hs.mqttDisconnected":"not connected","hs.mqttOff":"MQTT: off","ctrl.editHost":"Change address","ctrl.hostInvalid":"Not a valid IP address or hostname","wifi.connectedTo":"Connected","wifi.notConnected":"Not connected","wifi.apActive":"Setup network “Lune Touch Setup” is on","wifi.sent":"Switching network… this page may lose its connection for a moment.","wifi.needSsid":"Enter the network name","wifi.switch.pending":"Switching to {ssid}…","wifi.switch.connected":"Connected to {ssid}","wifi.switch.reverted":"{ssid} did not connect – back on the previous network","wifi.switch.failed":"{ssid} did not connect","strip.lease.refused":"V6 refused Touch's lease – running locally","strip.lease.none":"No Touch lease – running locally","strip.charge.now":"Charging the floor (+{c} °C) before wind and cold","strip.charge.insufficient":"Charging (+{c} °C) – the floor cannot cover the whole shortfall","hs.link.ok":"OK – Odin gets data and learns","hs.link.forwarder_off":"Asgard is not forwarding to Odin – Odin is not learning","hs.link.telemetry_stale":"Odin has no fresh telemetry ({s} min) – Odin is not learning","hs.link.no_room_temperature":"Odin gets no room temperature – Odin is not learning","hs.link.odin_unreachable":"Odin does not respond","hs.link.unknown":"Unknown","hs.odinStatus.disabled":"Off","hs.odinStatus.idle":"Waiting for the first check","hs.odinStatus.watching":"Watching – no lift now","hs.odinStatus.lifted":"Lifted +{c} °C from {h}:00 for {n} h","hs.odinStatus.yielded":"Paused – the schedule was changed in Odin","hs.odinStatus.rate_limited":"Waiting – at most one change per 20 min","hs.odinStatus.write_failed":"Could not write to Odin","hs.odinStatus.odin_unreachable":"Odin does not respond","hs.odinStatus.schedule_unreadable":"Odin's schedule could not be read","hs.odinStatus.clock_invalid":"Touch clock is not set","hs.odinWanted":"wanted +{c} °C from {h}:00 for {n} h","hs.route.virtual_thermostat":"Asgard's virtual thermostat (+{c} °C)","hs.route.generic":"Heat source inputs (+{c} °C)","hs.route.none":"None – Odin follows its own schedule","hs.leverState":"Target {t} °C · heat request {r} · curve +{c} °C","price.state.ok":"Sent","price.state.waiting":"Waiting","price.state.running":"Sending","price.state.error":"Failed","price.state.disabled":"Off","price.odinMode.api":"Touch","price.odinMode.energy_charts":"Odin's own (Energy-Charts)","price.odinMode.unknown":"Not set yet","price.odinMode.pending":"Being changed","price.err.spot":"The spot price could not be fetched","price.err.spot_incomplete":"Today's spot price is incomplete","price.err.grid":"The grid tariff could not be fetched – check GLN and tariff code","price.err.energinet":"Energinet's tariffs could not be fetched","price.err.odin":"Odin did not accept the prices","price.err.no_odin_host":"No Odin address – set it under Heat source","price.err.clock":"Touch does not know the time yet","price.err.other":"The price could not be calculated","price.cached":"Tariff from the last successful fetch","price.noOdinHost":"Set Odin's address under Heat source first.","price.pushOk":"Sent to Odin · {time}","price.pushOkBody":"{n} hours from 00:00 today","price.pushFail":"Not sent · {time}","price.pushPending":"Touch has not answered yet – see Status in a moment","price.pushDisabled":"Turn on “Send prices to Odin” first","price.schedRemove":"Remove period","price.schedHourAria":"Start hour","price.schedValueAria":"Price in DKK/kWh excl. VAT","price.atHour":"{v} at {h}:00","price.hoursValue":"{n} h from 00:00 today","price.unitDkk":"DKK/kWh","price.noData":"No prices yet","price.lastPushValue":"{time}","_dec":".","_walls":{"n":"N","e":"E","s":"S","w":"W"},"_lang":"en"}</script>
+<script type="application/json" id="i18n">{"rt.savedOk":"Saved","rt.saveFailed":"Save failed","rt.saving":"Saving…","rt.unsaved.one":"{n} unsaved change","rt.unsaved.other":"{n} unsaved changes","rt.nothingToSave":"No changes to save","rt.leaveUnsaved":"You have unsaved changes.","rt.autoSaving":"Saving…","rt.autoSaved":"Saved","rt.autoFailed":"Not saved — try again","rt.retry":"Try again","rt.secondsAgo":"{n} s ago","rt.minutesAgo":"{n} min ago","rt.offline":"Offline","common.undo":"Undo","state.calling":"Calling for heat","state.idle":"Idle","state.fault":"Fault","state.off":"Not in use","tile.fault":"Fault","tile.off":"Off","badge.ok":"Ok","badge.warn":"Attention","badge.bad":"Fault","badge.calling":"Calling","common.on":"On","common.off":"Off","common.approve":"Approve","common.remove":"Remove","common.days":"days","common.faults":"{n} fault","common.noFaults":"no faults","device.this":"this device","device.copied":"Copied","device.copyDiag":"Copy diagnostics","dash.house.sub":"{manifolds} controllers · {calling} zones calling · {faults} fault","dash.manifold.sub":"{zones} zones · {calling} calling · {state}","dash.zone.sub":"{state} · target {target}°C","fc.sub":"72 hours · {model} · fetched {time}","alert.boardFault":"{board} is unreachable","ctrl.removeTitle":"Remove controller","ctrl.removeAsk":"Remove {name}?","ctrl.removeConfirm":"Remove {name}? Rooms mapped only to this board become empty.","ctrl.removeBtn":"Remove…","ctrl.removeDo":"Remove","ctrl.editName":"Edit name","ctrl.found":"Found","ctrl.addRow":"Add","ctrl.empty":"No controllers yet. Scan the network or add a hostname.","ctrl.host":"Hostname or IP","common.unnamed":"Unnamed","common.cancel":"Cancel","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Connected","heat.badge.bad":"Unreachable","heat.badge.off":"Off","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Not sent – switched off","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Testing…","hs.testReadOk":"Read OK · {time} · {code} · {ms} ms","hs.testPushOk":"Send OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C from {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Check host and port, and that the heat source is reachable.","hs.testCheckDns":"Check that the hostname resolves.","hs.testCheckHttp":"Check the endpoint and that the heat source answers.","hs.testStatus.failed":"Failed","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Address missing","hs.testReason.network":"No network","hs.testReason.endpoint":"Invalid endpoint","hs.testReason.notReady":"Heat source is not ready","hs.testReason.busy":"Busy","hs.testReason.rejected":"Rejected","status.trusted":"Approved","status.paired":"Waiting","status.unpaired":"Waiting","status.waiting":"Waiting","status.unreachable":"No connection","status.confirmed":"Confirmed","status.sent":"Sent","status.mismatch":"Mismatch","status.blocked":"Blocked","status.unknown":"Unknown","status.disabled":"Off","scope.title.house":"House","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Below target","house.at":"At target","house.above":"Above target","dash.house.sub.one":"{manifolds} controllers · {calling} zone calling · {faults} fault","fc.badge":"Preload +{v} °C","fc.windFrom":"from {dir}","fc.dirTitle":"{time}: {speed} m/s from {dir}","fc.sky.sun":"Sunny","fc.sky.partly":"Partly sunny","fc.sky.cloud":"Cloudy","fc.sky.rain":"Rain","fc.sky.snow":"Snow","fc.sky.moon":"Clear night","diag.pollOk":"OK","diag.pollFail":"{n} failed polls","rooms.includeAria":"Include {name} in house temperature","rooms.weightAria":"Weight for {name}","rooms.windAria":"Wind exposure for {name}","rooms.solarAria":"Solar gain for {name}","m.supplyShort":"Flow","m.returnShort":"Ret","strip.sub":"Zones on {name}","diag.ota.valid":"Confirmed","diag.ota.pending_verify":"Awaiting confirmation","diag.ota.new":"New, not started","diag.ota.invalid":"Rejected","diag.ota.aborted":"Rejected","diag.ota.undefined":"Factory image","hs.notSentLease":"Not sent – the V6s have not granted Touch the lease","hs.route.odin_schedule":"Odin's comfort schedule","hp.compOn":"compressor {hz} Hz","hp.compOff":"compressor off","flow.none":"No open loops – the pump runs at minimum flow.","flow.note":"Approximate: derived from valve openings. Pipe length to each manifold is not included.","flow.noteLpm":"Approximate: derived from valve openings and the pump flow. Pipe length to each manifold is not included.","flow.zoneTip":"{zone}: valve {v} % · {pct} % of the manifold","flow.closed":"closed","fc.now":"Now","role.reserve":"Backup – Odin is in control. Asgard uses the target (unlifted) if Odin stops.","role.reserveNow":"Backup – Odin drives the pump now. Asgard uses the target if Odin stops.","role.asgardNow":"Active – Asgard regulates itself right now and heats to the target.","role.offOdin":"Off – if Odin stops, Asgard uses its own setpoint. Turn sync on.","role.drives":"In control – Asgard heats to the target (+{c} °C when needed).","role.off":"Off – Asgard does not get the house target.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Heating {kw} kW","now.off":"Off","now.dhw":"Hot water","planG.odin":"Odin","planG.noOdin":"No Odin plan","planG.tip.heat":"{h} · space heat {kwh} kWh","planG.tip.dhw":"{h} · hot water {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Preheat +{c} °C","planG.tipCharge":"Charging +{c} °C","planG.tipInsufficient":"Charging +{c} °C – the floor cannot cover the whole shortfall","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Comfort band lifted +{c} °C","hs.mqttPasswordSet":"Saved – leave empty to keep it","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"connected","hs.mqttDisconnected":"not connected","hs.mqttOff":"MQTT: off","ctrl.editHost":"Change address","ctrl.hostInvalid":"Not a valid IP address or hostname","wifi.connectedTo":"Connected","wifi.notConnected":"Not connected","wifi.apActive":"Setup network “Lune Touch Setup” is on","wifi.sent":"Switching network… this page may lose its connection for a moment.","wifi.needSsid":"Enter the network name","wifi.switch.pending":"Switching to {ssid}…","wifi.switch.connected":"Connected to {ssid}","wifi.switch.reverted":"{ssid} did not connect – back on the previous network","wifi.switch.failed":"{ssid} did not connect","strip.lease.refused":"V6 refused Touch's lease – running locally","strip.lease.none":"No Touch lease – running locally","strip.charge.now":"Charging the floor (+{c} °C) before wind and cold","strip.charge.insufficient":"Charging (+{c} °C) – the floor cannot cover the whole shortfall","hs.link.ok":"OK – Odin gets data and learns","hs.link.forwarder_off":"Asgard is not forwarding to Odin – Odin is not learning","hs.link.telemetry_stale":"Odin has no fresh telemetry ({s} min) – Odin is not learning","hs.link.no_room_temperature":"Odin gets no room temperature – Odin is not learning","hs.link.odin_unreachable":"Odin does not respond","hs.link.unknown":"Unknown","hs.odinStatus.disabled":"Off","hs.odinStatus.idle":"Waiting for the first check","hs.odinStatus.watching":"Watching – no lift now","hs.odinStatus.lifted":"Lifted +{c} °C from {h}:00 for {n} h","hs.odinStatus.yielded":"Paused – the schedule was changed in Odin","hs.odinStatus.rate_limited":"Waiting – at most one change per 20 min","hs.odinStatus.write_failed":"Could not write to Odin","hs.odinStatus.odin_unreachable":"Odin does not respond","hs.odinStatus.schedule_unreadable":"Odin's schedule could not be read","hs.odinStatus.clock_invalid":"Touch clock is not set","hs.odinWanted":"wanted +{c} °C from {h}:00 for {n} h","hs.route.virtual_thermostat":"Asgard's virtual thermostat (+{c} °C)","hs.route.generic":"Heat source inputs (+{c} °C)","hs.route.none":"None – Odin follows its own schedule","hs.leverState":"Target {t} °C · heat request {r} · curve +{c} °C","price.state.ok":"Sent","price.state.waiting":"Waiting","price.state.running":"Sending","price.state.error":"Failed","price.state.disabled":"Off","price.odinMode.api":"Touch","price.odinMode.energy_charts":"Odin's own (Energy-Charts)","price.odinMode.unknown":"Not set yet","price.odinMode.pending":"Being changed","price.err.spot":"The spot price could not be fetched","price.err.spot_incomplete":"Today's spot price is incomplete","price.err.grid":"The grid tariff could not be fetched – check GLN and tariff code","price.err.energinet":"The system tariff could not be fetched","price.err.odin":"Odin did not accept the prices","price.err.no_odin_host":"No Odin address – set it under Heat source","price.err.clock":"Touch does not know the time yet","price.err.other":"The price could not be calculated","price.cached":"Tariff from the last successful fetch","price.noOdinHost":"Set Odin's address under Heat source first.","price.pushOk":"Sent to Odin · {time}","price.pushOkBody":"{n} hours from 00:00 today","price.pushFail":"Not sent · {time}","price.pushPending":"Touch has not answered yet – see Status in a moment","price.pushDisabled":"Turn on “Send prices to Odin” first","price.schedRemove":"Remove period","price.schedHourAria":"Start hour","price.schedValueAria":"Price in DKK/kWh excl. VAT","price.atHour":"{v} at {h}:00","price.hoursValue":"{n} h from 00:00 today","price.noData":"No prices yet","price.lastPushValue":"{time}","price.state.odin":"Odin fetches","price.odinMode.fixed":"Fixed price","price.odinMode.entsoe":"ENTSO-E","price.tokenSet":"Set","price.tokenUnset":"Not set","price.tokenSaved":"Saved – type a new one to replace it","price.inclAll":"All-in price in {cur}/kWh incl. tariffs, taxes and VAT.","price.defaultsApplied":"Defaults for {zone} filled in – save to use them","price.defaultsUnknown":"No table entry for {zone}: 0 tax and 21 % VAT filled in","price.odinWriteOk":"Written to Odin · {time}","price.odinWriteFail":"Not written · {time}","price.spotUsed.eds":"Energi Data Service","price.spotUsed.energy_charts":"Energy-Charts","price.spotUsed.entsoe":"ENTSO-E","price.spotUsed.fixed":"Fixed price","price.spotFallback":"{src} (fallback)","price.err.datahub_dk_only":"DataHub and Energi Data Service only cover Denmark","price.err.no_token":"ENTSO-E needs a token","price.odinMode.dynamic":"Spot price","_dec":".","_walls":{"n":"N","e":"E","s":"S","w":"W"},"_lang":"en"}</script>
 <script>window.LUNE_TOUCH_MOCK=true;</script>
 <script src="ui.js" defer></script>
 <script>
