@@ -1707,8 +1707,8 @@
     setBind('pump.head', esc(num(circ.head_m)) + ' <small>m</small>');
     setBind('pump.power', esc(num(circ.power_w, 0)) + ' <small>W</small>');
     setText('pump.host', circ.host || '—');
-    setText('tile.pumpVal', num(lpm, 1));
-    setText('tile.pumpSub', lpm == null ? '' : t('tile.pumpSub', { h: num(circ.head_m), w: num(circ.power_w, 0) }));
+    setText('tile.pumpVal', finite(circ.flow_m3h) ? num(circ.flow_m3h, 1) + ' m³/h' : '—');
+    setText('tile.pumpSub', finite(circ.power_w) ? num(circ.power_w, 0) + ' W' : '');
     setText('tile.pumpStatus', lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
     if (state.zones) renderDist();
     applyCirculation(circ);
@@ -2274,6 +2274,8 @@
     var nodes = Object.keys(byNode).map(Number).sort(function (a, b) { return a - b; });
     if (!nodes.length || !(total > 0)) {
       host.innerHTML = '<div class="dist-bar"></div><p class="dist-note">' + esc(t('flow.none')) + '</p>';
+      var td0 = qs('[data-bind-tiledist]');
+      if (td0) td0.hidden = true;
       return;
     }
     var bar = '';
@@ -2299,6 +2301,21 @@
     host.innerHTML = '<div class="dist-bar">' + bar + '</div><div class="dist-rows">' + rows + '</div>' +
       '<p class="dist-note">' + esc(t(lpmTotal != null ? 'flow.noteLpm' : 'flow.note')) + '</p>';
     setText('svc.dist', nodes.map(function (n) { return num(byNode[n].kv / total * 100, 0); }).join(' · ') + ' %');
+    // Home's Circulation tile: the same split as a donut + legend.
+    var td = qs('[data-bind-tiledist]');
+    if (td) {
+      var cum = 0, gap = nodes.length > 1 ? 1.5 : 0, segs = '', legend = '';
+      nodes.forEach(function (n, i) {
+        var pct = byNode[n].kv / total * 100;
+        var name = nodeLabel(state.nodes[n]) || ('M' + (n + 1));
+        segs += '<circle data-i="' + (i % 4) + '" cx="22" cy="22" r="17" pathLength="100" stroke-dasharray="' +
+          Math.max(0, pct - gap).toFixed(2) + ' 100" stroke-dashoffset="' + (-cum).toFixed(2) + '"/>';
+        cum += pct;
+        legend += '<li><i data-i="' + (i % 4) + '"></i><span>' + esc(name) + '</span> <b>' + esc(num(pct, 0)) + ' %</b></li>';
+      });
+      td.innerHTML = '<svg viewBox="0 0 44 44" role="img" aria-label="' + esc(t('pump.dist')) + '"><circle class="trk" cx="22" cy="22" r="17"/>' + segs + '</svg><ul>' + legend + '</ul>';
+      td.hidden = false;
+    }
   }
 
   function applyCirculation(circ) {
