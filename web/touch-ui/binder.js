@@ -889,6 +889,8 @@
         var valve = room && room.primary === z ? room.valve : z.valve_pct;
         var st = mapStatus(room && room.primary === z ? room.status : z.status);
         var lvl = tileLevel(z, valve);
+        var open5 = lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(valve) / 20)));
+        var area = Number((z.room && z.room.total_area_m2) || (room && room.area_m2)) || 12;   // tile width follows the room's area
         var idl = zoneIdLabel(z);
         var val = roomValText(z);
         var ch = chargeFor(m - 1, mz.z - 1);
@@ -898,10 +900,10 @@
         var aria = t('tile.room.aria', { name: nm, state: t('state.' + st), temp: val });
         var tag = slot ? 'button' : 'div';
         var open = slot ? ' type="button" popovertarget="sheet-r' + slot + '"' : '';
-        return '<' + tag + ' class="tile"' + open + chargeAttr + ' data-state="' + st + '" data-level="' + lvl + '"' +
-          (idl.role ? ' data-group="' + idl.role + '"' : '') + ' aria-label="' + esc(aria) + '">' +
-          '<span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
-          '<span class="tile-pct">' + (lvl === 0 && !zoneHasData(z) ? '—' : num(lvl === 0 ? 0 : valve, 0) + ' %') + '</span>' +
+        return '<' + tag + ' class="tile"' + open + chargeAttr + ' data-state="' + st + '" data-open="' + open5 + '"' +
+          ' style="--area:' + Math.round(area) + '"' + (idl.role ? ' data-group="' + idl.role + '"' : '') + ' aria-label="' + esc(aria) + '">' +
+          '<span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>' +
+          '<span class="tile-pct">' + (lvl === 0 && !zoneHasData(z) ? '—' : (lvl === 0 ? t('tile.closed') : t('tile.open', { p: num(valve, 0) }))) + '</span>' +
           '<span class="tile-id">' + esc(idl.id) + '</span><span class="tile-name">' + esc(nm) + '</span>' +
           devChip(z) + '<span class="tile-val">' + esc(val) + '</span></' + tag + '>';
       }).join('');
@@ -1116,7 +1118,7 @@
       : (o.house_comfort_target_c != null ? o.house_comfort_target_c : (o.house_target && o.house_target.value_c));
     var tgt = qs('#house_target');
     if (tgt && !editingTarget(tgt) && finite(target)) {
-      putVal(tgt, Number(target).toFixed(1));
+      putVal(tgt, num(target));
       if (tgt.form && tgt.form.luneResnap) tgt.form.luneResnap();
     }
     renderHome();
@@ -1139,9 +1141,12 @@
     return finite(ht) ? Number(ht) : null;
   }
 
+  // The house target is a text field so it shows the page language's decimal sign.
+  function parseNum(v) { return Number(String(v == null ? '' : v).trim().replace(',', '.')); }
+
   function houseTarget() {
     var tgt = qs('#house_target');
-    var v = tgt ? Number(tgt.value) : NaN;
+    var v = tgt ? parseNum(tgt.value) : NaN;
     return isFinite(v) ? v : null;
   }
 
@@ -1155,6 +1160,9 @@
     var faults = primaries.filter(function (z) { return mapStatus(z.status) === 'fault'; }).length;
     var rel = ht == null || tg == null ? 'none' : (ht - tg < -0.2 ? 'below' : (ht - tg > 0.2 ? 'above' : 'at'));
     setText('home.headline', t('home.headline.' + (faults ? 'fault' : rel)));
+    var hpx = (state.heat && state.heat.heat_pump) || {};
+    setText('home.headline2', hpx.available && hpx.compressor_on != null ? t(hpx.compressor_on ? 'home.hp.on' : 'home.hp.off') : '');
+    setText('house.outdoor', finite(state.outdoorC) ? t('thermo.outside', { t: deg(state.outdoorC) }) : '');
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
     setBind('house.temp', ht == null ? '—' : esc(num(ht)) + '<small>°</small>');
     var ring = qs('[data-bind-thermo]');
@@ -1178,7 +1186,38 @@
       if (fn) fl = fs / fn;
       if (rn) rt = rs / rn;
     }
-    setText('tile.heatVal', fl == null && rt == null ? '—' : deg(fl) + ' → ' + deg(rt));
+    var heatVal = fl == null && rt == null ? '—' : deg(fl) + ' → ' + deg(rt);
+    setText('tile.heatVal', heatVal);
+    // Hero shortcut: heat source (flow → return) and its compressor state.
+    setShow('hero.heat', heatVal !== '—');
+    setText('hero.heatLabel', hp.available ? t('hero.heatPump') : t('tile.heat'));
+    setText('hero.heatVal', heatVal);
+    setText('hero.heatSub', hp.available && hp.compressor_on != null
+      ? (hp.compressor_on ? t('hp.compOn', { hz: num(hp.compressor_hz, 0) }) : t('hp.compOff')) : (qs('[data-bind="heat.badgeText"]') || {}).textContent || '');
+    pushHeatSample(fl, rt);
+  }
+
+  // The device keeps no flow/return history, so the Heat tile draws what this
+  // page has seen: one sample a minute, up to 24 h.
+  var HEAT_HIST_MAX = 1440;
+  function pushHeatSample(fl, rt) {
+    if (!finite(fl) || !finite(rt)) return;
+    var hist = state.heatHist || (state.heatHist = []);
+    var now = Date.now();
+    if (hist.length && now - hist[hist.length - 1].at < 60000) return;
+    hist.push({ at: now, f: Number(fl), r: Number(rt) });
+    if (hist.length > HEAT_HIST_MAX) hist.shift();
+    var viz = qs('[data-bind-viz="heat"]');
+    var tile = qs('[data-tile="heat"]');
+    var ok = hist.length >= 3;
+    if (tile) tile.toggleAttribute('data-empty', !ok);
+    if (!viz || !ok) return;
+    var fs = hist.map(function (h) { return h.f; }), rs = hist.map(function (h) { return h.r; });
+    var r = axisRange([fs, rs], 3);
+    var fp = seriesPoints(fs, 240, 64, r.lo, r.hi);
+    viz.querySelector('polyline.f').setAttribute('points', fp);
+    viz.querySelector('polyline.r').setAttribute('points', seriesPoints(rs, 240, 64, r.lo, r.hi));
+    viz.querySelector('path.a').setAttribute('d', 'M0,64 L' + fp.split(' ').join(' L') + ' L240,64Z');
   }
 
   /* ---- Controllers (System › Controllers) --------------------------------- */
@@ -1998,15 +2037,20 @@
       setText('tile.planVal', '—');
       setText('tile.planKwh', '');
     }
+    var planVal = (qs('[data-bind="tile.planVal"]') || {}).textContent || '—';
+    setShow('hero.plan', planVal !== '—');
+    setText('hero.planVal', planVal);
+    setText('hero.planSub', (qs('[data-bind="tile.planKwh"]') || {}).textContent || '');
     setText('tile.planStatus', odin.available ? t('tile.planStatusOdin') : (p.rooms && p.rooms.length ? t('planG.noOdin') : t('tile.planNone')));
     setBind('plan.energyKwh', odin.available ? esc(num(totalKwh)) + ' <small>kWh</small>' : '—');
     var viz = qs('[data-bind-viz="plan"]');
     if (viz) {
       var max = 0;
       heat.forEach(function (x) { if (Number(x) > max) max = Number(x); });
-      viz.innerHTML = odin.available && max > 0 ? heat.slice(0, 24).map(function (x, k) {
-        var h2 = Math.max(2, Number(x) / max * 46);
-        return '<rect class="col' + (Number(x) > 0.05 ? ' on' : '') + '" x="' + (k * 10 + 1) + '" y="' + (48 - h2).toFixed(1) + '" width="8" height="' + h2.toFixed(1) + '"/>';
+      viz.innerHTML = odin.available && max > 0 ? '<line class="base" x1="0" y1="63.5" x2="240" y2="63.5"/>' + heat.slice(0, 24).map(function (x, k) {
+        if (!(Number(x) > 0.05)) return '';
+        var h2 = Math.max(4, Number(x) / max * 60);
+        return '<rect class="col on" x="' + (k * 10 + 2) + '" y="' + (64 - h2).toFixed(1) + '" width="6" height="' + h2.toFixed(1) + '" rx="3"/>';
       }).join('') : '';
       if (tile) tile.toggleAttribute('data-empty', !(odin.available && max > 0));
     }
@@ -2391,6 +2435,7 @@
       setBind('forecast.temp', esc(num(nowHour.temp_c)) + ' <small>°C</small>');
       if (finite(nowHour.temp_c)) setText('house.outdoor', num(nowHour.temp_c) + ' °C');
       setText('tile.weatherVal', deg(nowHour.temp_c));
+      state.outdoorC = finite(nowHour.temp_c) ? Number(nowHour.temp_c) : null;
       setText('tile.weatherSub', finite(nowHour.wind_ms) ? t('tile.weatherSub', { w: num(nowHour.wind_ms, 0) }) : '');
     }
     if (fc.cache) {
@@ -2416,7 +2461,10 @@
     if (viz && ok) {
       var r = axisRange([next], 3);
       var pl = viz.querySelector('polyline.t');
-      if (pl) pl.setAttribute('points', seriesPoints(next, 240, 48, r.lo, r.hi));
+      var wp = seriesPoints(next, 240, 64, r.lo, r.hi);
+      if (pl) pl.setAttribute('points', wp);
+      var wa = viz.querySelector('path.wa');
+      if (wa) wa.setAttribute('d', 'M0,64 L' + wp.split(' ').join(' L') + ' L' + wp.split(' ').pop().split(',')[0] + ',64Z');
       var pre = preloadWindow(fc, 0);
       var rect = viz.querySelector('rect.pre');
       if (rect) {
@@ -2894,7 +2942,7 @@
     var submitter = detail.submitter || null;
     try {
       if (key === 'house-target') {
-        await post('/strategy', { house_target_c: data.house_target });
+        await post('/strategy', { house_target_c: parseNum(data.house_target) });
         renderHome();
       } else if (key === 'rooms') {
         await saveRoom(form, ch);
@@ -3311,8 +3359,16 @@
     var b = e.target.closest('[data-step]');
     if (b && !b.disabled) {
       var i = b.parentNode.querySelector('input');
-      if (i) {
+      if (i && i.type === 'number') {
         if (Number(b.dataset.step) > 0) i.stepUp(); else i.stepDown();
+        i.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (i) {
+        // Text field with data-step-size/min/max (house target): step and format in the page language.
+        var sz = Number(i.dataset.stepSize) || 0.5, cur = parseNum(i.value);
+        var nv = (isFinite(cur) ? Math.round(cur / sz) * sz : Number(i.dataset.min) || 0) + (Number(b.dataset.step) > 0 ? sz : -sz);
+        nv = Math.max(Number(i.dataset.min), Math.min(Number(i.dataset.max), nv));
+        i.value = num(nv);
+        i.dispatchEvent(new Event('input', { bubbles: true }));
         i.dispatchEvent(new Event('change', { bubbles: true }));
       }
     }

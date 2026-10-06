@@ -92,7 +92,7 @@ I = {  # ikoner (stroke, currentColor) — samme som LDS-eksemplet
     "heat": '<svg viewBox="0 0 24 24"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg>',
     "plan": '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
     "wx": '<svg viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/></svg>',
-    "pump": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/></svg>',
+    "pump": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.6 1.2-4.4 3.6-5M13.4 12.8c2.3 1.3 3.2 3.3 2.6 5.7M10.6 12.8c-2.3 1.3-4.5 1.2-6.2-.6"/></svg>',
     "room": '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h8V4"/></svg>',
     "mani": '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10"/></svg>',
 }
@@ -101,7 +101,7 @@ CAT_ICONS = {
     "controllers": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h16M12 4v16"/>',
     "heatsource": '<path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/>',
     "prices": '<path d="M12 3v18M16 7H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H8"/>',
-    "pump": '<circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/>',
+    "pump": '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.6 1.2-4.4 3.6-5M13.4 12.8c2.3 1.3 3.2 3.3 2.6 5.7M10.6 12.8c-2.3 1.3-4.5 1.2-6.2-.6"/>',
     "weather": '<path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/>',
     "network": '<path d="M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0"/><circle cx="12" cy="20" r="1"/>',
     "firmware": '<path d="M12 4v10M8 10l4 4 4-4M5 19h14"/>',
@@ -274,7 +274,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <span class="chip-icon" aria-hidden="true">{I["heat"]}</span><b>{T("tile.heat")}</b>
             <span class="ht-status" data-bind="heat.badgeText">{T("status.waiting")}</span>
             <span class="ht-val"><span data-bind="tile.heatVal">{DASH}</span> <small>{T("tile.heatSub")}</small></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>'''
     tile_plan = f'''
           <button class="home-tile" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
@@ -282,26 +282,32 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <span class="ht-status" data-bind="tile.planStatus">{T("tile.planNone")}</span>
             <span class="ht-val"><span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="plan"></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="plan"></svg>
           </button>'''
     tile_wx = f'''
           <button class="home-tile" type="button" popovertarget="sheet-weather" data-empty data-tile="weather">
             <span class="chip-icon" data-tone="info" aria-hidden="true">{I["wx"]}</span><b>{T("tile.weather")}</b>
             <span class="ht-status" data-bind="tile.weatherStatus">{T("tile.weatherStatusNone")}</span>
             <span class="ht-val"><span data-bind="tile.weatherVal">{DASH}</span> <small data-bind="tile.weatherSub"></small></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="weather"><rect class="pre" x="0" y="0" width="0" height="48"/><polyline class="t" points=""/></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="weather"><rect class="pre" x="0" y="0" width="0" height="64"/><path class="wa" d=""/><polyline class="t" points=""/></svg>
           </button>'''
     tile_pump = f'''
           <button class="home-tile" type="button" popovertarget="sheet-pump" data-empty data-tile="pump">
             <span class="chip-icon" data-tone="neutral" aria-hidden="true">{I["pump"]}</span><b>{T("tile.pump")}</b>
             <span class="ht-status" data-bind="tile.pumpStatus">{T("tile.pumpNone")}</span>
             <span class="ht-val"><span data-bind="tile.pumpVal">{DASH}</span> <small data-bind="tile.pumpSub"></small></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg>
           </button>'''
 
+    steps = [(1, f"≤−{T.num(1, 0)}"), (2, f"−{T.num(.3)}"), (3, f"±{T.num(.3)}"), (4, f"+{T.num(.3)}"), (5, f"≥+{T.num(1, 0)}")]
+    legend = (f'<div class="heatmap-legend" role="group" aria-label="{T("heatmap.legendAria")}">'
+              f'<ol>{"".join(f"<li data-dev={chr(34)}{k}{chr(34)}>{t}</li>" for k, t in steps)}</ol><span>{T("heatmap.legendDev")}</span>'
+              f'<span><span class="lvl" aria-hidden="true">{"<i></i>" * 5}</span>{T("heatmap.legendValve")}</span></div>')
     heatmap = f'''
         <section class="panel" aria-labelledby="h-heatmap">
-          <header class="panel-head"><h3 id="h-heatmap">{T("heatmap.title")}</h3><p>{T("heatmap.sub")}</p></header>
+          <header class="heatmap-head">
+            <div><small>{T("heatmap.eyebrow")}</small><h3 id="h-heatmap">{T("heatmap.title")}</h3></div>
+            {legend}
+          </header>
           <div class="heatmap" data-bind-heatmap><p class="note">{T("common.emptyRooms")}</p></div>
           <p class="heatmap-note">{T("heatmap.note")}</p>
         </section>'''
@@ -310,26 +316,31 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       <section class="view" id="v-home-house" aria-labelledby="h-home">
         {alerts}
         <section class="home-hero">
-          <div>
+          <div class="hero-text">
             <small data-bind="home.greeting">{T("home.greeting.day")}</small>
-            <h2 id="h-home" data-bind="home.headline">{T("home.headline.none")}</h2>
+            <h2 id="h-home"><span data-bind="home.headline">{T("home.headline.none")}</span> <span class="sub" data-bind="home.headline2"></span></h2>
             <p data-bind="home.sentence">{T("home.sentence.none")}</p>
+            <div class="hero-facts">
+              <button class="hero-fact" type="button" popovertarget="sheet-heat" data-bind-show="hero.heat" hidden><span class="chip-icon" aria-hidden="true">{I["heat"]}</span><small data-bind="hero.heatLabel">{T("tile.heat")}</small><b data-bind="hero.heatVal">{DASH}</b><span data-bind="hero.heatSub"></span></button>
+              <button class="hero-fact" type="button" popovertarget="sheet-plan" data-bind-show="hero.plan" hidden><span class="chip-icon" data-tone="violet" aria-hidden="true">{I["plan"]}</span><small>{T("tile.plan")}</small><b data-bind="hero.planVal">{DASH}</b><span data-bind="hero.planSub"></span></button>
+            </div>
           </div>
           <form class="thermo" data-save="house-target">
             <div class="thermo-ring" style="--v:60;--now:0" role="img" aria-label="{T("climate.now")}" data-bind-thermo>
-              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="now" cx="50" cy="50" r="44" pathLength="100"/></svg>
-              <div class="thermo-val"><b data-bind="house.temp">{DASH}</b><span>{T("thermo.house")}</span></div>
+              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="tg-edge" cx="50" cy="50" r="44" pathLength="100"/><circle class="tg" cx="50" cy="50" r="44" pathLength="100"/></svg>
+              <div class="thermo-val"><span>{T("thermo.house")}</span><b data-bind="house.temp">{DASH}</b><span data-bind="house.outdoor"></span></div>
             </div>
             <div class="climate">
               <div class="target">
                 <button type="button" data-step="-1" aria-label="{T("common.decrease", x=ta)}">−</button>
-                <label class="value"><small>{T("climate.target")}</small><input type="number" inputmode="decimal" id="house_target" name="house_target" value="21.0" min="5" max="30" step="0.5"></label>
+                <label class="value"><small>{T("climate.target")}</small><input type="text" inputmode="decimal" id="house_target" name="house_target" value="{T.num(21.0)}" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off"><span class="unit" aria-hidden="true">°</span></label>
                 <button type="button" data-step="1" aria-label="{T("common.increase", x=ta)}">+</button>
               </div>
               <p class="autosave" aria-live="polite"></p>
             </div>
           </form>
         </section>
+        <header class="home-head"><small>{T("home.nowEyebrow")}</small><h3>{T("home.nowTitle")}</h3></header>
         <div class="home-tiles">{tile_heat}{tile_plan}{tile_wx}{tile_pump}</div>
         {heatmap}
       </section>'''
@@ -851,6 +862,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
+        "home.hp.on", "home.hp.off", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
