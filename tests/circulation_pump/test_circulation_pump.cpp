@@ -28,5 +28,10 @@ int main() {
   assert(parse_sensor_response("{\"value\":3.10}", &value) && std::fabs(value - 3.10f) < 0.0001f);
   assert(parse_sensor_response("{\"state\":\"22.4\"}", &value) && std::fabs(value - 22.4f) < 0.0001f);
   assert(!parse_sensor_response("{\"state\":\"unknown\"}", &value));
+  char alt[48];
+  assert(alternate_entity("pump_head_pressure", alt, sizeof(alt)) && std::strcmp(alt, "Pump Head Pressure") == 0);
+  assert(alternate_entity("Pump Flow", alt, sizeof(alt)) && std::strcmp(alt, "pump_flow") == 0);
+  assert(!alternate_entity("Power", alt, sizeof(alt)) || std::strcmp(alt, "Power") != 0);
+  assert(alternate_entity("power", alt, sizeof(alt)) && std::strcmp(alt, "Power") == 0);
   std::puts("Circulation pump tests passed.");
 }

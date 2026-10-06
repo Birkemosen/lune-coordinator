@@ -128,7 +128,7 @@ var parts=decodeURIComponent((location.hash||"").replace(/^#/,"")).split("/");if
 /* Første niveau: et ark eller en tilstand (#m-sys) — aldrig en fane eller System-kategori. */
 var root=document.querySelector('[popover][data-hash="'+parts[0]+'"],input[name="mode"][data-hash="'+parts[0]+'"]')||document.getElementById("sheet-"+parts[0]);
 if(!root)return;
-if(root.matches("input")){root.checked=true;
+if(root.matches("input")){root.checked=true;document.querySelectorAll(".sheet:popover-open").forEach(function(o){try{o.hidePopover()}catch(e){}});
 if(parts[1]){var c=document.querySelector('input[name="syscat"][data-hash="'+parts[1]+'"]')||document.getElementById("c-"+parts[1]);if(c)c.checked=true}}
 else if(root.matches("[popover]")){
 if(parts[1]){var tb=root.querySelector('input.tab[data-hash="'+parts[1]+'"]')||root.querySelector('input.tab[value="'+parts[1]+'"]');if(tb)tb.checked=true}

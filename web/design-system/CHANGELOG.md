@@ -1,5 +1,12 @@
 # Changelog — Lune Design System
 
+## 2.3.6
+
+- `.hchart`: graf i et ark med tal, intervalvalg (24 t / 7 d, radioer), y/x-akser i HTML og fælles `.chart-legend`; `.trend .grid`, `.trend .nowl`; `.c-heat`.
+- `.fc--stack`: vejrprognosen som fem små grafer over hinanden (vejr, temperatur, sol, vind, retning) i stedet for én kombineret.
+- `a.sheet-link`: «Indstillinger for … ›» nederst i et ark; `lune-forms.js` lukker åbne ark ved skift til en tilstand via hash.
+- Navbar: smal pille ved scroll (`scroll-state`-query, ≥ 768 px).
+
 ## 2.3.5
 
 - `.hero-fact`: egen flade og skygge over højdekurverne (nye tokens `--lift-bg`, `--lift-shadow-c`, `--lift`; kontrast fg/muted på lift-bg). Ikonbrikken fik ved en fejl tekstliniens grå farve — rettet.

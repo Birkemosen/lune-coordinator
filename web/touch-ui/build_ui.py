@@ -391,9 +391,39 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                   rrow(T("hs.sentTarget"), "hs.http.entity") +
                   rrow(T("hs.sentWhen"), "hs.http.when"),
                   extra=f'<p class="note mono" data-bind="hs.sent.url">{DASH}</p>' + calc_table, cls="hs-type-http"))
+    def hchart_panel(rng, aria):
+        return (f'<div class="hchart-panel" data-range="{rng}" data-empty data-f="h{rng}"><p class="empty">{T("hchart.empty")}</p>'
+                f'<div class="hchart-y" aria-hidden="true" data-f="y"></div>'
+                f'<svg class="trend" viewBox="0 0 240 100" preserveAspectRatio="none" role="img" aria-label="{aria}">'
+                f'<line class="grid" x1="0" x2="240" y1="0.5" y2="0.5"/><line class="grid" x1="0" x2="240" y1="50" y2="50"/>'
+                f'<line class="grid" x1="0" x2="240" y1="99.5" y2="99.5"/><path class="dt" d=""/><polyline class="r" points=""/>'
+                f'<polyline class="f" points=""/><line class="nowl" x1="239.5" x2="239.5" y1="0" y2="100"/></svg>'
+                f'<div class="axis" aria-hidden="true" data-f="x"></div></div>')
+
+    def sheet_link(cat, key):
+        return f'<a class="sheet-link" href="#{T("hash.system")}/{T("hash." + cat)}">{T(key)}</a>'
+
+    heat_chart = f'''
+          <div class="hchart hs-type-asgard" data-bind-hchart>
+            <input class="state" type="radio" name="hr-heat" id="hr-heat-24h" value="24h" checked aria-label="{T("hchart.r24")}">
+            <input class="state" type="radio" name="hr-heat" id="hr-heat-7d" value="7d" aria-label="{T("hchart.r7")}">
+            <div class="hchart-head">
+              <dl class="metrics">
+                {metric(T("m.supply"), "", "hp.feed", "c-heat")}
+                {metric(T("m.return"), "", "hp.ret", "c-info")}
+                {metric("ΔT", "", "hp.dt")}
+              </dl>
+              <span class="badge" data-bind="hp.pill" hidden></span>
+            </div>
+            <div class="hchart-range" aria-hidden="true"><label for="hr-heat-24h" data-range="24h">{T("hchart.r24")}</label><label for="hr-heat-7d" data-range="7d">{T("hchart.r7")}</label></div>
+            {hchart_panel("24h", T("hchart.aria24"))}
+            {hchart_panel("7d", T("hchart.aria7"))}
+            <p class="chart-legend" aria-hidden="true"><span><i class="lf"></i>{T("m.supply")}</span><span><i class="lr"></i>{T("m.return")}</span></p>
+          </div>'''
     heat_over = f'''
         <div data-hs-type="{hs_type}" style="display:grid;gap:var(--space-5)">
-          <dl class="metrics">
+          {heat_chart}
+          <dl class="metrics hs-type-http">
             {metric(T("heat.weighted"), "°C", "heat.weighted")}
             {metric(T("heat.setpoint"), "°C", "heat.setpoint")}
           </dl>
@@ -405,6 +435,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                  (T("hs.odinState"), "dash.odinPlan"), (T("hs.route"), "odin.route")])}
           </div>
           {sent}
+          {sheet_link("heatsource", "link.heatsource")}
         </div>'''
     heat_set = f'''
         <form data-save="heat_source.behavior" data-patch>
@@ -444,7 +475,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
           <p class="note" data-bind="price.inclAll">{T("price.inclAll", cur="DKK")}</p>
           {kv([(T("price.now"), "price.now"), (T("price.cheapest"), "price.min"), (T("price.dearest"), "price.max"), (T("price.peakAvg"), "price.peak")])}
-        </div>'''
+        </div>
+        {sheet_link("prices", "link.prices")}'''
     plan_hist = f'''
         <div class="sub" data-empty data-f="pvr"><h4>{T("plan.vsActual")}</h4>
           <p class="empty">{T("room.noHistory")}</p>
@@ -475,27 +507,31 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <symbol id="i-snow" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01"/></symbol>
             <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 20V4M6 10l6-6 6 6"/></symbol>
           </defs></svg>
-          <div class="fc fc--dual" style="--now:0%">
-            <div class="fc-icons" data-hourly aria-hidden="true"></div>
-            <div class="fc-y" aria-hidden="true"></div>
+          <div class="fc fc--stack" style="--now:0%">
+            <span class="fc-lab"><b>{T("fc.rowSky")}</b></span>
+            <div class="fc-icons" aria-hidden="true"></div>
+            <span class="fc-lab"><b>{T("fc.rowTemp")}</b><small data-fc-range="temp"></small></span>
             <div class="fc-plot fc-temp" role="img" aria-label="{T("fc.tempAria")}">
-              <svg viewBox="0 0 720 100" preserveAspectRatio="none" data-bind-fc="temp"><rect class="pre" x="0" y="0" width="0" height="100"/><polygon class="sa" points=""/><polyline class="sl" points=""/><rect class="past" x="0" y="0" width="0" height="100"/><polyline class="tl" points=""/><line class="now" x1="0" x2="0" y1="0" y2="100"/></svg>
+              <svg viewBox="0 0 720 100" preserveAspectRatio="none" data-bind-fc="temp"><rect class="pre" x="0" y="0" width="0" height="100"/><line class="gl" x1="0" x2="720" y1="50" y2="50"/><rect class="past" x="0" y="0" width="0" height="100"/><polyline class="tl" points=""/><line class="now" x1="0" x2="0" y1="0" y2="100"/></svg>
               <span class="fc-now">{T("fc.now")}</span>
             </div>
-            <div class="fc-y2" aria-hidden="true"></div>
-            <div class="fc-y" aria-hidden="true"></div>
+            <span class="fc-lab"><b>{T("fc.rowSun")}</b><small data-fc-range="sun"></small></span>
+            <div class="fc-plot fc-sun" role="img" aria-label="{T("fc.sunAria")}">
+              <svg viewBox="0 0 720 60" preserveAspectRatio="none" data-bind-fc="sun"><polygon class="sa" points=""/><polyline class="sl" points=""/><rect class="past" x="0" y="0" width="0" height="60"/><line class="now" x1="0" x2="0" y1="0" y2="60"/></svg>
+            </div>
+            <span class="fc-lab"><b>{T("fc.rowWind")}</b><small data-fc-range="wind"></small></span>
             <div class="fc-plot fc-wind" role="img" aria-label="{T("fc.windAria")}">
               <svg viewBox="0 0 720 60" preserveAspectRatio="none" data-bind-fc="wind"><polygon class="wa" points=""/><polyline class="wl" points=""/><rect class="past" x="0" y="0" width="0" height="60"/><line class="now" x1="0" x2="0" y1="0" y2="60"/></svg>
             </div>
-            <div class="fc-y2" aria-hidden="true"><span>m/s</span></div>
+            <span class="fc-lab"><b>{T("fc.rowDir")}</b></span>
             <div class="fc-dirs" aria-hidden="true"></div>
+            <span></span>
             <div class="fc-x" aria-hidden="true"></div>
             <span class="fc-scrub" hidden aria-hidden="true"></span>
             <div class="fc-readout" hidden aria-hidden="true"></div>
           </div>
           <p class="fc-legend" aria-hidden="true">
-            <span><i class="lt"></i>{T("fc.lTemp")}</span><span><i class="lsun"></i>{T("fc.lSun")}</span><span><i class="lw"></i>{T("fc.lWind")}</span>
-            <span><svg class="dir" viewBox="0 0 24 24"><use href="#i-arrow"/></svg>{T("fc.lDir")}</span><span><i class="lpre"></i>{T("fc.lPre")}</span>
+            <span><i class="lpre"></i>{T("fc.lPre")}</span>
           </p>
         </div>'''
     wx_hist = trend("wx.past", "wx-past", T("wx.pastAria"), f="wxpast")
@@ -504,7 +540,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {group(T("wx.preload"), sstep("wx_boost", T("wx.boost"), 1.5, 0, 3, 0.1, "°C", hint=T("wx.boostHint")))}
           <p class="note">{T("wx.locationOnSystem")}</p>
           {savebar("weather-boost", T("weatherCfg.save"))}
-        </form>'''
+        </form>
+        {sheet_link("weather", "link.weather")}'''
     sheet_wx = sheet("weather", T("hash.weather"), I["wx"], "info", T("tile.weather"), None,
                      [("overview", wx_over), ("history", wx_hist), ("settings", wx_set)], status_attrs=' data-bind="tile.weatherStatus"')
 
@@ -518,7 +555,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
-        <p class="note">{T("flow.sub")}</p>'''
+        <p class="note">{T("flow.sub")}</p>
+        {sheet_link("pump", "link.pump")}'''
     sheet_pump = sheet("pump", T("hash.pump"), I["pump"], "neutral", T("tile.pump"), None,
                        [("overview", pump_over)], status_attrs=' data-bind="tile.pumpStatus"')
 
@@ -770,7 +808,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {group(T("wx.location"), sinput("latitude", T("weatherCfg.lat"), "55.6761", "w-sm", id_="wx_lat", extra=' inputmode="decimal"') +
                sinput("longitude", T("weatherCfg.lon"), "12.5683", "w-sm", id_="wx_lon", extra=' inputmode="decimal"') +
                sbtn(T("wx.geoLabel"), f'<button class="btn" type="button" data-action="wx-geo">{T("weatherCfg.geo")}</button>'),
-               extra=note(T("wx.boostOnSheet")))}
+               extra='<p class="note" data-bind="wx.geoResult" aria-live="polite"></p>' + note(T("wx.boostOnSheet")))}
         {savebar("weather-location", T("weatherCfg.save"))}
       </form>''', "", hhelp("weather", "weatherCfg.title", ["help.weather"], "docs/Manual.md#weather")))
 
@@ -890,7 +928,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",

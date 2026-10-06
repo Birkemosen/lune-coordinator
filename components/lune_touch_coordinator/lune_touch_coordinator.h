@@ -3,6 +3,7 @@
 #include "coordinator_model.h"
 #include "energy_price.h"
 #include "flow_trim.h"
+#include "hp_history.h"
 #include "house_demand.h"
 #include "odin_comfort.h"
 #include "odin_mqtt.h"
@@ -477,6 +478,8 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_settings_json(char *buffer, size_t capacity) const;
   void write_heat_source_json(char *buffer, size_t capacity) const;
   void write_circulation_json(char *buffer, size_t capacity) const;
+  /// Heat sheet chart: Asgard flow/return averaged into buckets. range 0 = 24 h, 1 = 7 d.
+  void write_heat_history_json(char *buffer, size_t capacity, uint8_t range) const;
   void write_events_json(char *buffer, size_t capacity) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
@@ -929,6 +932,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool push_generic_levers_();
   /// Asgard /dashboard/state → heat-pump flow/return/outdoor/compressor.
   bool poll_asgard_telemetry_();
+  /// Asgard /dashboard/history → hp_history_[range] (stream-parsed, no full body in RAM).
+  bool poll_asgard_history_(uint8_t range);
   NodeTelemetryState node_telemetry_[::lune_touch::MAX_NODES]{};
   EventRecord events_[EVENT_CAPACITY]{};
   size_t event_next_{0};
@@ -982,6 +987,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool asgard_enabled_{true};
   char asgard_mode_[16]{"advisory"};
   HeatSourceState heat_source_{};
+  hp_history::Series hp_history_[2]{};   // 0 = 24 h (96 × 15 min), 1 = 7 d (84 × 2 h)
   bool heat_source_push_requested_{false};
   HeatSourceProbeKind heat_source_probe_kind_{HeatSourceProbeKind::NONE};
   SemaphoreHandle_t heat_source_probe_done_{nullptr};

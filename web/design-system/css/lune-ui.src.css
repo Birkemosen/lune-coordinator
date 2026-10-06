@@ -112,6 +112,15 @@
   }
   .header > :last-child { justify-self: end; }
   .header .mode { background: var(--raised); }
+  /* Ved scroll (navbaren sidder fast øverst) bliver pillen kun så bred som indholdet.
+     Kræver scroll-state-queries; uden dem forbliver den bred. */
+  @media (min-width: 768px) {
+    .navbar-wrap { container-type: scroll-state; }
+    .header { interpolate-size: allow-keywords; transition: width var(--dur) var(--ease); }
+    @container scroll-state(stuck: top) {
+      .header { width: fit-content; margin-inline: auto; grid-template-columns: auto auto auto; gap: var(--space-5); }
+    }
+  }
   .top { position: static; }
 
   /* Mobil: ingen backdrop-filter på navbaren — et filter på en forfader
@@ -984,6 +993,23 @@
   .fc--dual > :is(.fc-icons, .fc-x, .fc-plot, .fc-dirs) { grid-column: 2; }
   .fc--dual > .fc-y { grid-column: 1; }
   .fc--dual > .fc-y2 { grid-column: 3; }
+  /* .fc--stack: én lille graf pr. størrelse over hinanden (vejr, temperatur, sol, vind, retning)
+     med fælles x-akse og nu-linje. Navn og spænd står i venstre kolonne; mobil: over grafen. */
+  .fc.fc--stack { grid-template-columns: 6.5rem minmax(0, 1fr); gap: var(--space-3) var(--space-3); align-items: center; }
+  .fc--stack > .fc-lab { grid-column: 1; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--faint); line-height: 1.2; }
+  .fc--stack > .fc-lab b { font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
+  .fc--stack > :is(.fc-icons, .fc-plot, .fc-dirs, .fc-x) { grid-column: 2; }
+  .fc--stack .fc-temp { height: 96px; }
+  .fc--stack :is(.fc-sun, .fc-wind) { height: 52px; margin-top: 0; }
+  .fc--stack .fc-plot { border-bottom: 1px solid var(--border); }
+  .fc--stack .fc-x span.m { visibility: hidden; }   /* arket er smalt: kun 6-timers mærker */
+  .fc--stack .fc-icons { grid-template-columns: repeat(var(--fc-cols, 24), minmax(0, 1fr)); }
+  @media (max-width: 599.98px) {
+    .fc.fc--stack { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-1); }
+    .fc--stack > :is(.fc-lab, .fc-icons, .fc-plot, .fc-dirs, .fc-x) { grid-column: 1; }
+    .fc--stack > .fc-lab { flex-direction: row; align-items: baseline; gap: var(--space-2); margin-top: var(--space-2); }
+    .fc--stack > .fc-lab:empty { display: none; }
+  }
   .fc-y2 { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
   /* Solindstråling: grafens ene fyldte serie, som glød (jævn gul bliver oliven på mørkt). */
   .fc .sa { fill: url(#lds-fade-light); }
@@ -1649,6 +1675,41 @@
     .room-grid .tile .tile-val { font-size: var(--fs-lg); }
   }
 
+  /* Graf i et ark (.hchart, fx Varme: fremløb/retur): tal øverst, intervalvalg (24 t / 7 d)
+     som radioer + labels, y-akse og x-akse i HTML, «nu» som stiplet linje til højre. */
+  .hchart { display: grid; gap: var(--space-4); }
+  .hchart-head { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: var(--space-3); }
+  .hchart-head .metrics { flex: 1 1 auto; grid-template-columns: repeat(3, auto); justify-content: start; gap: var(--space-2) var(--space-6); }
+  .hchart-head .metric dd { font-size: var(--fs-2xl); }
+  .hchart-range { display: inline-flex; justify-self: start; padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
+  .hchart-range label { display: grid; place-items: center; min-height: calc(var(--hit) - 8px); padding: 0 var(--space-4); border-radius: var(--r-pill);
+    font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; }
+  .hchart > input[value="24h"]:checked ~ .hchart-range label[data-range="24h"],
+  .hchart > input[value="7d"]:checked ~ .hchart-range label[data-range="7d"] { background: var(--inv-bg); color: var(--inv-fg); }
+  .hchart > input:focus-visible ~ .hchart-range { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .hchart > input[value="24h"]:checked ~ .hchart-panel:not([data-range="24h"]),
+  .hchart > input[value="7d"]:checked ~ .hchart-panel:not([data-range="7d"]) { display: none; }
+  .hchart-panel { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "y plot" ". x"; gap: var(--space-2) var(--space-3); }
+  .hchart-panel .trend { grid-area: plot; height: 200px; }
+  .hchart-panel .axis { grid-area: x; }
+  .hchart-panel .axis b { color: var(--fg); }
+  .hchart-y { grid-area: y; display: flex; flex-direction: column; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+  .trend .grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .trend .nowl { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .hchart-panel[data-empty] { display: flex; }
+  .hchart-panel[data-empty] .hchart-y { display: none; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: var(--space-4); font-size: var(--fs-sm); color: var(--muted); }
+  .chart-legend i { display: inline-block; width: 14px; margin-right: var(--space-2); vertical-align: middle; border-top: 2px solid; border-radius: 2px; }
+  .chart-legend .lf { border-color: var(--accent); }
+  .chart-legend .lr { border-color: var(--data-return); }
+  .hchart:has(> .hchart-panel[data-empty]:only-of-type) .chart-legend { display: none; }
+
+  /* Link nederst i et ark til tingens indstillinger på System («Indstillinger for varmekilde ›»). */
+  .sheet-link { justify-self: start; display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--hit);
+    font-weight: 600; color: var(--fg); text-decoration: none; }
+  .sheet-link::after { content: "›"; color: var(--muted); font-size: var(--fs-lg); line-height: 1; }
+  .sheet-link:hover { color: var(--muted); }
+
   /* Læseværdier fra en anden enhed (fx V6 i Touch' rum-ark): dæmpet når enheden er offline. */
   .setting-group[data-offline] .setting-list { opacity: .55; }
   /* @end */
@@ -2021,7 +2082,7 @@
     /* @end */
   /* @compact:end */
   .muted { color: var(--muted); } .accent { color: var(--accent-ink); }
-  .c-info { color: var(--info); } .c-ok { color: var(--ok); } .c-warn { color: var(--warn); } .c-bad { color: var(--danger); } .c-violet { color: var(--violet); }
+  .c-heat { color: var(--accent-ink); } .c-info { color: var(--info); } .c-ok { color: var(--ok); } .c-warn { color: var(--warn); } .c-bad { color: var(--danger); } .c-violet { color: var(--violet); }
   :not(.badge):not(.msg).ok { color: var(--ok); } :not(.badge):not(.msg).bad { color: var(--danger); }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   [hidden] { display: none !important; }

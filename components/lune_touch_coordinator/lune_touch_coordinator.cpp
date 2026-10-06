@@ -1883,6 +1883,17 @@ void LuneTouchCoordinator::heat_source_task_() {
     if (asgard_type) {
       poll_asgard_freeze_inputs_();
       poll_asgard_telemetry_();
+      // Chart history for the Heat sheet: 24 h every 10 min, 7 d every hour.
+      for (uint8_t range = 0; range < 2; range++) {
+        uint32_t fetched = 0;
+        if (take_state_lock_(50)) {
+          fetched = hp_history_[range].fetched_ms;
+          give_state_lock_();
+        }
+        const uint32_t every_ms = range == 0 ? 600000UL : 3600000UL;
+        if (fetched == 0 || esphome::millis() - fetched >= every_ms)
+          poll_asgard_history_(range);
+      }
     }
     if (lease_held)
       push_weighted_temperature_();
@@ -2391,6 +2402,107 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     give_state_lock_();
   }
   return ok;
+}
+
+bool LuneTouchCoordinator::poll_asgard_history_(uint8_t range) {
+  if (range > 1 || time_ == nullptr)
+    return false;
+  const auto now = time_->now();
+  if (!now.is_valid())
+    return false;
+  char host[64]{};
+  uint16_t port = 80;
+  if (!take_state_lock_(100))
+    return false;
+  std::strncpy(host, heat_source_.host, sizeof(host) - 1);
+  port = heat_source_.port == 0 ? 80 : heat_source_.port;
+  hp_history_[range].fetched_ms = esphome::millis();   // also on failure: retry at the next interval
+  give_state_lock_();
+  if (host[0] == '\0')
+    return false;
+
+  const uint16_t step_s = range == 0 ? 900 : 7200;
+  const uint8_t n = range == 0 ? 96 : 84;
+  const uint32_t to_ts = static_cast<uint32_t>(now.timestamp);
+  const uint32_t from_ts = to_ts - static_cast<uint32_t>(step_s) * n;
+  // ~1.3 KiB of sums: static, only the heat-source task calls this.
+  static hp_history::Bucketer bucketer;
+  bucketer.begin(from_ts, step_s, n);
+
+  char url[160];
+  std::snprintf(url, sizeof(url), "http://%s:%u/dashboard/history?type=min&from=%lu&to=%lu", host,
+                static_cast<unsigned>(port), static_cast<unsigned long>(from_ts),
+                static_cast<unsigned long>(to_ts + 60));
+  esp_http_client_config_t cfg{};
+  cfg.url = url;
+  cfg.method = HTTP_METHOD_GET;
+  cfg.timeout_ms = 10000;
+  cfg.disable_auto_redirect = true;
+  cfg.user_data = &bucketer;
+  cfg.event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
+    if (evt != nullptr && evt->user_data != nullptr && evt->event_id == HTTP_EVENT_ON_DATA &&
+        evt->data != nullptr && evt->data_len > 0)
+      static_cast<hp_history::Bucketer *>(evt->user_data)
+          ->feed(static_cast<const char *>(evt->data), static_cast<size_t>(evt->data_len));
+    return ESP_OK;
+  };
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (client == nullptr)
+    return false;
+  const esp_err_t err = esp_http_client_perform(client);
+  const int status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
+  esp_http_client_cleanup(client);
+  if (err != ESP_OK || status != 200) {
+    ESP_LOGD(TAG, "Asgard history %s failed: %s / %d", range == 0 ? "24h" : "7d", esp_err_to_name(err), status);
+    return false;
+  }
+  static hp_history::Series series;
+  bucketer.finish(&series);
+  series.fetched_ms = esphome::millis();
+  if (take_state_lock_(100)) {
+    hp_history_[range] = series;
+    give_state_lock_();
+  }
+  ESP_LOGD(TAG, "Asgard history %s: %u rows", range == 0 ? "24h" : "7d", static_cast<unsigned>(bucketer.rows()));
+  return series.valid;
+}
+
+void LuneTouchCoordinator::write_heat_history_json(char *buffer, size_t capacity, uint8_t range) const {
+  if (buffer == nullptr || capacity == 0)
+    return;
+  static hp_history::Series series;
+  series = hp_history::Series{};
+  bool asgard = false;
+  if (range <= 1 && take_state_lock_(50)) {
+    series = hp_history_[range];
+    asgard = heat_source_type_is_asgard_(heat_source_.type);
+    give_state_lock_();
+  }
+  size_t off = static_cast<size_t>(std::snprintf(
+      buffer, capacity, "{\"available\":%s,\"range\":\"%s\",\"from_ts\":%lu,\"step_s\":%u,\"age_s\":%lu",
+      asgard && series.valid ? "true" : "false", range == 1 ? "7d" : "24h",
+      static_cast<unsigned long>(series.from_ts), static_cast<unsigned>(series.step_s),
+      static_cast<unsigned long>(series.fetched_ms == 0 ? 0 : (esphome::millis() - series.fetched_ms) / 1000UL)));
+  auto put_series = [&](const char *key, const int16_t *v) {
+    if (off + 16 >= capacity)
+      return;
+    off += static_cast<size_t>(std::snprintf(buffer + off, capacity - off, ",\"%s\":[", key));
+    for (uint8_t i = 0; i < series.n && off + 8 < capacity; i++) {
+      if (v[i] == hp_history::NONE)
+        off += static_cast<size_t>(std::snprintf(buffer + off, capacity - off, "%snull", i ? "," : ""));
+      else
+        off += static_cast<size_t>(std::snprintf(buffer + off, capacity - off, "%s%.1f", i ? "," : "",
+                                                 static_cast<double>(v[i]) / 10.0));
+    }
+    if (off + 2 < capacity)
+      off += static_cast<size_t>(std::snprintf(buffer + off, capacity - off, "]"));
+  };
+  if (asgard && series.valid) {
+    put_series("feed_c", series.feed_x10);
+    put_series("return_c", series.return_x10);
+  }
+  if (off + 2 < capacity)
+    std::snprintf(buffer + off, capacity - off, "}");
 }
 
 std::string LuneTouchCoordinator::display_heat_pump_temps_text() const {
@@ -3720,7 +3832,15 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
     }
     char body[384];
     int status = 0;
-    if (esphome::network::is_connected() && fetch_json_(url, body, sizeof(body), &status)) {
+    bool fetched = esphome::network::is_connected() && fetch_json_(url, body, sizeof(body), &status);
+    if (!fetched && status == 404) {
+      // Newer ESPHome addresses entities by name, older by object id (circulation_pump.h).
+      char alt[48];
+      if (circulation_pump::alternate_entity(reading.entity, alt, sizeof(alt)) &&
+          circulation_pump::build_sensor_read_url(settings.host, settings.port, alt, url, sizeof(url)))
+        fetched = fetch_json_(url, body, sizeof(body), &status);
+    }
+    if (fetched) {
       last_status = status;
       if (circulation_pump::parse_sensor_response(body, reading.value)) {
         *reading.has_value = true;
