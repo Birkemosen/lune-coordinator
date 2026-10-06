@@ -1,5 +1,11 @@
 # Changelog — Lune Design System
 
+## 2.3.7
+
+- `.chip-icon[data-tone="water"]` med nyt token `--water-fill` (dom-water, solid i begge temaer, on-fill 5,2:1): cirkulation/flow.
+- `.ht-dist`: fordeling i et Hjem-felt som donut + forklaring, én kulør (dom-water) i nuancer.
+- Navbar ved scroll animeres (`--dur-slow` 360 ms; kolonnerne bevares, så bredden kan interpoleres; ingen animation ved `prefers-reduced-motion`).
+
 ## 2.3.6
 
 - `.hchart`: graf i et ark med tal, intervalvalg (24 t / 7 d, radioer), y/x-akser i HTML og fælles `.chart-legend`; `.trend .grid`, `.trend .nowl`; `.c-heat`.

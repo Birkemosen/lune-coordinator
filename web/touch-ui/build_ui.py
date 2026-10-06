@@ -317,9 +317,10 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </button>'''
     tile_pump = f'''
           <button class="home-tile" type="button" popovertarget="sheet-pump" data-empty data-tile="pump">
-            <span class="chip-icon" data-tone="neutral" aria-hidden="true">{I["pump"]}</span><b>{T("tile.pump")}</b>
+            <span class="chip-icon" data-tone="water" aria-hidden="true">{I["pump"]}</span><b>{T("tile.pump")}</b>
             <span class="ht-status" data-bind="tile.pumpStatus">{T("tile.pumpNone")}</span>
             <span class="ht-val"><span data-bind="tile.pumpVal">{DASH}</span> <small data-bind="tile.pumpSub"></small></span>
+            <div class="ht-dist" data-bind-tiledist hidden></div>
           </button>'''
 
     steps = [(1, f"≤−{T.num(1, 0)}"), (2, f"−{T.num(.3)}"), (3, f"±{T.num(.3)}"), (4, f"+{T.num(.3)}"), (5, f"≥+{T.num(1, 0)}")]
@@ -555,7 +556,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <p class="note">{T("flow.sub")}</p>
         {sheet_link("pump", "link.pump")}'''
-    sheet_pump = sheet("pump", T("hash.pump"), I["pump"], "neutral", T("tile.pump"), None,
+    sheet_pump = sheet("pump", T("hash.pump"), I["pump"], "water", T("tile.pump"), None,
                        [("overview", pump_over)], status_attrs=' data-bind="tile.pumpStatus"')
 
     # ---- Styring (skabelon; binderen kloner én pr. styring): status, fremløb/retur, rum, link til V6
@@ -926,7 +927,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
