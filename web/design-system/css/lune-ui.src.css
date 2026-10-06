@@ -1456,7 +1456,7 @@
   .hero-fact {
     display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--space-3);
     flex: 1 1 0; min-width: min(100%, 15rem); max-width: 20rem; padding: var(--space-3) var(--space-4);
-    border: 0; border-radius: var(--r-tile); background: var(--card); box-shadow: var(--card-edge);
+    border: 0; border-radius: var(--r-tile); background: var(--lift-bg); box-shadow: var(--lift);
     color: var(--fg); font: inherit; text-align: left; cursor: pointer;
     transition: background var(--dur) var(--ease);
   }
@@ -1464,7 +1464,7 @@
   .hero-fact > .chip-icon { grid-row: 1 / 4; }
   .hero-fact > small { font-size: var(--fs-xs); color: var(--muted); }
   .hero-fact > b { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hero-fact > span { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero-fact > span:not(.chip-icon) { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .hero-fact[hidden] { display: none; }
   @media (max-width: 1099.98px) { .home-hero h2 { font-size: var(--fs-2xl); } }
   @media (max-width: 767.98px) {

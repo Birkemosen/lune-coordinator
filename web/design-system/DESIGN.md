@@ -219,7 +219,7 @@ Radius følger hierarki: jo større flade, jo større radius, og alt man trykker
 
 ### 3.7 Dybde
 
-Dybde kommer fra **baggrundskontrast**, ikke skygger. Kort er `--card` på `--bg`, plus `--card-edge` (kun synlig i lyst tema). Skygger bruges kun på elementer, der svæver over indhold: enhedsmenuen og tilstandspillen på mobil.
+Dybde kommer fra **baggrundskontrast**, ikke skygger. Kort er `--card` på `--bg`, plus `--card-edge` (kun synlig i lyst tema). Skygger bruges kun på elementer, der svæver over indhold: enhedsmenuen, tilstandspillen på mobil og genvejene i Hjems hovedsektion (`.hero-fact`, `--lift-bg` + `--lift`, fordi de ligger over højdekurverne).
 
 ### 3.8 Bevægelse
 
