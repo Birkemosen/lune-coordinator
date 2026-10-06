@@ -7,28 +7,28 @@
 namespace lune::tokens {
 
 constexpr uint32_t kBg = 0x101010;
-constexpr uint32_t kCard = 0x211C19;
-constexpr uint32_t kRaised = 0x292821;
+constexpr uint32_t kCard = 0x212021;
+constexpr uint32_t kRaised = 0x292829;
 constexpr uint32_t kField = 0x191819;
-constexpr uint32_t kLine = 0x313129;
-constexpr uint32_t kSegOff = 0x313129;
-constexpr uint32_t kFg = 0xF7F7EF;
-constexpr uint32_t kMuted = 0xA5A29C;
-constexpr uint32_t kFaint = 0x8C8E84;
-constexpr uint32_t kAccent = 0xD66D31;
-constexpr uint32_t kAccentInk = 0xE6864A;
-constexpr uint32_t kOnAccent = 0x191410;
-constexpr uint32_t kInfo = 0x6BA2CE;
-constexpr uint32_t kOk = 0x73B65A;
-constexpr uint32_t kWarn = 0xCEAA42;
-constexpr uint32_t kDanger = 0xD67973;
-constexpr uint32_t kViolet = 0x9479CE;
-constexpr uint32_t kInfoBg = 0x192029;
-constexpr uint32_t kOkBg = 0x192819;
-constexpr uint32_t kWarnBg = 0x212019;
-constexpr uint32_t kDangerBg = 0x291819;
-constexpr uint32_t kVioletBg = 0x211C31;
-constexpr uint32_t kInvBg = 0xF7F7EF;
+constexpr uint32_t kLine = 0x313131;
+constexpr uint32_t kSegOff = 0x313131;
+constexpr uint32_t kFg = 0xF7F3F7;
+constexpr uint32_t kMuted = 0xA5A6AD;
+constexpr uint32_t kFaint = 0x8C8E94;
+constexpr uint32_t kAccent = 0xFF8A3A;
+constexpr uint32_t kAccentInk = 0xFF9A5A;
+constexpr uint32_t kOnAccent = 0x101010;
+constexpr uint32_t kInfo = 0x6BB2FF;
+constexpr uint32_t kOk = 0x63CE7B;
+constexpr uint32_t kWarn = 0xEFCA4A;
+constexpr uint32_t kDanger = 0xFF7973;
+constexpr uint32_t kViolet = 0xB59EFF;
+constexpr uint32_t kInfoBg = 0x102431;
+constexpr uint32_t kOkBg = 0x102819;
+constexpr uint32_t kWarnBg = 0x292010;
+constexpr uint32_t kDangerBg = 0x311C19;
+constexpr uint32_t kVioletBg = 0x212031;
+constexpr uint32_t kInvBg = 0xF7F3F7;
 constexpr uint32_t kInvFg = 0x101010;
 
 }  // namespace lune::tokens

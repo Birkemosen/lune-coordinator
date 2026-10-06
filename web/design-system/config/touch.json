@@ -1,17 +1,12 @@
 {
   "project": "Lune Touch",
   "id": "touch",
-  "note": "Koordinator for 1–4 V6-boards. Hierarki: hus → manifold → zone. Delte visninger (house/manifold/zone). Varmekildetyper sættes ved build; første er standard. Type-id'er matcher UI/CSS; API bruger generic_http for http.",
-  "modes": ["dash", "conf"],
-  "tiers": true,
-  "shared_views": true,
+  "note": "Koordinator for 1–4 V6-boards. Hjem er huset (hovedsektion, felter, varmekort); rum, manifolds og husets ting åbner ark (DESIGN.md 15). Varmekildetyper sættes ved build; første er standard. Type-id'er matcher UI/CSS; API bruger generic_http for http. Den hierarkiske strimmel (feature tiers-strip) er forældet.",
+  "modes": ["home", "sys"],
+  "systemCategories": ["device", "controllers", "heatsource", "prices", "pump", "weather", "network", "firmware", "service"],
   "heat_source_types": ["http", "asgard"],
   "typed_groups": {"pm": ["odin", "touch"], "om": ["dynamic", "fixed"], "ss": ["eds", "energy_charts", "entsoe", "fixed"], "gt": ["datahub", "schedule", "none"], "en": ["datahub", "fixed"]},
-  "manifolds": [
-    {"id": "m1", "label": "Manifold 1", "zones": 6},
-    {"id": "m2", "label": "Manifold 2", "zones": 6},
-    {"id": "m3", "label": "Manifold 3", "zones": 6},
-    {"id": "m4", "label": "Manifold 4", "zones": 6}
-  ],
-  "strip": {"variant": "tiers"}
+  "scopes": [
+    {"id": "house", "kind": "system", "label": "Hus"}
+  ]
 }
