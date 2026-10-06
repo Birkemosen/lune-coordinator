@@ -898,6 +898,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/prices") == 0) {
+      if (coordinator_)
+        coordinator_->write_prices_json(data_buf_, DATA_BUF_SIZE);
+      else
+        snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/odin/physics") == 0) {
       if (coordinator_)
         coordinator_->write_odin_physics_json(data_buf_, DATA_BUF_SIZE);
@@ -1413,6 +1421,43 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
         has_odin_enabled, odin_enabled != 0, max_lift_c, has_forwarder ? forwarder : nullptr,
         has_target ? target_tmpl : nullptr, has_request ? request_tmpl : nullptr,
         has_curve ? curve_tmpl : nullptr, curve_gain, curve_max, data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/prices/settings") == 0) {
+    // Energy price → Odin. Absent keys are unchanged. grid_schedule is a JSON
+    // string like Odin's sched_ui ([{"h":0,"v":0.077},...]); a JSON body may
+    // also send it as an array.
+    lune_touch_coordinator::PriceSettingsUpdate update;
+    uint32_t enabled = 0;
+    update.has_enabled = parse_uint_param(api, api.json_body, "enabled", &enabled);
+    update.enabled = enabled != 0;
+    char area[8]{};
+    char grid_source[16]{};
+    char grid_gln[24]{};
+    char grid_code[32]{};
+    char energinet_source[16]{};
+    char schedule[768]{};
+    parse_text_param(api, api.json_body, "area", area, sizeof(area));
+    parse_text_param(api, api.json_body, "grid_source", grid_source, sizeof(grid_source));
+    parse_text_param(api, api.json_body, "grid_gln", grid_gln, sizeof(grid_gln));
+    parse_text_param(api, api.json_body, "grid_code", grid_code, sizeof(grid_code));
+    parse_text_param(api, api.json_body, "energinet_source", energinet_source, sizeof(energinet_source));
+    parse_text_param(api, api.json_body, "grid_schedule", schedule, sizeof(schedule));
+    if (schedule[0] == '\0' && api.json_body != nullptr && (*api.json_body)["grid_schedule"].is<JsonArrayConst>())
+      serializeJson((*api.json_body)["grid_schedule"], schedule, sizeof(schedule));
+    update.area = area;
+    update.grid_source = grid_source;
+    update.grid_gln = grid_gln;
+    update.grid_code = grid_code;
+    update.energinet_source = energinet_source;
+    update.grid_schedule = schedule;
+    parse_float_param(api, api.json_body, "energinet_fixed_dkk", &update.energinet_fixed_dkk);
+    parse_float_param(api, api.json_body, "elafgift_dkk", &update.elafgift_dkk);
+    parse_float_param(api, api.json_body, "markup_dkk", &update.markup_dkk);
+    parse_float_param(api, api.json_body, "vat_pct", &update.vat_pct);
+    const bool accepted = coordinator_->set_price_settings(update, data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/prices/push") == 0) {
+    const bool accepted = coordinator_->request_price_push(data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/heat-source/push") == 0 || strcmp(path, "/heat-source/test") == 0) {
     const bool accepted = coordinator_->request_heat_source_push(data_buf_, DATA_BUF_SIZE);

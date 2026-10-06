@@ -557,6 +557,94 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {foot_save("heat-source", T("hs.save"))}
         </form>
 
+        <form class="panel wide gated" data-save="prices">
+          <header class="panel-head"><h3>{T("price.title")}</h3><span class="badge" data-bind="price.badge">{T("price.state.disabled")}</span>{help_btn("help-price", T("price.title"))}</header>
+          {help_pop("help-price", "help.price", "docs/Manual.md#electricity-price-to-odin")}
+          {switch("enabled", T("price.enabled"), T("price.enabledHint"), False)}
+          <div class="gated-body">
+            <div class="subs cols-2">
+              <div class="sub">
+                <h4>{T("price.subSpot")}</h4>
+                <div class="seg" role="radiogroup" aria-label="{T("price.area")}">
+                  <label><input type="radio" name="area" value="DK1" checked><span>{T("price.areaDk1")}</span></label>
+                  <label><input type="radio" name="area" value="DK2"><span>{T("price.areaDk2")}</span></label>
+                </div>
+                {row("elafgift_dkk", T("price.elafgift"), stepper("elafgift_dkk", 0.008, 0, 2, 0.001, T("price.unitDkk"), T("price.elafgift"), dec=3))}
+                {row("markup_dkk", T("price.markup"), stepper("markup_dkk", 0.0, -1, 5, 0.01, T("price.unitDkk"), T("price.markup"), dec=3))}
+                {row("vat_pct", T("price.vat"), stepper("vat_pct", 25, 0, 50, 1, "%", T("price.vat"), dec=0))}
+              </div>
+              <div class="sub">
+                <h4>{T("price.subGrid")}</h4>
+                <input class="state" type="radio" name="grid_source" id="gt-datahub" value="datahub" checked>
+                <input class="state" type="radio" name="grid_source" id="gt-schedule" value="schedule">
+                <input class="state" type="radio" name="grid_source" id="gt-none" value="none">
+                <div class="seg" role="radiogroup" aria-label="{T("price.gridSource")}">
+                  <label for="gt-datahub"><span>{T("price.srcDatahub")}</span></label>
+                  <label for="gt-schedule"><span>{T("price.srcSchedule")}</span></label>
+                  <label for="gt-none"><span>{T("price.srcNone")}</span></label>
+                </div>
+                <fieldset class="typed-fields" data-type="datahub">
+                  {row("price_gln", T("price.gln"), '<input class="input w-md" id="price_gln" name="grid_gln" value="5790000610976" inputmode="numeric" maxlength="13" spellcheck="false">')}
+                  {row("price_code", T("price.code"), '<input class="input w-md" id="price_code" name="grid_code" value="TNT1009" maxlength="23" spellcheck="false">')}
+                  <p class="hint">{T("price.gridDatahubHint")}</p>
+                </fieldset>
+                <fieldset class="typed-fields" data-type="schedule">
+                  <div class="table-wrap"><table class="table">
+                    <thead><tr><th>{T("price.schedFrom")}</th><th class="num">{T("price.schedValue")}</th><th></th></tr></thead>
+                    <tbody data-bind-price-sched></tbody>
+                  </table></div>
+                  <input type="hidden" name="grid_schedule" value='[{{"h":0,"v":0.077}},{{"h":6,"v":0.231}},{{"h":17,"v":0.692}},{{"h":21,"v":0.231}}]'>
+                  <p class="hint">{T("price.schedHint")}</p>
+                  <div class="actions"><button class="btn" type="button" data-action="price-sched-add">{T("price.schedAdd")}</button></div>
+                </fieldset>
+                <fieldset class="typed-fields" data-type="none">
+                  <p class="hint">{T("price.gridNoneHint")}</p>
+                </fieldset>
+              </div>
+              <div class="sub">
+                <h4>{T("price.subEnerginet")}</h4>
+                <input class="state" type="radio" name="energinet_source" id="en-datahub" value="datahub" checked>
+                <input class="state" type="radio" name="energinet_source" id="en-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="{T("price.energinetSource")}">
+                  <label for="en-datahub"><span>{T("price.srcDatahub")}</span></label>
+                  <label for="en-fixed"><span>{T("price.srcFixed")}</span></label>
+                </div>
+                <fieldset class="typed-fields" data-type="datahub">
+                  <p class="hint">{T("price.energinetDatahubHint")}</p>
+                </fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  {row("energinet_fixed_dkk", T("price.energinetFixed"), stepper("energinet_fixed_dkk", 0.115, -1, 5, 0.001, T("price.unitDkk"), T("price.energinetFixed"), dec=3))}
+                </fieldset>
+              </div>
+              <div class="sub">
+                <h4>{T("price.subStatus")}</h4>
+                <dl class="kv">
+                  <div><dt>{T("price.lastPush")}</dt><dd data-bind="price.lastPush">—</dd></div>
+                  <div><dt>{T("price.hours")}</dt><dd data-bind="price.hours">—</dd></div>
+                  <div><dt>{T("price.odinMode")}</dt><dd data-bind="price.odinMode">—</dd></div>
+                  <div><dt>{T("price.problem")}</dt><dd data-bind="price.problem">—</dd></div>
+                </dl>
+                <p class="hint" data-bind="price.note"></p>
+                <div class="actions"><button class="btn" type="button" data-action="price-push">{T("price.pushNow")}</button></div>
+                <div class="test-result" data-bind-price-result aria-live="polite"></div>
+              </div>
+              <div class="sub" data-bind-price-today>
+                <h4>{T("price.subToday")}</h4>
+                <div class="bars" style="--bars-n:24"><div class="bars-plot" data-bind-price-bars></div>
+                  <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
+                <p class="hint">{T("price.inclAll")}</p>
+                <dl class="kv">
+                  <div><dt>{T("price.now")}</dt><dd data-bind="price.now">—</dd></div>
+                  <div><dt>{T("price.cheapest")}</dt><dd data-bind="price.min">—</dd></div>
+                  <div><dt>{T("price.dearest")}</dt><dd data-bind="price.max">—</dd></div>
+                  <div><dt>{T("price.peakAvg")}</dt><dd data-bind="price.peak">—</dd></div>
+                </dl>
+              </div>
+            </div>
+          </div>
+          {foot_save("prices", T("price.save"))}
+        </form>
+
         <form class="panel wide" data-save="rooms">
           <header class="panel-head"><h3>{T("rooms.title")}</h3><p>{T("rooms.sub")}</p>{help_btn("help-rooms", T("rooms.title"))}</header>
           {help_pop("help-rooms", "help.rooms", "docs/Manual.md#rooms")}
@@ -740,6 +828,13 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "hs.odinStatus.write_failed", "hs.odinStatus.odin_unreachable", "hs.odinStatus.schedule_unreadable", "hs.odinStatus.clock_invalid",
         "hs.odinWanted", "hs.route.virtual_thermostat", "hs.route.odin_schedule", "hs.route.generic",
         "hs.route.none", "hs.leverState",
+        "price.state.ok", "price.state.waiting", "price.state.running", "price.state.error", "price.state.disabled",
+        "price.odinMode.api", "price.odinMode.energy_charts", "price.odinMode.unknown", "price.odinMode.pending",
+        "price.err.spot", "price.err.spot_incomplete", "price.err.grid", "price.err.energinet", "price.err.odin",
+        "price.err.no_odin_host", "price.err.clock", "price.err.other", "price.cached", "price.noOdinHost",
+        "price.pushOk", "price.pushOkBody", "price.pushFail", "price.pushPending", "price.pushDisabled",
+        "price.schedRemove", "price.schedHourAria", "price.schedValueAria", "price.atHour", "price.hoursValue",
+        "price.unitDkk", "price.noData", "price.lastPushValue",
     )}
     rt["_dec"] = T.meta("_dec")
     rt["_walls"] = T.meta("_walls")

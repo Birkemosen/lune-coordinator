@@ -626,6 +626,8 @@ Når en indstilling har en type (fx varmekilde `http` | `asgard`), vises typespe
 
 Regler genereres af `lds_build.py` fra `heat_source_types`: `.typed-fields { display: none }` og `#hs-{type}:checked ~ .typed-fields[data-type="{type}"] { display: grid }`. Virker uden `:has()`. Ved 4+ typer: brug `.select` i stedet for `.seg` (5.13).
 
+Andre typevalg i samme form (fx kilde for nettarif: DataHub / skema / ingen) bruger samme mønster med egne radio-id'er: tilføj gruppen i `typed_groups` i `config/<projekt>.json` (`{"gt": ["datahub", "schedule", "none"]}` → `#gt-datahub` …). Gruppens radioer, `.seg` og `fieldset.typed-fields` skal have samme forælder (søskende-selektorer), så grupper ikke påvirker hinanden.
+
 Dashboard-paneler sætter `data-hs-type="http|asgard"`; CSS skjuler `.hs-type-*` der ikke matcher.
 
 ---

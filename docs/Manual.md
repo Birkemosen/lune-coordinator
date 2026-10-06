@@ -16,6 +16,40 @@ sync the comfort target. Wrong host or disabled push blocks delivery.
 See [whole-house flow temperature](lune_whole_house_flow_temperature.md) and
 [Asgard authority](lune_asgard_authority_state_machine.md).
 
+### Electricity price to Odin {#electricity-price-to-odin}
+
+Odin 2.0 plans the heat pump on hourly electricity prices. Its built-in Danish price,
+(spot + 0.10 €) × 1.25, predates 2026: elafgift is now 0.008 DKK/kWh and the
+time-of-use grid tariff (e.g. Vores Elnet Nettarif C 0.077 / 0.231 / 0.692 / 0.231
+DKK/kWh at 00–06 / 06–17 / 17–21 / 21–24 excl. VAT) sets the shape of the day. With
+**Send prices to Odin** on, Touch computes the real consumer price and pushes it:
+
+    all-in DKK/kWh = (spot + grid tariff + Energinet + elafgift + markup) × (1 + VAT)
+    pushed €/kWh   = all-in / (DKK per EUR from the same spot data), 4 decimals
+
+- **Spot** — Energi Data Service `DayAheadPrices`, DK1 or DK2. The 15-minute prices
+  are averaged into local clock hours (DST: the missing spring hour copies the hour
+  before; the repeated autumn hour averages all eight quarters).
+- **Grid tariff** — *DataHub* (`DatahubPricelist` by the grid company's GLN and tariff
+  code; default Vores Elnet `5790000610976` / `TNT1009`), *own schedule* (periods
+  `{h, v}` like Odin's 24 h profile: each applies from its hour to the next, the last
+  runs past midnight; DKK/kWh excl. VAT) or *none*.
+- **Energinet** — transmission (40000) + system tariff (41000) from DataHub, or a
+  fixed value (default 0.115 DKK/kWh).
+- **Elafgift** (default 0.008), **supplier markup** (default 0) and **VAT** (default 25 %).
+
+Touch pushes 24 hours from 00:00 today, or 48 once tomorrow's spot is published
+(`POST /api/data/prices` on the Odin host set under [Heat source](#heat-source)).
+Schedule: once after boot (when the clock is set), daily from 14:15 every 30 min until
+tomorrow's prices are in (gives up at 20:00), and again just after 00:05, because
+Odin's array starts at today 00:00. A failed push retries after 30 min; **Send prices
+now** pushes at once. If a DataHub fetch fails, the last fetched tariff is used; with
+none, nothing is pushed and Status shows the problem.
+
+Turning it on sets Odin's price source to *API* (`price_source=api`); turning it off
+sets it back to Odin's own *Energy-Charts* price.
+API: `GET /prices`, `POST /prices/settings`, `POST /prices/push` ([api_v1.md](api_v1.md)).
+
 ### Pump {#pump}
 
 Circulation pump host, port and ESPHome entities for flow, head and power on the
