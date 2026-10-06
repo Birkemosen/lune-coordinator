@@ -20,6 +20,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -58,6 +59,16 @@ MANIFOLDS = [
     }
     for i, m in enumerate(CFG["manifolds"])
 ]
+
+
+# Price zones and currencies come from the firmware's table (single source).
+_PRICE_H = (ROOT.parent.parent / "components" / "lune_touch_coordinator" / "energy_price.h").read_text(encoding="utf-8")
+PRICE_ZONES = [
+    (m.group(1), m.group(2).lower())
+    for m in re.finditer(r'\{"([A-Za-z0-9-]+)", "[0-9A-Z-]{16}", ZoneGroup::([A-Z_]+),', _PRICE_H)
+]
+PRICE_CURRENCIES = re.findall(r'\{"([A-Z]{3})", ([0-9.]+)f\}', _PRICE_H)
+assert len(PRICE_ZONES) >= 30 and PRICE_CURRENCIES, "price tables not found in energy_price.h"
 
 
 class Cat:
@@ -139,6 +150,22 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             f'value="{val:.{dec}f}" min="{mn}" max="{mx}" step="{step}"><span class="unit">{unit}</span></span>'
             f'<button type="button" data-step="1" aria-label="{T("common.increase", x=label.lower())}">+</button></div>'
         )
+
+    def unit_cur(html):
+        # Units that follow the calculation currency (binder updates them).
+        return html.replace('<span class="unit">DKK/kWh</span>', '<span class="unit" data-price-cur>DKK</span>')
+
+    zone_groups = {}
+    for zid, group in PRICE_ZONES:
+        zone_groups.setdefault(group, []).append(zid)
+    price_zone_select = '<select class="select" id="price_zone" name="zone">' + "".join(
+        f'<optgroup label="{T("price.group." + g)}">' + "".join(
+            f'<option value="{z}"{" selected" if z == "DK1" else ""}>{z}</option>' for z in zs
+        ) + "</optgroup>" for g, zs in zone_groups.items()
+    ) + "</select>"
+    price_currency_select = '<select class="select" id="price_currency" name="currency">' + "".join(
+        f'<option value="{c}" data-fx="{fx}"{" selected" if c == "DKK" else ""}>{c}</option>' for c, fx in PRICE_CURRENCIES
+    ) + "</select>"
 
     def help_btn(hid, topic):
         return (
@@ -561,17 +588,84 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <header class="panel-head"><h3>{T("price.title")}</h3><span class="badge" data-bind="price.badge">{T("price.state.disabled")}</span>{help_btn("help-price", T("price.title"))}</header>
           {help_pop("help-price", "help.price", "docs/Manual.md#electricity-price-to-odin")}
           {switch("enabled", T("price.enabled"), T("price.enabledHint"), False)}
-          <div class="gated-body">
+          <div class="gated-body"><div class="subs">
+            <input class="state" type="radio" name="model" id="pm-odin" value="odin">
+            <input class="state" type="radio" name="model" id="pm-touch" value="touch" checked>
+            <div class="seg" role="radiogroup" aria-label="{T("price.model")}" style="justify-self:start">
+              <label for="pm-odin"><span>{T("price.modelOdin")}</span></label>
+              <label for="pm-touch"><span>{T("price.modelTouch")}</span></label>
+            </div>
             <div class="subs cols-2">
               <div class="sub">
-                <h4>{T("price.subSpot")}</h4>
-                <div class="seg" role="radiogroup" aria-label="{T("price.area")}">
-                  <label><input type="radio" name="area" value="DK1" checked><span>{T("price.areaDk1")}</span></label>
-                  <label><input type="radio" name="area" value="DK2"><span>{T("price.areaDk2")}</span></label>
+                <h4>{T("price.subZone")}</h4>
+                {row("price_zone", T("price.zone"), price_zone_select)}
+                {row("price_token", T("price.token"), '<input class="input w-md" type="password" id="price_token" name="entsoe_token" autocomplete="new-password" spellcheck="false" maxlength="63">')}
+                <p class="hint">{T("price.tokenHint")}</p>
+              </div>
+            </div>
+            <fieldset class="typed-fields subs cols-2" data-type="odin">
+              <div class="sub">
+                <h4>{T("price.subOdinOwn")}</h4>
+                <input class="state" type="radio" name="odin_mode" id="om-dynamic" value="dynamic" checked>
+                <input class="state" type="radio" name="odin_mode" id="om-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="{T("price.odinModeLabel")}">
+                  <label for="om-dynamic"><span>{T("price.odinDynamic")}</span></label>
+                  <label for="om-fixed"><span>{T("price.odinFixed")}</span></label>
                 </div>
-                {row("elafgift_dkk", T("price.elafgift"), stepper("elafgift_dkk", 0.008, 0, 2, 0.001, T("price.unitDkk"), T("price.elafgift"), dec=3))}
-                {row("markup_dkk", T("price.markup"), stepper("markup_dkk", 0.0, -1, 5, 0.01, T("price.unitDkk"), T("price.markup"), dec=3))}
-                {row("vat_pct", T("price.vat"), stepper("vat_pct", 25, 0, 50, 1, "%", T("price.vat"), dec=0))}
+                <fieldset class="typed-fields" data-type="dynamic">
+                  <div class="seg" role="radiogroup" aria-label="{T("price.odinSourceLabel")}">
+                    <label><input type="radio" name="odin_source" value="energy_charts" checked><span>Energy-Charts</span></label>
+                    <label><input type="radio" name="odin_source" value="entsoe"><span>ENTSO-E</span></label>
+                  </div>
+                  <p class="hint">{T("price.odinDynamicHint")}</p>
+                </fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  {row("odin_fixed_price", T("price.odinFixedPrice"), stepper("odin_fixed_price", 0.25, 0, 5, 0.01, "€/kWh", T("price.odinFixedPrice"), dec=3))}
+                </fieldset>
+                <p class="hint" data-bind="price.dkNote">{T("price.odinDkNote")}</p>
+              </div>
+              <div class="sub">
+                <h4>{T("price.subOdinNow")}</h4>
+                <dl class="kv">
+                  <div><dt>{T("price.odinNowMode")}</dt><dd data-bind="price.odin.mode">—</dd></div>
+                  <div><dt>{T("price.odinNowZone")}</dt><dd data-bind="price.odin.zone">—</dd></div>
+                  <div><dt>{T("price.odinNowFixed")}</dt><dd data-bind="price.odin.fixed">—</dd></div>
+                  <div><dt>{T("price.token")}</dt><dd data-bind="price.odin.token">—</dd></div>
+                </dl>
+                <div class="actions"><button class="btn" type="button" data-action="price-odin-write">{T("price.odinWrite")}</button></div>
+                <div class="test-result" data-bind-price-odin-result aria-live="polite"></div>
+              </div>
+            </fieldset>
+            <fieldset class="typed-fields subs cols-2" data-type="touch">
+              <div class="sub">
+                <h4>{T("price.subSpot")}</h4>
+                <input class="state" type="radio" name="spot_source" id="ss-eds" value="eds" checked>
+                <input class="state" type="radio" name="spot_source" id="ss-energy_charts" value="energy_charts">
+                <input class="state" type="radio" name="spot_source" id="ss-entsoe" value="entsoe">
+                <input class="state" type="radio" name="spot_source" id="ss-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="{T("price.spotSource")}">
+                  <label for="ss-eds" data-dk-only><span>{T("price.srcEds")}</span></label>
+                  <label for="ss-energy_charts"><span>Energy-Charts</span></label>
+                  <label for="ss-entsoe"><span>ENTSO-E</span></label>
+                  <label for="ss-fixed"><span>{T("price.srcFixed")}</span></label>
+                </div>
+                <fieldset class="typed-fields" data-type="eds"><p class="hint">{T("price.spotEdsHint")}</p></fieldset>
+                <fieldset class="typed-fields" data-type="energy_charts"><p class="hint">{T("price.spotEcHint")}</p></fieldset>
+                <fieldset class="typed-fields" data-type="entsoe"><p class="hint">{T("price.spotEntsoeHint")}</p></fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  {row("spot_fixed_eur", T("price.spotFixed"), stepper("spot_fixed_eur", 0.10, -1, 5, 0.01, "€/kWh", T("price.spotFixed"), dec=3))}
+                </fieldset>
+              </div>
+              <div class="sub">
+                <h4>{T("price.subTaxes")}</h4>
+                {row("price_currency", T("price.currency"), price_currency_select)}
+                {row("fx", T("price.fx"), '<input class="input w-sm" type="number" inputmode="decimal" id="fx" name="fx" value="7.46" min="0.01" max="10000" step="any">', T("price.fxHint"))}
+                {row("energy_tax", T("price.energyTax"), unit_cur(stepper("energy_tax", 0.008, 0, 500, 0.001, "DKK/kWh", T("price.energyTax"), dec=3)))}
+                {row("markup", T("price.markup"), unit_cur(stepper("markup", 0.0, -100, 500, 0.01, "DKK/kWh", T("price.markup"), dec=3)))}
+                {row("vat_pct", T("price.vat"), stepper("vat_pct", 25, 0, 50, 0.5, "%", T("price.vat"), dec=1))}
+                <div class="actions"><button class="btn" type="button" data-action="price-zone-defaults">{T("price.applyDefaults")}</button></div>
+                <p class="hint">{T("price.perKwhHint")}</p>
+                <p class="hint" data-bind="price.defaultsNote" aria-live="polite">{T("price.applyDefaultsHint")}</p>
               </div>
               <div class="sub">
                 <h4>{T("price.subGrid")}</h4>
@@ -579,7 +673,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 <input class="state" type="radio" name="grid_source" id="gt-schedule" value="schedule">
                 <input class="state" type="radio" name="grid_source" id="gt-none" value="none">
                 <div class="seg" role="radiogroup" aria-label="{T("price.gridSource")}">
-                  <label for="gt-datahub"><span>{T("price.srcDatahub")}</span></label>
+                  <label for="gt-datahub" data-dk-only><span>{T("price.srcDatahub")}</span></label>
                   <label for="gt-schedule"><span>{T("price.srcSchedule")}</span></label>
                   <label for="gt-none"><span>{T("price.srcNone")}</span></label>
                 </div>
@@ -590,7 +684,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 </fieldset>
                 <fieldset class="typed-fields" data-type="schedule">
                   <div class="table-wrap"><table class="table">
-                    <thead><tr><th>{T("price.schedFrom")}</th><th class="num">{T("price.schedValue")}</th><th></th></tr></thead>
+                    <thead><tr><th>{T("price.schedFrom")}</th><th class="num" data-price-unit>DKK/kWh</th><th></th></tr></thead>
                     <tbody data-bind-price-sched></tbody>
                   </table></div>
                   <input type="hidden" name="grid_schedule" value='[{{"h":0,"v":0.077}},{{"h":6,"v":0.231}},{{"h":17,"v":0.692}},{{"h":21,"v":0.231}}]'>
@@ -602,18 +696,19 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 </fieldset>
               </div>
               <div class="sub">
-                <h4>{T("price.subEnerginet")}</h4>
-                <input class="state" type="radio" name="energinet_source" id="en-datahub" value="datahub" checked>
-                <input class="state" type="radio" name="energinet_source" id="en-fixed" value="fixed">
-                <div class="seg" role="radiogroup" aria-label="{T("price.energinetSource")}">
-                  <label for="en-datahub"><span>{T("price.srcDatahub")}</span></label>
+                <h4>{T("price.subSystem")}</h4>
+                <input class="state" type="radio" name="system_source" id="en-datahub" value="datahub" checked>
+                <input class="state" type="radio" name="system_source" id="en-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="{T("price.systemSource")}">
+                  <label for="en-datahub" data-dk-only><span>{T("price.srcDatahub")}</span></label>
                   <label for="en-fixed"><span>{T("price.srcFixed")}</span></label>
                 </div>
                 <fieldset class="typed-fields" data-type="datahub">
-                  <p class="hint">{T("price.energinetDatahubHint")}</p>
+                  <p class="hint">{T("price.systemDatahubHint")}</p>
                 </fieldset>
                 <fieldset class="typed-fields" data-type="fixed">
-                  {row("energinet_fixed_dkk", T("price.energinetFixed"), stepper("energinet_fixed_dkk", 0.115, -1, 5, 0.001, T("price.unitDkk"), T("price.energinetFixed"), dec=3))}
+                  {row("system_fixed", T("price.systemFixed"), unit_cur(stepper("system_fixed", 0.115, -100, 500, 0.001, "DKK/kWh", T("price.systemFixed"), dec=3)))}
+                  <p class="hint">{T("price.systemFixedHint")}</p>
                 </fieldset>
               </div>
               <div class="sub">
@@ -621,6 +716,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 <dl class="kv">
                   <div><dt>{T("price.lastPush")}</dt><dd data-bind="price.lastPush">—</dd></div>
                   <div><dt>{T("price.hours")}</dt><dd data-bind="price.hours">—</dd></div>
+                  <div><dt>{T("price.spotUsed")}</dt><dd data-bind="price.spotUsed">—</dd></div>
                   <div><dt>{T("price.odinMode")}</dt><dd data-bind="price.odinMode">—</dd></div>
                   <div><dt>{T("price.problem")}</dt><dd data-bind="price.problem">—</dd></div>
                 </dl>
@@ -632,7 +728,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 <h4>{T("price.subToday")}</h4>
                 <div class="bars" style="--bars-n:24"><div class="bars-plot" data-bind-price-bars></div>
                   <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
-                <p class="hint">{T("price.inclAll")}</p>
+                <p class="hint" data-bind="price.inclAll">{T("price.inclAll", cur="DKK")}</p>
                 <dl class="kv">
                   <div><dt>{T("price.now")}</dt><dd data-bind="price.now">—</dd></div>
                   <div><dt>{T("price.cheapest")}</dt><dd data-bind="price.min">—</dd></div>
@@ -640,8 +736,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                   <div><dt>{T("price.peakAvg")}</dt><dd data-bind="price.peak">—</dd></div>
                 </dl>
               </div>
-            </div>
-          </div>
+            </fieldset>
+          </div></div>
           {foot_save("prices", T("price.save"))}
         </form>
 
@@ -834,7 +930,12 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "price.err.no_odin_host", "price.err.clock", "price.err.other", "price.cached", "price.noOdinHost",
         "price.pushOk", "price.pushOkBody", "price.pushFail", "price.pushPending", "price.pushDisabled",
         "price.schedRemove", "price.schedHourAria", "price.schedValueAria", "price.atHour", "price.hoursValue",
-        "price.unitDkk", "price.noData", "price.lastPushValue",
+        "price.noData", "price.lastPushValue",
+        "price.state.odin", "price.odinMode.fixed", "price.odinMode.entsoe", "price.tokenSet", "price.tokenUnset",
+        "price.tokenSaved", "price.inclAll", "price.defaultsApplied", "price.defaultsUnknown",
+        "price.odinWriteOk", "price.odinWriteFail", "price.spotUsed.eds",
+        "price.spotUsed.energy_charts", "price.spotUsed.entsoe", "price.spotUsed.fixed", "price.spotFallback",
+        "price.err.datahub_dk_only", "price.err.no_token", "price.odinMode.dynamic",
     )}
     rt["_dec"] = T.meta("_dec")
     rt["_walls"] = T.meta("_walls")

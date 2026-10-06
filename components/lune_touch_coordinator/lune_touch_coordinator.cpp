@@ -313,6 +313,13 @@ const char *ota_state_name_(esp_ota_img_states_t state) {
   }
 }
 
+void copy_str_(char *dst, size_t cap, const char *src) {
+  if (dst == nullptr || cap == 0)
+    return;
+  std::strncpy(dst, src != nullptr ? src : "", cap - 1);
+  dst[cap - 1] = '\0';
+}
+
 bool appendf_(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...) {
   if (buffer == nullptr || offset >= capacity)
     return false;
@@ -1572,8 +1579,8 @@ void LuneTouchCoordinator::setup() {
       mem = heap_caps_calloc(1, sizeof(PriceRuntime), MALLOC_CAP_8BIT);
     price_rt_ = mem != nullptr ? new (mem) PriceRuntime() : nullptr;
     // Re-assert Odin's manual price mode once per boot while enabled.
-    if (price_.cfg.enabled)
-      price_.source_pending = 1;
+    if (price_.cfg.enabled && price_.cfg.model == lune_touch_price::Model::TOUCH)
+      price_.odin_write_pending = 1;
   }
   ensure_automatic_identity_();
   std::snprintf(authority_lease_id_, sizeof(authority_lease_id_), "touch-%08lx",
@@ -1761,7 +1768,7 @@ void LuneTouchCoordinator::forecast_task_() {
     if (take_state_lock_(100)) {
       do_forecast = forecast_task_fetch_pending_;
       forecast_task_fetch_pending_ = false;
-      do_price = price_.run_pending || price_.source_pending != 0;
+      do_price = price_.run_pending || price_.odin_write_pending != 0;
       give_state_lock_();
     }
     if (do_forecast) {
@@ -2015,7 +2022,8 @@ void LuneTouchCoordinator::poll_task_() {
         // Energy price → Odin: decide here (cheap), fetch/push on the TLS task.
         if (!price_.run_pending) {
           const lune_touch_price::Due due = lune_touch_price::push_due(
-              price_.cfg.enabled, price_.push_requested, price_clock_ok, price_ymd, price_minute,
+              price_.cfg.enabled && price_.cfg.model == lune_touch_price::Model::TOUCH, price_.push_requested,
+              price_clock_ok, price_ymd, price_minute,
               price_.sched);
           if (due != lune_touch_price::Due::NONE &&
               (boot_settled || due == lune_touch_price::Due::REQUEST)) {
@@ -2024,8 +2032,8 @@ void LuneTouchCoordinator::poll_task_() {
             price_.push_requested = false;
           }
         }
-        if (price_.source_pending != 0 && boot_settled &&
-            (price_.source_last_try_ms == 0 || now - price_.source_last_try_ms >= 300000UL))
+        if (price_.odin_write_pending != 0 && boot_settled &&
+            (price_.odin_write_last_try_ms == 0 || now - price_.odin_write_last_try_ms >= 300000UL))
           price_due = true;
         price_due = price_due || price_.run_pending;
         give_state_lock_();
@@ -2804,8 +2812,31 @@ void LuneTouchCoordinator::run_odin_control_() {
     filter["telemetry_ts"] = true;
     filter["room_z1_current"] = true;
     filter["sched_ui"] = true;
+    // Odin's own price settings for the price panel. The ENTSO-E token is read
+    // only to know whether one is set; it is never stored or returned.
+    filter["price_mode"] = true;
+    filter["price_source"] = true;
+    filter["ec_bzn"] = true;
+    filter["fixed_price"] = true;
+    filter["entsoe_token"] = true;
     JsonDocument doc;
     if (!deserializeJson(doc, body, DeserializationOption::Filter(filter))) {
+      OdinPriceView view{};
+      view.known = !doc["price_source"].isNull() || !doc["price_mode"].isNull();
+      copy_str_(view.price_mode, sizeof(view.price_mode), doc["price_mode"] | "");
+      copy_str_(view.price_source, sizeof(view.price_source), doc["price_source"] | "");
+      copy_str_(view.ec_bzn, sizeof(view.ec_bzn), doc["ec_bzn"] | "");
+      if (doc["fixed_price"].is<const char *>())
+        view.fixed_price = std::strtof(doc["fixed_price"].as<const char *>(), nullptr);
+      else if (!doc["fixed_price"].isNull())
+        view.fixed_price = doc["fixed_price"].as<float>();
+      const char *token = doc["entsoe_token"] | "";
+      view.token_set = token[0] != '\0';
+      view.read_ms = now_ms == 0 ? 1 : now_ms;
+      if (view.known && take_state_lock_(50)) {
+        price_.odin = view;
+        give_state_lock_();
+      }
       const double ts = doc["telemetry_ts"] | 0.0;
       const int64_t now_epoch = current_epoch_s_();
       if (ts > 0.0 && now_epoch > 0)
@@ -13898,16 +13929,18 @@ void LuneTouchCoordinator::write_odin_physics_json(char *buffer, size_t capacity
 }
 
 // ---------------------------------------------------------------------------
-// Energy price → Odin (energy_price.h). Fetch over HTTPS from Energi Data
-// Service, compute the all-in consumer price, push €/kWh to Odin 2.0.
+// Energy price → Odin (energy_price.h). Either write Odin's own price
+// settings, or fetch spot + tariffs over HTTPS (Energi Data Service,
+// Energy-Charts, ENTSO-E), compute the all-in consumer price and push €/kWh.
 // Runs on the forecast (TLS) task; the poll task only decides when.
 // ---------------------------------------------------------------------------
 
 namespace {
 constexpr const char *EDS_BASE = "https://api.energidataservice.dk/dataset/";
-// Two local days of quarter-hour spot with three columns is ~19 KB; DataHub
-// answers (8 records, selected columns) stay under 5 KB.
-constexpr size_t PRICE_BODY_CAP = 32768;
+// One PSRAM body per run, reused for every call. Two local days of 15-minute
+// spot: Energi Data Service ~19 KB, ENTSO-E XML ~20–40 KB (more when a market
+// also publishes PT60M), Energy-Charts ~4 KB; DataHub answers stay under 5 KB.
+constexpr size_t PRICE_BODY_CAP = 49152;
 constexpr uint32_t EDS_CALL_GAP_MS = 1200;  // the public API rate-limits bursts
 
 struct PsramBody {
@@ -13921,12 +13954,6 @@ struct PsramBody {
   PsramBody &operator=(const PsramBody &) = delete;
 };
 
-void copy_str_(char *dst, size_t cap, const char *src) {
-  if (dst == nullptr || cap == 0)
-    return;
-  std::strncpy(dst, src != nullptr ? src : "", cap - 1);
-  dst[cap - 1] = '\0';
-}
 }  // namespace
 
 bool LuneTouchCoordinator::local_today_(int *ymd, uint16_t *minute_of_day) const {
@@ -14023,11 +14050,211 @@ void LuneTouchCoordinator::fail_price_cycle_(const char *error) {
   log_event_("warn", "prices", msg);
 }
 
+namespace {
+bool epoch_to_local_(int64_t epoch, int *ymd, int *hour) {
+  const time_t t = static_cast<time_t>(epoch);
+  struct tm tm {};
+  if (localtime_r(&t, &tm) == nullptr)
+    return false;
+  *ymd = lune_touch_price::make_ymd(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+  *hour = tm.tm_hour;
+  return true;
+}
+
+int64_t local_midnight_epoch_(int ymd) {
+  struct tm tm {};
+  tm.tm_year = ymd / 10000 - 1900;
+  tm.tm_mon = (ymd / 100) % 100 - 1;
+  tm.tm_mday = ymd % 100;
+  tm.tm_isdst = -1;
+  return static_cast<int64_t>(mktime(&tm));
+}
+
+bool valid_token_(const char *s) {
+  if (s == nullptr || s[0] == '\0')
+    return false;
+  size_t n = 0;
+  for (; s[n] != '\0'; n++) {
+    const char c = s[n];
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-'))
+      return false;
+  }
+  return n < 64;
+}
+}  // namespace
+
+size_t LuneTouchCoordinator::fetch_spot_(const lune_touch_price::Config &cfg, int today, char *body,
+                                         size_t capacity, const char **used, bool *fallback, float *fx,
+                                         char *error, size_t error_len) {
+  using namespace lune_touch_price;
+  PriceRuntime &rt = *price_rt_;
+  const int tomorrow = add_days(today, 1);
+  const float cfx = config_fx(cfg);
+  *fx = cfx;
+  *fallback = false;
+  *used = spot_source_name(cfg.spot_source);
+  char err[40]{};
+  int status = 0;
+
+  if (cfg.spot_source == SpotSource::FIXED) {
+    size_t n = 0;
+    for (const int day : {today, tomorrow})
+      for (uint8_t h = 0; h < HOURS; h++) {
+        rt.samples[n].ymd = day;
+        rt.samples[n].hour = h;
+        rt.samples[n].eur_mwh = cfg.spot_fixed_eur * 1000.0f;
+        rt.samples[n].mwh = cfg.spot_fixed_eur * 1000.0f * cfx;
+        n++;
+      }
+    return n;
+  }
+
+  if (cfg.spot_source == SpotSource::EDS) {
+    if (!zone_is_dk(cfg.zone)) {
+      std::snprintf(error, error_len, "spot_eds_dk_only");
+      return 0;
+    }
+    char start[12], end[12];
+    format_ymd(today, start, sizeof(start));
+    format_ymd(add_days(today, 2), end, sizeof(end));
+    char url[384];
+    std::snprintf(url, sizeof(url),
+                  "%sDayAheadPrices?start=%sT00:00&end=%sT00:00"
+                  "&filter=%%7B%%22PriceArea%%22%%3A%%5B%%22%s%%22%%5D%%7D"
+                  "&columns=TimeDK,DayAheadPriceDKK,DayAheadPriceEUR&sort=TimeDK%%20asc&limit=400",
+                  EDS_BASE, start, end, find_zone(cfg.zone)->id);
+    if (!fetch_https_(url, body, capacity, &status, err, sizeof(err))) {
+      std::snprintf(error, error_len, "spot_%s", err);
+      return 0;
+    }
+    const size_t n = parse_spot_records(body, std::strlen(body), rt.samples, MAX_SPOT_SAMPLES);
+    if (std::strcmp(cfg.currency, "DKK") == 0)
+      *fx = spot_fx(rt.samples, n);  // DKK per EUR from the same data
+    else
+      reprice_from_eur(rt.samples, n, cfx);
+    return n;
+  }
+
+  // Energy-Charts / ENTSO-E: the other one is the fallback (ENTSO-E needs a token).
+  const Zone *zone = find_zone(cfg.zone);
+  if (zone == nullptr) {
+    std::snprintf(error, error_len, "spot_unknown_zone");
+    return 0;
+  }
+  char token[64]{};
+  if (take_state_lock_(100)) {
+    copy_str_(token, sizeof(token), entsoe_token_);
+    give_state_lock_();
+  }
+  const bool primary_ec = cfg.spot_source == SpotSource::ENERGY_CHARTS;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    const bool use_ec = (attempt == 0) == primary_ec;
+    if (!use_ec && token[0] == '\0') {
+      if (attempt == 0)
+        copy_str_(err, sizeof(err), "entsoe_no_token");
+      continue;
+    }
+    if (attempt == 1)
+      vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+    auto sink = make_sink(rt.samples, MAX_SPOT_SAMPLES, cfx, epoch_to_local_);
+    bool fetched = false;
+    if (use_ec) {
+      char start[12], end[12];
+      format_ymd(today, start, sizeof(start));
+      format_ymd(tomorrow, end, sizeof(end));  // Energy-Charts' end date is inclusive
+      char url[192];
+      std::snprintf(url, sizeof(url), "https://api.energy-charts.info/price?bzn=%s&start=%s&end=%s", zone->id,
+                    start, end);
+      fetched = fetch_https_(url, body, capacity, &status, err, sizeof(err));
+      if (fetched)
+        parse_energy_charts(body, std::strlen(body), sink);
+    } else {
+      char t0[16], t1[16];
+      format_entsoe_time(local_midnight_epoch_(today), t0, sizeof(t0));
+      format_entsoe_time(local_midnight_epoch_(add_days(today, 2)), t1, sizeof(t1));
+      static constexpr const char *HOSTS[] = {"web-api.tp.entsoe.eu", "external-api.tp.entsoe.eu"};
+      for (const char *host : HOSTS) {
+        char url[320];
+        std::snprintf(url, sizeof(url),
+                      "https://%s/api?securityToken=%s&documentType=A44&in_Domain=%s&out_Domain=%s"
+                      "&periodStart=%s&periodEnd=%s",
+                      host, token, zone->eic, zone->eic, t0, t1);
+        fetched = fetch_https_(url, body, capacity, &status, err, sizeof(err));
+        if (fetched || (status >= 400 && status < 500))
+          break;  // a 4xx (bad token / no data) is the same on both hosts
+      }
+      if (fetched)
+        parse_entsoe_xml(body, std::strlen(body), sink);
+    }
+    if (fetched && aggregate_spot_day(rt.samples, sink.n, today).complete) {
+      *used = use_ec ? "energy_charts" : "entsoe";
+      *fallback = attempt == 1;
+      return sink.n;
+    }
+    if (fetched)
+      copy_str_(err, sizeof(err), "incomplete");
+    std::snprintf(error, error_len, "spot_%s_%s", use_ec ? "ec" : "entsoe", err);
+  }
+  return 0;
+}
+
+bool LuneTouchCoordinator::write_odin_price_settings_(uint8_t what, const lune_touch_price::Config &cfg,
+                                                      bool send_token, char *error, size_t error_len) {
+  using namespace lune_touch_price;
+  struct Item {
+    const char *key;
+    char value[80];
+    bool quoted;
+  };
+  Item items[5]{};
+  size_t n = 0;
+  auto add = [&](const char *key, const char *value, bool quoted) {
+    items[n].key = key;
+    copy_str_(items[n].value, sizeof(items[n].value), value);
+    items[n].quoted = quoted;
+    n++;
+  };
+  if (what == 2) {
+    add("price_source", "energy_charts", true);
+  } else if (cfg.model == Model::TOUCH) {
+    add("price_source", "api", true);
+  } else {
+    add("price_mode", odin_mode_name(cfg.odin_mode), true);
+    if (cfg.odin_mode == OdinMode::DYNAMIC) {
+      add("price_source", odin_source_name(cfg.odin_source), true);
+      add("ec_bzn", cfg.zone, true);
+    } else {
+      char v[24];
+      std::snprintf(v, sizeof(v), "%.4f", static_cast<double>(cfg.odin_fixed_price));
+      add("fixed_price", v, false);
+    }
+    if (send_token && take_state_lock_(100)) {
+      char token[64];
+      copy_str_(token, sizeof(token), entsoe_token_);
+      give_state_lock_();
+      if (token[0] != '\0')
+        add("entsoe_token", token, true);
+    }
+  }
+  for (size_t i = 0; i < n; i++) {
+    char body[160];
+    std::snprintf(body, sizeof(body), items[i].quoted ? "{\"key\":\"%s\",\"value\":\"%s\"}" : "{\"key\":\"%s\",\"value\":%s}",
+                  items[i].key, items[i].value);
+    int status = 0;
+    if (!post_odin_json_("/dashboard/set", body, &status)) {
+      std::snprintf(error, error_len, "%s_http_%d", items[i].key, status);
+      return false;
+    }
+  }
+  return true;
+}
+
 void LuneTouchCoordinator::run_price_cycle_() {
   using namespace lune_touch_price;
   Config cfg{};
   bool run = false;
-  uint8_t source = 0;
+  uint8_t write_what = 0;
+  bool send_token = false;
   Due due = Due::NONE;
   char odin_host[64]{};
   int today = 0;
@@ -14039,7 +14266,8 @@ void LuneTouchCoordinator::run_price_cycle_() {
   run = price_.run_pending;
   price_.run_pending = false;
   due = price_.due;
-  source = price_.source_pending;
+  write_what = price_.odin_write_pending;
+  send_token = price_.odin_token_pending;
   copy_str_(odin_host, sizeof(odin_host), odin_plan_.odin_host);
   if (run) {
     // Stamp the attempt first: the poll task must not queue a second run
@@ -14054,38 +14282,42 @@ void LuneTouchCoordinator::run_price_cycle_() {
   }
   give_state_lock_();
 
-  // 1) Odin's price mode: "api" while Touch pushes, "energy_charts" after.
-  if (source != 0) {
-    const char *value = source == 1 ? "api" : "energy_charts";
-    bool ok = false;
-    int status = 0;
+  // 1) Odin's own price settings: price_source=api while Touch pushes, Odin's
+  //    mode/source/zone in the Odin model, energy_charts when Touch stops.
+  if (write_what != 0) {
+    char err[48]{};
+    const bool ok = odin_host[0] != '\0' && write_odin_price_settings_(write_what, cfg, send_token, err, sizeof(err));
     if (odin_host[0] != '\0') {
-      char body[72];
-      std::snprintf(body, sizeof(body), "{\"key\":\"price_source\",\"value\":\"%s\"}", value);
-      ok = post_odin_json_("/dashboard/set", body, &status);
-      char msg[80];
+      char msg[96];
       if (ok)
-        std::snprintf(msg, sizeof(msg), "Odin price source set to %s", value);
+        std::snprintf(msg, sizeof(msg), "Odin price settings written (%s)",
+                      write_what == 2 ? "energy_charts" : (cfg.model == Model::TOUCH ? "api" : model_name(cfg.model)));
       else
-        std::snprintf(msg, sizeof(msg), "Odin price source write failed (HTTP %d)", status);
+        std::snprintf(msg, sizeof(msg), "Odin price settings write failed: %s", err);
       log_event_(ok ? "info" : "warn", "prices", msg);
     }
     if (take_state_lock_(100)) {
       const uint32_t now_ms = esphome::millis();
-      price_.source_last_try_ms = now_ms == 0 ? 1 : now_ms;
+      price_.odin_write_last_try_ms = now_ms == 0 ? 1 : now_ms;
       if (ok) {
-        if (price_.source_pending == source)
-          price_.source_pending = 0;
-        copy_str_(price_.odin_source, sizeof(price_.odin_source), value);
+        if (price_.odin_write_pending == write_what)
+          price_.odin_write_pending = 0;
+        if (send_token)
+          price_.odin_token_pending = false;
+        const char *src = write_what == 2 ? "energy_charts"
+                          : cfg.model == Model::TOUCH ? "api"
+                          : cfg.odin_mode == OdinMode::FIXED ? "fixed"
+                                                             : odin_source_name(cfg.odin_source);
+        copy_str_(price_.odin_source, sizeof(price_.odin_source), src);
       }
       give_state_lock_();
     }
-    if (run && source == 1 && !ok) {
+    if (run && !ok && write_what == 1 && cfg.model == Model::TOUCH) {
       fail_price_cycle_(odin_host[0] == '\0' ? "no_odin_host" : "odin_unreachable");
       return;
     }
   }
-  if (!run || !cfg.enabled)
+  if (!run || !cfg.enabled || cfg.model != Model::TOUCH)
     return;
   if (!clock_ok) {
     fail_price_cycle_("clock_invalid");
@@ -14093,10 +14325,6 @@ void LuneTouchCoordinator::run_price_cycle_() {
   }
   if (odin_host[0] == '\0') {
     fail_price_cycle_("no_odin_host");
-    return;
-  }
-  if (cfg.area == Area::OFF) {
-    fail_price_cycle_("spot_area_off");
     return;
   }
   if (price_rt_ == nullptr) {
@@ -14110,33 +14338,28 @@ void LuneTouchCoordinator::run_price_cycle_() {
     return;
   }
   const int tomorrow = add_days(today, 1);
+  const bool dk = zone_is_dk(cfg.zone);
   char error[48];
   char err[40];
 
-  // 2) Spot, today 00:00 → day after tomorrow 00:00 (local), 15-min records.
-  {
-    char start[12], end[12];
-    format_ymd(today, start, sizeof(start));
-    format_ymd(add_days(today, 2), end, sizeof(end));
-    char url[384];
-    std::snprintf(url, sizeof(url),
-                  "%sDayAheadPrices?start=%sT00:00&end=%sT00:00"
-                  "&filter=%%7B%%22PriceArea%%22%%3A%%5B%%22%s%%22%%5D%%7D"
-                  "&columns=TimeDK,DayAheadPriceDKK,DayAheadPriceEUR&sort=TimeDK%%20asc&limit=400",
-                  EDS_BASE, start, end, area_name(cfg.area));
-    int status = 0;
-    if (!fetch_https_(url, body.ptr, PRICE_BODY_CAP, &status, err, sizeof(err))) {
-      std::snprintf(error, sizeof(error), "spot_%s", err);
-      fail_price_cycle_(error);
-      return;
-    }
+  // 2) Spot, today 00:00 → day after tomorrow 00:00 (local).
+  const char *spot_used = "";
+  bool spot_fallback = false;
+  float fx = config_fx(cfg);
+  const size_t samples =
+      fetch_spot_(cfg, today, body.ptr, PRICE_BODY_CAP, &spot_used, &spot_fallback, &fx, error, sizeof(error));
+  if (samples == 0) {
+    fail_price_cycle_(error);
+    return;
   }
-  const size_t samples = parse_spot_records(body.ptr, std::strlen(body.ptr), rt.samples, MAX_SPOT_SAMPLES);
   const SpotDay spot0 = aggregate_spot_day(rt.samples, samples, today);
   const SpotDay spot1 = aggregate_spot_day(rt.samples, samples, tomorrow);
-  const float fx = spot_fx(rt.samples, samples);
   if (!spot0.complete) {
     fail_price_cycle_("spot_incomplete");
+    return;
+  }
+  if (!(fx > 0.0f)) {
+    fail_price_cycle_("fx_invalid");
     return;
   }
   if (take_state_lock_(100)) {
@@ -14144,7 +14367,7 @@ void LuneTouchCoordinator::run_price_cycle_() {
     give_state_lock_();
   }
 
-  // 3) Grid tariff: DataHub price list, the user's schedule, or none.
+  // 3) Grid tariff: DataHub price list (DK), the user's schedule, or none.
   float grid0[HOURS]{};
   float grid1[HOURS]{};
   bool grid1_ok = true;
@@ -14156,6 +14379,10 @@ void LuneTouchCoordinator::run_price_cycle_() {
     }
     std::memcpy(grid1, grid0, sizeof(grid0));
   } else if (cfg.grid_source == GridSource::DATAHUB) {
+    if (!dk) {
+      fail_price_cycle_("grid_datahub_dk_only");
+      return;
+    }
     char key[48];
     std::snprintf(key, sizeof(key), "%s/%s", cfg.grid_gln, cfg.grid_code);
     char codes[32];
@@ -14183,15 +14410,19 @@ void LuneTouchCoordinator::run_price_cycle_() {
     grid1_ok = tariff_for_day(rt.grid, tomorrow, grid1);
   }
 
-  // 4) Energinet transmission + system tariff: DataHub or a fixed value.
-  float en0[HOURS]{};
-  float en1[HOURS]{};
-  bool en1_ok = true;
-  bool en_cache = false;
-  if (cfg.energinet_source == EnerginetSource::FIXED) {
+  // 4) System/transmission tariff: Energinet via DataHub (DK) or a fixed value.
+  float sys0[HOURS]{};
+  float sys1[HOURS]{};
+  bool sys1_ok = true;
+  bool sys_cache = false;
+  if (cfg.system_source == SystemSource::FIXED) {
     for (size_t h = 0; h < HOURS; h++)
-      en0[h] = en1[h] = cfg.energinet_fixed_dkk;
+      sys0[h] = sys1[h] = cfg.system_fixed;
   } else {
+    if (!dk) {
+      fail_price_cycle_("system_datahub_dk_only");
+      return;
+    }
     char codes[32];
     std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\"", ENERGINET_TRANSMISSION_CODE, ENERGINET_SYSTEM_CODE);
     vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
@@ -14205,31 +14436,31 @@ void LuneTouchCoordinator::run_price_cycle_() {
     } else {
       if (fetched)
         copy_str_(err, sizeof(err), "no_records");
-      en_cache = true;
+      sys_cache = true;
     }
     if (!rt.have_energinet) {
-      std::snprintf(error, sizeof(error), "energinet_%s", err);
+      std::snprintf(error, sizeof(error), "system_%s", err);
       fail_price_cycle_(error);
       return;
     }
-    float sys[HOURS];
-    if (!tariff_for_day(rt.energinet_transmission, today, en0) ||
-        !tariff_for_day(rt.energinet_system, today, sys)) {
-      fail_price_cycle_("energinet_no_tariff_today");
+    float part[HOURS];
+    if (!tariff_for_day(rt.energinet_transmission, today, sys0) ||
+        !tariff_for_day(rt.energinet_system, today, part)) {
+      fail_price_cycle_("system_no_tariff_today");
       return;
     }
     for (size_t h = 0; h < HOURS; h++)
-      en0[h] += sys[h];
-    en1_ok = tariff_for_day(rt.energinet_transmission, tomorrow, en1) &&
-             tariff_for_day(rt.energinet_system, tomorrow, sys);
-    if (en1_ok)
+      sys0[h] += part[h];
+    sys1_ok = tariff_for_day(rt.energinet_transmission, tomorrow, sys1) &&
+              tariff_for_day(rt.energinet_system, tomorrow, part);
+    if (sys1_ok)
       for (size_t h = 0; h < HOURS; h++)
-        en1[h] += sys[h];
+        sys1[h] += part[h];
   }
 
   // 5) All-in price → €/kWh array → Odin.
-  rt.next_today = build_day(today, spot0.dkk_kwh, grid0, en0, cfg);
-  rt.next_tomorrow = spot1.complete && grid1_ok && en1_ok ? build_day(tomorrow, spot1.dkk_kwh, grid1, en1, cfg)
+  rt.next_today = build_day(today, spot0.kwh, grid0, sys0, cfg);
+  rt.next_tomorrow = spot1.complete && grid1_ok && sys1_ok ? build_day(tomorrow, spot1.kwh, grid1, sys1, cfg)
                                                            : DayPrices{};
   float eur[2 * HOURS];
   const size_t count = build_odin_array(rt.next_today, rt.next_tomorrow, fx, eur, 2 * HOURS);
@@ -14247,8 +14478,10 @@ void LuneTouchCoordinator::run_price_cycle_() {
     rt.today = rt.next_today;
     rt.tomorrow = rt.next_tomorrow;
     price_.fx = fx;
+    copy_str_(price_.spot_used, sizeof(price_.spot_used), spot_used);
+    price_.spot_fallback = spot_fallback;
     price_.grid_from_cache = grid_cache;
-    price_.energinet_from_cache = en_cache;
+    price_.system_from_cache = sys_cache;
     if (pushed) {
       price_.sched.pushed_ymd = today;
       price_.sched.pushed_tomorrow = count >= 2 * HOURS;
@@ -14265,8 +14498,9 @@ void LuneTouchCoordinator::run_price_cycle_() {
     return;
   }
   char msg[96];
-  std::snprintf(msg, sizeof(msg), "prices pushed to Odin: %u h (%s)%s", static_cast<unsigned>(count),
-                due_name(due), grid_cache || en_cache ? ", cached tariff" : "");
+  std::snprintf(msg, sizeof(msg), "prices pushed to Odin: %u h (%s, %s%s)%s", static_cast<unsigned>(count),
+                due_name(due), spot_used, spot_fallback ? " fallback" : "",
+                grid_cache || sys_cache ? ", cached tariff" : "");
   log_event_("info", "prices", msg);
 }
 
@@ -14274,6 +14508,7 @@ void LuneTouchCoordinator::load_price_settings_() {
   using namespace lune_touch_price;
   price_.cfg = Config{};
   price_.cfg.grid_schedule = default_grid_schedule();
+  price_.cfg.model = Model::ODIN;  // fresh install: Odin keeps fetching its own price
   nvs_handle_t handle;
   if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
@@ -14281,27 +14516,58 @@ void LuneTouchCoordinator::load_price_settings_() {
   uint8_t u8 = 0;
   if (nvs_get_u8(handle, "pr_en", &u8) == ESP_OK)
     cfg.enabled = u8 != 0;
-  if (nvs_get_u8(handle, "pr_area", &u8) == ESP_OK && u8 <= 2)
-    cfg.area = static_cast<Area>(u8);
+  // v1 (DK-only push) had no model: a device that pushed keeps pushing.
+  if (nvs_get_u8(handle, "pr_model", &u8) == ESP_OK && u8 <= 1)
+    cfg.model = static_cast<Model>(u8);
+  else if (cfg.enabled)
+    cfg.model = Model::TOUCH;
+  char text[24];
+  size_t len = sizeof(text);
+  const Zone *zone = nullptr;
+  if (nvs_get_str(handle, "pr_zone", text, &len) == ESP_OK)
+    zone = find_zone(text);
+  if (zone == nullptr && nvs_get_u8(handle, "pr_area", &u8) == ESP_OK)
+    zone = find_zone(u8 == 2 ? "DK2" : "DK1");  // v1: 1 = DK1, 2 = DK2
+  if (zone != nullptr)
+    copy_str_(cfg.zone, sizeof(cfg.zone), zone->id);
+  if (nvs_get_u8(handle, "pr_ssrc", &u8) == ESP_OK && u8 <= 3)
+    cfg.spot_source = static_cast<SpotSource>(u8);
+  len = sizeof(text);
+  if (nvs_get_str(handle, "pr_cur", text, &len) == ESP_OK && find_currency(text) != nullptr)
+    copy_str_(cfg.currency, sizeof(cfg.currency), text);
   if (nvs_get_u8(handle, "pr_gsrc", &u8) == ESP_OK && u8 <= 2)
     cfg.grid_source = static_cast<GridSource>(u8);
   if (nvs_get_u8(handle, "pr_esrc", &u8) == ESP_OK && u8 <= 1)
-    cfg.energinet_source = static_cast<EnerginetSource>(u8);
-  char text[24];
-  size_t len = sizeof(text);
+    cfg.system_source = static_cast<SystemSource>(u8);
+  if (nvs_get_u8(handle, "pr_omode", &u8) == ESP_OK && u8 <= 1)
+    cfg.odin_mode = static_cast<OdinMode>(u8);
+  if (nvs_get_u8(handle, "pr_osrc", &u8) == ESP_OK && u8 <= 1)
+    cfg.odin_source = static_cast<OdinSource>(u8);
+  len = sizeof(text);
   if (nvs_get_str(handle, "pr_gln", text, &len) == ESP_OK && valid_gln(text))
     copy_str_(cfg.grid_gln, sizeof(cfg.grid_gln), text);
   len = sizeof(text);
   if (nvs_get_str(handle, "pr_gcode", text, &len) == ESP_OK && valid_charge_code(text))
     copy_str_(cfg.grid_code, sizeof(cfg.grid_code), text);
+  // v1 blob: Energinet fixed, elafgift, markup, VAT (DKK) — same meaning now.
   float nums[4]{};
   len = sizeof(nums);
   if (nvs_get_blob(handle, "pr_nums", nums, &len) == ESP_OK && len == sizeof(nums)) {
-    if (std::isfinite(nums[0])) cfg.energinet_fixed_dkk = nums[0];
-    if (std::isfinite(nums[1])) cfg.elafgift_dkk = nums[1];
-    if (std::isfinite(nums[2])) cfg.markup_dkk = nums[2];
+    if (std::isfinite(nums[0])) cfg.system_fixed = nums[0];
+    if (std::isfinite(nums[1])) cfg.energy_tax = nums[1];
+    if (std::isfinite(nums[2])) cfg.markup = nums[2];
     if (std::isfinite(nums[3])) cfg.vat_pct = nums[3];
   }
+  float nums2[3]{};
+  len = sizeof(nums2);
+  if (nvs_get_blob(handle, "pr_nums2", nums2, &len) == ESP_OK && len == sizeof(nums2)) {
+    if (std::isfinite(nums2[0]) && nums2[0] > 0.0f) cfg.fx = nums2[0];
+    if (std::isfinite(nums2[1])) cfg.spot_fixed_eur = nums2[1];
+    if (std::isfinite(nums2[2])) cfg.odin_fixed_price = nums2[2];
+  }
+  len = sizeof(entsoe_token_);
+  if (nvs_get_str(handle, "pr_etok", entsoe_token_, &len) != ESP_OK || !valid_token_(entsoe_token_))
+    entsoe_token_[0] = '\0';
   char *sched = psram_scratch_<char>(640);
   if (sched != nullptr) {
     len = 640;
@@ -14315,26 +14581,36 @@ void LuneTouchCoordinator::load_price_settings_() {
 
 void LuneTouchCoordinator::save_price_settings_() {
   lune_touch_price::Config cfg{};
+  char token[64]{};
   if (!take_state_lock_(100))
     return;
   cfg = price_.cfg;
+  copy_str_(token, sizeof(token), entsoe_token_);
   give_state_lock_();
   static char *sched = psram_scratch_<char>(640);
   if (sched == nullptr)
     return;
   sched[0] = '\0';
   lune_touch_price::format_schedule(cfg.grid_schedule, sched, 640);
-  const float nums[4]{cfg.energinet_fixed_dkk, cfg.elafgift_dkk, cfg.markup_dkk, cfg.vat_pct};
+  const float nums[4]{cfg.system_fixed, cfg.energy_tax, cfg.markup, cfg.vat_pct};
+  const float nums2[3]{cfg.fx, cfg.spot_fixed_eur, cfg.odin_fixed_price};
   nvs_handle_t handle;
   if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   esp_err_t err = nvs_set_u8(handle, "pr_en", cfg.enabled ? 1 : 0);
-  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_area", static_cast<uint8_t>(cfg.area));
+  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_model", static_cast<uint8_t>(cfg.model));
+  if (err == ESP_OK) err = nvs_set_str(handle, "pr_zone", cfg.zone);
+  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_ssrc", static_cast<uint8_t>(cfg.spot_source));
+  if (err == ESP_OK) err = nvs_set_str(handle, "pr_cur", cfg.currency);
   if (err == ESP_OK) err = nvs_set_u8(handle, "pr_gsrc", static_cast<uint8_t>(cfg.grid_source));
-  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_esrc", static_cast<uint8_t>(cfg.energinet_source));
+  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_esrc", static_cast<uint8_t>(cfg.system_source));
+  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_omode", static_cast<uint8_t>(cfg.odin_mode));
+  if (err == ESP_OK) err = nvs_set_u8(handle, "pr_osrc", static_cast<uint8_t>(cfg.odin_source));
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gln", cfg.grid_gln);
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gcode", cfg.grid_code);
   if (err == ESP_OK) err = nvs_set_blob(handle, "pr_nums", nums, sizeof(nums));
+  if (err == ESP_OK) err = nvs_set_blob(handle, "pr_nums2", nums2, sizeof(nums2));
+  if (err == ESP_OK) err = nvs_set_str(handle, "pr_etok", token);
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gsched", sched);
   if (err == ESP_OK) err = nvs_commit(handle);
   nvs_close(handle);
@@ -14349,85 +14625,158 @@ bool LuneTouchCoordinator::set_price_settings(const PriceSettingsUpdate &u, char
     return false;
   };
   auto given = [](const char *s) { return s != nullptr && s[0] != '\0'; };
-  Area area{};
+  Model model{};
+  SpotSource spot{};
   GridSource grid{};
-  EnerginetSource energinet{};
-  if (given(u.area) && !parse_area(u.area, &area))
-    return reject("invalid_area");
+  SystemSource system{};
+  OdinMode odin_mode{};
+  OdinSource odin_source{};
+  const Zone *zone = nullptr;
+  const Currency *currency = nullptr;
+  if (given(u.model) && !parse_model(u.model, &model))
+    return reject("invalid_model");
+  if (given(u.zone) && (zone = find_zone(u.zone)) == nullptr)
+    return reject("invalid_zone");
+  if (given(u.spot_source) && !parse_spot_source(u.spot_source, &spot))
+    return reject("invalid_spot_source");
+  if (given(u.currency) && (currency = find_currency(u.currency)) == nullptr)
+    return reject("invalid_currency");
   if (given(u.grid_source) && !parse_grid_source(u.grid_source, &grid))
     return reject("invalid_grid_source");
-  if (given(u.energinet_source) && !parse_energinet_source(u.energinet_source, &energinet))
-    return reject("invalid_energinet_source");
+  if (given(u.system_source) && !parse_system_source(u.system_source, &system))
+    return reject("invalid_system_source");
+  if (given(u.odin_mode) && !parse_odin_mode(u.odin_mode, &odin_mode))
+    return reject("invalid_odin_mode");
+  if (given(u.odin_source) && !parse_odin_source(u.odin_source, &odin_source))
+    return reject("invalid_odin_source");
   if (given(u.grid_gln) && !valid_gln(u.grid_gln))
     return reject("invalid_gln");
   if (given(u.grid_code) && !valid_charge_code(u.grid_code))
     return reject("invalid_charge_code");
+  if (given(u.entsoe_token) && !valid_token_(u.entsoe_token))
+    return reject("invalid_token");
   Schedule schedule{};
   if (given(u.grid_schedule) && !parse_schedule(u.grid_schedule, &schedule))
     return reject("invalid_schedule");
   auto bad = [](float v, float lo, float hi) { return !std::isnan(v) && !(v >= lo && v <= hi); };
-  if (bad(u.energinet_fixed_dkk, -1.0f, 5.0f) || bad(u.elafgift_dkk, 0.0f, 5.0f) ||
-      bad(u.markup_dkk, -1.0f, 5.0f) || bad(u.vat_pct, 0.0f, 50.0f))
+  if (bad(u.system_fixed, -100.0f, 500.0f) || bad(u.energy_tax, 0.0f, 500.0f) || bad(u.markup, -100.0f, 500.0f) ||
+      bad(u.vat_pct, 0.0f, 50.0f) || bad(u.fx, 0.01f, 10000.0f) || bad(u.spot_fixed_eur, -1.0f, 5.0f) ||
+      bad(u.odin_fixed_price, 0.0f, 5.0f))
     return reject("invalid_value");
 
-  bool was_enabled = false;
-  bool enabled = false;
   if (!take_state_lock_(200))
     return reject("busy");
-  Config &cfg = price_.cfg;
-  was_enabled = cfg.enabled;
+  const Config before = price_.cfg;
+  Config cfg = before;
   if (u.has_enabled) cfg.enabled = u.enabled;
-  if (given(u.area)) cfg.area = area;
+  if (given(u.model)) cfg.model = model;
+  if (zone != nullptr) copy_str_(cfg.zone, sizeof(cfg.zone), zone->id);
+  if (given(u.spot_source)) cfg.spot_source = spot;
+  if (currency != nullptr) {
+    copy_str_(cfg.currency, sizeof(cfg.currency), currency->code);
+    if (std::isnan(u.fx) && std::strcmp(before.currency, currency->code) != 0)
+      cfg.fx = currency->default_fx;
+  }
+  if (!std::isnan(u.fx)) cfg.fx = u.fx;
+  if (!std::isnan(u.spot_fixed_eur)) cfg.spot_fixed_eur = u.spot_fixed_eur;
   if (given(u.grid_source)) cfg.grid_source = grid;
-  if (given(u.energinet_source)) cfg.energinet_source = energinet;
+  if (given(u.system_source)) cfg.system_source = system;
   if (given(u.grid_gln)) copy_str_(cfg.grid_gln, sizeof(cfg.grid_gln), u.grid_gln);
   if (given(u.grid_code)) copy_str_(cfg.grid_code, sizeof(cfg.grid_code), u.grid_code);
   if (given(u.grid_schedule)) cfg.grid_schedule = schedule;
-  if (!std::isnan(u.energinet_fixed_dkk)) cfg.energinet_fixed_dkk = u.energinet_fixed_dkk;
-  if (!std::isnan(u.elafgift_dkk)) cfg.elafgift_dkk = u.elafgift_dkk;
-  if (!std::isnan(u.markup_dkk)) cfg.markup_dkk = u.markup_dkk;
+  if (!std::isnan(u.system_fixed)) cfg.system_fixed = u.system_fixed;
+  if (!std::isnan(u.energy_tax)) cfg.energy_tax = u.energy_tax;
+  if (!std::isnan(u.markup)) cfg.markup = u.markup;
   if (!std::isnan(u.vat_pct)) cfg.vat_pct = u.vat_pct;
-  enabled = cfg.enabled;
-  if (enabled != was_enabled) {
-    price_.source_pending = enabled ? 1 : 2;
-    price_.source_last_try_ms = 0;
+  if (given(u.odin_mode)) cfg.odin_mode = odin_mode;
+  if (given(u.odin_source)) cfg.odin_source = odin_source;
+  if (!std::isnan(u.odin_fixed_price)) cfg.odin_fixed_price = u.odin_fixed_price;
+  // DataHub and Energi Data Service only exist for Denmark.
+  const bool dk = zone_is_dk(cfg.zone);
+  if (cfg.model == Model::TOUCH && !dk &&
+      (cfg.spot_source == SpotSource::EDS || cfg.grid_source == GridSource::DATAHUB ||
+       cfg.system_source == SystemSource::DATAHUB)) {
+    give_state_lock_();
+    return reject("datahub_dk_only");
   }
-  // New settings take effect with a fresh push (next poll pass, ≤ 15 s).
-  price_.push_requested = enabled;
-  if (!enabled) {
+  const bool token_given = given(u.entsoe_token);
+  if (token_given)
+    copy_str_(entsoe_token_, sizeof(entsoe_token_), u.entsoe_token);
+  else if (u.clear_token)
+    entsoe_token_[0] = '\0';
+  const bool pushes = cfg.enabled && cfg.model == Model::TOUCH;
+  const bool pushed_before = before.enabled && before.model == Model::TOUCH;
+  if (cfg.enabled) {
+    // Idempotent: Touch model re-asserts price_source=api, Odin model writes
+    // Odin's own price settings from this form.
+    price_.odin_write_pending = 1;
+    price_.odin_write_last_try_ms = 0;
+    if (cfg.model == Model::ODIN && token_given)
+      price_.odin_token_pending = true;
+  } else if (pushed_before) {
+    price_.odin_write_pending = 2;
+    price_.odin_write_last_try_ms = 0;
+  }
+  price_.push_requested = pushes;
+  if (!pushes) {
     price_.sched = SchedulerState{};
     price_.hours_pushed = 0;
   }
+  price_.cfg = cfg;
   give_state_lock_();
   save_price_settings_();
-  log_event_("info", "prices",
-             enabled == was_enabled ? "price settings saved"
-                                    : (enabled ? "price push to Odin enabled" : "price push to Odin disabled"));
-  std::snprintf(response, capacity, "{\"result\":\"saved\",\"enabled\":%s,\"push_queued\":%s}",
-                enabled ? "true" : "false", enabled ? "true" : "false");
+  const char *what = pushes == pushed_before
+                         ? "price settings saved"
+                         : (pushes ? "price push to Odin enabled" : "price push to Odin disabled");
+  log_event_("info", "prices", what);
+  std::snprintf(response, capacity,
+                "{\"result\":\"saved\",\"enabled\":%s,\"model\":\"%s\",\"push_queued\":%s,\"odin_write_queued\":%s}",
+                cfg.enabled ? "true" : "false", model_name(cfg.model), pushes ? "true" : "false",
+                cfg.enabled || pushed_before ? "true" : "false");
   return true;
 }
 
 bool LuneTouchCoordinator::request_price_push(char *response, size_t capacity) {
-  bool enabled = false;
+  bool pushes = false;
   bool host = false;
+  bool odin_model = false;
   if (!take_state_lock_(200)) {
     std::snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"busy\"}");
     return false;
   }
-  enabled = price_.cfg.enabled;
+  pushes = price_.cfg.enabled && price_.cfg.model == lune_touch_price::Model::TOUCH;
+  odin_model = price_.cfg.enabled && price_.cfg.model == lune_touch_price::Model::ODIN;
   host = odin_plan_.odin_host[0] != '\0';
-  if (enabled && host)
+  if (pushes && host)
     price_.push_requested = true;
+  if (odin_model && host) {
+    price_.odin_write_pending = 1;  // "Write to Odin now" in the Odin model
+    price_.odin_write_last_try_ms = 0;
+  }
   give_state_lock_();
-  if (!enabled || !host) {
+  if (!(pushes || odin_model) || !host) {
     std::snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"%s\"}",
-                  enabled ? "no_odin_host" : "disabled");
+                  !host ? "no_odin_host" : "disabled");
     return false;
   }
   kick_task_(poll_task_handle_);
   std::snprintf(response, capacity, "{\"result\":\"queued\"}");
   return true;
+}
+
+void LuneTouchCoordinator::write_price_zone_defaults_json(const char *zone, char *buffer, size_t capacity) const {
+  using namespace lune_touch_price;
+  const Zone *z = find_zone(zone);
+  const ZoneDefaults d = zone_defaults(zone);
+  std::snprintf(buffer, capacity,
+                "{\"zone\":\"%s\",\"known\":%s,\"spot_source\":\"%s\",\"currency\":\"%s\",\"fx\":%.4f,"
+                "\"energy_tax\":%.4f,\"vat_pct\":%.2f,\"grid_source\":\"%s\",\"system_source\":\"%s\","
+                "\"system_fixed\":%.4f,\"odin_tax_eur\":%.4f,\"odin_vat_pct\":%.2f}",
+                z != nullptr ? z->id : "", d.known ? "true" : "false", spot_source_name(d.spot_source), d.currency,
+                static_cast<double>(d.fx), static_cast<double>(d.energy_tax), static_cast<double>(d.vat_pct),
+                grid_source_name(d.grid_source), system_source_name(d.system_source),
+                static_cast<double>(d.system_fixed), z != nullptr ? static_cast<double>(z->tax_eur) : 0.0,
+                z != nullptr ? static_cast<double>(z->vat_pct) : 21.0);
 }
 
 void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) const {
@@ -14443,44 +14792,62 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
   }
   const PriceState &p = price_;
   const Config &c = p.cfg;
+  const bool pushes = c.enabled && c.model == Model::TOUCH;
   const uint32_t now_ms = esphome::millis();
   char sched[640];
   format_schedule(c.grid_schedule, sched, sizeof(sched));
   if (sched[0] == '\0')
     copy_str_(sched, sizeof(sched), "[]");
-  const char *state = !c.enabled                                    ? "disabled"
-                      : p.run_pending                                ? "running"
+  const char *state = !c.enabled                                     ? "disabled"
+                      : c.model == Model::ODIN                        ? (p.odin_write_pending != 0 ? "running" : "odin")
+                      : p.run_pending                                 ? "running"
                       : (p.sched.attempt_ymd != 0 && !p.sched.attempt_ok && p.last_error[0] != '\0')
                           ? "error"
-                      : (clock_ok && p.sched.pushed_ymd == today)    ? "ok"
-                                                                     : "waiting";
+                      : (clock_ok && p.sched.pushed_ymd == today)     ? "ok"
+                                                                      : "waiting";
   char err[96];
   json_escape_(p.last_error, err, sizeof(err));
   size_t off = 0;
   appendf_(buffer, capacity, off,
-           "{\"available\":true,\"enabled\":%s,\"area\":\"%s\","
+           "{\"available\":true,\"enabled\":%s,\"model\":\"%s\",\"zone\":\"%s\",\"dk\":%s,"
+           "\"spot\":{\"source\":\"%s\",\"fixed_eur\":%.4f},\"currency\":\"%s\",\"fx\":%.4f,"
            "\"grid\":{\"source\":\"%s\",\"gln\":\"%s\",\"code\":\"%s\",\"schedule\":%s},"
-           "\"energinet\":{\"source\":\"%s\",\"fixed_dkk\":%.4f},"
-           "\"elafgift_dkk\":%.4f,\"markup_dkk\":%.4f,\"vat_pct\":%.2f,\"odin_host_set\":%s,",
-           c.enabled ? "true" : "false", area_name(c.area), grid_source_name(c.grid_source), c.grid_gln,
-           c.grid_code, sched, energinet_source_name(c.energinet_source),
-           static_cast<double>(c.energinet_fixed_dkk), static_cast<double>(c.elafgift_dkk),
-           static_cast<double>(c.markup_dkk), static_cast<double>(c.vat_pct),
-           odin_plan_.odin_host[0] != '\0' ? "true" : "false");
+           "\"system\":{\"source\":\"%s\",\"fixed\":%.4f},"
+           "\"energy_tax\":%.4f,\"markup\":%.4f,\"vat_pct\":%.2f,\"entsoe_token_set\":%s,\"odin_host_set\":%s,",
+           c.enabled ? "true" : "false", model_name(c.model), c.zone, zone_is_dk(c.zone) ? "true" : "false",
+           spot_source_name(c.spot_source), static_cast<double>(c.spot_fixed_eur), c.currency,
+           static_cast<double>(c.fx), grid_source_name(c.grid_source), c.grid_gln, c.grid_code, sched,
+           system_source_name(c.system_source), static_cast<double>(c.system_fixed),
+           static_cast<double>(c.energy_tax), static_cast<double>(c.markup), static_cast<double>(c.vat_pct),
+           entsoe_token_[0] != '\0' ? "true" : "false", odin_plan_.odin_host[0] != '\0' ? "true" : "false");
+  char ofp[16];
+  json_float_token_(ofp, sizeof(ofp), p.odin.fixed_price, 6);
+  char oage[16] = "null";
+  if (p.odin.known && p.odin.read_ms != 0)
+    std::snprintf(oage, sizeof(oage), "%lu", static_cast<unsigned long>((now_ms - p.odin.read_ms) / 1000UL));
+  // Odin's current values; its ENTSO-E token is reported only as set/unset.
+  appendf_(buffer, capacity, off,
+           "\"odin\":{\"mode\":\"%s\",\"source\":\"%s\",\"fixed_price\":%.4f,"
+           "\"current\":{\"known\":%s,\"price_mode\":\"%s\",\"price_source\":\"%s\",\"ec_bzn\":\"%s\","
+           "\"fixed_price\":%s,\"token_set\":%s,\"age_s\":%s}},",
+           odin_mode_name(c.odin_mode), odin_source_name(c.odin_source), static_cast<double>(c.odin_fixed_price),
+           p.odin.known ? "true" : "false", p.odin.price_mode, p.odin.price_source, p.odin.ec_bzn, ofp,
+           p.odin.token_set ? "true" : "false", oage);
   char fetch_age[16] = "null";
   if (p.last_fetch_ok_ms != 0)
     std::snprintf(fetch_age, sizeof(fetch_age), "%lu", static_cast<unsigned long>((now_ms - p.last_fetch_ok_ms) / 1000UL));
   char fx[16];
   json_float_token_(fx, sizeof(fx), p.fx, 6);
+  const char *odin_source = p.odin.known && p.odin.price_source[0] != '\0' ? p.odin.price_source : p.odin_source;
   appendf_(buffer, capacity, off,
-           "\"status\":{\"state\":\"%s\",\"reason\":\"%s\",\"odin_source\":\"%s\",\"source_pending\":%s,"
-           "\"last_fetch_age_s\":%s,\"last_push_epoch\":%lld,\"last_attempt_epoch\":%lld,"
-           "\"hours_pushed\":%u,\"fx\":%s,\"grid_from_cache\":%s,\"energinet_from_cache\":%s,"
-           "\"last_error\":\"%s\"},",
-           state, p.last_reason, p.odin_source, p.source_pending != 0 ? "true" : "false", fetch_age,
-           static_cast<long long>(p.last_push_ok_epoch), static_cast<long long>(p.last_attempt_epoch),
-           static_cast<unsigned>(p.hours_pushed), fx, p.grid_from_cache ? "true" : "false",
-           p.energinet_from_cache ? "true" : "false", err);
+           "\"status\":{\"state\":\"%s\",\"pushes\":%s,\"reason\":\"%s\",\"odin_source\":\"%s\","
+           "\"odin_write_pending\":%s,\"last_fetch_age_s\":%s,\"last_push_epoch\":%lld,\"last_attempt_epoch\":%lld,"
+           "\"hours_pushed\":%u,\"fx\":%s,\"spot_used\":\"%s\",\"spot_fallback\":%s,\"grid_from_cache\":%s,"
+           "\"system_from_cache\":%s,\"last_error\":\"%s\"},",
+           state, pushes ? "true" : "false", p.last_reason, odin_source, p.odin_write_pending != 0 ? "true" : "false",
+           fetch_age, static_cast<long long>(p.last_push_ok_epoch), static_cast<long long>(p.last_attempt_epoch),
+           static_cast<unsigned>(p.hours_pushed), fx, p.spot_used, p.spot_fallback ? "true" : "false",
+           p.grid_from_cache ? "true" : "false", p.system_from_cache ? "true" : "false", err);
   auto write_day = [&](const char *name, const DayPrices *d) {
     if (d == nullptr || !d->valid) {
       appendf_(buffer, capacity, off, "\"%s\":null", name);
@@ -14492,7 +14859,7 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
     const struct {
       const char *key;
       const float *v;
-    } series[] = {{"spot", d->spot}, {"grid", d->grid}, {"energinet", d->energinet}, {"total", d->total}};
+    } series[] = {{"spot", d->spot}, {"grid", d->grid}, {"system", d->system}, {"total", d->total}};
     for (const auto &s : series) {
       appendf_(buffer, capacity, off, ",\"%s\":[", s.key);
       for (size_t h = 0; h < HOURS; h++)
@@ -14504,7 +14871,7 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
   // Breakdown only for the current local day (yesterday's "tomorrow" after midnight).
   const DayPrices *d_today = nullptr;
   const DayPrices *d_tomorrow = nullptr;
-  if (price_rt_ != nullptr && clock_ok) {
+  if (price_rt_ != nullptr && clock_ok && pushes) {
     if (price_rt_->today.valid && price_rt_->today.ymd == today) {
       d_today = &price_rt_->today;
       d_tomorrow = &price_rt_->tomorrow;

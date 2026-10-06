@@ -1949,6 +1949,36 @@
   [data-hs-type="http"] .hs-type-asgard { display: none; }
   [data-hs-type="asgard"] .hs-type-http { display: none; }
 
+  /* Typeafhængige felter: gruppe 'pm' */
+  #pm-odin:checked ~ .typed-fields[data-type="odin"],
+  #pm-touch:checked ~ .typed-fields[data-type="touch"] { display: grid; }
+  #pm-odin:checked ~ .seg label[for="pm-odin"] > span,
+  #pm-touch:checked ~ .seg label[for="pm-touch"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #pm-odin:focus-visible ~ .seg label[for="pm-odin"] > span,
+  #pm-touch:focus-visible ~ .seg label[for="pm-touch"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'om' */
+  #om-dynamic:checked ~ .typed-fields[data-type="dynamic"],
+  #om-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #om-dynamic:checked ~ .seg label[for="om-dynamic"] > span,
+  #om-fixed:checked ~ .seg label[for="om-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #om-dynamic:focus-visible ~ .seg label[for="om-dynamic"] > span,
+  #om-fixed:focus-visible ~ .seg label[for="om-fixed"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'ss' */
+  #ss-eds:checked ~ .typed-fields[data-type="eds"],
+  #ss-energy_charts:checked ~ .typed-fields[data-type="energy_charts"],
+  #ss-entsoe:checked ~ .typed-fields[data-type="entsoe"],
+  #ss-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #ss-eds:checked ~ .seg label[for="ss-eds"] > span,
+  #ss-energy_charts:checked ~ .seg label[for="ss-energy_charts"] > span,
+  #ss-entsoe:checked ~ .seg label[for="ss-entsoe"] > span,
+  #ss-fixed:checked ~ .seg label[for="ss-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #ss-eds:focus-visible ~ .seg label[for="ss-eds"] > span,
+  #ss-energy_charts:focus-visible ~ .seg label[for="ss-energy_charts"] > span,
+  #ss-entsoe:focus-visible ~ .seg label[for="ss-entsoe"] > span,
+  #ss-fixed:focus-visible ~ .seg label[for="ss-fixed"] > span { outline: 2px solid var(--focus); }
+
   /* Typeafhængige felter: gruppe 'gt' */
   #gt-datahub:checked ~ .typed-fields[data-type="datahub"],
   #gt-schedule:checked ~ .typed-fields[data-type="schedule"],
@@ -2548,19 +2578,86 @@
 
         <form class="panel wide gated" data-save="prices">
           <header class="panel-head"><h3>Elpris til Odin</h3><span class="badge" data-bind="price.badge">Fra</span><button class="help-btn" type="button" popovertarget="help-price" style="anchor-name:--a-help-price" aria-label="Hjælp: Elpris til Odin">?</button></header>
-          <div id="help-price" popover class="help-pop" style="position-anchor:--a-help-price"><p>Odin planlægger varmepumpen efter elprisen. Dens indbyggede danske pris mangler nettariffen, som giver døgnet sin form. Touch henter spotpris og tariffer, lægger afgifter og moms til og sender timeprisen til Odin efter kl. 14.15 (morgendagens priser) og lige efter midnat. Mens det er slået til, bruger Odin disse priser.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#electricity-price-to-odin">Læs mere</a></div>
-          <label class="switch"><span class="switch-text"><b>Send priser til Odin</b><small>Touch regner den samlede pris ud; Odin planlægger varmen efter den</small></span><input type="checkbox" role="switch" name="enabled"></label>
-          <div class="gated-body">
+          <div id="help-price" popover class="help-pop" style="position-anchor:--a-help-price"><p>Odin planlægger varmepumpen efter elprisen. «Odin henter selv»: Touch sætter kun Odins egne prisindstillinger (spot fra Energy-Charts eller ENTSO-E plus Odins afgift og moms for området, eller en fast pris). «Touch beregner»: Touch henter spot og tariffer, lægger afgift, tillæg og moms til i din valuta og sender timeprisen til Odin efter kl. 14.15 og lige efter midnat – brug det, hvor Odins tabel er ufuldstændig, fx i Danmark (nettarif, elafgift 2026).</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#electricity-price-to-odin">Læs mere</a></div>
+          <label class="switch"><span class="switch-text"><b>Styr Odins elpris</b><small>Touch sætter Odins egen pris op eller regner prisen ud og sender den</small></span><input type="checkbox" role="switch" name="enabled"></label>
+          <div class="gated-body"><div class="subs">
+            <input class="state" type="radio" name="model" id="pm-odin" value="odin">
+            <input class="state" type="radio" name="model" id="pm-touch" value="touch" checked>
+            <div class="seg" role="radiogroup" aria-label="Prismodel" style="justify-self:start">
+              <label for="pm-odin"><span>Odin henter selv</span></label>
+              <label for="pm-touch"><span>Touch beregner</span></label>
+            </div>
             <div class="subs cols-2">
               <div class="sub">
-                <h4>Spotpris og afgifter</h4>
-                <div class="seg" role="radiogroup" aria-label="Prisområde">
-                  <label><input type="radio" name="area" value="DK1" checked><span>DK1 (vest)</span></label>
-                  <label><input type="radio" name="area" value="DK2"><span>DK2 (øst)</span></label>
+                <h4>Prisområde</h4>
+                <div class="field row"><label for="price_zone">Budområde</label><select class="select" id="price_zone" name="zone"><optgroup label="Benelux"><option value="NL">NL</option><option value="BE">BE</option></optgroup><optgroup label="Tyskland, Østrig, Schweiz"><option value="DE-LU">DE-LU</option><option value="DE-AT-LU">DE-AT-LU</option><option value="AT">AT</option><option value="CH">CH</option></optgroup><optgroup label="Frankrig og Den Iberiske Halvø"><option value="FR">FR</option><option value="ES">ES</option><option value="PT">PT</option></optgroup><optgroup label="De Britiske Øer"><option value="GB">GB</option><option value="IE">IE</option></optgroup><optgroup label="Skandinavien og Finland"><option value="DK1" selected>DK1</option><option value="DK2">DK2</option><option value="FI">FI</option><option value="SE1">SE1</option><option value="SE2">SE2</option><option value="SE3">SE3</option><option value="SE4">SE4</option><option value="NO1">NO1</option><option value="NO2">NO2</option><option value="NO3">NO3</option><option value="NO4">NO4</option><option value="NO5">NO5</option></optgroup><optgroup label="Østeuropa"><option value="PL">PL</option><option value="CZ">CZ</option><option value="SK">SK</option><option value="HU">HU</option><option value="RO">RO</option><option value="BG">BG</option><option value="SI">SI</option><option value="HR">HR</option><option value="EE">EE</option><option value="LT">LT</option><option value="LV">LV</option><option value="GR">GR</option><option value="RS">RS</option></optgroup><optgroup label="Italien"><option value="IT-North">IT-North</option></optgroup></select></div>
+                <div class="field row"><label for="price_token">ENTSO-E-token</label><input class="input w-md" type="password" id="price_token" name="entsoe_token" autocomplete="new-password" spellcheck="false" maxlength="63"></div>
+                <p class="hint">Kun nødvendig for ENTSO-E (gratis på transparency.entsoe.eu). Den gemmes, men vises aldrig igen; ved «Odin henter selv» skrives den også til Odin.</p>
+              </div>
+            </div>
+            <fieldset class="typed-fields subs cols-2" data-type="odin">
+              <div class="sub">
+                <h4>Odins egen pris</h4>
+                <input class="state" type="radio" name="odin_mode" id="om-dynamic" value="dynamic" checked>
+                <input class="state" type="radio" name="odin_mode" id="om-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="Odins pristilstand">
+                  <label for="om-dynamic"><span>Spotpris</span></label>
+                  <label for="om-fixed"><span>Fast pris</span></label>
                 </div>
-                <div class="field row"><label for="elafgift_dkk">Elafgift</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk elafgift">−</button><span class="value"><input type="number" inputmode="decimal" id="elafgift_dkk" name="elafgift_dkk" value="0.008" min="0" max="2" step="0.001"><span class="unit">kr./kWh</span></span><button type="button" data-step="1" aria-label="Hæv elafgift">+</button></div></div>
-                <div class="field row"><label for="markup_dkk">Tillæg fra elselskab</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk tillæg fra elselskab">−</button><span class="value"><input type="number" inputmode="decimal" id="markup_dkk" name="markup_dkk" value="0.000" min="-1" max="5" step="0.01"><span class="unit">kr./kWh</span></span><button type="button" data-step="1" aria-label="Hæv tillæg fra elselskab">+</button></div></div>
-                <div class="field row"><label for="vat_pct">Moms</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk moms">−</button><span class="value"><input type="number" inputmode="decimal" id="vat_pct" name="vat_pct" value="25" min="0" max="50" step="1"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Hæv moms">+</button></div></div>
+                <fieldset class="typed-fields" data-type="dynamic">
+                  <div class="seg" role="radiogroup" aria-label="Odins spotkilde">
+                    <label><input type="radio" name="odin_source" value="energy_charts" checked><span>Energy-Charts</span></label>
+                    <label><input type="radio" name="odin_source" value="entsoe"><span>ENTSO-E</span></label>
+                  </div>
+                  <p class="hint">Odin lægger sin egen afgift og moms for området til og skifter til den anden kilde, hvis den ene fejler.</p>
+                </fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  <div class="field row"><label for="odin_fixed_price">Fast pris</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk fast pris">−</button><span class="value"><input type="number" inputmode="decimal" id="odin_fixed_price" name="odin_fixed_price" value="0.250" min="0" max="5" step="0.01"><span class="unit">€/kWh</span></span><button type="button" data-step="1" aria-label="Hæv fast pris">+</button></div></div>
+                </fieldset>
+                <p class="hint" data-bind="price.dkNote">For DK1/DK2 er Odins afgift forældet (0,10 €/kWh i stedet for elafgiften 0,008 kr. i 2026), og den har ingen nettarif – vælg «Touch beregner».</p>
+              </div>
+              <div class="sub">
+                <h4>Odin nu</h4>
+                <dl class="kv">
+                  <div><dt>Priskilde</dt><dd data-bind="price.odin.mode">—</dd></div>
+                  <div><dt>Område</dt><dd data-bind="price.odin.zone">—</dd></div>
+                  <div><dt>Fast pris</dt><dd data-bind="price.odin.fixed">—</dd></div>
+                  <div><dt>ENTSO-E-token</dt><dd data-bind="price.odin.token">—</dd></div>
+                </dl>
+                <div class="actions"><button class="btn" type="button" data-action="price-odin-write">Skriv til Odin nu</button></div>
+                <div class="test-result" data-bind-price-odin-result aria-live="polite"></div>
+              </div>
+            </fieldset>
+            <fieldset class="typed-fields subs cols-2" data-type="touch">
+              <div class="sub">
+                <h4>Spotpris</h4>
+                <input class="state" type="radio" name="spot_source" id="ss-eds" value="eds" checked>
+                <input class="state" type="radio" name="spot_source" id="ss-energy_charts" value="energy_charts">
+                <input class="state" type="radio" name="spot_source" id="ss-entsoe" value="entsoe">
+                <input class="state" type="radio" name="spot_source" id="ss-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="Kilde til spotpris">
+                  <label for="ss-eds" data-dk-only><span>Energi Data Service</span></label>
+                  <label for="ss-energy_charts"><span>Energy-Charts</span></label>
+                  <label for="ss-entsoe"><span>ENTSO-E</span></label>
+                  <label for="ss-fixed"><span>Fast</span></label>
+                </div>
+                <fieldset class="typed-fields" data-type="eds"><p class="hint">Kun Danmark. Priser i kr. og euro; valutakursen kommer fra de samme data.</p></fieldset>
+                <fieldset class="typed-fields" data-type="energy_charts"><p class="hint">Gratis, alle områder. Bruger ENTSO-E i stedet, hvis Energy-Charts fejler og der er en token.</p></fieldset>
+                <fieldset class="typed-fields" data-type="entsoe"><p class="hint">Kræver ENTSO-E-token ovenfor. Bruger Energy-Charts i stedet, hvis ENTSO-E fejler.</p></fieldset>
+                <fieldset class="typed-fields" data-type="fixed">
+                  <div class="field row"><label for="spot_fixed_eur">Fast spotpris</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk fast spotpris">−</button><span class="value"><input type="number" inputmode="decimal" id="spot_fixed_eur" name="spot_fixed_eur" value="0.100" min="-1" max="5" step="0.01"><span class="unit">€/kWh</span></span><button type="button" data-step="1" aria-label="Hæv fast spotpris">+</button></div></div>
+                </fieldset>
+              </div>
+              <div class="sub">
+                <h4>Valuta og afgifter</h4>
+                <div class="field row"><label for="price_currency">Valuta</label><select class="select" id="price_currency" name="currency"><option value="EUR" data-fx="1.0">EUR</option><option value="DKK" data-fx="7.46" selected>DKK</option><option value="SEK" data-fx="11.0">SEK</option><option value="NOK" data-fx="11.7">NOK</option><option value="CHF" data-fx="0.94">CHF</option><option value="PLN" data-fx="4.25">PLN</option><option value="CZK" data-fx="24.3">CZK</option><option value="HUF" data-fx="395.0">HUF</option><option value="RON" data-fx="5.08">RON</option><option value="BGN" data-fx="1.95583">BGN</option><option value="GBP" data-fx="0.86">GBP</option><option value="RSD" data-fx="117.2">RSD</option></select></div>
+                <div class="field row"><label for="fx">Valutakurs<span class="hint">Valuta pr. euro. Bruges ikke ved EUR; Energi Data Service i kr. bruger sin egen kurs.</span></label><input class="input w-sm" type="number" inputmode="decimal" id="fx" name="fx" value="7.46" min="0.01" max="10000" step="any"></div>
+                <div class="field row"><label for="energy_tax">Elafgift</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk elafgift">−</button><span class="value"><input type="number" inputmode="decimal" id="energy_tax" name="energy_tax" value="0.008" min="0" max="500" step="0.001"><span class="unit" data-price-cur>DKK</span></span><button type="button" data-step="1" aria-label="Hæv elafgift">+</button></div></div>
+                <div class="field row"><label for="markup">Tillæg fra elselskab</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk tillæg fra elselskab">−</button><span class="value"><input type="number" inputmode="decimal" id="markup" name="markup" value="0.000" min="-100" max="500" step="0.01"><span class="unit" data-price-cur>DKK</span></span><button type="button" data-step="1" aria-label="Hæv tillæg fra elselskab">+</button></div></div>
+                <div class="field row"><label for="vat_pct">Moms</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk moms">−</button><span class="value"><input type="number" inputmode="decimal" id="vat_pct" name="vat_pct" value="25.0" min="0" max="50" step="0.5"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Hæv moms">+</button></div></div>
+                <div class="actions"><button class="btn" type="button" data-action="price-zone-defaults">Brug områdets standard</button></div>
+                <p class="hint">Beløb er pr. kWh uden moms.</p>
+                <p class="hint" data-bind="price.defaultsNote" aria-live="polite">Udfylder valuta, kurs, elafgift, moms og kilder for området (Odins tabel; Danmark får satserne for 2026). Intet ændres, før du gemmer.</p>
               </div>
               <div class="sub">
                 <h4>Nettarif</h4>
@@ -2568,7 +2665,7 @@
                 <input class="state" type="radio" name="grid_source" id="gt-schedule" value="schedule">
                 <input class="state" type="radio" name="grid_source" id="gt-none" value="none">
                 <div class="seg" role="radiogroup" aria-label="Kilde til nettarif">
-                  <label for="gt-datahub"><span>DataHub</span></label>
+                  <label for="gt-datahub" data-dk-only><span>DataHub</span></label>
                   <label for="gt-schedule"><span>Eget skema</span></label>
                   <label for="gt-none"><span>Ingen</span></label>
                 </div>
@@ -2579,7 +2676,7 @@
                 </fieldset>
                 <fieldset class="typed-fields" data-type="schedule">
                   <div class="table-wrap"><table class="table">
-                    <thead><tr><th>Fra kl.</th><th class="num">kr./kWh</th><th></th></tr></thead>
+                    <thead><tr><th>Fra kl.</th><th class="num" data-price-unit>DKK/kWh</th><th></th></tr></thead>
                     <tbody data-bind-price-sched></tbody>
                   </table></div>
                   <input type="hidden" name="grid_schedule" value='[{"h":0,"v":0.077},{"h":6,"v":0.231},{"h":17,"v":0.692},{"h":21,"v":0.231}]'>
@@ -2591,18 +2688,19 @@
                 </fieldset>
               </div>
               <div class="sub">
-                <h4>Energinets tariffer</h4>
-                <input class="state" type="radio" name="energinet_source" id="en-datahub" value="datahub" checked>
-                <input class="state" type="radio" name="energinet_source" id="en-fixed" value="fixed">
-                <div class="seg" role="radiogroup" aria-label="Kilde til Energinets tariffer">
-                  <label for="en-datahub"><span>DataHub</span></label>
+                <h4>System- og transmissionstarif</h4>
+                <input class="state" type="radio" name="system_source" id="en-datahub" value="datahub" checked>
+                <input class="state" type="radio" name="system_source" id="en-fixed" value="fixed">
+                <div class="seg" role="radiogroup" aria-label="Kilde til systemtarif">
+                  <label for="en-datahub" data-dk-only><span>DataHub</span></label>
                   <label for="en-fixed"><span>Fast</span></label>
                 </div>
                 <fieldset class="typed-fields" data-type="datahub">
-                  <p class="hint">Transmissions- og systemtarif fra DataHub (2026: 0,115 kr./kWh i alt).</p>
+                  <p class="hint">Energinets transmissions- og systemtarif fra DataHub (2026: 0,115 kr./kWh i alt).</p>
                 </fieldset>
                 <fieldset class="typed-fields" data-type="fixed">
-                  <div class="field row"><label for="energinet_fixed_dkk">Energinets tariffer</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk energinets tariffer">−</button><span class="value"><input type="number" inputmode="decimal" id="energinet_fixed_dkk" name="energinet_fixed_dkk" value="0.115" min="-1" max="5" step="0.001"><span class="unit">kr./kWh</span></span><button type="button" data-step="1" aria-label="Hæv energinets tariffer">+</button></div></div>
+                  <div class="field row"><label for="system_fixed">Tarif</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk tarif">−</button><span class="value"><input type="number" inputmode="decimal" id="system_fixed" name="system_fixed" value="0.115" min="-100" max="500" step="0.001"><span class="unit" data-price-cur>DKK</span></span><button type="button" data-step="1" aria-label="Hæv tarif">+</button></div></div>
+                  <p class="hint">Uden moms. Brug 0, hvis den ikke opkræves for sig.</p>
                 </fieldset>
               </div>
               <div class="sub">
@@ -2610,6 +2708,7 @@
                 <dl class="kv">
                   <div><dt>Sidst sendt</dt><dd data-bind="price.lastPush">—</dd></div>
                   <div><dt>Timer sendt</dt><dd data-bind="price.hours">—</dd></div>
+                  <div><dt>Spot fra</dt><dd data-bind="price.spotUsed">—</dd></div>
                   <div><dt>Odins priskilde</dt><dd data-bind="price.odinMode">—</dd></div>
                   <div><dt>Problem</dt><dd data-bind="price.problem">—</dd></div>
                 </dl>
@@ -2621,7 +2720,7 @@
                 <h4>Dagens pris</h4>
                 <div class="bars" style="--bars-n:24"><div class="bars-plot" data-bind-price-bars></div>
                   <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
-                <p class="hint">Samlet pris i kr./kWh inkl. tariffer, afgifter og moms.</p>
+                <p class="hint" data-bind="price.inclAll">Samlet pris i DKK/kWh inkl. tariffer, afgifter og moms.</p>
                 <dl class="kv">
                   <div><dt>Nu</dt><dd data-bind="price.now">—</dd></div>
                   <div><dt>Billigste time</dt><dd data-bind="price.min">—</dd></div>
@@ -2629,8 +2728,8 @@
                   <div><dt>Gennemsnit kl. 17–21</dt><dd data-bind="price.peak">—</dd></div>
                 </dl>
               </div>
-            </div>
-          </div>
+            </fieldset>
+          </div></div>
           <footer class="panel-foot"><span class="save-status" id="ss-prices" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem prisindstillinger</button></footer>
         </form>
 
@@ -2756,7 +2855,7 @@
   </main>
 </div>
 
-<script type="application/json" id="i18n">{"rt.savedOk":"Gemt","rt.saveFailed":"Gem fejlede","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt — prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{n} s siden","rt.minutesAgo":"{n} min siden","rt.offline":"Offline","common.undo":"Fortryd","state.calling":"Kalder på varme","state.idle":"I ro","state.fault":"Fejl","state.off":"Ikke i brug","tile.fault":"Fejl","tile.off":"Fra","badge.ok":"Ok","badge.warn":"Opmerk","badge.bad":"Fejl","badge.calling":"Kalder","common.on":"Til","common.off":"Fra","common.approve":"Godkend","common.remove":"Fjern","common.days":"dage","common.faults":"{n} fejl","common.noFaults":"ingen fejl","device.this":"denne enhed","device.copied":"Kopieret","device.copyDiag":"Kopiér diagnostik","dash.house.sub":"{manifolds} styringer · {calling} zoner kalder · {faults} fejl","dash.manifold.sub":"{zones} zoner · {calling} kalder · {state}","dash.zone.sub":"{state} · mål {target}°C","fc.sub":"72 timer · {model} · hentet {time}","alert.boardFault":"{board} svarer ikke","ctrl.removeTitle":"Fjern styring","ctrl.removeAsk":"Fjern {name}?","ctrl.removeConfirm":"Fjern {name}? Rum der kun er mappet hertil bliver tomme.","ctrl.removeBtn":"Fjern…","ctrl.removeDo":"Fjern","ctrl.editName":"Redigér navn","ctrl.found":"Fundet","ctrl.addRow":"Tilføj","ctrl.empty":"Ingen styringer endnu. Scan netværket eller tilføj et værtsnavn.","ctrl.host":"Værtsnavn eller IP","common.unnamed":"Unavngivet","common.cancel":"Annullér","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Forbundet","heat.badge.bad":"Utilgængelig","heat.badge.off":"Slået fra","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Sendes ikke – slået fra","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Tester…","hs.testReadOk":"Læsning OK · {time} · {code} · {ms} ms","hs.testPushOk":"Afsendelse OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C fra {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Tjek host og port, og at varmekilden kan nås.","hs.testCheckDns":"Tjek at værtsnavnet kan slås op.","hs.testCheckHttp":"Tjek endpoint, og at varmekilden svarer.","hs.testStatus.failed":"Fejl","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Adresse mangler","hs.testReason.network":"Intet netværk","hs.testReason.endpoint":"Ugyldigt endpoint","hs.testReason.notReady":"Varmekilde er ikke klar","hs.testReason.busy":"Optaget","hs.testReason.rejected":"Afvist","status.trusted":"Godkendt","status.paired":"Venter","status.unpaired":"Venter","status.waiting":"Venter","status.unreachable":"Ingen forbindelse","status.confirmed":"Bekræftet","status.sent":"Sendt","status.mismatch":"Afviger","status.blocked":"Blokeret","status.unknown":"Ukendt","status.disabled":"Slået fra","scope.title.house":"Hus","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Under mål","house.at":"Ved mål","house.above":"Over mål","dash.house.sub.one":"{manifolds} styringer · {calling} zone kalder · {faults} fejl","fc.badge":"Preload +{v} °C","fc.windFrom":"fra {dir}","fc.dirTitle":"{time}: {speed} m/s fra {dir}","fc.sky.sun":"Sol","fc.sky.partly":"Delvis sol","fc.sky.cloud":"Skyet","fc.sky.rain":"Regn","fc.sky.snow":"Sne","fc.sky.moon":"Klar nat","diag.pollOk":"OK","diag.pollFail":"{n} fejlede polls","rooms.includeAria":"Medregn {name} i hustemperatur","rooms.weightAria":"Vægt for {name}","rooms.windAria":"Vindpåvirkning for {name}","rooms.solarAria":"Solindfald for {name}","m.supplyShort":"Frem","m.returnShort":"Ret","strip.sub":"Zoner på {name}","diag.ota.valid":"Bekræftet","diag.ota.pending_verify":"Afventer bekræftelse","diag.ota.new":"Ny, ikke startet","diag.ota.invalid":"Afvist","diag.ota.aborted":"Afvist","diag.ota.undefined":"Fabriksimage","hs.notSentLease":"Ikke sendt – V6 har ikke givet Touch lease","hs.route.odin_schedule":"Odins komfortplan","hp.compOn":"kompressor {hz} Hz","hp.compOff":"kompressor slukket","flow.none":"Ingen åbne sløjfer – pumpen kører på minimumsflow.","flow.note":"Omtrentlig: beregnet ud fra ventilåbningen. Rørlængde frem til hver manifold er ikke med.","flow.noteLpm":"Omtrentlig: beregnet ud fra ventilåbningen og pumpens flow. Rørlængde frem til hver manifold er ikke med.","flow.zoneTip":"{zone}: ventil {v} % · {pct} % af manifolden","flow.closed":"lukket","fc.now":"Nu","role.reserve":"Reserve – Odin styrer. Asgard bruger målet (uløftet), hvis Odin stopper.","role.reserveNow":"Reserve – Odin styrer pumpen nu. Asgard bruger målet, hvis Odin stopper.","role.asgardNow":"Aktiv – Asgard styrer selv lige nu og varmer efter målet.","role.offOdin":"Fra – stopper Odin, bruger Asgard sit eget setpunkt. Slå synkronisering til.","role.drives":"Styrer – Asgard varmer efter målet (+{c} °C ved behov).","role.off":"Fra – Asgard får ikke husets mål.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Varmer {kw} kW","now.off":"Slukket","now.dhw":"Varmt vand","planG.odin":"Odin","planG.noOdin":"Ingen Odin-plan","planG.tip.heat":"{h} · rumvarme {kwh} kWh","planG.tip.dhw":"{h} · varmt vand {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Forvarme +{c} °C","planG.tipCharge":"Opladning +{c} °C","planG.tipInsufficient":"Opladning +{c} °C – gulvet kan ikke dække hele underskuddet","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Komfortbånd løftet +{c} °C","hs.mqttPasswordSet":"Gemt – lad feltet stå tomt for at beholde den","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"forbundet","hs.mqttDisconnected":"ikke forbundet","hs.mqttOff":"MQTT: slået fra","ctrl.editHost":"Skift adresse","ctrl.hostInvalid":"Ikke en gyldig IP-adresse eller værtsnavn","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune Touch Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","strip.lease.refused":"V6 afviste Touch-lease – kører lokalt","strip.lease.none":"Ingen Touch-lease – kører lokalt","strip.charge.now":"Lader gulvet op (+{c} °C) før vind og kulde","strip.charge.insufficient":"Lader op (+{c} °C) – gulvet kan ikke dække hele underskuddet","hs.link.ok":"OK – Odin får data og lærer","hs.link.forwarder_off":"Asgard sender ikke til Odin – Odin lærer ikke","hs.link.telemetry_stale":"Odin får ikke frisk telemetri ({s} min) – Odin lærer ikke","hs.link.no_room_temperature":"Odin får ingen rumtemperatur – Odin lærer ikke","hs.link.odin_unreachable":"Odin svarer ikke","hs.link.unknown":"Ukendt","hs.odinStatus.disabled":"Fra","hs.odinStatus.idle":"Venter på første kontrol","hs.odinStatus.watching":"Overvåger – intet løft nu","hs.odinStatus.lifted":"Løftet +{c} °C fra kl. {h}:00 i {n} t","hs.odinStatus.yielded":"På pause – planen er ændret i Odin","hs.odinStatus.rate_limited":"Venter – højst én ændring pr. 20 min","hs.odinStatus.write_failed":"Kunne ikke skrive til Odin","hs.odinStatus.odin_unreachable":"Odin svarer ikke","hs.odinStatus.schedule_unreadable":"Odins plan kunne ikke læses","hs.odinStatus.clock_invalid":"Touch-uret er ikke sat","hs.odinWanted":"ønsket +{c} °C fra kl. {h}:00 i {n} t","hs.route.virtual_thermostat":"Asgards virtuelle termostat (+{c} °C)","hs.route.generic":"Varmekildens input (+{c} °C)","hs.route.none":"Ingen – Odin styrer efter sin egen plan","hs.leverState":"Mål {t} °C · varmebehov {r} · kurve +{c} °C","price.state.ok":"Sendt","price.state.waiting":"Venter","price.state.running":"Sender","price.state.error":"Fejlet","price.state.disabled":"Fra","price.odinMode.api":"Touch","price.odinMode.energy_charts":"Odins egen (Energy-Charts)","price.odinMode.unknown":"Ikke sat endnu","price.odinMode.pending":"Skiftes","price.err.spot":"Spotprisen kunne ikke hentes","price.err.spot_incomplete":"Dagens spotpris er ufuldstændig","price.err.grid":"Nettariffen kunne ikke hentes – tjek GLN og tarifkode","price.err.energinet":"Energinets tariffer kunne ikke hentes","price.err.odin":"Odin tog ikke imod priserne","price.err.no_odin_host":"Ingen Odin-adresse – angiv den under Varmekilde","price.err.clock":"Touch kender ikke klokken endnu","price.err.other":"Prisen kunne ikke beregnes","price.cached":"Tarif fra seneste vellykkede hentning","price.noOdinHost":"Angiv først Odins adresse under Varmekilde.","price.pushOk":"Sendt til Odin · {time}","price.pushOkBody":"{n} timer fra kl. 00 i dag","price.pushFail":"Ikke sendt · {time}","price.pushPending":"Touch har ikke svaret endnu – se Status om lidt","price.pushDisabled":"Slå «Send priser til Odin» til først","price.schedRemove":"Fjern periode","price.schedHourAria":"Starttime","price.schedValueAria":"Pris i kr./kWh uden moms","price.atHour":"{v} kl. {h}","price.hoursValue":"{n} t fra kl. 00 i dag","price.unitDkk":"kr./kWh","price.noData":"Ingen priser endnu","price.lastPushValue":"{time}","_dec":",","_walls":{"n":"N","e":"Ø","s":"S","w":"V"},"_lang":"da"}</script>
+<script type="application/json" id="i18n">{"rt.savedOk":"Gemt","rt.saveFailed":"Gem fejlede","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt — prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{n} s siden","rt.minutesAgo":"{n} min siden","rt.offline":"Offline","common.undo":"Fortryd","state.calling":"Kalder på varme","state.idle":"I ro","state.fault":"Fejl","state.off":"Ikke i brug","tile.fault":"Fejl","tile.off":"Fra","badge.ok":"Ok","badge.warn":"Opmerk","badge.bad":"Fejl","badge.calling":"Kalder","common.on":"Til","common.off":"Fra","common.approve":"Godkend","common.remove":"Fjern","common.days":"dage","common.faults":"{n} fejl","common.noFaults":"ingen fejl","device.this":"denne enhed","device.copied":"Kopieret","device.copyDiag":"Kopiér diagnostik","dash.house.sub":"{manifolds} styringer · {calling} zoner kalder · {faults} fejl","dash.manifold.sub":"{zones} zoner · {calling} kalder · {state}","dash.zone.sub":"{state} · mål {target}°C","fc.sub":"72 timer · {model} · hentet {time}","alert.boardFault":"{board} svarer ikke","ctrl.removeTitle":"Fjern styring","ctrl.removeAsk":"Fjern {name}?","ctrl.removeConfirm":"Fjern {name}? Rum der kun er mappet hertil bliver tomme.","ctrl.removeBtn":"Fjern…","ctrl.removeDo":"Fjern","ctrl.editName":"Redigér navn","ctrl.found":"Fundet","ctrl.addRow":"Tilføj","ctrl.empty":"Ingen styringer endnu. Scan netværket eller tilføj et værtsnavn.","ctrl.host":"Værtsnavn eller IP","common.unnamed":"Unavngivet","common.cancel":"Annullér","tile.manifold.live":"{id} {name}. {addr}","heat.badge.ok":"Forbundet","heat.badge.bad":"Utilgængelig","heat.badge.off":"Slået fra","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Sendes ikke – slået fra","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Tester…","hs.testReadOk":"Læsning OK · {time} · {code} · {ms} ms","hs.testPushOk":"Afsendelse OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C fra {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Tjek host og port, og at varmekilden kan nås.","hs.testCheckDns":"Tjek at værtsnavnet kan slås op.","hs.testCheckHttp":"Tjek endpoint, og at varmekilden svarer.","hs.testStatus.failed":"Fejl","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Adresse mangler","hs.testReason.network":"Intet netværk","hs.testReason.endpoint":"Ugyldigt endpoint","hs.testReason.notReady":"Varmekilde er ikke klar","hs.testReason.busy":"Optaget","hs.testReason.rejected":"Afvist","status.trusted":"Godkendt","status.paired":"Venter","status.unpaired":"Venter","status.waiting":"Venter","status.unreachable":"Ingen forbindelse","status.confirmed":"Bekræftet","status.sent":"Sendt","status.mismatch":"Afviger","status.blocked":"Blokeret","status.unknown":"Ukendt","status.disabled":"Slået fra","scope.title.house":"Hus","scope.title.manifold":"{id} {name}","scope.title.zone":"{id} {name}","house.below":"Under mål","house.at":"Ved mål","house.above":"Over mål","dash.house.sub.one":"{manifolds} styringer · {calling} zone kalder · {faults} fejl","fc.badge":"Preload +{v} °C","fc.windFrom":"fra {dir}","fc.dirTitle":"{time}: {speed} m/s fra {dir}","fc.sky.sun":"Sol","fc.sky.partly":"Delvis sol","fc.sky.cloud":"Skyet","fc.sky.rain":"Regn","fc.sky.snow":"Sne","fc.sky.moon":"Klar nat","diag.pollOk":"OK","diag.pollFail":"{n} fejlede polls","rooms.includeAria":"Medregn {name} i hustemperatur","rooms.weightAria":"Vægt for {name}","rooms.windAria":"Vindpåvirkning for {name}","rooms.solarAria":"Solindfald for {name}","m.supplyShort":"Frem","m.returnShort":"Ret","strip.sub":"Zoner på {name}","diag.ota.valid":"Bekræftet","diag.ota.pending_verify":"Afventer bekræftelse","diag.ota.new":"Ny, ikke startet","diag.ota.invalid":"Afvist","diag.ota.aborted":"Afvist","diag.ota.undefined":"Fabriksimage","hs.notSentLease":"Ikke sendt – V6 har ikke givet Touch lease","hs.route.odin_schedule":"Odins komfortplan","hp.compOn":"kompressor {hz} Hz","hp.compOff":"kompressor slukket","flow.none":"Ingen åbne sløjfer – pumpen kører på minimumsflow.","flow.note":"Omtrentlig: beregnet ud fra ventilåbningen. Rørlængde frem til hver manifold er ikke med.","flow.noteLpm":"Omtrentlig: beregnet ud fra ventilåbningen og pumpens flow. Rørlængde frem til hver manifold er ikke med.","flow.zoneTip":"{zone}: ventil {v} % · {pct} % af manifolden","flow.closed":"lukket","fc.now":"Nu","role.reserve":"Reserve – Odin styrer. Asgard bruger målet (uløftet), hvis Odin stopper.","role.reserveNow":"Reserve – Odin styrer pumpen nu. Asgard bruger målet, hvis Odin stopper.","role.asgardNow":"Aktiv – Asgard styrer selv lige nu og varmer efter målet.","role.offOdin":"Fra – stopper Odin, bruger Asgard sit eget setpunkt. Slå synkronisering til.","role.drives":"Styrer – Asgard varmer efter målet (+{c} °C ved behov).","role.off":"Fra – Asgard får ikke husets mål.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Varmer {kw} kW","now.off":"Slukket","now.dhw":"Varmt vand","planG.odin":"Odin","planG.noOdin":"Ingen Odin-plan","planG.tip.heat":"{h} · rumvarme {kwh} kWh","planG.tip.dhw":"{h} · varmt vand {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Forvarme +{c} °C","planG.tipCharge":"Opladning +{c} °C","planG.tipInsufficient":"Opladning +{c} °C – gulvet kan ikke dække hele underskuddet","planG.tipHeat":"{h}: {kw} kW","planG.tipLift":"Komfortbånd løftet +{c} °C","hs.mqttPasswordSet":"Gemt – lad feltet stå tomt for at beholde den","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"forbundet","hs.mqttDisconnected":"ikke forbundet","hs.mqttOff":"MQTT: slået fra","ctrl.editHost":"Skift adresse","ctrl.hostInvalid":"Ikke en gyldig IP-adresse eller værtsnavn","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune Touch Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","strip.lease.refused":"V6 afviste Touch-lease – kører lokalt","strip.lease.none":"Ingen Touch-lease – kører lokalt","strip.charge.now":"Lader gulvet op (+{c} °C) før vind og kulde","strip.charge.insufficient":"Lader op (+{c} °C) – gulvet kan ikke dække hele underskuddet","hs.link.ok":"OK – Odin får data og lærer","hs.link.forwarder_off":"Asgard sender ikke til Odin – Odin lærer ikke","hs.link.telemetry_stale":"Odin får ikke frisk telemetri ({s} min) – Odin lærer ikke","hs.link.no_room_temperature":"Odin får ingen rumtemperatur – Odin lærer ikke","hs.link.odin_unreachable":"Odin svarer ikke","hs.link.unknown":"Ukendt","hs.odinStatus.disabled":"Fra","hs.odinStatus.idle":"Venter på første kontrol","hs.odinStatus.watching":"Overvåger – intet løft nu","hs.odinStatus.lifted":"Løftet +{c} °C fra kl. {h}:00 i {n} t","hs.odinStatus.yielded":"På pause – planen er ændret i Odin","hs.odinStatus.rate_limited":"Venter – højst én ændring pr. 20 min","hs.odinStatus.write_failed":"Kunne ikke skrive til Odin","hs.odinStatus.odin_unreachable":"Odin svarer ikke","hs.odinStatus.schedule_unreadable":"Odins plan kunne ikke læses","hs.odinStatus.clock_invalid":"Touch-uret er ikke sat","hs.odinWanted":"ønsket +{c} °C fra kl. {h}:00 i {n} t","hs.route.virtual_thermostat":"Asgards virtuelle termostat (+{c} °C)","hs.route.generic":"Varmekildens input (+{c} °C)","hs.route.none":"Ingen – Odin styrer efter sin egen plan","hs.leverState":"Mål {t} °C · varmebehov {r} · kurve +{c} °C","price.state.ok":"Sendt","price.state.waiting":"Venter","price.state.running":"Sender","price.state.error":"Fejlet","price.state.disabled":"Fra","price.odinMode.api":"Touch","price.odinMode.energy_charts":"Odins egen (Energy-Charts)","price.odinMode.unknown":"Ikke sat endnu","price.odinMode.pending":"Skiftes","price.err.spot":"Spotprisen kunne ikke hentes","price.err.spot_incomplete":"Dagens spotpris er ufuldstændig","price.err.grid":"Nettariffen kunne ikke hentes – tjek GLN og tarifkode","price.err.energinet":"Systemtariffen kunne ikke hentes","price.err.odin":"Odin tog ikke imod priserne","price.err.no_odin_host":"Ingen Odin-adresse – angiv den under Varmekilde","price.err.clock":"Touch kender ikke klokken endnu","price.err.other":"Prisen kunne ikke beregnes","price.cached":"Tarif fra seneste vellykkede hentning","price.noOdinHost":"Angiv først Odins adresse under Varmekilde.","price.pushOk":"Sendt til Odin · {time}","price.pushOkBody":"{n} timer fra kl. 00 i dag","price.pushFail":"Ikke sendt · {time}","price.pushPending":"Touch har ikke svaret endnu – se Status om lidt","price.pushDisabled":"Slå «Send priser til Odin» til først","price.schedRemove":"Fjern periode","price.schedHourAria":"Starttime","price.schedValueAria":"Pris i kr./kWh uden moms","price.atHour":"{v} kl. {h}","price.hoursValue":"{n} t fra kl. 00 i dag","price.noData":"Ingen priser endnu","price.lastPushValue":"{time}","price.state.odin":"Odin henter","price.odinMode.fixed":"Fast pris","price.odinMode.entsoe":"ENTSO-E","price.tokenSet":"Angivet","price.tokenUnset":"Ikke angivet","price.tokenSaved":"Gemt – skriv en ny for at erstatte den","price.inclAll":"Samlet pris i {cur}/kWh inkl. tariffer, afgifter og moms.","price.defaultsApplied":"Standard for {zone} udfyldt – gem for at bruge den","price.defaultsUnknown":"{zone} findes ikke i tabellen: 0 i afgift og 21 % moms udfyldt","price.odinWriteOk":"Skrevet til Odin · {time}","price.odinWriteFail":"Ikke skrevet · {time}","price.spotUsed.eds":"Energi Data Service","price.spotUsed.energy_charts":"Energy-Charts","price.spotUsed.entsoe":"ENTSO-E","price.spotUsed.fixed":"Fast pris","price.spotFallback":"{src} (reserve)","price.err.datahub_dk_only":"DataHub og Energi Data Service dækker kun Danmark","price.err.no_token":"ENTSO-E kræver en token","price.odinMode.dynamic":"Spotpris","_dec":",","_walls":{"n":"N","e":"Ø","s":"S","w":"V"},"_lang":"da"}</script>
 <script>window.LUNE_TOUCH_MOCK=true;</script>
 <script src="ui.js" defer></script>
 <script>

@@ -1938,6 +1938,36 @@
   [data-hs-type="http"] .hs-type-asgard { display: none; }
   [data-hs-type="asgard"] .hs-type-http { display: none; }
 
+  /* Typeafhængige felter: gruppe 'pm' */
+  #pm-odin:checked ~ .typed-fields[data-type="odin"],
+  #pm-touch:checked ~ .typed-fields[data-type="touch"] { display: grid; }
+  #pm-odin:checked ~ .seg label[for="pm-odin"] > span,
+  #pm-touch:checked ~ .seg label[for="pm-touch"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #pm-odin:focus-visible ~ .seg label[for="pm-odin"] > span,
+  #pm-touch:focus-visible ~ .seg label[for="pm-touch"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'om' */
+  #om-dynamic:checked ~ .typed-fields[data-type="dynamic"],
+  #om-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #om-dynamic:checked ~ .seg label[for="om-dynamic"] > span,
+  #om-fixed:checked ~ .seg label[for="om-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #om-dynamic:focus-visible ~ .seg label[for="om-dynamic"] > span,
+  #om-fixed:focus-visible ~ .seg label[for="om-fixed"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'ss' */
+  #ss-eds:checked ~ .typed-fields[data-type="eds"],
+  #ss-energy_charts:checked ~ .typed-fields[data-type="energy_charts"],
+  #ss-entsoe:checked ~ .typed-fields[data-type="entsoe"],
+  #ss-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #ss-eds:checked ~ .seg label[for="ss-eds"] > span,
+  #ss-energy_charts:checked ~ .seg label[for="ss-energy_charts"] > span,
+  #ss-entsoe:checked ~ .seg label[for="ss-entsoe"] > span,
+  #ss-fixed:checked ~ .seg label[for="ss-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #ss-eds:focus-visible ~ .seg label[for="ss-eds"] > span,
+  #ss-energy_charts:focus-visible ~ .seg label[for="ss-energy_charts"] > span,
+  #ss-entsoe:focus-visible ~ .seg label[for="ss-entsoe"] > span,
+  #ss-fixed:focus-visible ~ .seg label[for="ss-fixed"] > span { outline: 2px solid var(--focus); }
+
   /* Typeafhængige felter: gruppe 'gt' */
   #gt-datahub:checked ~ .typed-fields[data-type="datahub"],
   #gt-schedule:checked ~ .typed-fields[data-type="schedule"],

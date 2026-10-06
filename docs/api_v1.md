@@ -1225,54 +1225,84 @@ requested/confirmed values, and `error` for commissioning logs.
 
 ### `GET /prices`
 
-Energy price → Odin: settings, status and the hourly breakdown (DKK/kWh) for the
-current local day and, once published, tomorrow.
+Electricity price for Odin: settings, Odin's own price settings, push status and the
+hourly breakdown (calculation currency per kWh) for the current local day and, once
+published, tomorrow. The ENTSO-E token is never returned (`entsoe_token_set`,
+`odin.current.token_set`).
 
 ```json
-{"available":true,"enabled":true,"area":"DK1",
+{"available":true,"enabled":true,"model":"touch","zone":"DK1","dk":true,
+ "spot":{"source":"eds","fixed_eur":0.1000},"currency":"DKK","fx":7.4600,
  "grid":{"source":"datahub","gln":"5790000610976","code":"TNT1009",
          "schedule":[{"h":0,"v":0.077},{"h":6,"v":0.231},{"h":17,"v":0.692},{"h":21,"v":0.231}]},
- "energinet":{"source":"datahub","fixed_dkk":0.1150},
- "elafgift_dkk":0.0080,"markup_dkk":0.0000,"vat_pct":25.00,"odin_host_set":true,
- "status":{"state":"ok","reason":"day_ahead","odin_source":"api","source_pending":false,
+ "system":{"source":"datahub","fixed":0.1150},
+ "energy_tax":0.0080,"markup":0.0000,"vat_pct":25.00,"entsoe_token_set":false,"odin_host_set":true,
+ "odin":{"mode":"dynamic","source":"energy_charts","fixed_price":0.2500,
+         "current":{"known":true,"price_mode":"dynamic","price_source":"api","ec_bzn":"DK1",
+                    "fixed_price":0.250000,"token_set":true,"age_s":120}},
+ "status":{"state":"ok","pushes":true,"reason":"day_ahead","odin_source":"api","odin_write_pending":false,
            "last_fetch_age_s":120,"last_push_epoch":1791296100,"last_attempt_epoch":1791296100,
-           "hours_pushed":48,"fx":7.473600,"grid_from_cache":false,"energinet_from_cache":false,
-           "last_error":""},
- "today":{"date":"2026-10-06","spot":[…24],"grid":[…24],"energinet":[…24],"total":[…24]},
+           "hours_pushed":48,"fx":7.473600,"spot_used":"eds","spot_fallback":false,
+           "grid_from_cache":false,"system_from_cache":false,"last_error":""},
+ "today":{"date":"2026-10-06","spot":[…24],"grid":[…24],"system":[…24],"total":[…24]},
  "tomorrow":null}
 ```
 
-`status.state`: `disabled` | `waiting` (nothing pushed for today yet) | `running` |
-`ok` (today's array is in Odin) | `error` (`last_error`, e.g. `spot_http_503`,
-`spot_incomplete`, `grid_no_records`, `energinet_…`, `odin_http_400`, `no_odin_host`,
-`clock_invalid`). `reason` is what triggered the last attempt: `boot`, `midnight`,
-`day_ahead`, `retry`, `request`. `spot`/`grid`/`energinet` exclude VAT; `total` is the
-all-in price incl. elafgift, markup and VAT.
+`model`: `odin` (Touch writes Odin's own price settings) | `touch` (Touch computes and
+pushes). `status.state`: `disabled` | `odin` (Odin model, settings written) | `waiting` |
+`running` | `ok` (today's array is in Odin) | `error` (`last_error`, e.g.
+`spot_ec_http_429`, `spot_entsoe_http_401`, `spot_entsoe_no_token`, `spot_incomplete`,
+`grid_no_records`, `system_…`, `grid_datahub_dk_only`, `odin_http_400`, `no_odin_host`,
+`clock_invalid`). `spot_used`: `eds` | `energy_charts` | `entsoe` | `fixed`
+(`spot_fallback` when the other source answered). `fx` is the rate used (the data's own
+DKK/EUR for Energi Data Service in DKK, 1 for EUR). `odin.current` is read from Odin's
+`/dashboard/state` (every ~5 min while an Odin host is set). `today`/`tomorrow` are
+only filled in the Touch model.
+
+### `GET /prices/zone-defaults/{zone}`
+
+What "Apply zone defaults" fills in (nothing is saved): Odin's energy tax (converted to the
+zone's currency) and VAT, the default currency and rate, and sources. Denmark: elafgift
+0.008 DKK, 25 %, Energi Data Service + DataHub. Unknown zone → EUR, 0 tax, 21 % VAT.
+
+```json
+{"zone":"NL","known":true,"spot_source":"energy_charts","currency":"EUR","fx":1.0000,
+ "energy_tax":0.1090,"vat_pct":21.00,"grid_source":"none","system_source":"fixed",
+ "system_fixed":0.0000,"odin_tax_eur":0.1090,"odin_vat_pct":21.00}
+```
 
 ### `POST /prices/settings`
 
-Form or JSON; absent or empty fields are unchanged.
+Form or JSON; absent or empty fields are unchanged. The v1 names `area`,
+`energinet_source`, `energinet_fixed_dkk`, `elafgift_dkk`, `markup_dkk` are still accepted.
 
 | Field | Meaning |
 |---|---|
-| `enabled` | `1`/`0`. On → Odin `price_source=api` and a push; off → `price_source=energy_charts` |
-| `area` | `DK1` / `DK2` (`off` disables spot and therefore pushing) |
-| `grid_source` | `datahub` / `schedule` / `none` |
+| `enabled` | `1`/`0`. Off from the Touch model → Odin `price_source=energy_charts` |
+| `model` | `odin` / `touch` |
+| `zone` | Energy-Charts / Odin zone code (`DK1`, `NL`, `DE-LU`, `SE3`, `IT-North`, …) |
+| `spot_source` | `eds` (DK only) / `energy_charts` / `entsoe` / `fixed` |
+| `spot_fixed_eur` | −1…5 €/kWh |
+| `currency`, `fx` | Calculation currency (`EUR`, `DKK`, `SEK`, `NOK`, `CHF`, `PLN`, `CZK`, `HUF`, `RON`, `BGN`, `GBP`, `RSD`) and its rate per € (a new currency without `fx` gets its default rate) |
+| `grid_source` | `datahub` (DK only) / `schedule` / `none` |
 | `grid_gln`, `grid_code` | DataHub GLN (13 digits) and ChargeTypeCode |
-| `grid_schedule` | JSON string (or JSON array) `[{"h":0,"v":0.077},…]`, DKK/kWh excl. VAT, hours 0–23 unique |
-| `energinet_source` | `datahub` (codes 40000 + 41000 at GLN 5790000432752) / `fixed` |
-| `energinet_fixed_dkk` | −1…5 (default 0.115) |
-| `elafgift_dkk` | 0…5 (default 0.008) |
-| `markup_dkk` | −1…5 (default 0) |
-| `vat_pct` | 0…50 (default 25) |
+| `grid_schedule` | JSON string (or JSON array) `[{"h":0,"v":0.077},…]`, hours 0–23 unique |
+| `system_source`, `system_fixed` | `datahub` (DK only, Energinet 40000 + 41000) / `fixed` |
+| `energy_tax`, `markup`, `vat_pct` | per kWh in the calculation currency; VAT 0…50 % |
+| `odin_mode`, `odin_source`, `odin_fixed_price` | Odin model: `dynamic`/`fixed`, `energy_charts`/`entsoe`, €/kWh |
+| `entsoe_token` | Write-only. Stored for Touch's ENTSO-E fetch; in the Odin model also written to Odin. `clear_token=1` forgets it |
 
-Response `{"result":"saved","enabled":true,"push_queued":true}`; invalid values →
-`400` with `invalid_area` / `invalid_gln` / `invalid_charge_code` / `invalid_schedule` / `invalid_value`.
+Saving with `enabled=1` (re)writes Odin's settings for the model: `price_source=api` (Touch
+model) or `price_mode`, `price_source` + `ec_bzn` / `fixed_price` (+ `entsoe_token` when
+entered) (Odin model). In the Touch model, `spot_source=eds` / `datahub` sources outside
+DK1/DK2 are rejected with `datahub_dk_only`. Other errors: `invalid_zone`,
+`invalid_currency`, `invalid_token`, `invalid_schedule`, `invalid_value`, ….
 
 ### `POST /prices/push`
 
-Queues an immediate fetch + push (`{"result":"queued"}`); rejected with `disabled` or
-`no_odin_host`. Follow the outcome in `GET /prices` (`status.last_attempt_epoch`, `state`).
+Touch model: queues an immediate fetch + push. Odin model: re-writes Odin's price
+settings now. `{"result":"queued"}`; rejected with `disabled` or `no_odin_host`. Follow
+the outcome in `GET /prices`.
 
 ### `POST /forecast/fetch`
 
