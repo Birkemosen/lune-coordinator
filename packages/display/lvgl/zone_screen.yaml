@@ -71,7 +71,7 @@ obj:
         y: 32
         width: 160
         height: 32
-        bg_color: ${lds_accent_ink}
+        bg_color: ${lds_heat_fill}
         bg_opa: COVER
         radius: CIRCLE
         border_width: 0
@@ -81,7 +81,7 @@ obj:
               id: page_zone_badge_text
               align: CENTER
               text: "Kalder varme"
-              text_color: ${lds_on_accent}
+              text_color: ${lds_on_fill}
               text_font: lds_font_xs
     - label:
         id: page_zone_ordinal

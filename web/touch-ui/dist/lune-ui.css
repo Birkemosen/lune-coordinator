@@ -497,10 +497,11 @@
   .tile-val  { grid-area: val; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
   .tile-dev  { grid-area: dev; justify-self: end; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-pill);
                font-size: 11px; font-weight: 700; white-space: nowrap; background: var(--raised); color: var(--muted); }
-  .tile-dev[data-dev="1"] { background: var(--scale-cold-warm-1); color: #111214; }
-  .tile-dev[data-dev="2"] { background: var(--scale-cold-warm-2); color: #111214; }
-  .tile-dev[data-dev="4"] { background: var(--scale-cold-warm-4); color: #111214; }
-  .tile-dev[data-dev="5"] { background: var(--scale-cold-warm-5); color: #111214; }
+  /* Tekst på chippen: næsten sort, undtagen trin 1 i lyst tema (mørk blå → hvid, ≥ 4,5:1). */
+  .tile-dev[data-dev="1"] { background: var(--scale-cold-warm-1); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
+  .tile-dev[data-dev="2"] { background: var(--scale-cold-warm-2); color: var(--on-warn-fill); }
+  .tile-dev[data-dev="4"] { background: var(--scale-cold-warm-4); color: var(--on-warn-fill); }
+  .tile-dev[data-dev="5"] { background: var(--scale-cold-warm-5); color: var(--on-warn-fill); }
 
   /* Ventilbjælke: 10 vandrette segmenter á 10 %, fyldes fra venstre + procent som tal.
      Mængde → neutral (tekstfarve), ikke varme-orange. Mobil: segmenterne smelter sammen til én bjælke. */

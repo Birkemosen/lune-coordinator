@@ -1,6 +1,6 @@
 {
   "display": {
-    "$note": "Vægskærm på Lune Touch: LVGL, 1024×600, RGB565. Farverne er de værdier skærmen faktisk kan vise (nærmeste 565-farve, perceptuelt valgt; neutrale grå håndplukket så de ikke får grønt/lilla stik). Ingen alfa: dæmpede flader er forblandede.",
+    "$note": "Vægskærm på Lune Touch: LVGL, 1024×600, RGB565. Farverne er de værdier skærmen faktisk kan vise (nærmeste 565-farve, perceptuelt valgt; neutrale grå håndplukket så de ikke får grønt/lilla stik). Ingen alfa: dæmpede flader er forblandede. Mørke flader er neutrale 565-grå (R5 = G6/2 = B5), så de hverken bliver varme/brune eller grønne.",
     "resolution": [
       1024,
       600
@@ -13,150 +13,215 @@
           "rgb565": "0x1082"
         },
         "card": {
-          "hex": "#212019",
-          "rgb565": "0x2103"
-        },
-        "raised": {
-          "hex": "#292821",
-          "rgb565": "0x2944"
-        },
-        "field": {
-          "hex": "#191819",
+          "hex": "#181818",
           "rgb565": "0x18C3"
         },
+        "raised": {
+          "hex": "#212429",
+          "rgb565": "0x2125"
+        },
+        "field": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
         "line": {
-          "hex": "#313129",
-          "rgb565": "0x3185"
+          "hex": "#292c31",
+          "rgb565": "0x2966"
         },
         "seg-off": {
-          "hex": "#313129",
-          "rgb565": "0x3185"
+          "hex": "#393839",
+          "rgb565": "0x39C7"
         },
         "fg": {
-          "hex": "#f7f3ef",
-          "rgb565": "0xF79D"
+          "hex": "#eff3f7",
+          "rgb565": "0xEF9E"
         },
         "muted": {
-          "hex": "#a5a29c",
-          "rgb565": "0xA513"
+          "hex": "#a5a6ad",
+          "rgb565": "0xA535"
         },
         "faint": {
-          "hex": "#8c8a84",
-          "rgb565": "0x8C50"
+          "hex": "#8c8e94",
+          "rgb565": "0x8C72"
         },
         "accent": {
-          "hex": "#de7131",
-          "rgb565": "0xDB86"
+          "hex": "#f77500",
+          "rgb565": "0xF3A0"
         },
         "accent-ink": {
-          "hex": "#e6824a",
-          "rgb565": "0xE409"
+          "hex": "#ff9a4a",
+          "rgb565": "0xFCC9"
         },
         "on-accent": {
           "hex": "#101010",
           "rgb565": "0x1082"
         },
         "info": {
-          "hex": "#6b9ece",
-          "rgb565": "0x6CF9"
+          "hex": "#63b2ef",
+          "rgb565": "0x659D"
         },
         "ok": {
-          "hex": "#73b25a",
-          "rgb565": "0x758B"
+          "hex": "#73cb6b",
+          "rgb565": "0x764D"
         },
         "warn": {
-          "hex": "#ceaa42",
-          "rgb565": "0xCD48"
+          "hex": "#ffb242",
+          "rgb565": "0xFD88"
         },
         "danger": {
-          "hex": "#d67973",
-          "rgb565": "0xD3CE"
+          "hex": "#ff6163",
+          "rgb565": "0xFB0C"
         },
         "violet": {
-          "hex": "#9479ce",
-          "rgb565": "0x93D9"
+          "hex": "#b596f7",
+          "rgb565": "0xB4BE"
         },
         "info-bg": {
-          "hex": "#192029",
-          "rgb565": "0x1905"
+          "hex": "#082842",
+          "rgb565": "0x0948"
         },
         "ok-bg": {
-          "hex": "#192819",
-          "rgb565": "0x1943"
+          "hex": "#102c10",
+          "rgb565": "0x1162"
         },
         "warn-bg": {
-          "hex": "#292419",
-          "rgb565": "0x2923"
+          "hex": "#312000",
+          "rgb565": "0x3100"
         },
         "danger-bg": {
-          "hex": "#291819",
-          "rgb565": "0x28C3"
+          "hex": "#391818",
+          "rgb565": "0x38C3"
         },
         "violet-bg": {
-          "hex": "#211c31",
-          "rgb565": "0x20E6"
+          "hex": "#291c42",
+          "rgb565": "0x28E8"
         },
         "inv-bg": {
-          "hex": "#f7f3ef",
-          "rgb565": "0xF79D"
+          "hex": "#eff3f7",
+          "rgb565": "0xEF9E"
         },
         "inv-fg": {
           "hex": "#101010",
           "rgb565": "0x1082"
+        },
+        "heat-fill": {
+          "hex": "#e76108",
+          "rgb565": "0xE301"
+        },
+        "water-fill": {
+          "hex": "#007973",
+          "rgb565": "0x03CE"
+        },
+        "water": {
+          "hex": "#4ac3bd",
+          "rgb565": "0x4E17"
+        },
+        "on-fill": {
+          "hex": "#ffffff",
+          "rgb565": "0xFFFF"
+        },
+        "on-warn-fill": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
+        "danger-fill": {
+          "hex": "#b53839",
+          "rgb565": "0xB1C7"
+        },
+        "warn-fill": {
+          "hex": "#ffaa29",
+          "rgb565": "0xFD45"
+        },
+        "violet-fill": {
+          "hex": "#7351b5",
+          "rgb565": "0x7296"
+        },
+        "ok-fill": {
+          "hex": "#318229",
+          "rgb565": "0x3405"
+        },
+        "info-fill": {
+          "hex": "#31719c",
+          "rgb565": "0x3393"
+        },
+        "dev-1": {
+          "hex": "#318ece",
+          "rgb565": "0x3479"
+        },
+        "on-dev-1": {
+          "hex": "#101010",
+          "rgb565": "0x1082"
+        },
+        "dev-2": {
+          "hex": "#73a2ce",
+          "rgb565": "0x7519"
+        },
+        "dev-3": {
+          "hex": "#42494a",
+          "rgb565": "0x4249"
+        },
+        "dev-4": {
+          "hex": "#f7aa63",
+          "rgb565": "0xF54C"
+        },
+        "dev-5": {
+          "hex": "#f77500",
+          "rgb565": "0xF3A0"
         }
       },
       "light": {
         "bg": {
-          "hex": "#fffbf7",
-          "rgb565": "0xFFDE"
+          "hex": "#f7f7f7",
+          "rgb565": "0xF7BE"
         },
         "card": {
-          "hex": "#e6e3de",
-          "rgb565": "0xE71B"
+          "hex": "#dedfde",
+          "rgb565": "0xDEFB"
         },
         "raised": {
-          "hex": "#d6d2ce",
-          "rgb565": "0xD699"
+          "hex": "#d6d7d6",
+          "rgb565": "0xD6BA",
+          "note": "Håndplukket hex så RGB565 ikke får grønt stik; bevar 0xD699."
         },
         "field": {
           "hex": "#ffffff",
           "rgb565": "0xFFFF"
         },
         "line": {
-          "hex": "#c5c6bd",
-          "rgb565": "0xC637"
+          "hex": "#bdbebd",
+          "rgb565": "0xBDF7"
         },
         "seg-off": {
-          "hex": "#c5c6bd",
-          "rgb565": "0xC637"
+          "hex": "#b5b6b5",
+          "rgb565": "0xB5B6"
         },
         "fg": {
-          "hex": "#101010",
-          "rgb565": "0x1082"
+          "hex": "#181818",
+          "rgb565": "0x18C3"
         },
         "muted": {
-          "hex": "#52514a",
-          "rgb565": "0x5289"
+          "hex": "#525152",
+          "rgb565": "0x528A"
         },
         "faint": {
-          "hex": "#635d5a",
-          "rgb565": "0x62EB"
+          "hex": "#636163",
+          "rgb565": "0x630C"
         },
         "accent": {
-          "hex": "#e66108",
+          "hex": "#e76108",
           "rgb565": "0xE301"
         },
         "accent-ink": {
-          "hex": "#a53d08",
-          "rgb565": "0xA1E1"
+          "hex": "#a54108",
+          "rgb565": "0xA201"
         },
         "on-accent": {
           "hex": "#ffffff",
           "rgb565": "0xFFFF"
         },
         "info": {
-          "hex": "#21618c",
-          "rgb565": "0x2311"
+          "hex": "#215d8c",
+          "rgb565": "0x22F1"
         },
         "ok": {
           "hex": "#296121",
@@ -167,7 +232,7 @@
           "rgb565": "0x6A60"
         },
         "danger": {
-          "hex": "#a53131",
+          "hex": "#a53031",
           "rgb565": "0xA186"
         },
         "violet": {
@@ -175,34 +240,107 @@
           "rgb565": "0x6214"
         },
         "info-bg": {
-          "hex": "#cedbde",
-          "rgb565": "0xCEDB"
+          "hex": "#c6dfef",
+          "rgb565": "0xC6FD"
         },
         "ok-bg": {
-          "hex": "#cedbc5",
-          "rgb565": "0xCED8"
+          "hex": "#cee3c6",
+          "rgb565": "0xCF18"
         },
         "warn-bg": {
-          "hex": "#ded7bd",
-          "rgb565": "0xDEB7"
+          "hex": "#efd7b5",
+          "rgb565": "0xEEB6"
         },
         "danger-bg": {
-          "hex": "#e6d2c5",
-          "rgb565": "0xE698"
+          "hex": "#f7d3c6",
+          "rgb565": "0xF698"
         },
         "violet-bg": {
-          "hex": "#d6d2de",
-          "rgb565": "0xD69B"
+          "hex": "#ded7ef",
+          "rgb565": "0xDEBD"
         },
         "inv-bg": {
+          "hex": "#181818",
+          "rgb565": "0x18C3"
+        },
+        "inv-fg": {
+          "hex": "#f7f7f7",
+          "rgb565": "0xF7BE"
+        },
+        "heat-fill": {
+          "hex": "#e76108",
+          "rgb565": "0xE301"
+        },
+        "water-fill": {
+          "hex": "#007973",
+          "rgb565": "0x03CE"
+        },
+        "water": {
+          "hex": "#007973",
+          "rgb565": "0x03CE"
+        },
+        "on-fill": {
+          "hex": "#ffffff",
+          "rgb565": "0xFFFF"
+        },
+        "on-warn-fill": {
           "hex": "#101010",
           "rgb565": "0x1082"
         },
-        "inv-fg": {
-          "hex": "#fffbf7",
-          "rgb565": "0xFFDE"
+        "danger-fill": {
+          "hex": "#b53839",
+          "rgb565": "0xB1C7"
+        },
+        "warn-fill": {
+          "hex": "#ffaa29",
+          "rgb565": "0xFD45"
+        },
+        "violet-fill": {
+          "hex": "#7351b5",
+          "rgb565": "0x7296"
+        },
+        "ok-fill": {
+          "hex": "#318229",
+          "rgb565": "0x3405"
+        },
+        "info-fill": {
+          "hex": "#31719c",
+          "rgb565": "0x3393"
+        },
+        "dev-1": {
+          "hex": "#186da5",
+          "rgb565": "0x1B74"
+        },
+        "on-dev-1": {
+          "hex": "#ffffff",
+          "rgb565": "0xFFFF"
+        },
+        "dev-2": {
+          "hex": "#7ba2c6",
+          "rgb565": "0x7D18"
+        },
+        "dev-3": {
+          "hex": "#cecfce",
+          "rgb565": "0xCE79"
+        },
+        "dev-4": {
+          "hex": "#de9a73",
+          "rgb565": "0xDCCE"
+        },
+        "dev-5": {
+          "hex": "#de5500",
+          "rgb565": "0xDAA0"
         }
       }
+    },
+    "night": {
+      "$note": "Nat/dvale: dæmpet, uden for paletten (SCREENS.md). Grå er neutrale (LDS 2.1: ingen varme grå som mørke flader).",
+      "bg": "#000000",
+      "clock": "#8a8a8a",
+      "muted": "#585858",
+      "call": "#8a3f1c",
+      "fault": "#8a4a47",
+      "idle": "#2c2c2c"
     },
     "type": {
       "xs": 16,
@@ -211,11 +349,19 @@
       "lg": 32,
       "xl": 48,
       "2xl": 72,
-      "hero": 144
+      "hero": 144,
+      "d28": 28,
+      "d36": 36,
+      "d44": 44,
+      "d168": 168
     },
     "type_digits_only": [
       "2xl",
-      "hero"
+      "hero",
+      "d28",
+      "d36",
+      "d44",
+      "d168"
     ],
     "size": {
       "statusbar": 64,

@@ -948,17 +948,18 @@ Touch har en 1024×600 berøringsskærm med 16-bit farver (RGB565), der hænger 
 
 ### 13.4 Zonefelt på skærmen
 
-Samme betydning som web-strimlen, men på væggen ligger niveaubjælken **vandret under tallet** (5 segmenter á 20 % ventilåbning), som på mobil. Det giver feltet fuld bredde til temperatur og mål.
+Samme sprog som web-varmekortet (15.10): navn, temperatur i tekstfarve, **afvigelses-chip** (5 trin, `dev-1…5`) og en **ventilbjælke** vandret under tallet (5 segmenter á 20 % åbning, tekstfarve).
 
 | Tilstand | Udseende |
 |---|---|
-| Kalder | 1–5 tændte segmenter (tekstfarve, ikke orange) |
-| Hviler | 1 segment |
-| Fejl | ID og "Fejl" i rødt, første segment rødt |
-| Slukket | 50 % opacitet, "Slukket" |
+| Ventil åben | 1–5 tændte segmenter (`fg`), lukket = 0 — for alle zoner, ikke kun dem der kalder |
+| Afvigelse fra mål | Chip `≤ −1 · ≤ −0,3 · ±0,3 · < +1 · ≥ +1` i `dev-1…5`; tekst `on-dev-1` på trin 1, `fg` på trin 3, ellers `on-warn-fill`. Temperaturen selv er altid `fg` |
+| Fejl | ID og "Fejl" i rødt, første segment rødt, ingen chip |
+| Slukket | 50 % opacitet, "Slukket", ingen chip |
 | Gruppe | Primær: 2 px violet kant, ID "Z4–5". Medlem: violet markering, dæmpet navn |
-| Under mål > 0,5 °C | Temperaturen i gul |
 | Presset | Inverteret i 150 ms |
+
+Store felter (1–2 manifolds) har chippen under temperaturen; kompakte felter til højre for den. Målet står på zone-skærmen.
 
 ### 13.5 Trykflader og kontroller
 
@@ -984,7 +985,7 @@ Skærmen kan kun vise 65.536 farver. Paletten i `tokens.json → display.palette
 
 Kontrasten og hex ↔ RGB565 tjekkes med `python tools/lds_display.py --check`.
 
-Den lyse palet følger samme regel som web (3.1): statusflader er mørkere end kortet og afledt af det — ikke kølige pasteller. `raised` i lyst tema er håndplukket (`#d6d2ce` / `0xD699`), så 16-bit kvantisering ikke giver grønt stik. Ret ikke display-hex i produktrepoet; ret `display.palette` her og kør `--check`.
+Paletten er web-tokens kvantiseret til 565 (LDS 2.3.8): kølige neutrale grå som web (`card` #181818, `raised` #212429 — 565 har ingen neutral værdi tæt på #232427 uden grønt eller lilla stik), Apex-orange, statusfarver, solide `*-fill` med `on-fill` (kaldende-badge = `heat-fill`), `water`/`water-fill` (cirkulation) og afvigelses-skalaen `dev-1…5`. Den lyse palet følger samme regel som web (3.1): statusflader er mørkere end kortet og afledt af det — ikke kølige pasteller. Kontakter er tændt i `inv-bg` med knop i `inv-fg`. Ret ikke display-hex i produktrepoet; ret `display.palette` her og kør `--check`.
 
 ### 13.7 Typografi
 

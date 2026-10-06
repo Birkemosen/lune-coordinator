@@ -5,55 +5,87 @@
 
 // ---- dark ----
 #define LDS_DARK_BG           lv_color_hex(0x101010)   /* 565: 0x1082 */
-#define LDS_DARK_CARD         lv_color_hex(0x212019)   /* 565: 0x2103 */
-#define LDS_DARK_RAISED       lv_color_hex(0x292821)   /* 565: 0x2944 */
-#define LDS_DARK_FIELD        lv_color_hex(0x191819)   /* 565: 0x18C3 */
-#define LDS_DARK_LINE         lv_color_hex(0x313129)   /* 565: 0x3185 */
-#define LDS_DARK_SEG_OFF      lv_color_hex(0x313129)   /* 565: 0x3185 */
-#define LDS_DARK_FG           lv_color_hex(0xf7f3ef)   /* 565: 0xF79D */
-#define LDS_DARK_MUTED        lv_color_hex(0xa5a29c)   /* 565: 0xA513 */
-#define LDS_DARK_FAINT        lv_color_hex(0x8c8a84)   /* 565: 0x8C50 */
-#define LDS_DARK_ACCENT       lv_color_hex(0xde7131)   /* 565: 0xDB86 */
-#define LDS_DARK_ACCENT_INK   lv_color_hex(0xe6824a)   /* 565: 0xE409 */
+#define LDS_DARK_CARD         lv_color_hex(0x181818)   /* 565: 0x18C3 */
+#define LDS_DARK_RAISED       lv_color_hex(0x212429)   /* 565: 0x2125 */
+#define LDS_DARK_FIELD        lv_color_hex(0x101010)   /* 565: 0x1082 */
+#define LDS_DARK_LINE         lv_color_hex(0x292c31)   /* 565: 0x2966 */
+#define LDS_DARK_SEG_OFF      lv_color_hex(0x393839)   /* 565: 0x39C7 */
+#define LDS_DARK_FG           lv_color_hex(0xeff3f7)   /* 565: 0xEF9E */
+#define LDS_DARK_MUTED        lv_color_hex(0xa5a6ad)   /* 565: 0xA535 */
+#define LDS_DARK_FAINT        lv_color_hex(0x8c8e94)   /* 565: 0x8C72 */
+#define LDS_DARK_ACCENT       lv_color_hex(0xf77500)   /* 565: 0xF3A0 */
+#define LDS_DARK_ACCENT_INK   lv_color_hex(0xff9a4a)   /* 565: 0xFCC9 */
 #define LDS_DARK_ON_ACCENT    lv_color_hex(0x101010)   /* 565: 0x1082 */
-#define LDS_DARK_INFO         lv_color_hex(0x6b9ece)   /* 565: 0x6CF9 */
-#define LDS_DARK_OK           lv_color_hex(0x73b25a)   /* 565: 0x758B */
-#define LDS_DARK_WARN         lv_color_hex(0xceaa42)   /* 565: 0xCD48 */
-#define LDS_DARK_DANGER       lv_color_hex(0xd67973)   /* 565: 0xD3CE */
-#define LDS_DARK_VIOLET       lv_color_hex(0x9479ce)   /* 565: 0x93D9 */
-#define LDS_DARK_INFO_BG      lv_color_hex(0x192029)   /* 565: 0x1905 */
-#define LDS_DARK_OK_BG        lv_color_hex(0x192819)   /* 565: 0x1943 */
-#define LDS_DARK_WARN_BG      lv_color_hex(0x292419)   /* 565: 0x2923 */
-#define LDS_DARK_DANGER_BG    lv_color_hex(0x291819)   /* 565: 0x28C3 */
-#define LDS_DARK_VIOLET_BG    lv_color_hex(0x211c31)   /* 565: 0x20E6 */
-#define LDS_DARK_INV_BG       lv_color_hex(0xf7f3ef)   /* 565: 0xF79D */
+#define LDS_DARK_INFO         lv_color_hex(0x63b2ef)   /* 565: 0x659D */
+#define LDS_DARK_OK           lv_color_hex(0x73cb6b)   /* 565: 0x764D */
+#define LDS_DARK_WARN         lv_color_hex(0xffb242)   /* 565: 0xFD88 */
+#define LDS_DARK_DANGER       lv_color_hex(0xff6163)   /* 565: 0xFB0C */
+#define LDS_DARK_VIOLET       lv_color_hex(0xb596f7)   /* 565: 0xB4BE */
+#define LDS_DARK_INFO_BG      lv_color_hex(0x082842)   /* 565: 0x0948 */
+#define LDS_DARK_OK_BG        lv_color_hex(0x102c10)   /* 565: 0x1162 */
+#define LDS_DARK_WARN_BG      lv_color_hex(0x312000)   /* 565: 0x3100 */
+#define LDS_DARK_DANGER_BG    lv_color_hex(0x391818)   /* 565: 0x38C3 */
+#define LDS_DARK_VIOLET_BG    lv_color_hex(0x291c42)   /* 565: 0x28E8 */
+#define LDS_DARK_INV_BG       lv_color_hex(0xeff3f7)   /* 565: 0xEF9E */
 #define LDS_DARK_INV_FG       lv_color_hex(0x101010)   /* 565: 0x1082 */
+#define LDS_DARK_HEAT_FILL    lv_color_hex(0xe76108)   /* 565: 0xE301 */
+#define LDS_DARK_WATER_FILL   lv_color_hex(0x007973)   /* 565: 0x03CE */
+#define LDS_DARK_WATER        lv_color_hex(0x4ac3bd)   /* 565: 0x4E17 */
+#define LDS_DARK_ON_FILL      lv_color_hex(0xffffff)   /* 565: 0xFFFF */
+#define LDS_DARK_ON_WARN_FILL lv_color_hex(0x101010)   /* 565: 0x1082 */
+#define LDS_DARK_DANGER_FILL  lv_color_hex(0xb53839)   /* 565: 0xB1C7 */
+#define LDS_DARK_WARN_FILL    lv_color_hex(0xffaa29)   /* 565: 0xFD45 */
+#define LDS_DARK_VIOLET_FILL  lv_color_hex(0x7351b5)   /* 565: 0x7296 */
+#define LDS_DARK_OK_FILL      lv_color_hex(0x318229)   /* 565: 0x3405 */
+#define LDS_DARK_INFO_FILL    lv_color_hex(0x31719c)   /* 565: 0x3393 */
+#define LDS_DARK_DEV_1        lv_color_hex(0x318ece)   /* 565: 0x3479 */
+#define LDS_DARK_ON_DEV_1     lv_color_hex(0x101010)   /* 565: 0x1082 */
+#define LDS_DARK_DEV_2        lv_color_hex(0x73a2ce)   /* 565: 0x7519 */
+#define LDS_DARK_DEV_3        lv_color_hex(0x42494a)   /* 565: 0x4249 */
+#define LDS_DARK_DEV_4        lv_color_hex(0xf7aa63)   /* 565: 0xF54C */
+#define LDS_DARK_DEV_5        lv_color_hex(0xf77500)   /* 565: 0xF3A0 */
 
 // ---- light ----
-#define LDS_LIGHT_BG           lv_color_hex(0xfffbf7)   /* 565: 0xFFDE */
-#define LDS_LIGHT_CARD         lv_color_hex(0xe6e3de)   /* 565: 0xE71B */
-#define LDS_LIGHT_RAISED       lv_color_hex(0xd6d2ce)   /* 565: 0xD699 */
+#define LDS_LIGHT_BG           lv_color_hex(0xf7f7f7)   /* 565: 0xF7BE */
+#define LDS_LIGHT_CARD         lv_color_hex(0xdedfde)   /* 565: 0xDEFB */
+#define LDS_LIGHT_RAISED       lv_color_hex(0xd6d7d6)   /* 565: 0xD6BA */
 #define LDS_LIGHT_FIELD        lv_color_hex(0xffffff)   /* 565: 0xFFFF */
-#define LDS_LIGHT_LINE         lv_color_hex(0xc5c6bd)   /* 565: 0xC637 */
-#define LDS_LIGHT_SEG_OFF      lv_color_hex(0xc5c6bd)   /* 565: 0xC637 */
-#define LDS_LIGHT_FG           lv_color_hex(0x101010)   /* 565: 0x1082 */
-#define LDS_LIGHT_MUTED        lv_color_hex(0x52514a)   /* 565: 0x5289 */
-#define LDS_LIGHT_FAINT        lv_color_hex(0x635d5a)   /* 565: 0x62EB */
-#define LDS_LIGHT_ACCENT       lv_color_hex(0xe66108)   /* 565: 0xE301 */
-#define LDS_LIGHT_ACCENT_INK   lv_color_hex(0xa53d08)   /* 565: 0xA1E1 */
+#define LDS_LIGHT_LINE         lv_color_hex(0xbdbebd)   /* 565: 0xBDF7 */
+#define LDS_LIGHT_SEG_OFF      lv_color_hex(0xb5b6b5)   /* 565: 0xB5B6 */
+#define LDS_LIGHT_FG           lv_color_hex(0x181818)   /* 565: 0x18C3 */
+#define LDS_LIGHT_MUTED        lv_color_hex(0x525152)   /* 565: 0x528A */
+#define LDS_LIGHT_FAINT        lv_color_hex(0x636163)   /* 565: 0x630C */
+#define LDS_LIGHT_ACCENT       lv_color_hex(0xe76108)   /* 565: 0xE301 */
+#define LDS_LIGHT_ACCENT_INK   lv_color_hex(0xa54108)   /* 565: 0xA201 */
 #define LDS_LIGHT_ON_ACCENT    lv_color_hex(0xffffff)   /* 565: 0xFFFF */
-#define LDS_LIGHT_INFO         lv_color_hex(0x21618c)   /* 565: 0x2311 */
+#define LDS_LIGHT_INFO         lv_color_hex(0x215d8c)   /* 565: 0x22F1 */
 #define LDS_LIGHT_OK           lv_color_hex(0x296121)   /* 565: 0x2B04 */
 #define LDS_LIGHT_WARN         lv_color_hex(0x6b4d00)   /* 565: 0x6A60 */
-#define LDS_LIGHT_DANGER       lv_color_hex(0xa53131)   /* 565: 0xA186 */
+#define LDS_LIGHT_DANGER       lv_color_hex(0xa53031)   /* 565: 0xA186 */
 #define LDS_LIGHT_VIOLET       lv_color_hex(0x6341a5)   /* 565: 0x6214 */
-#define LDS_LIGHT_INFO_BG      lv_color_hex(0xcedbde)   /* 565: 0xCEDB */
-#define LDS_LIGHT_OK_BG        lv_color_hex(0xcedbc5)   /* 565: 0xCED8 */
-#define LDS_LIGHT_WARN_BG      lv_color_hex(0xded7bd)   /* 565: 0xDEB7 */
-#define LDS_LIGHT_DANGER_BG    lv_color_hex(0xe6d2c5)   /* 565: 0xE698 */
-#define LDS_LIGHT_VIOLET_BG    lv_color_hex(0xd6d2de)   /* 565: 0xD69B */
-#define LDS_LIGHT_INV_BG       lv_color_hex(0x101010)   /* 565: 0x1082 */
-#define LDS_LIGHT_INV_FG       lv_color_hex(0xfffbf7)   /* 565: 0xFFDE */
+#define LDS_LIGHT_INFO_BG      lv_color_hex(0xc6dfef)   /* 565: 0xC6FD */
+#define LDS_LIGHT_OK_BG        lv_color_hex(0xcee3c6)   /* 565: 0xCF18 */
+#define LDS_LIGHT_WARN_BG      lv_color_hex(0xefd7b5)   /* 565: 0xEEB6 */
+#define LDS_LIGHT_DANGER_BG    lv_color_hex(0xf7d3c6)   /* 565: 0xF698 */
+#define LDS_LIGHT_VIOLET_BG    lv_color_hex(0xded7ef)   /* 565: 0xDEBD */
+#define LDS_LIGHT_INV_BG       lv_color_hex(0x181818)   /* 565: 0x18C3 */
+#define LDS_LIGHT_INV_FG       lv_color_hex(0xf7f7f7)   /* 565: 0xF7BE */
+#define LDS_LIGHT_HEAT_FILL    lv_color_hex(0xe76108)   /* 565: 0xE301 */
+#define LDS_LIGHT_WATER_FILL   lv_color_hex(0x007973)   /* 565: 0x03CE */
+#define LDS_LIGHT_WATER        lv_color_hex(0x007973)   /* 565: 0x03CE */
+#define LDS_LIGHT_ON_FILL      lv_color_hex(0xffffff)   /* 565: 0xFFFF */
+#define LDS_LIGHT_ON_WARN_FILL lv_color_hex(0x101010)   /* 565: 0x1082 */
+#define LDS_LIGHT_DANGER_FILL  lv_color_hex(0xb53839)   /* 565: 0xB1C7 */
+#define LDS_LIGHT_WARN_FILL    lv_color_hex(0xffaa29)   /* 565: 0xFD45 */
+#define LDS_LIGHT_VIOLET_FILL  lv_color_hex(0x7351b5)   /* 565: 0x7296 */
+#define LDS_LIGHT_OK_FILL      lv_color_hex(0x318229)   /* 565: 0x3405 */
+#define LDS_LIGHT_INFO_FILL    lv_color_hex(0x31719c)   /* 565: 0x3393 */
+#define LDS_LIGHT_DEV_1        lv_color_hex(0x186da5)   /* 565: 0x1B74 */
+#define LDS_LIGHT_ON_DEV_1     lv_color_hex(0xffffff)   /* 565: 0xFFFF */
+#define LDS_LIGHT_DEV_2        lv_color_hex(0x7ba2c6)   /* 565: 0x7D18 */
+#define LDS_LIGHT_DEV_3        lv_color_hex(0xcecfce)   /* 565: 0xCE79 */
+#define LDS_LIGHT_DEV_4        lv_color_hex(0xde9a73)   /* 565: 0xDCCE */
+#define LDS_LIGHT_DEV_5        lv_color_hex(0xde5500)   /* 565: 0xDAA0 */
 
 // ---- typografi (px) — 2XL og HERO: kun cifre , ° − ----
 #define LDS_FS_XS     16
@@ -68,13 +100,13 @@
 #define LDS_FS_D44    44
 #define LDS_FS_D168   168
 
-// ---- night (dæmpet, uden for paletten) ----
-#define LDS_NIGHT_BG      lv_color_hex(0x000000)
-#define LDS_NIGHT_CLOCK   lv_color_hex(0x8c8a84)
-#define LDS_NIGHT_MUTED   lv_color_hex(0x5a5853)
-#define LDS_NIGHT_CALL    lv_color_hex(0x8a3f1c)
-#define LDS_NIGHT_FAULT   lv_color_hex(0x8a4a47)
-#define LDS_NIGHT_IDLE    lv_color_hex(0x2d2c27)
+// ---- nat (dæmpet, uden for paletten) ----
+#define LDS_NIGHT_BG       lv_color_hex(0x000000)
+#define LDS_NIGHT_CLOCK    lv_color_hex(0x8a8a8a)
+#define LDS_NIGHT_MUTED    lv_color_hex(0x585858)
+#define LDS_NIGHT_CALL     lv_color_hex(0x8a3f1c)
+#define LDS_NIGHT_FAULT    lv_color_hex(0x8a4a47)
+#define LDS_NIGHT_IDLE     lv_color_hex(0x2c2c2c)
 
 // ---- mål (px) ----
 #define LDS_STATUSBAR    64
