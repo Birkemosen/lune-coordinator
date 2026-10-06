@@ -38,7 +38,7 @@ Kopiér denne fil ind i projektets `CLAUDE.md` / `AGENTS.md`, eller henvis til d
 - Sjældne indstillinger: `details.subpage` («Avanceret ›») i samme ark/kategori.
 - System: radioer `name="syscat"` (`c-{kategori}` + `c-none`) før `.sys`; `.sys-nav` + `.sys-cat[data-cat]`; `.sys-back` til mobil.
 - Deep links via `data-hash` (`#z3/indstillinger`, `#system/varmekilde`).
-- Touch' Hjem: `.home-hero` med `.hero-facts` (højst 2) og `.thermo` (bue = huset nu, mærke = mål; autogem), `.home-head`, maks. 4 `button.home-tile` (ét tal + én `.ht-viz`), `.heatmap` (`.heatmap-legend`, rumfelter efter areal) med `.room-group` pr. styring. Offline-styring: `data-offline` + `.offline-note`.
+- Touch' Hjem: `.home-scopes` (Hus + ét kort pr. styring), `.home-hero` med `.hero-waves`, `.hero-facts` (højst 2) og `.thermo` (bue + håndtag = huset nu, målet under; autogem), `.home-head`, maks. 4 `button.home-tile` (ét tal + én `.ht-viz`), `.heatmap` (`.heatmap-legend`, rumfelter efter areal) med `.room-group` pr. styring. Offline-styring: `data-offline` + `.offline-note`.
 - Delvis gem af én ressource fra to steder: `data-save="ressource.del"` + `data-patch` (sender kun ændrede felter som PATCH).
 - Ét felt pr. ting: en indstilling, der ejes af en anden enhed (fx V6' gulv i Touch), vises som læseværdi + «Redigér på V6 ›», aldrig som redigerbart felt to steder.
 
@@ -54,7 +54,7 @@ Kopiér denne fil ind i projektets `CLAUDE.md` / `AGENTS.md`, eller henvis til d
 - Ingen skygger på paneler; dybde kommer fra `--card` mod `--bg`.
 - Ingen versaler, ingen pynte-farver, ingen animation uden brugerhandling.
 - Ingen `display: none` på `.state`-inputs.
-- Ingen manifold- eller zonevisninger i Touch-produktet (Touch har ingen egne zoneindstillinger).
+- Ingen zoneindstillinger i Touch-produktet; styringer og zoner vises kun som status (`.home-scopes`, varmekort, styringsark).
 - Ingen stepper til port, id'er eller adresser.
 
 ## Vægskærmen (LVGL, Touch)

@@ -1,5 +1,11 @@
 # Changelog — Lune Design System
 
+## 2.3.4
+
+- `.thermo`: håndtaget (`.knob`) sidder for enden af buen (begge = huset nu); målet vises kun under ringen. `.tg`/`.tg-edge` er fjernet.
+- `.hero-waves`: højdekurver bag Hjems hovedsektion (inline-SVG, streger i varmefarven) — den eneste tilladte tekstur.
+- `.home-scopes`: Hus + ét kort pr. styring med zonesøjler (`.mini`), øverst på Hjem; åbner styringens ark.
+
 ## 2.3.3
 
 Touch' Hjem tættere på designet (`docs/design/Overview.png`).
