@@ -14,6 +14,8 @@ og udfolder kompakt-blokken (@compact:begin … @compact:end) to gange: under
 density.media (mus på bred skærm, medmindre data-density="comfortable") og
 for .app[data-density="compact"]. Blokken skrives med CSS-nesting relativt
 til .app; token-værdierne kommer fra density.compact i tokens.json.
+Projektspecifikke blokke (/* @only touch */ … /* @end */, flere id'er med komma)
+fjernes, når projektets config.id ikke står i listen.
 Alt andet i kildefilen er håndskrevet og fælles for begge projekter.
 """
 import json, gzip, sys, pathlib, argparse, re, math
@@ -27,6 +29,14 @@ TOK = json.loads((ROOT/"tokens/tokens.json").read_text(encoding="utf-8"))
 # Known heat-source type ids for config validation.
 # "http" is the UI/CSS id; firmware API stores it as generic_http.
 KNOWN_HEAT_SOURCE_TYPES = frozenset({"http", "generic_http", "asgard"})
+
+# Tilstande (DESIGN.md 15): home har en visning pr. omfang, sys én visning.
+MODES = frozenset({"home", "sys"})
+LEGACY_MODES = frozenset({"dash", "conf"})
+# Valgfrie CSS-dele (@only-blokke) ud over projektets id.
+# legacy = Dashboard/Konfiguration-modellen (sektioner, Konfigurationens spalter).
+# tiers-strip = Touch' hierarkiske strimmel og .boards (forældet i 2.2).
+KNOWN_FEATURES = frozenset({"legacy", "tiers-strip"})
 
 # ------------------------------------------------------------------ tokens --
 def flat_colors():
@@ -91,6 +101,24 @@ def validate_cfg(cfg, path=""):
     modes = cfg.get("modes") or []
     if not modes:
         errs.append("modes must be a non-empty list")
+    elif set(modes) <= LEGACY_MODES:
+        print(f"ADVARSEL{f' ({path})' if path else ''}: modes {modes} er udfaset — brug [\"home\", \"sys\"] (DESIGN.md 15). Bygger stadig.",
+              file=sys.stderr)
+    elif not set(modes) <= MODES:
+        errs.append(f"modes must be {sorted(MODES)} (or legacy {sorted(LEGACY_MODES)}), got {modes}")
+
+    feats = cfg.get("features")
+    if feats is not None and not (isinstance(feats, list) and all(f in KNOWN_FEATURES for f in feats)):
+        errs.append(f"features must be a list of {sorted(KNOWN_FEATURES)}, got {feats!r}")
+
+    cats = cfg.get("systemCategories")
+    if cats is not None:
+        if "sys" not in modes:
+            errs.append("systemCategories requires 'sys' in modes")
+        if not isinstance(cats, list) or not cats:
+            errs.append("systemCategories must be a non-empty list of ids")
+        elif not all(re.fullmatch(r"[a-z][a-z0-9-]*", str(c)) and c != "none" for c in cats):
+            errs.append("systemCategories ids must be lowercase [a-z0-9-] and not 'none'")
 
     tiers = bool(cfg.get("tiers"))
     manifolds = cfg.get("manifolds")
@@ -245,7 +273,8 @@ def typed_fields_rules(types, prefix="hs"):
     # External state radios + .seg label[for] (Touch heat-source type pill)
     L.append("  /* .seg med eksterne .state-radioer — aktiv pille */")
     pill = [
-        f'  #{prefix}-{t}:checked ~ .seg label[for="{prefix}-{t}"] > span'
+        f'  #{prefix}-{t}:checked ~ .seg label[for="{prefix}-{t}"] > span,\n'
+        f'  #{prefix}-{t}:checked ~ * .seg label[for="{prefix}-{t}"] > span'
         for t in types
     ]
     L.append(",\n".join(pill) + " { background: var(--inv-bg); color: var(--inv-fg); }")
@@ -276,7 +305,8 @@ def typed_group_rules(prefix, types, base=True):
         f'  #{prefix}-{t}:checked ~ .typed-fields[data-type="{t}"]' for t in types
     ) + " { display: grid; }")
     L.append(",\n".join(
-        f'  #{prefix}-{t}:checked ~ .seg label[for="{prefix}-{t}"] > span' for t in types
+        f'  #{prefix}-{t}:checked ~ .seg label[for="{prefix}-{t}"] > span,\n'
+        f'  #{prefix}-{t}:checked ~ * .seg label[for="{prefix}-{t}"] > span' for t in types
     ) + " { background: var(--inv-bg); color: var(--inv-fg); }")
     L.append(",\n".join(
         f'  #{prefix}-{t}:focus-visible ~ .seg label[for="{prefix}-{t}"] > span' for t in types
@@ -284,17 +314,41 @@ def typed_group_rules(prefix, types, base=True):
     return "\n".join(L)
 
 # ------------------------------------------------------------------ state ---
+def system_rules(cats):
+    """System-siden: én kategori ad gangen (radioer #c-{id} + #c-none)."""
+    on = " { background: var(--card); color: var(--fg); }"
+    L = ["  /* System: valgt kategori (radioer lige før .sys eller før .app) */"]
+    L.append(",\n".join(f'  #c-{c}:checked ~ :is(.app, .sys) .sys-cat[data-cat="{c}"]' for c in cats) + " { display: grid; }")
+    L.append(",\n".join(f'  #c-{c}:checked ~ :is(.app, .sys) .sys-nav label[for="c-{c}"]' for c in cats) + on)
+    L.append(",\n".join(f'  #c-{c}:focus-visible ~ :is(.app, .sys) .sys-nav label[for="c-{c}"]' for c in cats) +
+             " { outline: 2px solid var(--focus); outline-offset: 2px; }")
+    L.append("  /* Ingen kategori valgt: desktop viser den første, mobil viser listen */")
+    L.append("  @media (min-width: 600px) {")
+    L.append(f'    #c-none:checked ~ :is(.app, .sys) .sys-cat[data-cat="{cats[0]}"] {{ display: grid; }}')
+    L.append(f'    #c-none:checked ~ :is(.app, .sys) .sys-nav label[for="c-{cats[0]}"]{on}')
+    L.append("  }")
+    return "\n".join(L)
+
 def state_css(cfg):
-    modes = cfg["modes"]
+    all_modes = cfg["modes"]
+    # sys har én visning uafhængigt af omfang; de andre tilstande har en pr. omfang.
+    modes = [m for m in all_modes if m != "sys"]
     L = []
 
     # Mode pill
     L.append("  /* Aktiv tilstand: inverteret pille */")
-    L.append(",\n".join(f'  #m-{m}:checked ~ .app .mode label[for="m-{m}"]' for m in modes) +
+    L.append(",\n".join(f'  #m-{m}:checked ~ .app .mode label[for="m-{m}"]' for m in all_modes) +
              " { background: var(--inv-bg); color: var(--inv-fg); }")
-    L.append(",\n".join(f'  #m-{m}:focus-visible ~ .app .mode label[for="m-{m}"]' for m in modes) +
+    L.append(",\n".join(f'  #m-{m}:focus-visible ~ .app .mode label[for="m-{m}"]' for m in all_modes) +
              " { outline: 2px solid var(--focus); outline-offset: 2px; }")
     L.append("")
+    if "sys" in all_modes:
+        L.append("  /* System: én visning; strimlen hører til Hjem */")
+        L.append("  #m-sys:checked ~ .app #v-sys { display: block; }")
+        L.append("  #m-sys:checked ~ .app :is(.strip, .substrip, .boards) { display: none; }")
+        if cfg.get("systemCategories"):
+            L.append(system_rules(cfg["systemCategories"]))
+        L.append("")
 
     if cfg.get("tiers"):
         manifolds = cfg["manifolds"]
@@ -343,6 +397,23 @@ def state_css(cfg):
 
     return "\n".join(L)
 
+ONLY_RE = re.compile(r"[ \t]*/\* @only ([a-z0-9_,-]+) \*/\n(.*?)[ \t]*/\* @end \*/\n", re.S)
+
+def only_css(src, keep):
+    """Behold /* @only id[,id] */ … /* @end */-blokke, hvis et af id'erne er i keep
+    (projektets id + config.features); fjern resten. keep=None beholder alle
+    (referencesiden). Blokke kan ikke indlejres."""
+    if isinstance(keep, str):
+        keep = {keep}
+    def sub(m):
+        if "/* @only" in m.group(2):
+            sys.exit("@only-blokke kan ikke indlejres")
+        return m.group(2) if keep is None or keep & set(m.group(1).split(",")) else ""
+    out = ONLY_RE.sub(sub, src)
+    if "/* @only" in out or "/* @end */" in out:
+        sys.exit("@only uden matchende /* @end */ i css/lune-ui.src.css")
+    return out
+
 def compact_css(src):
     """Expand the hand-written compact block twice (media + forced attribute)."""
     a_tag, b_tag = "/* @compact:begin */", "/* @compact:end */"
@@ -377,6 +448,41 @@ def contrast_report():
             rows.append((fg, bg, th, r, need, r >= need))
     return rows
 
+def build_css(cfg, project_id="cfg"):
+    """Færdig CSS for et projekt. project_id=None beholder alle @only-blokke."""
+    keep = ({cfg["id"]} | set(cfg.get("features") or [])) if project_id == "cfg" else project_id
+    src = only_css((ROOT/"css/lune-ui.src.css").read_text(encoding="utf-8"), keep)
+    css = compact_css(fill(fill(src, "tokens", tokens_css()), "state", state_css(cfg)))
+    return css.replace("Kildefil. Den færdige CSS pr. projekt bygges med tools/lds_build.py.",
+                       f"Bygget til {cfg['project']} af tools/lds_build.py — redigér css/lune-ui.src.css, ikke denne fil.")
+
+# ------------------------------------------------------------------ var-tjek
+# Inline-variabler: sættes i markup (style="--v:32%") eller af binderen, ikke i tokens.
+INLINE_VARS = frozenset({"v", "w", "a", "b", "deg", "now", "act", "bars-n", "fc-cols", "fc-dirs", "sub-n", "plan", "float"})
+
+def token_names():
+    names = set()
+    for group in TOK["color"].values():
+        names |= set(group)
+    for section in ("font", "type", "space", "radius", "size", "shadow", "motion"):
+        names |= set(TOK[section])
+    names |= set(TOK.get("density", {}).get("compact", {}))
+    return names
+
+def var_report():
+    """Hver var(--x) i kildefilen skal være et token, defineret lokalt i CSS'en
+    (--x: …) eller stå i INLINE_VARS. Returnerer [(navn, linjenumre)] for ukendte."""
+    src = (ROOT/"css/lune-ui.src.css").read_text(encoding="utf-8")
+    code = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), src, flags=re.S)
+    local = set(re.findall(r"--([a-z0-9-]+)\s*:", code))
+    known = token_names() | local | INLINE_VARS
+    bad = {}
+    for no, line in enumerate(code.splitlines(), 1):
+        for name in re.findall(r"var\(\s*--([a-z0-9-]+)", line):
+            if name not in known:
+                bad.setdefault(name, []).append(no)
+    return sorted(bad.items())
+
 # ------------------------------------------------------------------ main ----
 def main():
     ap = argparse.ArgumentParser()
@@ -390,18 +496,19 @@ def main():
     if a.check or not a.config:
         for fg, bg, th, r, need, ok in rows:
             print(f"{'OK ' if ok else 'FEJL'}  {fg:>11} på {bg:<10} {th:<5} {r:5.2f}:1  (krav {need})")
-        sys.exit(1 if bad else 0)
+        unknown = var_report()
+        for name, lines in unknown:
+            print(f"FEJL  var(--{name}) er hverken token, lokal variabel eller inline-variabel (linje {', '.join(map(str, lines))})")
+        if not unknown:
+            print("OK   alle var(--…) i css/lune-ui.src.css er kendte")
+        sys.exit(1 if bad or unknown else 0)
     if bad:
         print("ADVARSEL: tokens består ikke kontrastkravene — kør --check")
 
     cfg_path = pathlib.Path(a.config)
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     validate_cfg(cfg, str(cfg_path))
-
-    src = (ROOT/"css/lune-ui.src.css").read_text(encoding="utf-8")
-    css = compact_css(fill(fill(src, "tokens", tokens_css()), "state", state_css(cfg)))
-    css = css.replace("Kildefil. Den færdige CSS pr. projekt bygges med tools/lds_build.py.",
-                      f"Bygget til {cfg['project']} af tools/lds_build.py — redigér css/lune-ui.src.css, ikke denne fil.")
+    css = build_css(cfg)
     out = pathlib.Path(a.out)/cfg["id"]; out.mkdir(parents=True, exist_ok=True)
     (out/"lune-ui.css").write_text(css, encoding="utf-8")
     gz = gzip.compress(css.encode(), 9, mtime=0); (out/"lune-ui.css.gz").write_bytes(gz)

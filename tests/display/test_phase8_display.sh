@@ -353,7 +353,7 @@ token_body=$(sed -n '/display_refresh_token() const/,/display_header_text() cons
 rg -F 'return display_refresh_token_cache_' "$coordinator" >/dev/null
 ! rg -F 'Not mapped' "$zone_cell"
 
-rg -F 'data-save="heat-source"' "$touch_ui" >/dev/null
+rg -F 'data-save="heat_source.connection"' "$touch_ui" >/dev/null
 rg -F 'data-save="circulation"' "$touch_ui" >/dev/null
 rg -F 'public, max-age=31536000, immutable' "$dashboard_cpp" >/dev/null
 rg -F 'STATIC_CHUNK_SIZE = 1024' "$dashboard_cpp" >/dev/null

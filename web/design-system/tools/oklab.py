@@ -63,3 +63,9 @@ def cr(a: str, b: str) -> float:
     """WCAG contrast ratio between two hex colours."""
     la, lb = sorted((lum(a), lum(b)), reverse=True)
     return (la + 0.05) / (lb + 0.05)
+
+
+def mix(c1: str, pct: float, c2: str) -> str:
+    """Bland c1 (pct %) med c2 i OKLab — som color-mix(in oklab, c1 pct%, c2)."""
+    A, B, t = to_oklab(c1), to_oklab(c2), pct / 100
+    return from_oklab(*(A[i] * t + B[i] * (1 - t) for i in range(3)))

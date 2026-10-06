@@ -2,6 +2,10 @@
    LUNE DESIGN SYSTEM 2 — fælles stylesheet for Lune V6 og Lune Touch
    Kildefil. Den færdige CSS pr. projekt bygges med tools/lds_build.py.
    Regler og komponentbeskrivelser: DESIGN.md
+   Projektspecifikke blokke markeres med en @only-kommentar (touch, v6 eller en
+   feature som legacy = Dashboard/Konfiguration-modellen, DESIGN.md 12)
+   og en @end-kommentar; lds_build.py fjerner dem fra de andre projekters CSS.
+   Blokkene indlejres ikke. Se DESIGN.md 12.
    --------------------------------------------------------------------------
    Visuelt sprog
    • Fra Apex: varme neutraler, dybde via baggrundskontrast i stedet for
@@ -40,7 +44,7 @@
 @layer base {
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { -webkit-text-size-adjust: 100%; color-scheme: light dark; }
-  body { background: light-dark(#fbfaf8, #121210); }
+  body { background: light-dark(#f5f5f0, #121210); }
 
   .app {
     min-height: 100vh;
@@ -81,115 +85,114 @@
   }
 
   /* ---- 3.1 Top: header + zonestrimmel, klæber sammen på web ----------- */
-  .top {
+  /* ---- 3.1 Navbar: svævende pille der følger med ned ------------------
+     Én komponent til Lune og andre systemer (fx HA-dashboards):
+     venstre = enhed/brand, midte = navigation (tilstand eller visninger),
+     højre = værktøjer (sprog, tema, advarsler). Strimlen ligger under og
+     scroller med indholdet. */
+  .navbar-wrap {
     position: sticky;
     top: 0;
-    z-index: 20;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    z-index: 30;
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+    padding-bottom: var(--space-2);
   }
-  /* Mobil: ikke sticky, og ingen backdrop-filter — et filter på en forfader
-     ville gøre den svævende tilstands-pille relativ til .top i stedet for skærmen */
-  @media (max-width: 767.98px), (max-height: 600px) { .top { position: static; backdrop-filter: none; -webkit-backdrop-filter: none; } }
-
   .header {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: var(--space-3);
-    min-height: 60px;
-    padding-top: max(var(--space-2), env(safe-area-inset-top));
+    min-height: 56px;
+    padding: 6px 8px 6px 10px;
+    border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--card) 82%, transparent);
+    backdrop-filter: blur(18px) saturate(1.3);
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px var(--border), 0 10px 30px rgba(0,0,0,.22);
   }
   .header > :last-child { justify-self: end; }
+  .header .mode { background: var(--raised); }
+  .top { position: static; }
 
+  /* Mobil: ingen backdrop-filter på navbaren — et filter på en forfader
+     ville gøre den svævende tilstands-pille relativ til navbaren i stedet for skærmen */
   @media (max-width: 767.98px) {
-    .header { grid-template-columns: 1fr auto; min-height: 60px; }
+    .header { grid-template-columns: 1fr auto; min-height: 52px; background: var(--card); backdrop-filter: none; -webkit-backdrop-filter: none; }
   }
 
   /* ---- 3.2 Zonestrimmel ----------------------------------------------- */
-  /* Manifold + zoner deler skærmen i ens kolonner (samme bredde). */
+  /* Grid i stedet for vandret scroll: manifold + 6 zoner står ALTID
+     inden for skærmen. Zonefelterne deler resten ligeligt og krymper;
+     navne afkortes med ellipse. */
   .strip {
     --strip-n: 6;                    /* antal zonefelter; sættes af config (V6: 6) */
     display: grid;
-    grid-template-columns: repeat(calc(var(--strip-n) + 1), minmax(0, 1fr));
+    grid-template-columns: minmax(128px, auto) repeat(var(--strip-n), minmax(0, 1fr));
     gap: var(--space-2);
     padding-block: var(--space-1) var(--space-3);
   }
+  /* Mobil: system-feltet som smal række øverst, zonerne i én række under */
   @media (max-width: 599.98px) {
-    .strip { gap: 6px; }
+    .strip { grid-template-columns: repeat(var(--strip-n), minmax(0, 1fr)); gap: 6px; }
   }
 
-  /* Touch tiers: hus+manifolds + .substrip (≤190px / ≤150px@390). */
+  /* Mange felter (Touch med > 8 rum): felterne brydes i rækker i stedet
+     for at blive for smalle. System-feltet får sin egen fulde række. */
+  .strip.strip--many { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+  .strip.strip--many .tile-sys { grid-column: 1 / -1; grid-template-columns: auto 1fr auto; align-items: baseline; column-gap: var(--space-3); }
+  @media (max-width: 599.98px) {
+    .strip.strip--many { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+
+  /* @only tiers-strip */
+  /* FORÆLDET (2.2): Touch-hierarki (DESIGN.md 5.2.1): hus + manifolds på niveau 1, zonerne i
+     .substrip på niveau 2, kun når manifolden eller en af dens zoner er valgt
+     (reglerne genereres af lds_build.py ud fra `tiers` + `manifolds`). */
   .strip.strip--tiers {
-    display: grid;
     grid-template-columns: repeat(calc(var(--strip-n) + 1), minmax(0, 1fr));
-    gap: var(--space-2);
     padding-block: var(--space-1) var(--space-2);
   }
-  .strip.strip--tiers :is(.tile-sys, .tile-manifold) {
-    min-height: 0;
-    padding-block: var(--space-2);
-  }
+  .strip.strip--tiers :is(.tile-sys, .tile-manifold) { min-height: 0; padding-block: var(--space-2); }
   .substrip {
     display: none;
     grid-template-columns: repeat(var(--sub-n, 6), minmax(0, 1fr));
     gap: var(--space-2);
     padding-block: 0 var(--space-2);
   }
+  /* Manifoldfelt: ID + navn, fremløb/retur, og én lodret mini-søjle pr. zone.
+     Søjlerne er ventilåbning = mængde → neutral (tekstfarve), som zonefeltets bjælke. */
   .tile.tile-manifold {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto auto auto;
+    grid-template-areas: none;
     align-items: start;
     row-gap: 2px;
     column-gap: var(--space-2);
   }
   .tile.tile-manifold .tile-id { grid-column: 1; grid-row: 1; }
   .tile.tile-manifold .tile-name { grid-column: 2; grid-row: 1; min-width: 0; }
-  .tile.tile-manifold .tile-val {
-    grid-column: 1 / -1; grid-row: 2;
-    font-size: var(--fs-sm); font-weight: 500; color: var(--muted);
-  }
-  .tile.tile-manifold .mini {
-    grid-column: 1 / -1; grid-row: 3;
-    display: flex; align-items: flex-end; gap: 3px;
-    height: 28px; margin-top: 2px;
-  }
-  .tile.tile-manifold .mini i {
-    flex: 1 1 0; min-width: 0; border-radius: 2px;
-    background: var(--accent); align-self: flex-end; min-height: 2px;
-  }
+  .tile.tile-manifold .tile-val { grid-column: 1 / -1; grid-row: 2; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
+  .tile.tile-manifold .mini { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: flex-end; gap: 3px; height: 28px; margin-top: 2px; }
+  .tile.tile-manifold .mini i { flex: 1 1 0; min-width: 0; min-height: 2px; border-radius: 2px; background: currentColor; }
   .tile.tile-manifold .mini i[data-level="0"] { height: 2px; background: var(--seg-off); }
   .tile.tile-manifold .mini i[data-level="1"] { height: 20%; }
   .tile.tile-manifold .mini i[data-level="2"] { height: 40%; }
   .tile.tile-manifold .mini i[data-level="3"] { height: 60%; }
   .tile.tile-manifold .mini i[data-level="4"] { height: 80%; }
   .tile.tile-manifold .mini i[data-level="5"] { height: 100%; }
-  .tile.tile-manifold .mini i[data-state="fault"] {
-    background: var(--danger); height: 100%; min-height: 100%;
-  }
-  .tile.tile-manifold .mini i[data-state="blocked"] { background: var(--warn); height: 100%; min-height: 100%; }
+  .tile.tile-manifold .mini i[data-state="fault"]   { height: 100%; background: var(--danger); }
+  .tile.tile-manifold .mini i[data-state="blocked"] { height: 100%; background: var(--warn); }
   .tile.tile-manifold .mini i[data-state="learning"] { background: var(--violet); }
   .tile.tile-manifold .mini i[data-state="off"] { background: var(--seg-off); }
   .tile.tile-manifold[data-state="fault"] .tile-id { color: var(--danger); }
   .tile.tile-manifold.is-parent { box-shadow: inset 0 0 0 2px var(--fg); }
-
   @media (max-width: 599.98px) {
-    .strip.strip--tiers {
-      gap: 6px;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-    .strip.strip--tiers .tile-manifold {
-      grid-template-columns: 1fr; grid-template-rows: auto auto;
-      text-align: center; padding: 8px 6px 7px; border-radius: 10px;
-    }
+    .strip.strip--tiers { gap: 6px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .strip.strip--tiers .tile-sys { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
+    .strip.strip--tiers .tile-manifold { grid-template-columns: 1fr; grid-template-rows: auto auto; text-align: center; padding: 8px 6px 7px; border-radius: 10px; }
     .strip.strip--tiers .tile-manifold :is(.tile-name, .tile-val) { display: none; }
-    .strip.strip--tiers .tile-manifold .tile-id {
-      grid-column: 1; font-size: 10px; justify-self: center;
-    }
-    .strip.strip--tiers .tile-manifold .mini {
-      grid-column: 1; height: 22px; gap: 2px;
-    }
+    .strip.strip--tiers .tile-manifold .tile-id { grid-column: 1; font-size: 10px; justify-self: center; }
+    .strip.strip--tiers .tile-manifold .mini { grid-column: 1; height: 22px; gap: 2px; }
     .substrip { gap: 6px; }
   }
 
@@ -197,6 +200,7 @@
      Samme felter som V6' strimmel; felterne er links til V6'ens egen side. */
   .boards { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
   .boards .strip { padding-block: 0; }
+  /* @end */
   a.tile { text-decoration: none; }
 
   /* ---- 3.3 Indhold ---------------------------------------------------- */
@@ -211,7 +215,7 @@
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: var(--space-3);             /* Apex: gap-3 mellem kort */
     align-items: stretch;            /* kort side om side får samme højde */
-    /* Sticky header + strip ≈ scroll-mål. Mobil sticky er slået fra. */
+    /* Klæbende navbar ≈ scroll-mål for sektionslinks. Mobil klæber ikke. */
     --section-scroll-margin: calc(var(--hit) + var(--space-7) + var(--space-6));
   }
   @media (max-width: 767.98px), (max-height: 600px) {
@@ -237,12 +241,14 @@
   .view-head h2 { font-size: var(--fs-view); letter-spacing: -.03em; }
   .view-head p  { color: var(--muted); }
 
-  /* ---- 3.4 Sektioner (kun Konfiguration) ------------------------------
-     Grupperer paneler under en overskrift. 3+ sektioner → .section-nav.
-     Kun Service/Udvikler må være details.section (lukket som standard).
+  /* @only legacy */
+  /* ---- 3.4 Sektioner (kun Konfiguration, DESIGN.md 4.3) ---------------
+     Bruges af V6/Touch' konfigurationssider, indtil de er flyttet til
+     ark/System (afsnit 15). Grupperer paneler under en overskrift.
+     3+ sektioner → .section-nav. Kun Service/Udvikler må være
+     details.section (lukket som standard).
      Markup: h2.section-h > tekst + i.section-h-dot + i.section-h-line
-     Foldbar: summary.section-h > tekst + badge + i.section-h-dot + i.section-h-line
-     (chevron via summary::after). */
+     Foldbar: summary.section-h > tekst + badge + i.section-h-dot + i.section-h-line */
   .section-nav {
     grid-column: 1 / -1;
     display: flex;
@@ -270,11 +276,7 @@
   }
   .section-nav a:hover { color: var(--fg); }
   .section-nav a[data-dirty]::after,
-  .section-nav a[data-fault]::after {
-    content: "";
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--warn); flex: none;
-  }
+  .section-nav a[data-fault]::after { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
   .section-nav a[data-fault]::after { background: var(--danger); }
 
   .section,
@@ -288,7 +290,6 @@
     background: transparent;
     scroll-margin-top: var(--section-scroll-margin);
   }
-
   .section-h {
     display: flex;
     align-items: center;
@@ -304,30 +305,11 @@
   details.section:first-of-type > .section-h,
   .view-head + .section-nav + .section > .section-h,
   .view-head + .section-nav + details.section > .section-h,
-  .view-head + .section > .section-h {
-    margin-top: 0;
-  }
-  .section-h-line {
-    flex: 1 1 auto;
-    height: 1px;
-    background: var(--border);
-    min-width: var(--space-4);
-  }
-  .section-h-dot {
-    display: none;
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--warn); flex: none;
-  }
-  .section[data-dirty] > .section-h .section-h-dot,
-  details.section[data-dirty] > .section-h .section-h-dot,
-  .section[data-fault] > .section-h .section-h-dot,
-  details.section[data-fault] > .section-h .section-h-dot {
-    display: block;
-  }
-  .section[data-fault] > .section-h .section-h-dot,
-  details.section[data-fault] > .section-h .section-h-dot {
-    background: var(--danger);
-  }
+  .view-head + .section > .section-h { margin-top: 0; }
+  .section-h-line { flex: 1 1 auto; height: 1px; min-width: var(--space-4); background: var(--border); }
+  .section-h-dot { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .section:is([data-dirty], [data-fault]) > .section-h .section-h-dot { display: block; }
+  .section[data-fault] > .section-h .section-h-dot { background: var(--danger); }
 
   .section-grid {
     display: grid;
@@ -374,44 +356,22 @@
     )) { --conf-cols: 2; }
   }
 
-  details.section > summary.section-h {
-    list-style: none;
-    cursor: pointer;
-  }
+  details.section > summary.section-h { list-style: none; cursor: pointer; }
   details.section > summary.section-h::-webkit-details-marker { display: none; }
   details.section > summary.section-h::after {
-    content: "";
-    width: 7px; height: 7px; flex: none;
-    border-right: 1.5px solid currentColor;
-    border-bottom: 1.5px solid currentColor;
-    transform: rotate(45deg) translateY(-2px);
-    transition: transform var(--dur) var(--ease);
+    content: ""; flex: none; width: 7px; height: 7px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translateY(-2px); transition: transform var(--dur) var(--ease);
   }
-  details.section[open] > summary.section-h::after {
-    transform: rotate(225deg) translateY(-2px);
-  }
+  details.section[open] > summary.section-h::after { transform: rotate(225deg) translateY(-2px); }
+  /* @end */
 
-  /* Legacy .section-head — midlertidig kompatibilitet */
-  .section-head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding-block: var(--space-4) var(--space-1);
-    margin: 0;
-  }
-  .section-head > span {
-    flex: none;
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    letter-spacing: .04em;
-    color: var(--muted);
-  }
-  .section-head::after {
-    content: "";
-    flex: 1 1 auto;
-    height: 1px;
-    background: var(--border);
-  }
+  /* @only touch */
+  /* Legacy .section-head — midlertidig kompatibilitet (Touch-eksemplet) */
+  .section-head { display: flex; align-items: center; gap: var(--space-3); padding-block: var(--space-4) var(--space-1); margin: 0; }
+  .section-head > span { flex: none; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+  .section-head::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border); }
+  /* @end */
 }
 
 
@@ -455,24 +415,11 @@
     box-shadow: 0 12px 40px rgba(0,0,0,.18), 0 0 0 1px var(--border);
   }
   /* Om enhed — identitet øverst; ingen driftshandlinger her */
-  .device-about {
-    display: grid;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: var(--r-field);
-    background: var(--card);
-  }
-  .device-about h3 {
-    margin: 0;
-    font-size: var(--fs-sm);
-    font-weight: 600;
-  }
+  .device-about { display: grid; gap: var(--space-3); padding: var(--space-3); border-radius: var(--r-field); background: var(--card); }
+  .device-about h3 { margin: 0; font-size: var(--fs-sm); font-weight: 600; }
   .device-about .kv { gap: var(--space-2); }
   .device-about .btn { justify-self: start; }
-  .device-menu > nav {
-    display: grid;
-    gap: 2px;
-  }
+  .device-menu > nav { display: grid; gap: 2px; }
   .device-menu a {
     display: grid;
     grid-template-columns: 10px 1fr;
@@ -562,18 +509,21 @@
   .icon-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; }
 
   /* ---- 4.3 Zonefelt ----------------------------------------------------
-     Struktur genbrugt fra V6-headeren. Valgt felt INVERTERES (Apex'
-     "inverted card") — tydeligt på afstand, uden at tilføje en farve. */
+     Samme sprog som rumfelterne på Hjem: neutralt felt, ID + navn øverst,
+     afvigelses-chip (5 trin) til højre, temperatur, og en NEUTRAL vandret
+     ventilbjælke nederst. Farve kun i chippen og ved fejl.
+     Valgt felt INVERTERES. Grupper markeres i violet (gruppering), ikke orange. */
   .tile {
     position: relative;
     min-width: 0;
     min-height: var(--tile-h);
     display: grid;
-    grid-template-columns: 10px minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
-    column-gap: var(--space-3);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "id name dev" "val val val" "lvl lvl lvl";
+    column-gap: 6px;
+    row-gap: 6px;
     align-items: center;
-    padding: 10px var(--space-3) 10px 10px;
+    padding: 10px 12px 11px;
     border-radius: var(--r-tile);
     background: var(--card);
     box-shadow: var(--card-edge);
@@ -584,46 +534,57 @@
     transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
   }
   .tile:hover { background: var(--raised); }
+  /* Felter og rækker der åbner et ark (DESIGN.md 15) er knapper med popovertarget. */
+  button:is(.tile, .comfort > *) { width: 100%; border: 0; font: inherit; text-align: inherit; }
+  .comfort > button { background: none; color: inherit; }
+  .tile-id   { grid-area: id; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+  .tile-name { grid-area: name; font-size: var(--fs-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile-val  { grid-area: val; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+  .tile-dev  { grid-area: dev; justify-self: end; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-pill);
+               font-size: 11px; font-weight: 700; white-space: nowrap; background: var(--raised); color: var(--muted); }
+  .tile-dev[data-dev="1"] { background: var(--scale-cold-warm-1); color: #111214; }
+  .tile-dev[data-dev="2"] { background: var(--scale-cold-warm-2); color: #111214; }
+  .tile-dev[data-dev="4"] { background: var(--scale-cold-warm-4); color: #111214; }
+  .tile-dev[data-dev="5"] { background: var(--scale-cold-warm-5); color: #111214; }
 
-  .tile .lvl { grid-row: 1 / -1; align-self: stretch; display: grid; gap: 3px; }
-  .tile .lvl i { display: block; min-height: 7px; border-radius: 2px; background: var(--seg-off); }
-  .tile-id   { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
-  .tile-name { font-size: var(--fs-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tile-val  { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Ventilbjælke: 10 vandrette segmenter á 10 %, fyldes fra venstre + procent som tal.
+     Mængde → neutral (tekstfarve), ikke varme-orange. Mobil: segmenterne smelter sammen til én bjælke. */
+  .tile { grid-template-areas: "id name dev" "val val val" "lvl lvl pct"; }
+  .tile .lvl { grid-area: lvl; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 2px; direction: rtl; align-self: center; }
+  .tile .lvl i { display: block; height: 4px; border-radius: 2px; background: var(--seg-off); }
+  .tile-pct { grid-area: pct; justify-self: end; white-space: nowrap; font-size: 11px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3.2ch; text-align: right; }
+  .tile[data-level="1"] .lvl i:nth-child(n+10),
+  .tile[data-level="2"] .lvl i:nth-child(n+9),
+  .tile[data-level="3"] .lvl i:nth-child(n+8),
+  .tile[data-level="4"] .lvl i:nth-child(n+7),
+  .tile[data-level="5"] .lvl i:nth-child(n+6),
+  .tile[data-level="6"] .lvl i:nth-child(n+5),
+  .tile[data-level="7"] .lvl i:nth-child(n+4),
+  .tile[data-level="8"] .lvl i:nth-child(n+3),
+  .tile[data-level="9"] .lvl i:nth-child(n+2),
+  .tile[data-level="10"] .lvl i { background: currentColor; }
 
-  /* Niveau 0–5 tænder segmenter nedefra (ventilåbning i trin á 20 %) */
-  .tile[data-level="1"] .lvl i:nth-child(n+5),
-  .tile[data-level="2"] .lvl i:nth-child(n+4),
-  .tile[data-level="3"] .lvl i:nth-child(n+3),
-  .tile[data-level="4"] .lvl i:nth-child(n+2),
-  .tile[data-level="5"] .lvl i { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
-
-  /* Grupper: primær = hel kant, medlem = stiplet */
-  .tile[data-group="primary"] { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent); }
-  .tile[data-group="member"]  { outline: 1.5px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: -1.5px; }
+  /* Grupper (violet = gruppering): primær = hel ring, medlem = stiplet ring + dæmpet navn */
+  .tile[data-group="primary"] { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--violet) 80%, transparent); }
+  .tile[data-group="member"]  { outline: 1.5px dashed color-mix(in srgb, var(--violet) 80%, transparent); outline-offset: -1.5px; }
   .tile[data-group="member"] .tile-name { color: var(--muted); }
 
   .tile[data-state="fault"] :is(.tile-id, .tile-val) { color: var(--danger); }
   .tile[data-state="fault"] .lvl i:last-child { background: var(--danger); }
-  .tile[data-state="blocked"] :is(.tile-id, .tile-val) { color: var(--warn); }
+  .tile[data-state="fault"] .tile-pct { color: var(--danger); }
+  /* Blokeret (gul) og motorlæring (violet = læring): ID, værdi og bjælke i statusfarven.
+     Under læring viser bjælken læringsprocenten i stedet for ventilåbning. */
+  .tile[data-state="blocked"] :is(.tile-id, .tile-val, .tile-pct) { color: var(--warn); }
   .tile[data-state="blocked"] .lvl i:last-child { background: var(--warn); }
-  .tile[data-state="learning"] :is(.tile-id, .tile-val) { color: var(--violet); }
-  .tile[data-state="learning"][data-level="1"] .lvl i:nth-child(n+5),
-  .tile[data-state="learning"][data-level="2"] .lvl i:nth-child(n+4),
-  .tile[data-state="learning"][data-level="3"] .lvl i:nth-child(n+3),
-  .tile[data-state="learning"][data-level="4"] .lvl i:nth-child(n+2),
-  .tile[data-state="learning"][data-level="5"] .lvl i {
-    background: var(--violet);
-    box-shadow: none;
-  }
+  .tile[data-state="learning"] :is(.tile-id, .tile-val, .tile-pct, .lvl) { color: var(--violet); }
   .tile[data-state="off"] { opacity: .5; }
 
-  /* Lader op: Touch har planlagt pladeopladning før vind/kulde (absorb åben).
-     Pil-skilt øverst til højre; "insufficient" = gulvet kan ikke nå det hele.
-     Står før læringsskiltet, så "mangler læring" vinder hvis begge gælder. */
-  .tile[data-charge]::after,
-  .tile-sys[data-lease="refused"]::after,
-  .tile-sys[data-lease="none"]::after {
+  /* Skilte øverst til højre (DESIGN.md 5.2). Solide fyld-toner med on-…-tekst.
+     ↑ lader op: Touch har planlagt pladeopladning før vind/kulde; "insufficient" =
+     gulvet kan ikke nå det hele. ! mangler læring (vinder over ↑). ! på systemfeltet:
+     V6 uden Touch-lease kører lokalt. Skiltet tager afvigelses-chippens plads. */
+  .tile:is([data-charge], [data-learn="needed"])::after,
+  .tile-sys:is([data-lease="refused"], [data-lease="none"])::after {
     content: "\2191";
     position: absolute;
     top: var(--space-2);
@@ -634,37 +595,19 @@
     width: var(--space-4);
     height: var(--space-4);
     border-radius: var(--r-pill);
-    background: var(--accent);
-    color: var(--bg);
+    background: var(--heat-fill);
+    color: var(--on-heat-fill);
     font-size: var(--fs-xs);
     font-weight: 700;
     line-height: 1;
     pointer-events: none;
   }
-  .tile[data-charge="insufficient"]::after { background: var(--warn); }
-  /* System uden Touch-lease: V6 kører lokalt. Samme skilt, gult "!". */
-  .tile-sys[data-lease="refused"]::after,
-  .tile-sys[data-lease="none"]::after { content: "!"; background: var(--warn); }
-
-  /* Mangler læring: gult advarselsskilt øverst til højre. Farve er aldrig eneste signal. */
-  .tile[data-learn="needed"]::after {
-    content: "!";
-    position: absolute;
-    top: var(--space-2);
-    right: var(--space-2);
-    z-index: 1;
-    display: grid;
-    place-items: center;
-    width: var(--space-4);
-    height: var(--space-4);
-    border-radius: var(--r-pill);
-    background: var(--warn);
-    color: var(--bg);
-    font-size: var(--fs-xs);
-    font-weight: 700;
-    line-height: 1;
-    pointer-events: none;
-  }
+  .tile[data-charge="insufficient"]::after,
+  .tile[data-learn="needed"]::after,
+  .tile-sys:is([data-lease="refused"], [data-lease="none"])::after { background: var(--warn-fill); color: var(--on-warn-fill); }
+  .tile[data-learn="needed"]::after,
+  .tile-sys:is([data-lease="refused"], [data-lease="none"])::after { content: "!"; }
+  .tile:is([data-charge], [data-learn="needed"]) .tile-dev { visibility: hidden; }
 
   /* Valgt uden radio-state (server-renderet side eller JS): samme udtryk
      som det genererede :checked-selektor-sæt i sektion 6. */
@@ -676,77 +619,56 @@
   }
   .mode label.is-active { background: var(--inv-bg); color: var(--inv-fg); }
 
-  /* System-feltet: samme stak som zonefelter — .tile-id øverst (som Z1),
-     frem/retur som værdier under. ΔT hører til dashboard-visningen. */
+  /* System-feltet (manifold på V6, hus på Touch) */
   .tile-sys {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto;
+    grid-template-columns: auto;
+    grid-template-areas: none;
+    align-content: center;
     row-gap: 2px;
-    min-width: 0;
-    padding: 10px var(--space-3);
+    padding-inline: var(--space-4);
   }
-  .tile-sys .tile-id {
-    white-space: normal;
-    line-height: 1.15;
-    overflow: visible;
-    text-overflow: unset;
-  }
-  .tile-sys .temps {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-    line-height: 1.15;
-  }
-  .tile-sys .temp {
-    display: flex;
-    align-items: baseline;
-    gap: 3px;
-    min-width: 0;
-  }
-  .tile-sys .temp-lab {
-    flex: none;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: .02em;
-  }
-  .tile-sys .temp .tile-val {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  /* Samme farvebetydning som trendgrafen: frem = varme, retur = sensor/vand. */
-  .tile-sys .temp.flow .temp-lab,
-  .tile-sys .temp.flow .tile-val { color: var(--accent-ink); }
-  .tile-sys .temp.ret .temp-lab,
-  .tile-sys .temp.ret .tile-val { color: var(--info); }
+  .tile-sys b { font-size: var(--fs-xs); font-weight: 600; }
+  .tile-sys .big { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; }
+  .tile-sys small { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+  /* Systemfelt med fremløb/retur som stak (Touch' V6-rækker og manifoldfelter):
+     .tile-id øverst, frem/retur under. Samme farvebetydning som trendgrafen. */
+  .tile-sys > * { grid-area: auto; }
+  .tile-sys .temps { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.15; }
+  .tile-sys .temp { display: flex; align-items: baseline; gap: 3px; min-width: 0; }
+  .tile-sys .temp-lab { flex: none; font-size: 10px; font-weight: 600; }
+  .tile-sys .temp .tile-val { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .tile-sys .temp.flow :is(.temp-lab, .tile-val) { color: var(--accent-ink); }
+  .tile-sys .temp.ret  :is(.temp-lab, .tile-val) { color: var(--info); }
+  .tile-sys .temp.ret .tile-val { font-size: var(--fs-sm); font-weight: 500; }
   /* Uden måling: værdien er "—" og labelen er ikke farvet. */
-  .tile-sys .temp[data-empty] .temp-lab,
-  .tile-sys .temp[data-empty] .tile-val { color: var(--muted); }
-  .tile-sys .temp.ret .tile-val {
-    font-size: var(--fs-sm);
-    font-weight: 500;
-  }
+  .tile-sys .temp[data-empty] :is(.temp-lab, .tile-val) { color: var(--muted); }
 
-  /* Tablet: lidt strammere felter */
+  /* Tablet (600–1023 px): ID + navn på første linje, ingen afvigelses-chip (for smalt).
+     Under 600 px overtager mobil-reglen herunder. */
   @media (max-width: 1023.98px) {
-    .tile { column-gap: var(--space-2); padding-right: var(--space-2); }
+    .tile:not(.tile-sys) { grid-template-areas: "id name name" "val val val" "lvl lvl pct"; grid-template-columns: auto minmax(0, 1fr) auto; }
+    .tile-id { justify-self: start; }
+    .tile-dev { display: none; }
     .tile-val { font-size: var(--fs-md); }
   }
-  /* Mobil: zonefelt = ID + temperatur + niveaubjælken lagt NED som en
-     vandret række under (frigør bredde, så 6 zoner kan stå i én række
-     helt ned til 320px). Navnet står i overskriften under strimlen. */
+  /* Mobil: ID + temperatur + bjælke, centreret; navnet står i overskriften under strimlen */
   @media (max-width: 599.98px) {
-    .tile { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; row-gap: 3px; padding: 8px 6px 7px; border-radius: 10px; text-align: center; }
-    .tile .lvl { grid-row: 3; grid-template-columns: repeat(5, 1fr); gap: 2px; margin-top: 2px; }
-    .tile .lvl i { min-height: 3px; }
-    /* Vandret: segment 1 (venstre) tændes først → vend rækkefølgen */
-    .tile .lvl { direction: rtl; }
+    .tile { grid-template-areas: "id" "val" "lvl"; grid-template-columns: minmax(0, 1fr); row-gap: 3px; padding: 8px 6px 7px; border-radius: 10px; text-align: center; }
+    .tile .lvl { gap: 0; margin-top: 2px; border-radius: 2px; overflow: hidden; }
+    .tile .lvl i { height: 3px; border-radius: 0; }
+    .tile-pct { display: none; }
     .tile-name { display: none; }
     .tile-id { font-size: 10px; }
     .tile-val { font-size: var(--fs-sm); letter-spacing: -.03em; }
-
-    .tile-sys { padding: 8px 6px 7px; border-radius: 10px; }
+    .tile-sys {
+      grid-column: 1 / -1;
+      grid-template-columns: auto 1fr auto;
+      grid-template-rows: auto;
+      align-items: baseline;
+      column-gap: var(--space-3);
+      padding: 10px var(--space-3);
+    }
+    .tile-sys .big { font-size: var(--fs-md); }
     .tile-sys .temp { justify-content: center; }
     .tile-sys .temp.ret .tile-val { font-size: 10px; }
   }
@@ -774,10 +696,11 @@
   .panel-head .help-btn { align-self: center; }
   .panel-head .badge { margin-left: auto; }
   .panel-foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+  .panel-foot .note { margin-right: auto; }
 
   /* ---- Hjælp: ?-knap + native popover (klik/tryk, ikke hover) ---------
-     Desktop: forankret nær invoker via progressiv JS (flere ? kan dele
-     samme popover-id). Mobil: bundark. */
+     Neutral knap — orange betyder varme. Desktop: forankret nær knappen
+     (CSS anchor eller progressiv JS, når flere ? deler samme popover). Mobil: bundark. */
   .help-btn {
     position: relative;
     flex: none;
@@ -794,16 +717,12 @@
   }
   .help-btn::after { content: ""; position: absolute; inset: -11px; } /* ~44 px trykflade */
   .help-btn:hover { color: var(--fg); }
-  .help-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .help-pop {
-    /* Kæmp imod UA [popover] { inset:0; margin:auto }. Desktop: CSS anchor
-       hvor understøttet; ellers JS sætter top/left nær invoker. */
+    /* Kæmp imod UA [popover] { inset:0; margin:auto }. */
     position: fixed;
     inset: unset;
     top: 0;
     left: 0;
-    right: auto;
-    bottom: auto;
     margin: 0;
     max-width: 340px;
     padding: var(--space-4);
@@ -816,11 +735,7 @@
     box-shadow: 0 12px 40px rgba(0,0,0,.2), 0 0 0 1px var(--border);
   }
   @supports (anchor-name: --x) {
-    .help-pop {
-      top: anchor(bottom);
-      left: anchor(left);
-      margin-top: var(--space-2);
-    }
+    .help-pop { top: anchor(bottom); left: anchor(left); margin-top: var(--space-2); }
   }
   .help-pop p { margin: 0 0 var(--space-3); }
   .help-pop p:last-child { margin-bottom: 0; }
@@ -838,12 +753,21 @@
       border-radius: var(--r-card) var(--r-card) 0 0;
     }
   }
-  .panel-foot .note { margin-right: auto; }
 
   /* Inverteret panel: kun til det der kræver handling nu */
   /* Tonede paneler (Apex "usage examples"): dæmpet baggrund + stærk tekst */
-  .panel.alert { background: var(--danger-bg); gap: var(--space-3); box-shadow: inset 3px 0 0 var(--danger); }
-  .panel.alert h3 { color: var(--danger); }
+  /* Fejlpanel: tint-baggrund, solid rød kant og ikonbrik (Apex-fyld), titel i normal tekstfarve.
+     Rød bæres af de solide elementer — ikke af store flader med lav dækning (bliver brune i mørkt). */
+  .panel.alert { background: var(--danger-surface); gap: 2px var(--space-5); padding: var(--space-4) var(--space-5);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head foot" "note foot"; align-items: center;
+    box-shadow: inset 4px 0 0 var(--danger-fill), 0 0 0 1px color-mix(in srgb, var(--danger-fill) 35%, transparent); }
+  .panel.alert > .panel-head { grid-area: head; }
+  .panel.alert > .note { grid-area: note; padding-left: 40px; }
+  .panel.alert > .panel-foot { grid-area: foot; margin: 0; justify-content: flex-end !important; }
+  .panel.alert h3 { color: var(--fg); display: flex; align-items: center; gap: var(--space-3); font-size: var(--fs-md); }
+  @media (max-width: 599.98px) { .panel.alert { grid-template-columns: 1fr; grid-template-areas: "head" "note" "foot"; gap: var(--space-2); } .panel.alert > .panel-foot { justify-content: flex-start !important; padding-left: 40px; } }
+  .panel.alert h3::before { content: "!"; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--danger-fill); color: var(--on-fill); font-size: var(--fs-md); font-weight: 700; }
   .panel.tone-info { background: var(--info-bg); box-shadow: inset 3px 0 0 var(--info); }
   .panel.tone-info h3 { color: var(--info); }
 
@@ -858,52 +782,41 @@
   .msg.violet { background: var(--violet-bg); color: var(--violet); }
   .msg span { color: var(--fg); }
 
-  /* Resultat af Test læsning / Test afsendelse. Bliver stående; gemmes ikke. */
+  /* Resultat af Test læsning / Test afsendelse (DESIGN.md 6.7). Bliver stående; gemmes ikke. */
   .test-result:empty { display: none; }
-  .test-result[data-state="running"] {
-    display: flex;
-    align-items: center;
-    min-height: var(--hit);
-    font-size: var(--fs-sm);
-    color: var(--muted);
-  }
-  .test-result .msg span {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
+  .test-result[data-state="running"] { display: flex; align-items: center; min-height: var(--hit); font-size: var(--fs-sm); color: var(--muted); }
+  .test-result .msg span { display: flex; flex-direction: column; gap: var(--space-1); }
 
   /* Underafsnit side om side når panelet er bredt nok */
   .subs { display: grid; gap: var(--space-5) var(--space-6); }
   @container (min-width: 560px) { .subs.cols-2 { grid-template-columns: 1fr 1fr; } }
   .sub { display: grid; gap: var(--field-gap); align-content: start; min-width: 0; }
-  .subs.cols-2 > .sub {
-    display: flex;
-    flex-direction: column;
-    gap: var(--field-gap);
-    min-height: 100%;
-  }
-  .sub > h4 {
-    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
-    font-size: var(--fs-sm); font-weight: 500; color: var(--muted);
-  }
+  .subs.cols-2 > .sub { display: flex; flex-direction: column; gap: var(--field-gap); min-height: 100%; }
+  .sub > h4 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
   .sub > h4 .badge { margin-left: auto; }
+  /* Underafsnittets egne tilstandshandlinger flugter i bunden; panelets footer er kun Gem. */
   .sub > .actions:last-child { margin-top: auto; }
   .note { font-size: var(--fs-sm); color: var(--muted); }
 
   /* Monospace-id med kopiér (progressiv forstærkning) */
   .mono { font-family: var(--font-mono); font-size: var(--fs-sm); word-break: break-all; }
-  .id-row {
-    display: flex; align-items: center; gap: var(--space-2);
-    min-width: 0;
-  }
+  .id-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
   .id-row .mono { flex: 1; min-width: 0; }
-  .btn.copy {
-    flex: 0 0 auto;
-    padding-inline: var(--space-3);
-    font-size: var(--fs-xs);
-  }
+  .btn.copy { flex: 0 0 auto; padding-inline: var(--space-3); font-size: var(--fs-xs); }
+
+  /* Tilstandsafhængige handlinger (DESIGN.md 6.1b) — vis kun det, der passer
+     til panelets data-state. Skjul-reglen skal matche .btn-specificiteten. */
+  [data-state] [data-show-when] { display: none; }
+  .btn[data-show-when] { --show-display: inline-flex; }
+  .msg[data-show-when] { --show-display: flex; }
+  :is(.note, p, .hint, details)[data-show-when] { --show-display: block; }
+  dl[data-show-when] { --show-display: grid; }
+  .actions[data-show-when] { --show-display: flex; }
+  .setting[data-show-when] { --show-display: flex; }
+  [data-state="unpaired"] [data-show-when~="unpaired"],
+  [data-state="approved"] [data-show-when~="approved"],
+  [data-state="pending"]  [data-show-when~="pending"],
+  [data-state="error"]    [data-show-when~="error"] { display: var(--show-display, block); }
 
   /* Ekspert-tuning bag et link */
   .more > summary {
@@ -920,24 +833,6 @@
   .more[open] > summary::after { transform: rotate(225deg) translateY(-2px); }
   .more[open] > .subs { padding-top: var(--space-4); }
 
-  /* Tilstandsafhængige handlinger — vis kun det, der passer til data-state.
-     Skjul-reglen skal matche .btn-specificitet (ellers vinder display:inline-flex). */
-  [data-state] [data-show-when] { display: none; }
-  .btn[data-show-when] { --show-display: inline-flex; }
-  .msg[data-show-when] { --show-display: flex; }
-  .note[data-show-when],
-  p[data-show-when],
-  .hint[data-show-when] { --show-display: block; }
-  details[data-show-when] { --show-display: block; }
-  dl[data-show-when] { --show-display: grid; }
-  .actions[data-show-when] { --show-display: flex; }
-  [data-state="unpaired"]  [data-show-when~="unpaired"],
-  [data-state="approved"]  [data-show-when~="approved"],
-  [data-state="pending"]   [data-show-when~="pending"],
-  [data-state="error"]     [data-show-when~="error"] {
-    display: var(--show-display, block);
-  }
-
   /* Badge (pille) */
   .badge {
     display: inline-flex; align-items: center; gap: 6px;
@@ -946,13 +841,16 @@
     font-size: var(--fs-xs); font-weight: 500; white-space: nowrap;
   }
   .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .badge.hot { background: var(--accent-ink); color: var(--on-accent-ink); }
+  .badge.hot { background: var(--heat-fill); color: var(--on-heat-fill); }   /* solid Apex-orange, ikke den lyse tekst-tone (laks) */
   .badge.hot::before { background: currentColor; }
-  .badge.info   { color: var(--info);   background: var(--info-bg); }
-  .badge.ok     { color: var(--ok);     background: var(--ok-bg); }
-  .badge.warn   { color: var(--warn);   background: var(--warn-bg); }
-  .badge.bad    { color: var(--danger); background: var(--danger-bg); }
-  .badge.violet { color: var(--violet); background: var(--violet-bg); }
+  /* Lyst tema: hvid pille med farvet ring, prik og tekst (en tonet flade drukner på det beige kort).
+     Mørkt tema: afledt tint. */
+  .badge.info   { color: var(--info);   background: light-dark(var(--field), var(--info-bg)); }
+  .badge.ok     { color: var(--ok);     background: light-dark(var(--field), var(--ok-bg)); }
+  .badge.warn   { color: var(--warn);   background: light-dark(var(--field), var(--warn-bg)); }
+  .badge.bad    { color: var(--danger); background: light-dark(var(--field), var(--danger-bg)); }
+  .badge.violet { color: var(--violet); background: light-dark(var(--field), var(--violet-bg)); }
+  .badge:is(.info, .ok, .warn, .bad, .violet) { box-shadow: inset 0 0 0 1px light-dark(color-mix(in srgb, currentColor 35%, transparent), transparent); }
 
   /* ---- 4.5 Tal ---------------------------------------------------------
      Store tal, lille label under — ingen bokse (Apex metrics / Tesla). */
@@ -966,11 +864,11 @@
   .kv > div { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: max(0px, (var(--row-h) - 20px) / 2) 0; border-bottom: 1px solid var(--border); }
   .kv > div:last-child { border-bottom: 0; }
   .kv dt { color: var(--muted); }
-  .kv dd { font-weight: 500; text-align: right; }
+  .kv dd { min-width: 0; overflow-wrap: anywhere; font-weight: 500; text-align: right; }
 
-  /* Progress i Apex-stil: tynd bjælke (`--accent` varme, `.violet` læring) */
+  /* Progress i Apex-stil: tynd bjælke. Mængde → neutral; `.violet` = motorlæring. */
   .bar { height: 4px; border-radius: var(--r-pill); background: var(--seg-off); overflow: hidden; }
-  .bar > i { display: block; height: 100%; width: var(--v, 0%); background: var(--accent); border-radius: inherit; }
+  .bar > i { display: block; height: 100%; width: var(--v, 0%); background: var(--fg); border-radius: inherit; }
   .bar.violet > i { background: var(--violet); }
   p.hint + .bar { margin-top: var(--space-2); }
 
@@ -981,7 +879,7 @@
      skriver blot nye "points"-strenge — ingen chart-bibliotek.
      Smalt panel: grafen under navnet. Bredt panel: på samme række. */
   .comfort { display: grid; }
-  .comfort label {
+  .comfort > :is(label, button) {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr) auto;
     grid-template-areas: "id name val" "id spark spark";
@@ -993,9 +891,9 @@
     border-radius: var(--r-field);
     cursor: pointer;
   }
-  .comfort label + label { border-top: 1px solid var(--border); }
-  .comfort label:hover { background: var(--raised); border-color: transparent; }
-  .comfort label:hover + label { border-color: transparent; }
+  .comfort > :is(label, button) + :is(label, button) { border-top: 1px solid var(--border); }
+  .comfort > :is(label, button):hover { background: var(--raised); border-color: transparent; }
+  .comfort > :is(label, button):hover + :is(label, button) { border-color: transparent; }
   .comfort .id    { grid-area: id; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
   .comfort .name  { grid-area: name; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .comfort .val   { grid-area: val; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; text-align: right; }
@@ -1006,7 +904,7 @@
   .comfort [data-state="learning"] :is(.id, .val) { color: var(--violet); }
 
   @container (min-width: 560px) {
-    .comfort label {
+    .comfort > :is(label, button) {
       grid-template-columns: 40px minmax(90px, 140px) minmax(0, 1fr) 112px;  /* fast værdikolonne → graferne flugter */
       grid-template-areas: "id name spark val";
     }
@@ -1015,9 +913,9 @@
   .spark { display: block; width: 100%; height: 36px; overflow: visible; }
   .spark .t { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .spark .g { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-  .spark .a { fill: light-dark(rgba(232,99,10,.24), rgba(217,108,47,.18)); }
+  .spark .a { fill: url(#lds-fade-heat); }          /* glød fra linjen, ikke jævn tone (bliver brun på mørkt) */
   [data-state="fault"] .spark .t { stroke: var(--danger); }
-  [data-state="fault"] .spark .a { fill: color-mix(in srgb, var(--danger) 22%, transparent); }
+  [data-state="fault"] .spark .a { fill: url(#lds-fade-danger); }
 
   /* Fremløb/retur-trend i "Varme nu": fylder panelets bund, så kortet
      står lige så højt som komfortlisten ved siden af uden tom luft */
@@ -1025,110 +923,36 @@
   .trend-wrap h4 { display: flex; align-items: center; }
   .trend { display: block; width: 100%; height: 120px; overflow: visible; }
   .trend .f  { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
-  .trend .r  { fill: none; stroke: var(--info);   stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
-  .trend .dt { fill: var(--accent); opacity: .14; }
+  .trend .r  { fill: none; stroke: var(--data-return);   stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .trend .dt { fill: url(#lds-fade-heat); opacity: .8; }
+  .axis { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); }
+  .legend .lf { border-top: 2px solid var(--accent); }
+  .legend .lr { border-top: 2px solid var(--data-return); }
 
-  /* Tom graf: figuren klapper sammen til én linje (.empty) ved siden af
-     overskriften. Binderen sætter data-empty på grafens beholder. Manglende
-     værdier vises som "—", aldrig 0. */
+  /* Tom graf (DESIGN.md 5.9): figuren klapper sammen til én linje (.empty) ved
+     siden af overskriften. Binderen sætter data-empty på grafens beholder.
+     Manglende værdier vises som "—", aldrig 0. */
   .empty { display: none; margin: 0; font-size: var(--fs-sm); color: var(--muted); }
   [data-empty] > .empty { display: block; }
-  [data-empty] :is(.trend, .spark, .zchart, .fc, .bars, .axis, .legend, .zchart-legend, .fc-legend, .bars-legend) { display: none; }
+  [data-empty] :is(.trend, .spark, .zc, .fc, .bars, .axis, .legend, .fc-legend, .bars-legend) { display: none; }
   .sub[data-empty] { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
   .trend-wrap[data-empty] { margin-top: 0; }
   /* Dashboard: et panel hvis bundgraf er tom, strækkes ikke til naboens højde. */
   .panel:has(> .trend-wrap[data-empty]) { align-self: start; }
 
-  /* Zone 24 t + 6 t fremskrivning (halvtime). Akser/Nu/forklaring i HTML. */
-  .zchart {
-    display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
-    column-gap: var(--space-2);
-    row-gap: 6px;
-  }
-  .zchart-y {
-    display: flex; flex-direction: column; justify-content: space-between;
-    align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1;
-  }
-  .zchart-plot { position: relative; min-width: 0; height: 140px; cursor: crosshair; }
-  .zchart-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
-  .zchart .gl { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
-  .zchart .t  { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .zchart .g  { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-  .zchart .pb { fill: var(--info); opacity: .14; }
-  .zchart .pj { fill: none; stroke: var(--info); stroke-width: 1.6; stroke-dasharray: 4 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .zchart .past { fill: var(--card); opacity: .55; }
-  .zchart .now  { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-  .zchart-now {
-    position: absolute; top: -2px; left: var(--now, 80%);
-    transform: translateX(6px);
-    font-size: var(--fs-xs); font-weight: 600;
-  }
-  /* Mus-slider: stiplet lodret linje over plottet (HTML, så SVG-repaint ikke sletter den). */
-  .zchart-scrub {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 0;
-    border-left: 1px dashed var(--fg);
-    pointer-events: none;
-    z-index: 1;
-  }
-  .zchart-plot[data-scrubbing] .zchart-now { opacity: .45; }
-  .zchart-x {
-    grid-column: 2;
-    display: flex; justify-content: space-between;
-    font-size: var(--fs-xs); color: var(--faint);
-  }
-  .zchart-legend {
-    display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
-    font-size: var(--fs-xs); color: var(--muted); margin: var(--space-2) 0 0;
-  }
-  .zchart-legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .zchart-legend i { display: inline-block; width: 16px; }
-  .zchart-legend .lt { border-top: 2px solid var(--fg); }
-  .zchart-legend .lg { border-top: 1.5px dashed var(--muted); }
-  .zchart-legend .lp {
-    height: 8px;
-    background: color-mix(in srgb, var(--info) 22%, transparent);
-    border-top: 1.6px dashed var(--info);
-  }
-  @media (max-width: 599.98px) {
-    .zchart { grid-template-columns: 28px minmax(0, 1fr); }
-    .zchart-plot { height: 112px; }
-  }
-
-  /* .bars: plan vs reality */
+  /* @only touch */
+  /* Plan vs. virkelighed (.bars, Touch med Asgard/Odin): planlagt neutral, faktisk varme. */
   .bars { display: grid; gap: var(--space-2); }
-  .bars-plot {
-    display: grid;
-    grid-template-columns: repeat(var(--bars-n, 12), minmax(0, 1fr));
-    align-items: end; gap: 4px; height: 88px;
-  }
-  .bars-plot .col {
-    display: grid; grid-template-columns: 1fr 1fr;
-    align-items: end; gap: 2px; height: 100%;
-  }
-  .bars-plot .col i {
-    display: block; width: 100%; border-radius: 2px 2px 0 0; min-height: 2px;
-  }
-  .bars-plot .col i.plan { background: var(--muted); opacity: .45; height: calc(var(--plan, 0) * 1%); }
+  .bars-plot { display: grid; grid-template-columns: repeat(var(--bars-n, 12), minmax(0, 1fr)); align-items: end; gap: 4px; height: 88px; }
+  .bars-plot .col { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 2px; height: 100%; }
+  .bars-plot .col i { display: block; width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; }
+  .bars-plot .col i.plan { background: var(--seg-off); height: calc(var(--plan, 0) * 1%); }
   .bars-plot .col i.act  { background: var(--accent); height: calc(var(--act, 0) * 1%); }
-  .bars-legend {
-    display: flex; flex-wrap: wrap; gap: var(--space-3);
-    font-size: var(--fs-xs); color: var(--muted);
-  }
-  .bars-legend i {
-    display: inline-block; width: 10px; height: 10px;
-    border-radius: 2px; margin-right: 4px; vertical-align: -1px;
-  }
-  .bars-legend .lp { background: var(--muted); opacity: .45; }
+  .bars-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); font-size: var(--fs-xs); color: var(--muted); }
+  .bars-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
+  .bars-legend .lp { background: var(--seg-off); }
   .bars-legend .la { background: var(--accent); }
-
-  .axis { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); }
-  .legend .lf { border-top: 2px solid var(--accent); }
-  .legend .lr { border-top: 2px solid var(--info); }
+  /* @end */
 
   /* ---- Vejrudsigt: ikoner + temperatur + vind på fælles tidsakse -----
      Kun figurerne er SVG (strakt med preserveAspectRatio="none" og
@@ -1148,6 +972,7 @@
   .fc-icons .sun    { stroke: var(--warn); }
   .fc-icons .partly { stroke: var(--warn); }
   .fc-icons .rain   { stroke: var(--info); }
+  /* @only touch */
   .fc-icons .snow   { stroke: var(--info); }
   .fc-icons .moon   { stroke: var(--muted); }
   /* Ét ikon pr. time (data-hourly): antal kolonner = antal timer (--fc-cols). */
@@ -1160,11 +985,13 @@
   .fc--dual > .fc-y { grid-column: 1; }
   .fc--dual > .fc-y2 { grid-column: 3; }
   .fc-y2 { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
-  .fc .sa { fill: var(--warn); opacity: .14; }
-  .fc .sl { fill: none; stroke: var(--warn); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  /* Solindstråling: grafens ene fyldte serie, som glød (jævn gul bliver oliven på mørkt). */
+  .fc .sa { fill: url(#lds-fade-light); }
+  .fc .sl { fill: none; stroke: var(--data-light); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   /* Vindretning under vindgrafen: pile hver 3. time (--fc-dirs kolonner). */
-  .fc-dirs { display: grid; grid-template-columns: repeat(var(--fc-dirs, 24), minmax(0, 1fr)); justify-items: center; color: var(--info); }
+  .fc-dirs { display: grid; grid-template-columns: repeat(var(--fc-dirs, 24), minmax(0, 1fr)); justify-items: center; color: var(--data-return); }
   .fc-dirs .dir { margin: 0; width: 14px; height: 14px; }
+  /* @end */
 
   .fc-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
   .fc-plot { position: relative; min-width: 0; }
@@ -1174,10 +1001,10 @@
 
   .fc .gl   { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .fc .day  { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
-  .fc .pre  { fill: var(--accent); opacity: .12; }
-  .fc .tl   { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .fc .wa   { fill: var(--info); opacity: .18; }
-  .fc .wl   { fill: none; stroke: var(--info); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .fc .pre  { fill: url(#lds-hatch-heat); }         /* preload-bånd: skravering, ikke svag orange */
+  .fc .tl   { fill: none; stroke: var(--data-outdoor); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .fc .wa   { fill: url(#lds-fade-info); }
+  .fc .wl   { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .fc .thr  { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
   .fc .past { fill: var(--card); opacity: .55; }     /* fortiden tones ned */
   .fc .now  { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
@@ -1192,130 +1019,103 @@
   .fc-x span { width: 0; display: flex; justify-content: center; white-space: nowrap; }
   .fc-x span:first-child { justify-content: flex-start; }
   .fc-x .d { color: var(--fg); font-weight: 600; }
-  /* Mærker på faste klokkeslæt (00/06/12/18): placeret med left i % af tidsaksen. */
+  /* @only touch */
+  /* Mærker på faste klokkeslæt (00/03/06 …): placeret med left i % af tidsaksen. */
   .fc-x.fc-x--abs { position: relative; display: block; height: 1.4em; }
   .fc-x.fc-x--abs span { position: absolute; top: 0; width: auto; transform: translateX(-50%); }
+  /* @end */
 
   .fc-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: var(--fs-xs); color: var(--muted); }
   .fc-legend span { display: inline-flex; align-items: center; gap: 6px; }
   .fc-legend i { display: inline-block; width: 16px; }
-  .fc-legend .lt   { border-top: 2px solid var(--fg); }
-  .fc-legend .lw   { height: 8px; background: color-mix(in srgb, var(--info) 30%, transparent); border-top: 2px solid var(--info); }
+  .fc-legend .lt   { border-top: 2px solid var(--data-outdoor); }
+  .fc-legend .lw   { height: 8px; background: linear-gradient(color-mix(in srgb, var(--data-return) 45%, transparent), transparent); border-top: 2px solid var(--data-return); }
   .fc-legend .lthr { border-top: 1px dashed var(--accent); }
-  .fc-legend .lpre { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
-  .fc-legend .lsun { height: 8px; background: color-mix(in srgb, var(--warn) 22%, transparent); border-top: 1.2px solid var(--warn); }
-  .fc-legend .dir { margin: 0; color: var(--info); }
-  .fc-legend .lbar  { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 75%, transparent); }
-  .fc-legend .ldhw  { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--info) 70%, transparent); }
-  .fc-legend .lleg  { height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 75%, transparent) 0 3px, color-mix(in srgb, var(--info) 35%, transparent) 3px 6px); }
+  .fc-legend .lpre { height: 10px; border-radius: 2px; background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1.5px, transparent 1.5px 5px); }
+  /* @only touch */
+  .fc-legend .lsun { height: 8px; background: linear-gradient(color-mix(in srgb, var(--data-light) 45%, transparent), transparent); border-top: 1.2px solid var(--data-light); }
+  .fc-legend .dir  { margin: 0; color: var(--data-return); }
+  .fc-legend .lbar  { height: 10px; border-radius: 2px 2px 0 0; background: var(--heat-fill); }
+  .fc-legend .ldhw  { height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, transparent) 0 1.5px, transparent 1.5px 5px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
+  .fc-legend .lleg  { height: 10px; border-radius: 2px 2px 0 0; box-shadow: inset 0 0 0 1px var(--heat-fill);
+    background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1px, transparent 1px 3.5px),
+                repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1px, transparent 1px 3.5px); }
   .fc-legend .llift { border-top: 3px solid var(--violet); border-radius: var(--r-pill); }
-  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--accent-ink) 0 3px, color-mix(in srgb, var(--accent) 25%, transparent) 3px 6px); }
-  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--warn) 0 3px, color-mix(in srgb, var(--warn) 25%, transparent) 3px 6px); }
+  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px); }
+  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--warn) 0 3px, transparent 3px 6px); }
 
   /* Plan (Lune Touch): 24 t frem fra nu. Venstre kolonne = spornavn, højre = tidsakse
      (--a/--b = fra/til i timer fra nu). Øverste spor: Odin — planlagt varme som søjler
      (--v = højde i %), Touch' løft af Odins komfortbånd som violet streg under.
-     Rumspor: forvarme (lys accent), opladning før vind/kulde (accent; gul = gulvet
-     kan ikke dække hele underskuddet). Farve er aldrig eneste signal: hvert segment
-     har title-tekst, og forklaringen står under grafen. */
-  .plan {
-    display: grid;
-    grid-template-columns: minmax(4.5rem, 8rem) minmax(0, 1fr);
-    column-gap: var(--space-3);
-    row-gap: 6px;
-    align-items: center;
-  }
+     Rumspor: forvarme (skraveret lys), opladning før vind/kulde (skraveret varme; gul =
+     gulvet kan ikke dække hele underskuddet). Ingen jævne orange flader under 30 %
+     (3.2.1) — derfor skravering. Farve er aldrig eneste signal: hvert segment har
+     title-tekst, og forklaringen står under grafen. */
+  .plan { display: grid; grid-template-columns: minmax(4.5rem, 8rem) minmax(0, 1fr); column-gap: var(--space-3); row-gap: 6px; align-items: center; }
   .plan-lab { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .plan-lane {
-    position: relative;
-    height: 18px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--fg) 5%, transparent);
-  }
+  .plan-lane { position: relative; height: 18px; border-radius: 4px; background: var(--seg-off); }
   .plan-lane--odin {
-    height: 64px;
-    margin-bottom: 6px;
-    display: grid;
-    grid-template-columns: repeat(24, 1fr);
-    align-items: end;
-    gap: 1px;
-    border-radius: 0;
-    background: none;
-    border-bottom: 1px solid var(--border);
+    height: 64px; margin-bottom: 6px;
+    display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 1px;
+    border-radius: 0; background: none; border-bottom: 1px solid var(--border);
   }
-  .plan-bar { height: calc(var(--v, 0) * 1%); background: color-mix(in srgb, var(--accent) 75%, transparent); border-radius: 2px 2px 0 0; }
-  .plan-bar[data-mode="dhw"] { background: color-mix(in srgb, var(--info) 70%, transparent); }
+  /* Alle tre er varme (samme domæne) og adskilles med mønster, ikke kulør (3.2.2):
+     rumvarme solid, varmt vand skraveret + kant, legionella kryds-skraveret + kant.
+     Skraveringen er CSS-udgaven af lds-hatch-heat / lds-hatch-heat-dense (søjlerne er HTML). */
+  .plan-bar { height: calc(var(--v, 0) * 1%); border-radius: 2px 2px 0 0; background: var(--heat-fill); }
+  .plan-bar[data-mode="dhw"] {
+    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, transparent) 0 1.5px, transparent 1.5px 5px);
+    box-shadow: inset 0 0 0 1px var(--heat-fill);
+  }
   .plan-bar[data-mode="legionella"] {
-    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 75%, transparent) 0 3px,
-                                          color-mix(in srgb, var(--info) 35%, transparent) 3px 6px);
+    background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1px, transparent 1px 3.5px),
+                repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1px, transparent 1px 3.5px);
+    box-shadow: inset 0 0 0 1px var(--heat-fill);
   }
   /* Y-akse for Odin-sporet: navn til venstre, kWh-mærker højrestillet ved sporet. */
   .plan-lab--y { display: flex; align-items: stretch; justify-content: space-between; gap: var(--space-2); height: 64px; margin-bottom: 6px; }
   .plan-lab--y > b { font-weight: inherit; align-self: center; }
-  .plan-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
-            font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; line-height: 1; }
+  .plan-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: 10px; color: var(--faint); line-height: 1; }
   .plan-y i { font-style: normal; }
-  .plan-lift, .plan-seg {
-    position: absolute;
-    left: calc(var(--a, 0) * 100% / 24);
-    width: calc((var(--b, 0) - var(--a, 0)) * 100% / 24);
-    border-radius: var(--r-pill);
-  }
+  .plan-lift, .plan-seg { position: absolute; left: calc(var(--a, 0) * 100% / 24); width: calc((var(--b, 0) - var(--a, 0)) * 100% / 24); border-radius: var(--r-pill); }
   .plan-lift { bottom: -6px; height: 3px; background: var(--violet); }
   .plan-seg { top: 3px; bottom: 3px; }
-  .plan-seg[data-kind="preload"] { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  /* Opladning er skraveret, så den ikke ligner Odins massive rumvarme-søjler. */
-  .plan-seg[data-kind="charge"] {
-    background: repeating-linear-gradient(135deg, var(--accent-ink) 0 3px,
-                                          color-mix(in srgb, var(--accent) 25%, transparent) 3px 6px);
-  }
-  .plan-seg[data-kind="charge"][data-insufficient] {
-    background: repeating-linear-gradient(135deg, var(--warn) 0 3px,
-                                          color-mix(in srgb, var(--warn) 25%, transparent) 3px 6px);
-  }
+  .plan-seg[data-kind="preload"] { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1.5px, transparent 1.5px 5px); }
+  .plan-seg[data-kind="charge"] { background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px); }
+  .plan-seg[data-kind="charge"][data-insufficient] { background: repeating-linear-gradient(135deg, var(--warn) 0 3px, transparent 3px 6px); }
   .plan-x { grid-column: 2; position: relative; height: 1.4em; font-size: var(--fs-xs); color: var(--faint); }
   .plan-x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
   .plan-x span:first-child { transform: none; }
   .plan-x .d { color: var(--fg); font-weight: 600; }
   .plan-empty-lane { grid-column: 2; font-size: var(--fs-xs); color: var(--faint); }
 
-  /* Fordeling (.dist, Touch): omtrentlig andel af pumpens flow pr. manifold som
-     stablet bjælke (--w = andel i %), med en tynd bjælke pr. manifold for dens
-     zoner. Farve pr. manifold via data-i (0–3); rækkerne under bærer navn, % og
-     l/min, så farven aldrig er eneste signal. */
+  /* Fordeling (.dist, Touch): omtrentlig andel af pumpens flow pr. manifold. Flow er en
+     mængde → neutral, og bjælker er aldrig flerfarvede (3.2.2): segmenterne er --fg i
+     faldende styrke (data-i 0–3) med en tynd skillelinje. Rækkerne under bærer navn,
+     % og l/min, så tonen aldrig er eneste signal. */
   .dist { display: grid; gap: var(--space-3); }
-  .dist-bar {
-    display: flex; height: 22px; overflow: hidden;
-    border-radius: var(--r-pill);
-    background: color-mix(in srgb, var(--fg) 6%, transparent);
-  }
+  .dist-bar { display: flex; height: 22px; overflow: hidden; border-radius: var(--r-pill); background: var(--seg-off); }
   .dist-bar--thin { height: 8px; }
-  .dist-seg { flex: 0 0 calc(var(--w, 0) * 1%); min-width: 0; background: var(--c, var(--accent)); }
-  .dist-seg + .dist-seg { box-shadow: inset 2px 0 0 var(--card, var(--bg)); }
-  [data-i="0"] { --c: var(--accent); }
-  [data-i="1"] { --c: var(--info); }
-  [data-i="2"] { --c: var(--violet); }
-  [data-i="3"] { --c: var(--ok); }
-  .dist-bar--thin .dist-seg { opacity: .75; }
-  .dist-rows {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
-    gap: var(--space-2) var(--space-4); align-items: center; font-size: var(--fs-sm);
-  }
-  .dist-key { width: 10px; height: 10px; border-radius: 3px; background: var(--c, var(--accent)); }
+  .dist-seg { flex: 0 0 calc(var(--w, 0) * 1%); min-width: 0; background: color-mix(in srgb, var(--fg) var(--k, 100%), transparent); }
+  .dist-seg + .dist-seg { box-shadow: inset 2px 0 0 var(--card); }
+  .dist [data-i="0"] { --k: 100%; }
+  .dist [data-i="1"] { --k: 72%; }
+  .dist [data-i="2"] { --k: 50%; }
+  .dist [data-i="3"] { --k: 32%; }
+  .dist-rows { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--space-2) var(--space-4); align-items: center; font-size: var(--fs-sm); }
+  .dist-key { width: 10px; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--fg) var(--k, 100%), transparent); }
   .dist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dist-rows .num { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+  .dist-rows .num { text-align: right; color: var(--muted); }
   .dist-rows .dist-bar--thin { grid-column: 2 / -1; margin-top: -4px; }
   .dist-note { font-size: var(--fs-xs); color: var(--faint); }
+  /* @end */
 
-  /* Slider: stiplet linje gennem begge grafer + aflæsning, følger mus/finger.
+  /* @only touch */
+  /* Slider: stiplet linje gennem graferne + aflæsning, følger mus/finger.
      HTML (ikke SVG), så den ikke forvrænges. Binderen sætter left i px. */
   .fc { position: relative; }
   .fc-plot { cursor: crosshair; touch-action: pan-y; }
-  .fc-scrub {
-    position: absolute; top: 0; bottom: 0; width: 0;
-    border-left: 1px dashed var(--fg);
-    pointer-events: none; z-index: 1;
-  }
+  .fc-scrub { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-left: 1px dashed var(--fg); pointer-events: none; z-index: 1; }
   .fc-readout {
     position: absolute; top: 0; z-index: 2;
     display: grid; gap: 2px;
@@ -1329,14 +1129,15 @@
   .fc-readout.flip { transform: translateX(calc(-100% - var(--space-2))); }
   .fc-readout b { font-weight: 600; }
   .fc-readout .c-temp { color: var(--fg); }
-  .fc-readout .c-sun { color: var(--warn); }
-  .fc-readout .c-wind { color: var(--info); }
+  .fc-readout .c-sun  { color: var(--data-light); }
+  .fc-readout .c-wind { color: var(--data-return); }
   .fc[data-scrubbing] .fc-now { opacity: .45; }
 
   /* Timeikoner på smalle skærme: hvert 3. (ikonerne beholder deres plads). */
   @media (max-width: 899.98px) {
     .fc-icons[data-hourly] > :not(:nth-child(3n+1)) { visibility: hidden; }
   }
+  /* @end */
 
   /* Vindpil: roteres efter retningen via --deg */
   .dir { width: 16px; height: 16px; vertical-align: -2px; margin-left: 4px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; transform: rotate(var(--deg, 0deg)); }
@@ -1347,10 +1148,60 @@
     .fc-wind { height: 56px; }
     .fc-icons { grid-template-columns: repeat(12, 1fr); }
     .fc-icons:not([data-hourly]) .ic:nth-child(even) { display: none; }   /* ikon hver 6. time */
+    .fc-x:not(.fc-x--abs) span:not(.d):not(:first-child) { visibility: hidden; }  /* kun ugedage */
+    .fc-x:not(.fc-x--abs) span:is(:nth-child(3), :nth-child(7), :nth-child(11)) { visibility: visible; }
+    /* @only touch */
     .fc.fc--dual { grid-template-columns: 26px minmax(0, 1fr) 34px; }
     .fc-dirs > :nth-child(even) { visibility: hidden; }
     :is(.fc-x, .plan-x) span.m { visibility: hidden; }  /* 3-timers mærker kun på bred skærm */
+    /* @end */
   }
+
+  /* @only v6 */
+  /* ---- Zonegraf: 24 t historik + 6 t prognose --------------------------
+     Én tidsakse fra −24 t til +6 t (nu ved 80 %). Fortid: temperatur (fuld,
+     --fg), mål som trappe (stiplet, --muted), afvigelsen imellem (--accent).
+     Fremtid: tonet baggrund, prognose stiplet i --info med usikkerhedsbånd,
+     planlagt mål fortsætter. Preload-perioder som bånd. Ventilåbning som
+     søjlestrimmel under grafen. Alle tekster er HTML (se 5.9). */
+  .zc { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: var(--space-2); row-gap: 6px; }
+  .zc-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1; height: 180px; }
+  .zc-plot { position: relative; height: 180px; min-width: 0; }
+  .zc-plot svg, .zc-valve svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .zc-vlabel { align-self: center; justify-self: end; font-size: var(--fs-xs); color: var(--faint); }
+  .zc-valve { height: 18px; }
+  .zc-valve rect { fill: var(--fg); opacity: .7; }
+  .zc-x { grid-column: 2; position: relative; height: 16px; font-size: var(--fs-xs); color: var(--faint); }
+  .zc-x span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .zc-x span:first-child { transform: none; }
+  .zc-x span:last-child { transform: translateX(-100%); }
+  .zc-x .n { color: var(--fg); font-weight: 600; }
+
+  .zc .gl     { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .zc .day    { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+  .zc .pre    { fill: url(#lds-hatch-heat); }
+  .zc .future { fill: var(--raised); opacity: .45; }
+  .zc .dev    { fill: url(#lds-fade-heat); opacity: .8; }
+  .zc .band   { fill: var(--data-return); opacity: .18; }
+  .zc .sp     { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+  .zc .sp.plan { opacity: .8; }
+  .zc .t      { fill: none; stroke: var(--fg); stroke-width: 2.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .zc .fc     { fill: none; stroke: var(--data-return); stroke-width: 2; stroke-dasharray: 4 4; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .zc .now    { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  [data-state="fault"] .zc .t { stroke: var(--danger); }
+  /* Slider over plottet (HTML, så SVG'en ikke forvrænges). */
+  .zc-scrub { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-left: 1px dashed var(--fg); pointer-events: none; z-index: 1; }
+
+  .fc-legend .lsp    { border-top: 1.4px dashed var(--muted); }
+  .fc-legend .lfc    { border-top: 2px dashed var(--data-return); }
+  .fc-legend .lvalve { height: 10px; border-radius: 2px; background: var(--fg); opacity: .7; }
+
+  @media (max-width: 599.98px) {
+    .zc { grid-template-columns: 30px minmax(0, 1fr); }
+    .zc-y, .zc-plot { height: 140px; }
+    .zc-x span:nth-child(2), .zc-x span:nth-child(4) { visibility: hidden; }
+  }
+  /* @end */
 
   /* Signaturforklaring i panelhovedet */
   .legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
@@ -1383,6 +1234,7 @@
   .climate .target button:hover  { background: var(--border); }
   .climate .target button:active { background: var(--inv-bg); color: var(--inv-fg); }
   .climate .target button:disabled { opacity: .35; cursor: not-allowed; }
+  .climate .target svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; }
   .climate .target .value { display: grid; justify-items: center; }
   .climate .target .value small { font-size: var(--fs-xs); color: var(--muted); }
   .climate .target input {
@@ -1400,22 +1252,21 @@
   .field > label, .field > .label { font-size: var(--fs-sm); font-weight: 500; }
   .field .hint { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--muted); margin-top: 2px; }
   p.hint { font-size: var(--fs-xs); color: var(--muted); margin: 0; }
-  /* Label + kontrol på samme række. Kontrolbredde = aktiv halvdel af
-     2-valg-.seg (padding 4px+4px), så select/stepper/input flugter med
-     den hvide pille — ikke hele segløbet. */
-  .field.row {
-    grid-template-columns: minmax(0, 1fr) calc((100% - 8px) / 2);
-    align-items: center;
-    column-gap: var(--space-4);
+  @container (min-width: 320px) {
+    .field.row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
   }
-  .field.row > .input,
-  .field.row > .select,
-  .field.row > .stepper,
-  .field.row > .pair,
-  .field.row > .seg,
-  .field.row > .compass { width: 100%; min-width: 0; justify-self: stretch; }
-  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-  .pair.wide-first { grid-template-columns: 2fr 1fr; }
+  /* Kontroller får bredde efter indhold, ikke halv panelbredde (3.10) */
+  .field.row > .stepper, .field > .stepper { width: 168px; }
+  .field.row > .select { width: auto; min-width: 160px; max-width: 280px; }
+  .field > .select { width: min(100%, 320px); }
+  .field.row > .input, .field > .input { width: min(100%, 320px); }
+  .w-xs { width: 9ch !important; } .w-sm { width: 16ch !important; } .w-md { width: 26ch !important; } .w-lg { width: min(100%, 44ch) !important; }
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 16ch)); gap: var(--space-3); justify-content: start; }
+  .pair.wide-first { grid-template-columns: minmax(0, 26ch) auto; }
+  @media (max-width: 599.98px) {
+    .field.row > .stepper, .field > .stepper, .field.row > .select, .field > .select, .field.row > .input, .field > .input, .pair, .pair.wide-first { width: 100%; max-width: none; grid-template-columns: minmax(0,1fr) auto; }
+    .pair { grid-template-columns: 1fr 1fr; }
+  }
 
   .input, .select {
     width: 100%;
@@ -1430,37 +1281,19 @@
   .input::placeholder { color: var(--faint); }
   .input:user-invalid { border-color: var(--danger); }
   /* Filvalg: native input[type=file] kan ikke centreres pålideligt.
-     `.file.input` er en label der ser ud som et felt; den rigtige input er .sr-only. */
-  label.file.input {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    cursor: pointer;
-  }
+     `label.file.input` ser ud som et felt; den rigtige input er .sr-only. */
+  label.file.input { display: flex; align-items: center; gap: var(--space-3); cursor: pointer; }
   label.file.input:focus-within { border-color: var(--fg); }
   .file-pick {
     flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-flex; align-items: center; justify-content: center;
     min-height: calc(var(--hit) - 2 * var(--space-2));
     padding: 0 var(--space-4);
     border-radius: var(--r-pill);
-    background: var(--raised);
-    color: var(--fg);
-    font-size: var(--fs-sm);
-    font-weight: 500;
-    white-space: nowrap;
+    background: var(--raised); color: var(--fg);
+    font-size: var(--fs-sm); font-weight: 500; white-space: nowrap;
   }
-  .file-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--fs-sm);
-    color: var(--muted);
-  }
+  .file-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--muted); }
   .select {
     appearance: none;
     padding-right: 40px;
@@ -1470,6 +1303,312 @@
     background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%;
     background-size: 5px 5px;
     background-repeat: no-repeat;
+  }
+
+  /* ---- Grupperede lister (DESIGN.md 15.5) -------------------------------
+     Indstillinger i ark og på System: lille overskrift + én afrundet flade
+     med rækker. Label (+ hint) til venstre, kontrol til højre med naturlig
+     bredde. Maks. 6 rækker pr. gruppe, 5 grupper pr. side. */
+  .setting-group { display: grid; gap: var(--space-2); }
+  .setting-group > h4 { margin: 0 0 0 4px; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
+  .setting-list { border-radius: var(--r-tile); background: var(--raised); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); overflow: hidden; }
+  .setting { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: var(--setting-h); padding: 8px var(--space-4); }
+  .setting + .setting, .setting + .gated-body > .setting:first-child, .gated-body > .setting + .setting,
+  :is(.setting-list, .gated-body) > :is(.setting, details) + details > summary.setting, :is(.setting-list, .gated-body) > details + .setting { border-top: 1px solid var(--border); }
+  .setting-label { display: grid; gap: 2px; min-width: 0; }
+  .setting-label > :first-child { font-size: var(--fs-md); font-weight: 500; }
+  .setting-label small { font-size: var(--fs-xs); color: var(--muted); }
+  .setting-control { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+  .setting-control > .input, .setting-control > .select { min-height: 36px; }
+  .setting-control > .stepper { width: 140px; min-height: 36px; }
+  .setting-control > .select { width: auto; min-width: 160px; max-width: 220px; }
+  /* Kompas i en række: fire runde vægge (N Ø S V) uden hus. */
+  .compass.inline { display: flex; gap: var(--space-2); }
+  .compass.inline .c { display: none; }
+  .compass.inline span { width: 36px; height: 36px; border-radius: 50%; }
+  .setting-group > .note { margin: 0 0 0 4px; font-size: var(--fs-xs); color: var(--faint); }
+  /* Læseværdi (15.5): værdien i 600-vægt, tid/kilde dæmpet bagefter. */
+  .setting-value { font-weight: 600; text-align: right; }
+  .setting-value small { font-weight: 400; color: var(--muted); }
+  .setting.switch { cursor: pointer; }
+  .setting-list .btn:not(.primary):not(.danger-solid) { background: var(--card); box-shadow: inset 0 0 0 1px var(--border); }
+  /* Lang værdi (URL, variabel): kontrollen under labelen i fuld bredde */
+  .setting.stack { flex-direction: column; align-items: stretch; gap: var(--space-2); padding-block: var(--space-3); }
+  .setting.stack .setting-control > * { width: 100%; }
+  @media (max-width: 599.98px) {
+    /* Kontrollen bliver på rækken, når den kan; ellers brydes den under labelen. */
+    .setting { flex-wrap: wrap; }
+    .setting-control { margin-left: auto; max-width: 100%; }
+    .setting.stack .setting-control { margin-left: 0; width: 100%; }
+  }
+
+  /* Avanceret: række med › der åbner en underside i samme ark/kategori (15.3).
+     details.subpage — uden JS. Når den er åben, skjules resten af fanen/kategorien,
+     og summary bliver til «‹ Tilbage». */
+  details.subpage > summary { list-style: none; cursor: pointer; }
+  details.subpage > summary::-webkit-details-marker { display: none; }
+  details.subpage > summary .setting-control::after { content: "›"; font-size: var(--fs-lg); color: var(--muted); }
+  details.subpage > summary .sub-back { display: none; }
+  details.subpage[open] > summary { min-height: var(--hit); padding-inline: 0; border-radius: 0; background: none; }
+  details.subpage[open] > summary :is(.setting-label, .setting-control) { display: none; }
+  details.subpage[open] > summary .sub-back { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
+  details.subpage[open] > summary .sub-back::before { content: "‹"; font-size: var(--fs-lg); }
+  details.subpage > .subpage-body { display: grid; gap: var(--space-5); padding-top: var(--space-2); }
+  /* Åben underside: kun den står tilbage i fanen/kategorien. */
+  :is(.tab-panel, .sys-cat, .subpage-host):has(details.subpage[open]) .setting-group:not(:has(details.subpage[open])):not(.subpage-body .setting-group),
+  :is(.tab-panel, .sys-cat, .subpage-host):has(details.subpage[open]) > :not(.setting-group, form, .savebar),
+  :is(.tab-panel, .sys-cat, .subpage-host) form:has(details.subpage[open]) > :not(.setting-group, .savebar),
+  .setting-group:has(details.subpage[open]) > :not(.setting-list),
+  .setting-list:has(> details.subpage[open]) > :not(details.subpage[open]) { display: none; }
+  .setting-list:has(> details.subpage[open]) { background: none; box-shadow: none; overflow: visible; }
+
+  /* ---- Ark (.sheet, DESIGN.md 15.3) ------------------------------------
+     Native popover: Esc og klik udenfor lukker. Desktop: fast i højre side.
+     Mobil: ark fra bunden. Arket selv scroller; hoved og gem-bjælke klæber. */
+  .sheet {
+    position: fixed;
+    inset: var(--sheet-inset) var(--sheet-inset) var(--sheet-inset) auto;
+    width: min(var(--sheet-w), calc(100vw - 2 * var(--sheet-inset)));
+    height: auto;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sheet);
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: var(--float);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .sheet:popover-open { display: flex; flex-direction: column; }
+  .sheet::backdrop { background: rgb(0 0 0 / 35%); }
+  .sheet-head {
+    position: sticky; top: 0; z-index: 2;
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2) var(--space-3);
+    padding: var(--space-5) var(--space-5) var(--space-3);
+    background: var(--card);
+  }
+  .sheet-head h2 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; }
+  .sheet-head p { font-size: var(--fs-sm); color: var(--muted); }
+  .sheet-head .tabs { grid-column: 1 / -1; margin-top: var(--space-2); }
+  .sheet-close {
+    align-self: start;
+    display: grid; place-items: center;
+    width: var(--hit); height: var(--hit);
+    border: 0; border-radius: 50%;
+    background: var(--raised); color: var(--fg);
+    font-size: var(--fs-lg); line-height: 1; cursor: pointer;
+  }
+  .sheet-close:hover { background: var(--inv-bg); color: var(--inv-fg); }
+  .sheet-body { flex: 1 1 auto; display: grid; align-content: start; gap: var(--space-5); padding: var(--space-2) var(--space-5) var(--space-5); }
+  .sheet-body > .tab-panel { display: none; gap: var(--space-5); align-content: start; }
+  .sheet form { display: grid; gap: var(--space-5); }
+  @media (max-width: 599.98px) {
+    .sheet {
+      inset: auto 0 0 0;
+      width: 100%;
+      max-height: 92vh;
+      border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+    }
+    .sheet-head { padding: var(--space-4) var(--space-4) var(--space-3); }
+    .sheet-body { padding: var(--space-2) var(--space-4) max(var(--space-5), env(safe-area-inset-bottom)); }
+  }
+
+  /* Ikonbrik: dyb fyld-tone + hvid glyf (3.2.2). data-tone vælger domæne/status. */
+  .chip-icon {
+    display: grid; place-items: center; flex: none;
+    width: var(--hit); height: var(--hit);
+    border-radius: var(--r-field);
+    background: var(--heat-fill); color: var(--on-fill);
+  }
+  .chip-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .chip-icon[data-tone="info"]   { background: var(--info-fill); }
+  .chip-icon[data-tone="ok"]     { background: var(--ok-fill); }
+  .chip-icon[data-tone="violet"] { background: var(--violet-fill); }
+  .chip-icon[data-tone="warn"]   { background: var(--warn-fill); color: var(--on-warn-fill); }
+  .chip-icon[data-tone="danger"] { background: var(--danger-fill); }
+  .chip-icon[data-tone="neutral"]{ background: var(--raised); color: var(--fg); }
+
+  /* @only touch */
+  /* ---- Hjem (DESIGN.md 15.7): hovedsektion, termostat-ring, felter, varmekort ---- */
+  /* Hovedsektion: én sætning om situationen + hustemperatur og mål i ringen. */
+  .home-hero {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-5) var(--space-7);
+    padding: var(--space-6) var(--panel-pad);
+    border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
+  }
+  .home-hero > div > small { font-size: var(--fs-sm); color: var(--muted); }
+  .home-hero h2 { margin-top: var(--space-1); font-size: var(--fs-2xl); letter-spacing: -.03em; line-height: 1.1; }
+  .home-hero p { margin-top: var(--space-3); max-width: 52ch; color: var(--muted); }
+  @media (max-width: 767.98px) { .home-hero { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; } }
+
+  /* Termostat-ring: 270°-bue. Sporet er neutralt, buen er målet (varme, én farve, 3.2.2),
+     mærket er den aktuelle temperatur. --v og --now = 0–100 % af skalaen. */
+  .thermo { display: grid; justify-items: center; gap: var(--space-2); }
+  .thermo-ring { position: relative; width: min(240px, 64vw); aspect-ratio: 1; }
+  .thermo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(135deg); }
+  .thermo-ring circle { fill: none; stroke-linecap: round; }
+  .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 10; stroke-dasharray: 75 100; }
+  .thermo-ring .arc { stroke: var(--accent); stroke-width: 10; stroke-dasharray: calc(var(--v, 0) * .75) 100; }
+  .thermo-ring .now { stroke: var(--fg); stroke-width: 14; stroke-dasharray: .1 100; stroke-dashoffset: calc(var(--now, 0) * -.75); }
+  .thermo-val { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; }
+  .thermo-val b { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .95; }
+  .thermo-val b small { font-size: var(--fs-xl); color: var(--muted); letter-spacing: 0; }
+  .thermo-val span { font-size: var(--fs-sm); color: var(--muted); }
+  .thermo .climate { gap: var(--space-2); }
+
+  /* Felter på Hjem: maks. 4 i en række. Ét felt = én ting; hele feltet åbner tingens ark. */
+  .home-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+  @media (max-width: 1099.98px) { .home-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 599.98px)  { .home-tiles { grid-template-columns: minmax(0, 1fr); } }
+  .home-tile {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "icon title go" "icon status go" "val val val" "viz viz viz";
+    align-items: center; gap: 2px var(--space-3);
+    width: 100%; padding: var(--space-4);
+    border: 0; border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
+    color: var(--fg); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur) var(--ease);
+  }
+  .home-tile:hover { background: var(--raised); }
+  .home-tile > .chip-icon { grid-area: icon; }
+  .home-tile > b { grid-area: title; font-size: var(--fs-md); font-weight: 600; }
+  .home-tile > .ht-status { grid-area: status; overflow: hidden; font-size: var(--fs-sm); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .home-tile::after { content: "›"; grid-area: go; font-size: var(--fs-lg); color: var(--muted); }
+  .home-tile > .ht-val { grid-area: val; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-top: var(--space-3);
+    font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
+  .home-tile > .ht-val small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); letter-spacing: 0; }
+  .home-tile > .ht-viz { grid-area: viz; display: block; width: 100%; height: 48px; margin-top: var(--space-2); overflow: visible; }
+  .home-tile[data-empty] > .ht-viz { display: none; }
+  /* Én ekstra linje (fx aktuel elpris + skala-chip i Næste varme). */
+  .home-tile > .ht-price { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--muted); }
+  .ht-viz .t  { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ht-viz .f  { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ht-viz .r  { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ht-viz .a  { fill: url(#lds-fade-heat); }
+  .ht-viz .w  { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ht-viz .pre { fill: url(#lds-hatch-heat); }
+  .ht-viz .col { fill: var(--seg-off); }
+  .ht-viz .col.on { fill: var(--accent); }
+
+  /* Skala-chip (5 trin, scale-good-bad: pris, luft, signal). Tallet står altid i chippen. */
+  .scale-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-2); border-radius: var(--r-pill);
+    font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0; background: var(--raised); color: var(--muted); }
+  /* Tekst: lyst tema hvid på 1/2/4/5 og næsten sort på 3; mørkt tema næsten sort (alle ≥ 4,5:1). */
+  .scale-chip[data-scale="1"] { background: var(--scale-good-bad-1); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
+  .scale-chip[data-scale="2"] { background: var(--scale-good-bad-2); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
+  .scale-chip[data-scale="3"] { background: var(--scale-good-bad-3); color: var(--on-warn-fill); }
+  .scale-chip[data-scale="4"] { background: var(--scale-good-bad-4); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
+  .scale-chip[data-scale="5"] { background: var(--scale-good-bad-5); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
+
+  /* Varmekort: rum grupperet pr. manifold. Rummene er zonefelter (.tile) med 10-segment
+     ventilbjælke, procent og afvigelses-chip; gruppeoverskriften åbner manifoldens ark. */
+  .heatmap { display: grid; gap: var(--space-5); }
+  .room-group { display: grid; gap: var(--space-3); }
+  .room-group-head { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); justify-self: start;
+    padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
+  .room-group-head small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
+  .room-group-head::after { content: "›"; color: var(--muted); }
+  .room-group-head:hover { color: var(--muted); }
+  .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--space-2); }
+  .room-grid .tile { padding: var(--space-3); }
+  .room-grid .tile-val { font-size: var(--fs-xl); }
+  /* V6 offline: seneste værdier dæmpet + besked; farve er aldrig eneste signal. */
+  .room-group[data-offline] .room-grid { opacity: .55; }
+  .offline-note { font-size: var(--fs-sm); color: var(--warn); }
+  .offline-note::before { content: "!"; display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: var(--space-2);
+    border-radius: 50%; background: var(--warn-fill); color: var(--on-warn-fill); font-size: var(--fs-xs); font-weight: 700; vertical-align: -2px; }
+  .heatmap-note { font-size: var(--fs-xs); color: var(--faint); }
+  @media (max-width: 599.98px) {
+    .room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .room-grid .tile { grid-template-areas: "id name" "val val" "lvl pct"; grid-template-columns: auto minmax(0, 1fr); text-align: left; border-radius: var(--r-tile); }
+    .room-grid .tile :is(.tile-name, .tile-pct) { display: block; }
+    .room-grid .tile .tile-val { font-size: var(--fs-lg); }
+  }
+
+  /* Læseværdier fra en anden enhed (fx V6 i Touch' rum-ark): dæmpet når enheden er offline. */
+  .setting-group[data-offline] .setting-list { opacity: .55; }
+  /* @end */
+
+  /* ---- Faner (.tabs) ----------------------------------------------------
+     Radioer (class="state", name="tab-{id}", value=overview|history|settings)
+     står først i arket; fanerne er labels; panelerne vises med søskende-selektorer
+     ud fra radioens value — ingen genereret CSS pr. ark. */
+  .tabs { display: inline-flex; justify-self: start; width: fit-content; max-width: 100%; padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
+  .tabs label { display: grid; place-items: center; min-height: calc(var(--hit) - 8px); padding: 0 var(--space-4); border-radius: var(--r-pill);
+    font-size: var(--fs-sm); font-weight: 500; color: var(--muted); white-space: nowrap; cursor: pointer; }
+  .tabs label:hover { color: var(--fg); }
+  input.tab[value="overview"]:checked ~ .sheet-head .tabs label[data-tab="overview"],
+  input.tab[value="history"]:checked  ~ .sheet-head .tabs label[data-tab="history"],
+  input.tab[value="settings"]:checked ~ .sheet-head .tabs label[data-tab="settings"] { background: var(--inv-bg); color: var(--inv-fg); }
+  input.tab[value="overview"]:focus-visible ~ .sheet-head .tabs label[data-tab="overview"],
+  input.tab[value="history"]:focus-visible  ~ .sheet-head .tabs label[data-tab="history"],
+  input.tab[value="settings"]:focus-visible ~ .sheet-head .tabs label[data-tab="settings"] { outline: 2px solid var(--focus); outline-offset: 2px; }
+  input.tab[value="overview"]:checked ~ .sheet-body > .tab-panel[data-tab="overview"],
+  input.tab[value="history"]:checked  ~ .sheet-body > .tab-panel[data-tab="history"],
+  input.tab[value="settings"]:checked ~ .sheet-body > .tab-panel[data-tab="settings"] { display: grid; }
+
+  /* ---- Gem-bjælke (.savebar) -------------------------------------------
+     Én pr. fane/kategori, sidst i formularen. Klæber nederst. Dirty-mønstret
+     (6.1): clean = neutral knap med aria-disabled og ingen Fortryd. */
+  .savebar {
+    position: sticky; bottom: 0; z-index: 2;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2);
+    margin-inline: calc(-1 * var(--space-5));
+    padding: var(--space-3) var(--space-5) max(var(--space-3), env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    background: var(--card);
+  }
+  .sys .savebar { margin-inline: 0; padding-inline: 0; background: var(--bg); }
+  .savebar .save-status { margin-right: auto; font-size: var(--fs-sm); color: var(--warn); }
+  .savebar .save-status:not(:empty)::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: var(--space-2); border-radius: 50%; background: currentColor; vertical-align: middle; }
+  .savebar .save-status:empty { display: none; }
+  form[data-state="error"] .savebar .save-status { color: var(--danger); }
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) .savebar > .btn.primary,
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) .savebar > .btn.primary:hover { background: var(--raised); color: var(--muted); }
+  form[data-js]:not([data-dirty]) .savebar > button[type="reset"] { display: none; }
+  @media (max-width: 599.98px) {
+    .savebar { margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); }
+    /* System på mobil: over den svævende tilstandspille. */
+    .sys .savebar { bottom: calc(var(--hit) + var(--space-6) + env(safe-area-inset-bottom)); padding-inline: 0; }
+  }
+
+  /* ---- System-side (.sys, DESIGN.md 15.4) ------------------------------
+     Kategorier = radioer (class="state", name="syscat", id="c-{kategori}" og
+     "c-none") lige før .sys (eller før .app). Visning af kategorier genereres af
+     lds_build.py ud fra systemCategories. c-none: desktop viser første kategori,
+     mobil viser listen. */
+  .sys { display: grid; grid-template-columns: var(--sys-nav-w) minmax(0, var(--sys-main-w)); gap: var(--space-7); align-items: start; padding-block: var(--space-4) var(--space-7); }
+  .sys-nav { position: sticky; top: calc(var(--hit) + var(--space-7)); display: grid; gap: 2px; }
+  .sys-nav label {
+    display: flex; align-items: center; gap: var(--space-3);
+    min-height: var(--hit); padding: 0 var(--space-3);
+    border-radius: var(--r-field);
+    font-size: var(--fs-md); font-weight: 500; color: var(--muted); cursor: pointer;
+  }
+  .sys-nav label:hover { background: var(--card); color: var(--fg); }
+  .sys-nav label svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; }
+  .sys-nav label[data-dirty]::after { content: ""; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--warn); }
+  .sys-main { min-width: 0; }
+  .sys-cat { display: none; gap: var(--space-5); align-content: start; }
+  .sys-cat > header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+  .sys-cat > header small { display: block; font-size: var(--fs-sm); color: var(--muted); }
+  .sys-cat > header h2 { font-size: var(--fs-view); letter-spacing: -.03em; line-height: 1.1; }
+  .sys-cat form { display: grid; gap: var(--space-5); }
+  .sys-back { display: none; }
+  @media (max-width: 899.98px) { .sys { grid-template-columns: calc(var(--sys-nav-w) * .8) minmax(0, 1fr); gap: var(--space-5); } }
+  @media (max-width: 599.98px) {
+    .sys { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+    .sys-nav { position: static; padding: var(--space-2); border-radius: var(--r-tile); background: var(--card); }
+    .sys-nav label { min-height: var(--setting-h); color: var(--fg); }
+    .sys-nav label::after { content: "›"; margin-left: auto; color: var(--muted); }
+    #c-none:not(:checked) ~ :is(.app, .sys) .sys-nav { display: none; }
+    #c-none:not(:checked) ~ :is(.app, .sys) .sys-back {
+      display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--hit);
+      font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer;
+    }
+    .sys-back::before { content: "‹"; font-size: var(--fs-lg); }
   }
 
   /* Stepper — pille */
@@ -1517,49 +1656,48 @@
 
   .gated:has(> .switch input:not(:checked)) > .gated-body { opacity: .4; pointer-events: none; }
 
-  /* Heat-pump limits only apply in heat-pump mode (seg radios inside the form). */
-  form[data-save="heating"]:not(:has(input[name="heat_mode"][value="heat_pump"]:checked)) .hp-limits {
-    opacity: .4; pointer-events: none;
-  }
+  /* @only v6 */
+  /* V6: varmepumpe-grænser gælder kun i varmepumpe-tilstand (seg-radioer i formularen). */
+  form:has(input[name="heat_mode"]):not(:has(input[name="heat_mode"][value="heat_pump"]:checked)) .hp-limits { opacity: .4; pointer-events: none; }
 
-  /* 2-probe layout: kun manifold frem/retur — skjul zone-returfelter og ekstra probes */
+  /* V6 med 2 prober: kun manifold frem/retur — skjul zone-returfelter og ekstra prober. */
   .app[data-probe-layout="2"] .zone-ret { display: none; }
-  .app[data-probe-layout="2"] .metric[data-probe]:not([data-probe="1"]):not([data-probe="2"]) {
-    display: none;
-  }
+  .app[data-probe-layout="2"] .metric[data-probe]:not([data-probe="1"]):not([data-probe="2"]) { display: none; }
+  /* @end */
 
-  /* Segmenteret valg — pille, aktiv inverteret.
-     To mønstre: (1) radio inde i label (V6), (2) eksterne .state-radioer + label[for]
-     til typeafhængige felter (Touch varmekilde). Aktiv-stil for (2) genereres i lds_build. */
-  .seg { display: flex; min-height: var(--hit); padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
-  .seg label { flex: 1; display: grid; }
+  /* Segmenteret valg — pille, aktiv inverteret */
+  .seg { display: inline-flex; width: fit-content; max-width: 100%; min-height: var(--hit); padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
+  .seg label { flex: 0 0 auto; display: grid; }
+  .seg span { padding: 0 var(--space-4) !important; }
+  @media (max-width: 599.98px) { .seg { display: flex; width: auto; } .seg label { flex: 1; } }
   .seg input { position: absolute; opacity: 0; pointer-events: none; }
-  .seg span { display: grid; place-items: center; padding: 0 var(--space-3); border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; text-align: center; }
+  .seg span { display: grid; place-items: center; white-space: nowrap; padding: 0 var(--space-3); border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; text-align: center; }
   .seg input:checked + span { background: var(--inv-bg); color: var(--inv-fg); }
   .seg input:focus-visible + span { outline: 2px solid var(--focus); }
-
-  /* Type-fieldsets: ingen native fieldset-ramme */
-  fieldset.typed-fields,
-  fieldset.hs-fields {
-    border: 0;
-    margin: 0;
-    padding: 0;
-    min-inline-size: 0;
-  }
+  /* @only touch */
+  /* .seg med eksterne .state-radioer + label[for] (typeafhængige felter, 5.18):
+     aktiv-stilen genereres af lds_build.py. Type-fieldsets uden native ramme. */
+  fieldset:is(.typed-fields, .hs-fields) { border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+  /* @end */
 
   /* Kompas for ydervægge */
+  /* Kompas: et hus med fire vægge. Ydervægge vælges som piller på hver side.
+     Valgt = inverteret (neutral) — ydervægge er ikke varme, så ingen orange. */
   .compass {
     display: grid;
-    grid-template: ". n ." var(--hit) "w c e" var(--hit) ". s ." var(--hit) / var(--hit) var(--hit) var(--hit);
-    gap: 4px;
+    grid-template: ". n ." 30px "w c e" 76px ". s ." 30px / 30px 76px 30px;
+    gap: 6px;
   }
-  .compass .c { grid-area: c; border-radius: 50%; background: var(--raised); }
+  .compass .c { grid-area: c; position: relative; border-radius: 18px; background: var(--raised); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+  .compass .c::after { content: ""; position: absolute; inset: 0; margin: auto; width: 30px; height: 30px; background: var(--muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'/%3E%3C/svg%3E") center / contain no-repeat; }
   .compass label { display: grid; }
   .compass [data-wall="n"] { grid-area: n; } .compass [data-wall="e"] { grid-area: e; }
   .compass [data-wall="s"] { grid-area: s; } .compass [data-wall="w"] { grid-area: w; }
   .compass input { position: absolute; opacity: 0; }
-  .compass span { display: grid; place-items: center; border-radius: var(--r-pill); background: var(--field); box-shadow: inset 0 0 0 1px var(--border); font-size: var(--fs-sm); font-weight: 600; color: var(--muted); cursor: pointer; }
-  .compass input:checked + span { background: var(--accent-ink); box-shadow: none; color: var(--on-accent-ink); }
+  .compass span { display: grid; place-items: center; border-radius: var(--r-pill); background: var(--field); box-shadow: inset 0 0 0 1px var(--field-edge); font-size: var(--fs-xs); font-weight: 700; color: var(--muted); cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease); }
+  .compass span:hover { color: var(--fg); }
+  .compass input:checked + span { background: var(--inv-bg); box-shadow: none; color: var(--inv-fg); }
   .compass input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 
   /* Tabel */
@@ -1588,13 +1726,9 @@
   .btn:hover { background: var(--inv-bg); color: var(--inv-fg); }
   .btn.primary { background: var(--inv-bg); color: var(--inv-fg); }
   .btn.primary:hover { background: color-mix(in srgb, var(--inv-bg) 85%, transparent); }
-  /* Clean: gem-knap synlig men neutral — aldrig disabled/skjult */
-  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary {
-    background: var(--raised); color: var(--muted);
-  }
-  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary:hover {
-    background: var(--raised); color: var(--muted);
-  }
+  /* Gem (DESIGN.md 6.1). Clean: gem-knappen er synlig men neutral — aldrig disabled/skjult. */
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary,
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary:hover { background: var(--raised); color: var(--muted); }
   form[data-js]:not([data-dirty]) > .panel-foot > button[type="reset"] { display: none; }
   .panel-foot .foot-start { margin-right: auto; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; min-width: 0; }
   .panel-foot > .save-status { margin-right: auto; }
@@ -1602,9 +1736,11 @@
   .panel-foot .save-status:empty { display: none; }
   form[data-state="error"] .panel-foot .save-status { color: var(--danger); }
   .btn.primary[aria-busy="true"] { opacity: .7; cursor: wait; }
-  /* Dirty-prik (6 px) — `--warn`, aldrig eneste signal */
+  /* Ugemt-prik (6 px) i --warn på felt, segment, zonefelt og tilstandspille — aldrig eneste signal. */
   .field[data-dirty] > :is(label, .label)::after,
   .switch[data-dirty] .switch-text > b::after,
+  .tile[data-dirty] .tile-id::after,
+  .mode label[data-dirty]::after,
   .seg[data-dirty]::before {
     content: "";
     display: inline-block;
@@ -1615,110 +1751,49 @@
     vertical-align: middle;
   }
   .seg[data-dirty]::before { margin-left: 0; margin-right: var(--space-2); }
-  .tile[data-dirty] .tile-id::after,
-  .mode label[data-dirty]::after {
-    content: "";
-    display: inline-block;
-    width: 6px; height: 6px;
-    margin-left: var(--space-2);
-    border-radius: 50%;
-    background: var(--warn);
-    vertical-align: middle;
-  }
-  #m-conf:checked ~ .app .tile[data-dirty] .tile-id::after {
-    content: "";
-    color: transparent;
-    background: var(--warn);
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    font-weight: 400;
-  }
-  .autosave {
-    margin: var(--space-3) 0 0;
-    min-height: 1.25em;
-    font-size: var(--fs-sm);
-    color: var(--muted);
-    text-align: center;
-  }
+  /* Autogem (Dashboard): status under målet. */
+  .autosave { margin: var(--space-3) 0 0; min-height: 1.25em; font-size: var(--fs-sm); color: var(--muted); text-align: center; }
   .autosave:empty { display: none; }
   .autosave .btn { min-height: calc(var(--hit) - 8px); padding: 0 var(--space-3); margin-left: var(--space-2); font-size: var(--fs-xs); }
   .btn.danger { background: var(--danger-bg); color: var(--danger); }
-  .btn.danger:hover { background: var(--danger); color: var(--bg); }
-  .btn.danger-solid,
-  .btn.danger-solid:hover { background: var(--danger); color: var(--bg); }
+  .btn.danger:hover { background: var(--danger-fill); color: var(--on-fill); }
+  .btn.danger-solid { background: var(--danger-fill); color: var(--on-fill); }
+  .btn.danger-solid:hover { background: color-mix(in oklab, var(--danger-fill) 85%, black); }
   .btn:disabled { opacity: .35; pointer-events: none; }
   /* Knap på inverteret panel */
-  .panel.alert .btn { background: var(--danger); color: var(--bg); }
-  .panel.alert .btn:hover { background: var(--inv-bg); color: var(--inv-fg); }
+  .panel.alert .btn { background: var(--danger-fill); color: var(--on-fill); }
+  .panel.alert .btn:hover { background: color-mix(in oklab, var(--danger-fill) 85%, black); color: var(--on-fill); }
   form:has(:user-invalid) .btn.primary { opacity: .4; pointer-events: none; }
 
-  /* Bekræftelse: native popover i top-laget, så siden ikke flytter sig.
-     Uden script: centreret. Scriptet lægger den ved knappen og holder den
-     inde i vinduet. Under 600 px: ark fra bunden. */
+  /* Bekræftelse uden modal */
+  /* Bekræftelse: native popover (ingen JS). Tydelig flade, titel som spørgsmål,
+     Annullér + farlig handling til højre. Mobil: ark fra bunden. */
+  /* Titel: h4 (2.1) eller p.confirm-title (V6/Touch). Knapper: .actions eller .confirm-actions.
+     Uden script centreret. lune-forms.js lægger den ved knappen og holder den inde i
+     vinduet; uden script kan markup forankre den med inline position-anchor. */
   .confirm-pop {
-    border: 0;
-    padding: var(--space-5);
-    border-radius: var(--r-card);
-    background: var(--card);
-    color: var(--fg);
-    min-inline-size: calc(var(--space-7) * 6);
-    max-inline-size: min(calc(var(--space-7) * 7), calc(100vw - var(--space-6)));
-    max-block-size: calc(100dvh - var(--space-7));
-    overflow: auto;
-    box-shadow: var(--card-edge);
+    width: min(400px, calc(100% - 32px)); margin: auto; padding: var(--space-5);
+    max-block-size: calc(100dvh - var(--space-7)); overflow: auto;
+    border: 0; border-radius: var(--r-card); background: var(--card); color: var(--fg);
+    box-shadow: var(--float);
   }
-  .confirm-pop::backdrop { background: rgb(0 0 0 / 25%); }
-  /* Uden lune-forms.js (Touch): markup kan forankre popoveren med inline
-     position-anchor; så placerer CSS den under knappen. */
+  .confirm-pop::backdrop { background: rgb(0 0 0 / .5); }
   @supports (anchor-name: --x) {
-    .confirm-pop[style*="position-anchor"] {
-      inset: auto;
-      margin: var(--space-2);
-      position-area: block-end center;
-      position-try-fallbacks: flip-block;
-    }
+    .confirm-pop[style*="position-anchor"] { inset: auto; margin: var(--space-2); position-area: block-end center; position-try-fallbacks: flip-block; }
   }
-  .confirm-pop:popover-open {
-    display: grid;
-    gap: var(--space-4);
-  }
-  .confirm-pop .confirm-title {
-    margin: 0;
-    font-size: var(--fs-lg);
-    font-weight: 600;
-    line-height: 1.3;
-  }
-  .confirm-pop p {
-    margin: 0;
-    font-size: var(--fs-sm);
-    line-height: 1.5;
-  }
-  .confirm-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--space-2);
-  }
+  .confirm-pop :is(h4, .confirm-title) { display: flex; align-items: center; gap: var(--space-3); font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; margin: 0 0 var(--space-2); }
+  .confirm-pop :is(h4, .confirm-title)::before { content: "!"; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--danger-fill); color: var(--on-fill); font-size: var(--fs-md); font-weight: 700; }
+  .confirm-pop p:not(.confirm-title) { font-size: var(--fs-sm); color: var(--muted); line-height: 1.5; margin: 0; }
+  .confirm-pop :is(.actions, .confirm-actions) { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-5); }
   @media (max-width: 599.98px) {
     .confirm-pop {
       /* Ark fra bunden. Slår en eventuel inline-placering fra. */
-      position-anchor: none !important;
-      position-area: none !important;
-      inset: auto 0 0 0 !important;
-      top: auto !important;
-      left: 0 !important;
-      right: 0 !important;
-      bottom: 0 !important;
-      margin: 0 !important;
-      min-inline-size: 0 !important;
-      max-inline-size: none !important;
-      max-block-size: none;
-      width: auto !important;
+      position-anchor: none !important; position-area: none !important;
+      inset: auto 0 0 0 !important; width: auto !important; max-width: none; max-block-size: none; margin: 0 !important;
       border-radius: var(--r-card) var(--r-card) 0 0;
-      padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
-    }
-    .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; }
-    .confirm-actions .btn { width: 100%; }
+      padding-bottom: max(var(--space-5), env(safe-area-inset-bottom)); }
+    .confirm-pop :is(.actions, .confirm-actions) { display: grid; grid-template-columns: 1fr 1fr; }
+    .confirm-pop :is(.actions, .confirm-actions) .btn { width: 100%; }
   }
 
   .log {
@@ -1749,9 +1824,13 @@
      aktiv tilstands-pille og valgt zonefelt. Redigér ikke her. */
   /* @end:state */
 
+  /* @only legacy */
   /* I konfiguration viser zonefelterne en lille prik: "redigerer" */
   #m-conf:checked ~ .app .strip:not(.strip--tiers) .tile:not(.tile-sys) .tile-id::after,
-  #m-conf:checked ~ .app .substrip .tile .tile-id::after { content: " ·"; color: var(--accent-ink); font-weight: 800; }
+  #m-conf:checked ~ .app .substrip .tile .tile-id::after { content: " ·"; color: var(--muted); font-weight: 800; }
+  /* Ugemte ændringer vinder over "redigerer"-prikken (samme lag, derfor her). */
+  #m-conf:checked ~ .app .tile[data-dirty] .tile-id::after { content: ""; color: transparent; background: var(--warn); font-weight: 400; width: 6px; height: 6px; border-radius: 50%; }
+  /* @end */
 
   /* 6.4 Tema */
   @media (prefers-color-scheme: dark)  { #theme:checked ~ .app { color-scheme: light; } }
@@ -1773,86 +1852,51 @@
    7. TÆTHED
    ========================================================================== */
 @layer utilities {
-  /* Tætheden følger inputtypen. Touch: 48 px (uændret). Mus på skærm ≥ 1024 px:
-     kompakt. .app[data-density="compact|comfortable"] tvinger tætheden.
-     Token-værdierne står i tokens.json → density.compact; lds_build.py udfolder
-     blokken herunder både under density.media og for [data-density="compact"].
-     Blokken er CSS-nesting relativt til .app — start hver regel med . eller &. */
+  /* Tætheden følger inputtypen (DESIGN.md 3.9). Touch: 48 px. Mus på skærm ≥ 1024 px:
+     kompakt (kontrolhøjde 36 px). .app[data-density="compact|comfortable"] tvinger
+     tætheden. Token-værdierne står i tokens.json → density.compact; lds_build.py
+     udfolder blokken herunder både under density.media og for [data-density="compact"].
+     Blokken er CSS-nesting relativt til .app — start hver regel med &.
+     Kontrolbredder følger 15.6 (naturlig bredde + .w-*) i alle tætheder. */
   @media (pointer: coarse) { .app { --hit: 48px; } }
 
   /* @compact:begin */
     & .content { padding-block: var(--space-4) var(--space-6); }
     & .view-head { padding-block: var(--space-1) var(--space-2); }
+    /* @only legacy */
     & .section-nav { padding-block: var(--space-1) var(--space-2); }
     & .section-nav a { padding-inline: var(--space-3); }
     & .section-h { margin-bottom: var(--space-2); min-height: 0; }
     & .section ~ .section > .section-h { margin-top: var(--space-5); }
+    /* @end */
     & .mode label { padding-inline: var(--space-4); }
-    & .header { min-height: 48px; }
-
-    /* Zonefelt: ID + navn på én linje, værdi under (--tile-h). */
-    & .tile:not(.tile-manifold, .tile-sys) {
-      grid-template-columns: 10px auto minmax(0, 1fr);
-      grid-template-rows: auto auto;
-      column-gap: var(--space-2);
-      padding-block: var(--space-1);
-      line-height: 1.2;
-    }
-    & .tile:not(.tile-manifold, .tile-sys) .tile-id   { grid-column: 2; grid-row: 1; }
-    & .tile:not(.tile-manifold, .tile-sys) .tile-name { grid-column: 3; grid-row: 1; }
-    & .tile:not(.tile-manifold, .tile-sys) .tile-val  { grid-column: 2 / -1; grid-row: 2; }
-    & .tile .lvl { gap: 2px; }
-    & .tile .lvl i { min-height: 5px; }
-    & .tile-sys { padding-block: var(--space-1); line-height: 1.2; align-content: center; }
-    & .tile-sys .temps { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); }
+    /* @only tiers-strip */
     & .strip.strip--tiers :is(.tile-sys, .tile-manifold) { padding-block: var(--space-1); }
     & .tile.tile-manifold { line-height: 1.2; }
     & .tile.tile-manifold .mini { height: 18px; }
+    /* @end */
+    & .tile-sys .temps { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); }
 
     /* Indhold i paneler */
     & .subs { gap: var(--space-4) var(--space-5); }
     & .msg { padding: var(--space-2) var(--space-3); }
     & .metrics { gap: var(--space-4) var(--space-3); }
-    & .comfort label { padding-block: 6px; }
+    & .comfort > :is(label, button) { padding-block: 6px; }
     & .btn { padding-inline: var(--space-4); }
     & .file-pick { min-height: calc(var(--hit) - 2 * var(--space-1)); }
-    & .more > summary { min-height: var(--hit); }
 
-    /* Kontroller: --hit = 32 px giver højden; skrift 16 px bevares (iPad med mus). */
+    /* Kontroller: --hit giver højden; skrift 16 px bevares (iPad med mus). */
     & :is(.input, .select) { padding-inline: var(--space-3); }
     & .select { padding-right: var(--space-6); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; }
     & .switch input { width: 40px; height: 24px; }
     & .switch input::after { top: 3px; left: 3px; width: 18px; height: 18px; }
     & .switch input:checked::after { transform: translateX(16px); }
-    & .seg { justify-self: start; width: fit-content; max-width: 100%; }
-    & .seg label { flex: 1 1 auto; }
-    & .seg span { padding-inline: var(--space-4); }
-
-    /* .field.row: label ⟷ kontrol. Alle kontroller i en række har samme
-       bredde (--ctl-w = 5 × --hit = 160 px), så kolonnen flugter: input,
-       select, stepper; .seg har den som minimum. .w-lg (URL) står under
-       labelen i fuld bredde. .w-xs/.w-sm/.w-md er aliaser for --ctl-w. */
-    --ctl-w: calc(5 * var(--hit));
-    & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
-    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { justify-self: end; }
-    & .field.row > :is(.input, .select, .stepper) { width: var(--ctl-w); max-width: 100%; }
-    & .field.row > .seg { width: auto; min-width: var(--ctl-w); }
-    & .field.row > .input.w-lg { width: 100%; justify-self: stretch; }
-    & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
-    & .field:not(.row) > .input:not(.w-lg) { width: var(--ctl-w); max-width: 100%; }
-    /* Segment med label over (Ventiltype, Tilstand …): på én række i kompakt. */
-    & .field:not(.row):has(> .seg) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
-    & .field:not(.row) > .seg { justify-self: end; min-width: var(--ctl-w); }
     /* En løs knap i et panel (fx «Genlær alle…») strækkes ikke. */
     & :is(.panel, .sub) > .btn { align-self: flex-start; justify-self: start; }
+    /* @only legacy */
     /* Live-aflæsninger i Konfiguration: mindre tal end på Dashboard. */
     & .view[id^="v-conf-"] .metric dd { font-size: var(--fs-lg); }
-    /* .field.row med en .pair (fx MAC + Scan): label over, parret i fuld bredde. */
-    & .field.row:has(> .pair) { grid-template-columns: minmax(0, 1fr); }
-    & .field.row > .pair { justify-self: stretch; width: 100%; }
-    /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
-    & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
-    & .pair > .field.row > .input { justify-self: stretch; width: 100%; }
+    /* @end */
   /* @compact:end */
   .muted { color: var(--muted); } .accent { color: var(--accent-ink); }
   .c-info { color: var(--info); } .c-ok { color: var(--ok); } .c-warn { color: var(--warn); } .c-bad { color: var(--danger); } .c-violet { color: var(--violet); }

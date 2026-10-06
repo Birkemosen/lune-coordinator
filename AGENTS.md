@@ -9,9 +9,9 @@ LVGL-displayet (`packages/display/`) får tema, C++-farver og brand-mærker fra 
 - Byg UI med komponenterne i `web/design-system/css/lune-ui.src.css`. Find den nærmeste eksisterende komponent, før du laver en ny.
 - Brug kun tokens (`var(--…)`) fra `web/design-system/tokens/tokens.json`. Ingen hex-værdier, ingen `#fff`, ingen px-størrelser uden for skalaerne (`--space-*`, `--fs-*`, `--r-*`, `--hit`).
 - Ny farve eller ny tekst/baggrund-kombination: tilføj den i `tokens.json` (med en `contrast`-linje) og kør `python web/design-system/tools/lds_build.py --check`.
-- Hver visning har id `v-{dash|conf}-{omfang}` og ligger som barn af `main.content`. Delte omfang: `house`, `manifold`, `zone` (hierarki hus → manifold → zone; se `web/design-system/config/touch.json`).
-- Indhold i 2–4 paneler (`.panel`, bredde `c4`–`c8`). Én titel og ét emne pr. panel. Formularer er `form.panel` med `data-save` og én `.btn.primary` i `.panel-foot`.
-- Lange conf-sider: del i `.section` / `.section-grid` (4.3) med sektionslinks ved 3+ sektioner — Opsætning, Varme og vejr, Enhed, Service.
+- Informationsarkitektur: Hjem / ark / System (`web/design-system/DESIGN.md` afsnit 15). Visninger: `#v-home-house` og `#v-sys` under `main.content`; ark (`.sheet`) pr. ting: varme, næste varme, vejr, cirkulation, styring og rum (binderen opretter dem fra `<template id="tpl-mani">`/`tpl-room` og binder formularerne med `window.luneForms.scan`). Den hierarkiske strimmel bruges ikke.
+- Indstillinger er grupperede lister (`.setting-group`, maks. 6 rækker pr. gruppe og 5 grupper pr. fane/kategori) med én `.savebar` pr. formular. Delvis gem af én ressource: `data-save="ressource.del"` + `data-patch`. Tjek med `python web/touch-ui/check_fields.py`.
+- Hjem: `.home-hero` + `.thermo` (autogem), maks. 4 `.home-tile`, varmekort (`.heatmap`).
 - Hjælp i tre lag: gode labels/`.hint`, ét `.help-btn` (?) pr. panel med native `popover.help-pop` (klik/tryk, ikke hover), og «Læs mere» til `docs/Manual.md#…` i dette repo. Orange er varme — `?` er neutral.
 - Enhedsmenuen (`details.device`): «Om enhed» (identitet + kopiér diagnostik) over listen af andre enheder. Ingen driftshandlinger i menuen.
 - Al tekst kommer fra i18n-kataloget i `web/touch-ui/i18n/`, også `aria-label`, `title` og `placeholder`. Knaptekst er verbum + objekt.
@@ -27,7 +27,7 @@ Lune Design System code lives in the repository
 Every change to UI etc. must conform into Lune Design System.
 
 ## Aldrig (web)
-- Ingen sidebar, ingen modaler, ingen faner ud over tilstandspillen.
+- Ingen sidebar, ingen modaler; faner kun i ark (`.tabs`).
 - Ingen JavaScript til navigation eller tilstand (brug radio/checkbox/`<details>`/`popover`). JS kun til live-data, +/−, submit-hook, kopiér diagnostik, placering af hjælp-popover nær `?`.
 - Ingen eksterne ressourcer (fonte, CDN, billeder).
 - Ingen skygger på paneler; dybde kommer fra `--card` mod `--bg`.
