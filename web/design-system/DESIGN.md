@@ -1304,7 +1304,7 @@ Touch' Hjem (15.7) bygges af disse komponenter (`@only touch` i CSS'en):
 
 **Grafer i ark.** `.hchart` (fx Varme: fremløb/retur fra varmekildens egen historik): tal øverst (`.metrics` med `.c-heat`/`.c-info` + status-badge), intervalvalg som radioer + labels (`.hchart-range`, 24 t / 7 d, ingen JS), én `.hchart-panel[data-range]` pr. interval med y-akse (`.hchart-y`), `svg.trend` (`.grid`, `.dt`-glød under fremløb, `.r`, stiplet `.nowl`) og x-akse i HTML, og fælles `.chart-legend`. Uden data: `data-empty` på panelet. Vejrprognosen er `.fc.fc--stack`: én lille graf pr. størrelse over hinanden (vejr, temperatur med forvarmning, sol, vind, vindretning) med navn og spænd i venstre kolonne (`.fc-lab`), fælles x-akse og nu-linje; på mobil står navnet over grafen.
 
-**Link til indstillinger.** Står en tings forbindelse eller enhedsindstillinger på System, slutter arket med `a.sheet-link` («Indstillinger for varmekilde ›», `href="#system/<kategori>"`). `lune-forms.js` lukker åbne ark, når et link skifter tilstand.
+**Link til indstillinger.** Står en tings forbindelse eller enhedsindstillinger på System, er der ét `a.sheet-link` til dem (`href="#system/<kategori>"`), aldrig to veje til indstillinger. Har arket en Indstillinger-fane, står linket nederst i fanen («Forbindelse til varmekilde og Odin ›»), ikke i Overblik. Har arket ingen fane, slutter Overblik med linket («Indstillinger for cirkulationspumpe ›»). `lune-forms.js` lukker åbne ark, når et link skifter tilstand.
 
 **Navbar ved scroll.** På ≥ 768 px bliver `.header` kun så bred som indholdet, når `.navbar-wrap` sidder fast øverst (`container-type: scroll-state` + `@container scroll-state(stuck: top)`); uden understøttelse forbliver den bred.
 
