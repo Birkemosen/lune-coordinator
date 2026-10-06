@@ -1432,65 +1432,112 @@
 
   /* @only touch */
   /* ---- Hjem (DESIGN.md 15.7): hovedsektion, termostat-ring, felter, varmekort ---- */
-  /* Hovedsektion: én sætning om situationen + hustemperatur og mål i ringen. */
+  /* Hovedsektion: hilsen, én overskrift i to toner (situation · varmekilde), én sætning,
+     to genveje (varmekilde, næste varme) nederst — og hustemperatur + mål i ringen. */
   .home-hero {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-5) var(--space-7);
-    padding: var(--space-6) var(--panel-pad);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: var(--space-6) var(--space-7);
+    padding: var(--space-7) var(--space-7) var(--space-6);
     border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
   }
-  .home-hero > div > small { font-size: var(--fs-sm); color: var(--muted); }
-  .home-hero h2 { margin-top: var(--space-1); font-size: var(--fs-2xl); letter-spacing: -.03em; line-height: 1.1; }
-  .home-hero p { margin-top: var(--space-3); max-width: 52ch; color: var(--muted); }
-  @media (max-width: 767.98px) { .home-hero { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; } }
+  .hero-text { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .hero-text > small { font-size: var(--fs-sm); font-weight: 500; color: var(--accent-ink); }
+  .home-hero h2 { font-size: var(--fs-display); font-weight: 600; letter-spacing: -.04em; line-height: 1.05; text-wrap: balance; }
+  .home-hero h2 .sub { display: block; color: var(--muted); }
+  .home-hero h2 .sub:empty { display: none; }
+  .hero-text > p { max-width: 52ch; font-size: var(--fs-lg); line-height: 1.45; color: var(--muted); }
+  /* Genveje: samme flade som felterne; åbner tingens ark. */
+  .hero-facts { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: auto; padding-top: var(--space-4); }
+  .hero-fact {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--space-3);
+    flex: 1 1 0; min-width: min(100%, 15rem); max-width: 20rem; padding: var(--space-3) var(--space-4);
+    border: 0; border-radius: var(--r-tile); background: var(--card); box-shadow: var(--card-edge);
+    color: var(--fg); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur) var(--ease);
+  }
+  .hero-fact:hover { background: var(--raised); }
+  .hero-fact > .chip-icon { grid-row: 1 / 4; }
+  .hero-fact > small { font-size: var(--fs-xs); color: var(--muted); }
+  .hero-fact > b { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero-fact > span { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero-fact[hidden] { display: none; }
+  @media (max-width: 1099.98px) { .home-hero h2 { font-size: var(--fs-2xl); } }
+  @media (max-width: 767.98px) {
+    .home-hero { grid-template-columns: minmax(0, 1fr); padding: var(--space-5) var(--panel-pad); }
+    .home-hero h2 { font-size: var(--fs-2xl); }
+    .hero-text > p { font-size: var(--fs-md); }
+    /* Mobil: tekst og ring. */
+    .hero-text { display: contents; }
+    .home-hero { row-gap: var(--space-3); }
+    .home-hero .thermo { order: 1; margin-block: var(--space-4); }
+    .hero-facts { display: none; }    /* felterne står lige under */
+  }
 
-  /* Termostat-ring: 270°-bue. Sporet er neutralt, buen er målet (varme, én farve, 3.2.2),
-     mærket er den aktuelle temperatur. --v og --now = 0–100 % af skalaen. */
-  .thermo { display: grid; justify-items: center; gap: var(--space-2); }
-  .thermo-ring { position: relative; width: min(240px, 64vw); aspect-ratio: 1; }
+  /* Termostat-ring: 270°-bue. Sporet er neutralt, buen er husets temperatur nu (varme, én farve,
+     3.2.2), mærket er målet. --now og --v = 0–100 % af skalaen. */
+  .thermo { display: grid; justify-items: center; align-content: space-between; gap: var(--space-4); }
+  .thermo-ring { position: relative; width: min(260px, 64vw); aspect-ratio: 1; }
   .thermo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(135deg); }
   .thermo-ring circle { fill: none; stroke-linecap: round; }
-  .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 10; stroke-dasharray: 75 100; }
-  .thermo-ring .arc { stroke: var(--accent); stroke-width: 10; stroke-dasharray: calc(var(--v, 0) * .75) 100; }
-  .thermo-ring .now { stroke: var(--fg); stroke-width: 14; stroke-dasharray: .1 100; stroke-dashoffset: calc(var(--now, 0) * -.75); }
-  .thermo-val { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; }
-  .thermo-val b { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .95; }
-  .thermo-val b small { font-size: var(--fs-xl); color: var(--muted); letter-spacing: 0; }
+  .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 7; stroke-dasharray: 75 100; }
+  .thermo-ring .arc { stroke: var(--accent); stroke-width: 7; stroke-dasharray: calc(var(--now, 0) * .75) 100; }
+  .thermo-ring :is(.tg, .tg-edge) { stroke-dasharray: .1 100; stroke-dashoffset: calc(var(--v, 0) * -.75); }
+  .thermo-ring .tg-edge { stroke: var(--card); stroke-width: 9; }
+  .thermo-ring .tg { stroke: var(--fg); stroke-width: 5; }
+  .thermo-val { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--space-1); text-align: center; }
+  .thermo-val b { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .95; font-variant-numeric: tabular-nums; }
+  .thermo-val b small { margin-left: .02em; font-size: .4em; color: var(--muted); letter-spacing: 0; vertical-align: .95em; }
   .thermo-val span { font-size: var(--fs-sm); color: var(--muted); }
+  .thermo-val span:empty { display: none; }
   .thermo .climate { gap: var(--space-2); }
+  /* Målet vises med enhed og sprogets decimaltegn (tekstfelt, ikke type=number). */
+  .climate .target .value:has(> .unit) { grid-template-columns: auto auto; justify-content: center; align-items: start; }
+  .climate .target .value:has(> .unit) > small { grid-column: 1 / -1; justify-self: center; }
+  .climate .target .value > .unit { font-size: var(--fs-lg); font-weight: 600; color: var(--muted); line-height: 1.6; }
+  .climate .target .value:has(> .unit) input { width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 
-  /* Felter på Hjem: maks. 4 i en række. Ét felt = én ting; hele feltet åbner tingens ark. */
+  /* Overskrift over en blok på Hjem: lille linje + titel. */
+  .home-head { display: grid; gap: var(--space-1); margin-top: var(--space-4); }
+  .home-head small { font-size: var(--fs-sm); color: var(--muted); }
+  .home-head h3 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; }
+
+  /* Felter på Hjem: maks. 4 i en række. Ét felt = én ting; hele feltet åbner tingens ark.
+     Hoved øverst, tal under, visualiseringen i bunden (felterne i en række er lige høje). */
   .home-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
   @media (max-width: 1099.98px) { .home-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 599.98px)  { .home-tiles { grid-template-columns: minmax(0, 1fr); } }
   .home-tile {
     display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: "icon title go" "icon status go" "val val val" "viz viz viz";
-    align-items: center; gap: 2px var(--space-3);
-    width: 100%; padding: var(--space-4);
+    grid-template-areas: "icon title go" "icon status go" "val val val" "price price price" "viz viz viz";
+    grid-template-rows: auto auto auto auto 1fr;
+    align-items: center; gap: 0 var(--space-3);
+    width: 100%; padding: var(--space-5);
     border: 0; border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
     color: var(--fg); font: inherit; text-align: left; cursor: pointer;
     transition: background var(--dur) var(--ease);
   }
   .home-tile:hover { background: var(--raised); }
   .home-tile > .chip-icon { grid-area: icon; }
-  .home-tile > b { grid-area: title; font-size: var(--fs-md); font-weight: 600; }
-  .home-tile > .ht-status { grid-area: status; overflow: hidden; font-size: var(--fs-sm); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .home-tile > b { grid-area: title; align-self: end; font-size: var(--fs-md); font-weight: 600; }
+  .home-tile > .ht-status { grid-area: status; align-self: start; overflow: hidden; font-size: var(--fs-sm); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
   .home-tile::after { content: "›"; grid-area: go; font-size: var(--fs-lg); color: var(--muted); }
-  .home-tile > .ht-val { grid-area: val; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-top: var(--space-3);
+  .home-tile > .ht-val { grid-area: val; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-top: var(--space-4);
     font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
   .home-tile > .ht-val small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); letter-spacing: 0; }
-  .home-tile > .ht-viz { grid-area: viz; display: block; width: 100%; height: 48px; margin-top: var(--space-2); overflow: visible; }
+  .home-tile > .ht-viz { grid-area: viz; align-self: end; display: block; width: 100%; height: 64px; margin-top: var(--space-4); overflow: visible; }
   .home-tile[data-empty] > .ht-viz { display: none; }
   /* Én ekstra linje (fx aktuel elpris + skala-chip i Næste varme). */
-  .home-tile > .ht-price { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--muted); }
+  .home-tile > .ht-price { grid-area: price; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--muted); }
+  .home-tile > .ht-price[hidden] { display: none; }
   .ht-viz .t  { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .ht-viz .f  { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ht-viz .f  { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ht-viz .r  { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ht-viz .a  { fill: url(#lds-fade-heat); }
+  .ht-viz .wa { fill: var(--seg-off); opacity: .6; }
   .ht-viz .w  { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ht-viz .pre { fill: url(#lds-hatch-heat); }
+  .ht-viz .base { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
   .ht-viz .col { fill: var(--seg-off); }
-  .ht-viz .col.on { fill: var(--accent); }
+  .ht-viz .col.on { fill: var(--violet); }
 
   /* Skala-chip (5 trin, scale-good-bad: pris, luft, signal). Tallet står altid i chippen. */
   .scale-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-2); border-radius: var(--r-pill);
@@ -1502,18 +1549,54 @@
   .scale-chip[data-scale="4"] { background: var(--scale-good-bad-4); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
   .scale-chip[data-scale="5"] { background: var(--scale-good-bad-5); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
 
-  /* Varmekort: rum grupperet pr. manifold. Rummene er zonefelter (.tile) med 10-segment
-     ventilbjælke, procent og afvigelses-chip; gruppeoverskriften åbner manifoldens ark. */
+  /* Varmekort: rum grupperet pr. manifold. Rumfelterne fylder efter rummets areal (--area),
+     har afvigelses-chip (5 trin, forklaret i .heatmap-legend), temperatur og en 5-trins
+     ventilbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
+  .heatmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
+  .heatmap-head > div:first-child { display: grid; gap: var(--space-1); flex: 1 0 auto; }
+  .heatmap-head small { font-size: var(--fs-sm); color: var(--muted); }
+  .heatmap-head h3 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; }
+  .heatmap-legend { display: flex; flex-wrap: wrap; flex: 0 1 auto; align-items: start; gap: var(--space-2) var(--space-5); font-size: var(--fs-xs); color: var(--muted); }
+  .heatmap-legend ol { display: flex; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .heatmap-legend li { display: grid; justify-items: center; gap: var(--space-1); min-width: var(--space-6); font-variant-numeric: tabular-nums; }
+  .heatmap-legend li::before { content: ""; width: var(--space-6); height: var(--space-3); border-radius: var(--r-pill); background: var(--scale-cold-warm-3); }
+  .heatmap-legend li[data-dev="1"]::before { background: var(--scale-cold-warm-1); }
+  .heatmap-legend li[data-dev="2"]::before { background: var(--scale-cold-warm-2); }
+  .heatmap-legend li[data-dev="4"]::before { background: var(--scale-cold-warm-4); }
+  .heatmap-legend li[data-dev="5"]::before { background: var(--scale-cold-warm-5); }
+  .heatmap-legend > span { display: grid; justify-items: start; gap: var(--space-1); }
+  .heatmap-legend .lvl { display: grid; grid-template-columns: repeat(5, var(--space-2)); gap: 2px; padding-top: var(--space-1); }
+  .heatmap-legend .lvl i { height: 4px; border-radius: 2px; background: var(--seg-off); }
+  .heatmap-legend .lvl i:nth-child(-n+3) { background: var(--fg); }
+
   .heatmap { display: grid; gap: var(--space-5); }
   .room-group { display: grid; gap: var(--space-3); }
   .room-group-head { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); justify-self: start;
     padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .room-group-head small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
-  .room-group-head::after { content: "›"; color: var(--muted); }
-  .room-group-head:hover { color: var(--muted); }
-  .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--space-2); }
-  .room-grid .tile { padding: var(--space-3); }
-  .room-grid .tile-val { font-size: var(--fs-xl); }
+  button.room-group-head::after { content: "›"; color: var(--muted); }
+  button.room-group-head:hover { color: var(--muted); }
+  .room-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .room-grid .tile {
+    flex: var(--area, 12) 1 0; min-width: var(--room-min);
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name dev" "val val" "lvl lvl" "pct pct";
+    row-gap: var(--space-2); padding: var(--space-4);
+  }
+  .room-grid .tile-id { display: none; }
+  .room-grid .tile-dev { display: inline-flex; }
+  .room-grid .tile-name { font-weight: 600; }
+  .room-grid .tile-val { font-size: var(--fs-xl); margin-block: var(--space-1); }
+  .room-grid .tile .lvl { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-1); direction: ltr; }
+  .room-grid .tile .lvl i { background: var(--seg-off); }
+  .room-grid .tile[data-open="1"] .lvl i:nth-child(-n+1),
+  .room-grid .tile[data-open="2"] .lvl i:nth-child(-n+2),
+  .room-grid .tile[data-open="3"] .lvl i:nth-child(-n+3),
+  .room-grid .tile[data-open="4"] .lvl i:nth-child(-n+4),
+  .room-grid .tile[data-open="5"] .lvl i { background: currentColor; }
+  .room-grid .tile[data-state="fault"] .lvl i { background: var(--danger); }
+  .room-grid .tile-pct { justify-self: start; font-size: var(--fs-xs); font-weight: 500; text-align: left; }
+  /* Grupperede zoner er ét rum her; grupperingen vises i rummets ark. */
+  .room-grid .tile[data-group] { box-shadow: var(--card-edge); outline: 0; }
   /* V6 offline: seneste værdier dæmpet + besked; farve er aldrig eneste signal. */
   .room-group[data-offline] .room-grid { opacity: .55; }
   .offline-note { font-size: var(--fs-sm); color: var(--warn); }
@@ -1521,9 +1604,11 @@
     border-radius: 50%; background: var(--warn-fill); color: var(--on-warn-fill); font-size: var(--fs-xs); font-weight: 700; vertical-align: -2px; }
   .heatmap-note { font-size: var(--fs-xs); color: var(--faint); }
   @media (max-width: 599.98px) {
-    .room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .room-grid .tile { grid-template-areas: "id name" "val val" "lvl pct"; grid-template-columns: auto minmax(0, 1fr); text-align: left; border-radius: var(--r-tile); }
+    .room-grid .tile { padding: var(--space-3); }
+    .room-grid .tile { row-gap: var(--space-2); border-radius: var(--r-tile); text-align: left; }
     .room-grid .tile :is(.tile-name, .tile-pct) { display: block; }
+    .room-grid .tile .lvl { gap: var(--space-1); margin-top: 0; overflow: visible; }
+    .room-grid .tile .lvl i { height: 4px; border-radius: 2px; }
     .room-grid .tile .tile-val { font-size: var(--fs-lg); }
   }
 

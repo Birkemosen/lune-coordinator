@@ -128,6 +128,7 @@
     --fs-xl: 1.5rem;
     --fs-2xl: 2rem;
     --fs-hero: 4rem;
+    --fs-display: 3rem;
     --fs-panel: var(--fs-lg);
     --fs-view: var(--fs-2xl);
     /* space */
@@ -151,6 +152,7 @@
     --panel-gap: var(--space-4);
     --row-h: 40px;
     --tile-h: auto;
+    --room-min: 152px;
     --container: 1200px;
     --sheet-w: 520px;
     --sheet-inset: 12px;
@@ -1321,65 +1323,112 @@
   .chip-icon[data-tone="neutral"]{ background: var(--raised); color: var(--fg); }
 
   /* ---- Hjem (DESIGN.md 15.7): hovedsektion, termostat-ring, felter, varmekort ---- */
-  /* Hovedsektion: én sætning om situationen + hustemperatur og mål i ringen. */
+  /* Hovedsektion: hilsen, én overskrift i to toner (situation · varmekilde), én sætning,
+     to genveje (varmekilde, næste varme) nederst — og hustemperatur + mål i ringen. */
   .home-hero {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-5) var(--space-7);
-    padding: var(--space-6) var(--panel-pad);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: var(--space-6) var(--space-7);
+    padding: var(--space-7) var(--space-7) var(--space-6);
     border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
   }
-  .home-hero > div > small { font-size: var(--fs-sm); color: var(--muted); }
-  .home-hero h2 { margin-top: var(--space-1); font-size: var(--fs-2xl); letter-spacing: -.03em; line-height: 1.1; }
-  .home-hero p { margin-top: var(--space-3); max-width: 52ch; color: var(--muted); }
-  @media (max-width: 767.98px) { .home-hero { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; } }
+  .hero-text { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .hero-text > small { font-size: var(--fs-sm); font-weight: 500; color: var(--accent-ink); }
+  .home-hero h2 { font-size: var(--fs-display); font-weight: 600; letter-spacing: -.04em; line-height: 1.05; text-wrap: balance; }
+  .home-hero h2 .sub { display: block; color: var(--muted); }
+  .home-hero h2 .sub:empty { display: none; }
+  .hero-text > p { max-width: 52ch; font-size: var(--fs-lg); line-height: 1.45; color: var(--muted); }
+  /* Genveje: samme flade som felterne; åbner tingens ark. */
+  .hero-facts { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: auto; padding-top: var(--space-4); }
+  .hero-fact {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--space-3);
+    flex: 1 1 0; min-width: min(100%, 15rem); max-width: 20rem; padding: var(--space-3) var(--space-4);
+    border: 0; border-radius: var(--r-tile); background: var(--card); box-shadow: var(--card-edge);
+    color: var(--fg); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur) var(--ease);
+  }
+  .hero-fact:hover { background: var(--raised); }
+  .hero-fact > .chip-icon { grid-row: 1 / 4; }
+  .hero-fact > small { font-size: var(--fs-xs); color: var(--muted); }
+  .hero-fact > b { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero-fact > span { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero-fact[hidden] { display: none; }
+  @media (max-width: 1099.98px) { .home-hero h2 { font-size: var(--fs-2xl); } }
+  @media (max-width: 767.98px) {
+    .home-hero { grid-template-columns: minmax(0, 1fr); padding: var(--space-5) var(--panel-pad); }
+    .home-hero h2 { font-size: var(--fs-2xl); }
+    .hero-text > p { font-size: var(--fs-md); }
+    /* Mobil: tekst og ring. */
+    .hero-text { display: contents; }
+    .home-hero { row-gap: var(--space-3); }
+    .home-hero .thermo { order: 1; margin-block: var(--space-4); }
+    .hero-facts { display: none; }    /* felterne står lige under */
+  }
 
-  /* Termostat-ring: 270°-bue. Sporet er neutralt, buen er målet (varme, én farve, 3.2.2),
-     mærket er den aktuelle temperatur. --v og --now = 0–100 % af skalaen. */
-  .thermo { display: grid; justify-items: center; gap: var(--space-2); }
-  .thermo-ring { position: relative; width: min(240px, 64vw); aspect-ratio: 1; }
+  /* Termostat-ring: 270°-bue. Sporet er neutralt, buen er husets temperatur nu (varme, én farve,
+     3.2.2), mærket er målet. --now og --v = 0–100 % af skalaen. */
+  .thermo { display: grid; justify-items: center; align-content: space-between; gap: var(--space-4); }
+  .thermo-ring { position: relative; width: min(260px, 64vw); aspect-ratio: 1; }
   .thermo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(135deg); }
   .thermo-ring circle { fill: none; stroke-linecap: round; }
-  .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 10; stroke-dasharray: 75 100; }
-  .thermo-ring .arc { stroke: var(--accent); stroke-width: 10; stroke-dasharray: calc(var(--v, 0) * .75) 100; }
-  .thermo-ring .now { stroke: var(--fg); stroke-width: 14; stroke-dasharray: .1 100; stroke-dashoffset: calc(var(--now, 0) * -.75); }
-  .thermo-val { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; }
-  .thermo-val b { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .95; }
-  .thermo-val b small { font-size: var(--fs-xl); color: var(--muted); letter-spacing: 0; }
+  .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 7; stroke-dasharray: 75 100; }
+  .thermo-ring .arc { stroke: var(--accent); stroke-width: 7; stroke-dasharray: calc(var(--now, 0) * .75) 100; }
+  .thermo-ring :is(.tg, .tg-edge) { stroke-dasharray: .1 100; stroke-dashoffset: calc(var(--v, 0) * -.75); }
+  .thermo-ring .tg-edge { stroke: var(--card); stroke-width: 9; }
+  .thermo-ring .tg { stroke: var(--fg); stroke-width: 5; }
+  .thermo-val { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--space-1); text-align: center; }
+  .thermo-val b { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .95; font-variant-numeric: tabular-nums; }
+  .thermo-val b small { margin-left: .02em; font-size: .4em; color: var(--muted); letter-spacing: 0; vertical-align: .95em; }
   .thermo-val span { font-size: var(--fs-sm); color: var(--muted); }
+  .thermo-val span:empty { display: none; }
   .thermo .climate { gap: var(--space-2); }
+  /* Målet vises med enhed og sprogets decimaltegn (tekstfelt, ikke type=number). */
+  .climate .target .value:has(> .unit) { grid-template-columns: auto auto; justify-content: center; align-items: start; }
+  .climate .target .value:has(> .unit) > small { grid-column: 1 / -1; justify-self: center; }
+  .climate .target .value > .unit { font-size: var(--fs-lg); font-weight: 600; color: var(--muted); line-height: 1.6; }
+  .climate .target .value:has(> .unit) input { width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 
-  /* Felter på Hjem: maks. 4 i en række. Ét felt = én ting; hele feltet åbner tingens ark. */
+  /* Overskrift over en blok på Hjem: lille linje + titel. */
+  .home-head { display: grid; gap: var(--space-1); margin-top: var(--space-4); }
+  .home-head small { font-size: var(--fs-sm); color: var(--muted); }
+  .home-head h3 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; }
+
+  /* Felter på Hjem: maks. 4 i en række. Ét felt = én ting; hele feltet åbner tingens ark.
+     Hoved øverst, tal under, visualiseringen i bunden (felterne i en række er lige høje). */
   .home-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
   @media (max-width: 1099.98px) { .home-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 599.98px)  { .home-tiles { grid-template-columns: minmax(0, 1fr); } }
   .home-tile {
     display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: "icon title go" "icon status go" "val val val" "viz viz viz";
-    align-items: center; gap: 2px var(--space-3);
-    width: 100%; padding: var(--space-4);
+    grid-template-areas: "icon title go" "icon status go" "val val val" "price price price" "viz viz viz";
+    grid-template-rows: auto auto auto auto 1fr;
+    align-items: center; gap: 0 var(--space-3);
+    width: 100%; padding: var(--space-5);
     border: 0; border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
     color: var(--fg); font: inherit; text-align: left; cursor: pointer;
     transition: background var(--dur) var(--ease);
   }
   .home-tile:hover { background: var(--raised); }
   .home-tile > .chip-icon { grid-area: icon; }
-  .home-tile > b { grid-area: title; font-size: var(--fs-md); font-weight: 600; }
-  .home-tile > .ht-status { grid-area: status; overflow: hidden; font-size: var(--fs-sm); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+  .home-tile > b { grid-area: title; align-self: end; font-size: var(--fs-md); font-weight: 600; }
+  .home-tile > .ht-status { grid-area: status; align-self: start; overflow: hidden; font-size: var(--fs-sm); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
   .home-tile::after { content: "›"; grid-area: go; font-size: var(--fs-lg); color: var(--muted); }
-  .home-tile > .ht-val { grid-area: val; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-top: var(--space-3);
+  .home-tile > .ht-val { grid-area: val; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-top: var(--space-4);
     font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
   .home-tile > .ht-val small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); letter-spacing: 0; }
-  .home-tile > .ht-viz { grid-area: viz; display: block; width: 100%; height: 48px; margin-top: var(--space-2); overflow: visible; }
+  .home-tile > .ht-viz { grid-area: viz; align-self: end; display: block; width: 100%; height: 64px; margin-top: var(--space-4); overflow: visible; }
   .home-tile[data-empty] > .ht-viz { display: none; }
   /* Én ekstra linje (fx aktuel elpris + skala-chip i Næste varme). */
-  .home-tile > .ht-price { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--muted); }
+  .home-tile > .ht-price { grid-area: price; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--muted); }
+  .home-tile > .ht-price[hidden] { display: none; }
   .ht-viz .t  { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .ht-viz .f  { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ht-viz .f  { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ht-viz .r  { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ht-viz .a  { fill: url(#lds-fade-heat); }
+  .ht-viz .wa { fill: var(--seg-off); opacity: .6; }
   .ht-viz .w  { fill: none; stroke: var(--data-return); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .ht-viz .pre { fill: url(#lds-hatch-heat); }
+  .ht-viz .base { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
   .ht-viz .col { fill: var(--seg-off); }
-  .ht-viz .col.on { fill: var(--accent); }
+  .ht-viz .col.on { fill: var(--violet); }
 
   /* Skala-chip (5 trin, scale-good-bad: pris, luft, signal). Tallet står altid i chippen. */
   .scale-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-2); border-radius: var(--r-pill);
@@ -1391,18 +1440,54 @@
   .scale-chip[data-scale="4"] { background: var(--scale-good-bad-4); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
   .scale-chip[data-scale="5"] { background: var(--scale-good-bad-5); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
 
-  /* Varmekort: rum grupperet pr. manifold. Rummene er zonefelter (.tile) med 10-segment
-     ventilbjælke, procent og afvigelses-chip; gruppeoverskriften åbner manifoldens ark. */
+  /* Varmekort: rum grupperet pr. manifold. Rumfelterne fylder efter rummets areal (--area),
+     har afvigelses-chip (5 trin, forklaret i .heatmap-legend), temperatur og en 5-trins
+     ventilbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
+  .heatmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
+  .heatmap-head > div:first-child { display: grid; gap: var(--space-1); flex: 1 0 auto; }
+  .heatmap-head small { font-size: var(--fs-sm); color: var(--muted); }
+  .heatmap-head h3 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; }
+  .heatmap-legend { display: flex; flex-wrap: wrap; flex: 0 1 auto; align-items: start; gap: var(--space-2) var(--space-5); font-size: var(--fs-xs); color: var(--muted); }
+  .heatmap-legend ol { display: flex; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .heatmap-legend li { display: grid; justify-items: center; gap: var(--space-1); min-width: var(--space-6); font-variant-numeric: tabular-nums; }
+  .heatmap-legend li::before { content: ""; width: var(--space-6); height: var(--space-3); border-radius: var(--r-pill); background: var(--scale-cold-warm-3); }
+  .heatmap-legend li[data-dev="1"]::before { background: var(--scale-cold-warm-1); }
+  .heatmap-legend li[data-dev="2"]::before { background: var(--scale-cold-warm-2); }
+  .heatmap-legend li[data-dev="4"]::before { background: var(--scale-cold-warm-4); }
+  .heatmap-legend li[data-dev="5"]::before { background: var(--scale-cold-warm-5); }
+  .heatmap-legend > span { display: grid; justify-items: start; gap: var(--space-1); }
+  .heatmap-legend .lvl { display: grid; grid-template-columns: repeat(5, var(--space-2)); gap: 2px; padding-top: var(--space-1); }
+  .heatmap-legend .lvl i { height: 4px; border-radius: 2px; background: var(--seg-off); }
+  .heatmap-legend .lvl i:nth-child(-n+3) { background: var(--fg); }
+
   .heatmap { display: grid; gap: var(--space-5); }
   .room-group { display: grid; gap: var(--space-3); }
   .room-group-head { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); justify-self: start;
     padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-size: var(--fs-md); font-weight: 600; cursor: pointer; }
   .room-group-head small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); }
-  .room-group-head::after { content: "›"; color: var(--muted); }
-  .room-group-head:hover { color: var(--muted); }
-  .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--space-2); }
-  .room-grid .tile { padding: var(--space-3); }
-  .room-grid .tile-val { font-size: var(--fs-xl); }
+  button.room-group-head::after { content: "›"; color: var(--muted); }
+  button.room-group-head:hover { color: var(--muted); }
+  .room-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .room-grid .tile {
+    flex: var(--area, 12) 1 0; min-width: var(--room-min);
+    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name dev" "val val" "lvl lvl" "pct pct";
+    row-gap: var(--space-2); padding: var(--space-4);
+  }
+  .room-grid .tile-id { display: none; }
+  .room-grid .tile-dev { display: inline-flex; }
+  .room-grid .tile-name { font-weight: 600; }
+  .room-grid .tile-val { font-size: var(--fs-xl); margin-block: var(--space-1); }
+  .room-grid .tile .lvl { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-1); direction: ltr; }
+  .room-grid .tile .lvl i { background: var(--seg-off); }
+  .room-grid .tile[data-open="1"] .lvl i:nth-child(-n+1),
+  .room-grid .tile[data-open="2"] .lvl i:nth-child(-n+2),
+  .room-grid .tile[data-open="3"] .lvl i:nth-child(-n+3),
+  .room-grid .tile[data-open="4"] .lvl i:nth-child(-n+4),
+  .room-grid .tile[data-open="5"] .lvl i { background: currentColor; }
+  .room-grid .tile[data-state="fault"] .lvl i { background: var(--danger); }
+  .room-grid .tile-pct { justify-self: start; font-size: var(--fs-xs); font-weight: 500; text-align: left; }
+  /* Grupperede zoner er ét rum her; grupperingen vises i rummets ark. */
+  .room-grid .tile[data-group] { box-shadow: var(--card-edge); outline: 0; }
   /* V6 offline: seneste værdier dæmpet + besked; farve er aldrig eneste signal. */
   .room-group[data-offline] .room-grid { opacity: .55; }
   .offline-note { font-size: var(--fs-sm); color: var(--warn); }
@@ -1410,9 +1495,11 @@
     border-radius: 50%; background: var(--warn-fill); color: var(--on-warn-fill); font-size: var(--fs-xs); font-weight: 700; vertical-align: -2px; }
   .heatmap-note { font-size: var(--fs-xs); color: var(--faint); }
   @media (max-width: 599.98px) {
-    .room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .room-grid .tile { grid-template-areas: "id name" "val val" "lvl pct"; grid-template-columns: auto minmax(0, 1fr); text-align: left; border-radius: var(--r-tile); }
+    .room-grid .tile { padding: var(--space-3); }
+    .room-grid .tile { row-gap: var(--space-2); border-radius: var(--r-tile); text-align: left; }
     .room-grid .tile :is(.tile-name, .tile-pct) { display: block; }
+    .room-grid .tile .lvl { gap: var(--space-1); margin-top: 0; overflow: visible; }
+    .room-grid .tile .lvl i { height: 4px; border-radius: 2px; }
     .room-grid .tile .tile-val { font-size: var(--fs-lg); }
   }
 
@@ -2013,64 +2100,71 @@
         </div>
         <div data-bind-alerts></div>
         <section class="home-hero">
-          <div>
+          <div class="hero-text">
             <small data-bind="home.greeting">God eftermiddag</small>
-            <h2 id="h-home" data-bind="home.headline">Venter på styringerne.</h2>
+            <h2 id="h-home"><span data-bind="home.headline">Venter på styringerne.</span> <span class="sub" data-bind="home.headline2"></span></h2>
             <p data-bind="home.sentence">Ingen hustemperatur endnu. Tilføj en styring under System › Styringer.</p>
+            <div class="hero-facts">
+              <button class="hero-fact" type="button" popovertarget="sheet-heat" data-bind-show="hero.heat" hidden><span class="chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg></span><small data-bind="hero.heatLabel">Varme</small><b data-bind="hero.heatVal">—</b><span data-bind="hero.heatSub"></span></button>
+              <button class="hero-fact" type="button" popovertarget="sheet-plan" data-bind-show="hero.plan" hidden><span class="chip-icon" data-tone="violet" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><small>Næste varme</small><b data-bind="hero.planVal">—</b><span data-bind="hero.planSub"></span></button>
+            </div>
           </div>
           <form class="thermo" data-save="house-target">
             <div class="thermo-ring" style="--v:60;--now:0" role="img" aria-label="Hustemperatur" data-bind-thermo>
-              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="now" cx="50" cy="50" r="44" pathLength="100"/></svg>
-              <div class="thermo-val"><b data-bind="house.temp">—</b><span>Huset nu</span></div>
+              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="tg-edge" cx="50" cy="50" r="44" pathLength="100"/><circle class="tg" cx="50" cy="50" r="44" pathLength="100"/></svg>
+              <div class="thermo-val"><span>Huset nu</span><b data-bind="house.temp">—</b><span data-bind="house.outdoor"></span></div>
             </div>
             <div class="climate">
               <div class="target">
                 <button type="button" data-step="-1" aria-label="Sænk husets måltemperatur">−</button>
-                <label class="value"><small>Mål</small><input type="number" inputmode="decimal" id="house_target" name="house_target" value="21.0" min="5" max="30" step="0.5"></label>
+                <label class="value"><small>Mål</small><input type="text" inputmode="decimal" id="house_target" name="house_target" value="21,0" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off"><span class="unit" aria-hidden="true">°</span></label>
                 <button type="button" data-step="1" aria-label="Hæv husets måltemperatur">+</button>
               </div>
               <p class="autosave" aria-live="polite"></p>
             </div>
           </form>
         </section>
+        <header class="home-head"><small>Lige nu</small><h3>Varme, plan og vejr</h3></header>
         <div class="home-tiles">
           <button class="home-tile" type="button" popovertarget="sheet-heat" data-empty data-tile="heat">
             <span class="chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg></span><b>Varme</b>
             <span class="ht-status" data-bind="heat.badgeText">Venter</span>
             <span class="ht-val"><span data-bind="tile.heatVal">—</span> <small>fremløb → retur</small></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>
           <button class="home-tile" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
             <span class="chip-icon" data-tone="violet" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><b>Næste varme</b>
             <span class="ht-status" data-bind="tile.planStatus">Ingen plan endnu</span>
             <span class="ht-val"><span data-bind="tile.planVal">—</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="plan"></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="plan"></svg>
           </button>
           <button class="home-tile" type="button" popovertarget="sheet-weather" data-empty data-tile="weather">
             <span class="chip-icon" data-tone="info" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/></svg></span><b>Vejr</b>
             <span class="ht-status" data-bind="tile.weatherStatus">Ingen forvarmning</span>
             <span class="ht-val"><span data-bind="tile.weatherVal">—</span> <small data-bind="tile.weatherSub"></small></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="weather"><rect class="pre" x="0" y="0" width="0" height="48"/><polyline class="t" points=""/></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="weather"><rect class="pre" x="0" y="0" width="0" height="64"/><path class="wa" d=""/><polyline class="t" points=""/></svg>
           </button>
           <button class="home-tile" type="button" popovertarget="sheet-pump" data-empty data-tile="pump">
-            <span class="chip-icon" data-tone="neutral" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/></svg></span><b>Cirkulation</b>
+            <span class="chip-icon" data-tone="neutral" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.6 1.2-4.4 3.6-5M13.4 12.8c2.3 1.3 3.2 3.3 2.6 5.7M10.6 12.8c-2.3 1.3-4.5 1.2-6.2-.6"/></svg></span><b>Cirkulation</b>
             <span class="ht-status" data-bind="tile.pumpStatus">Ingen data fra pumpen</span>
             <span class="ht-val"><span data-bind="tile.pumpVal">—</span> <small data-bind="tile.pumpSub"></small></span>
-            <svg class="ht-viz" viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true"></svg>
           </button></div>
         
         <section class="panel" aria-labelledby="h-heatmap">
-          <header class="panel-head"><h3 id="h-heatmap">Varmekort</h3><p>Rum pr. styring</p></header>
+          <header class="heatmap-head">
+            <div><small>Rum</small><h3 id="h-heatmap">Varmekort</h3></div>
+            <div class="heatmap-legend" role="group" aria-label="Forklaring"><ol><li data-dev="1">≤−1</li><li data-dev="2">−0,3</li><li data-dev="3">±0,3</li><li data-dev="4">+0,3</li><li data-dev="5">≥+1</li></ol><span>° fra mål</span><span><span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>ventil åben</span></div>
+          </header>
           <div class="heatmap" data-bind-heatmap><p class="note">Ingen zoner endnu. Controllere importerer zoner automatisk.</p></div>
-          <p class="heatmap-note">Chippen viser afstand til målet, bjælken hvor meget ventilen er åben.</p>
+          <p class="heatmap-note">Farven viser afstand til målet, bjælken hvor meget ventilen er åben. Felterne fylder efter rummets areal.</p>
         </section>
       </section>
       <section class="view" id="v-sys" aria-labelledby="h-sys">
         <h2 class="sr-only" id="h-sys">System</h2>
         <input class="state" type="radio" name="syscat" id="c-none" checked aria-label="Kategorier"><input class="state" type="radio" name="syscat" id="c-device" data-hash="enhed" aria-label="Enhed"><input class="state" type="radio" name="syscat" id="c-controllers" data-hash="styringer" aria-label="Styringer"><input class="state" type="radio" name="syscat" id="c-heatsource" data-hash="varmekilde" aria-label="Varmekilde"><input class="state" type="radio" name="syscat" id="c-prices" data-hash="elpris" aria-label="Elpris"><input class="state" type="radio" name="syscat" id="c-pump" data-hash="cirkulation" aria-label="Cirkulationspumpe"><input class="state" type="radio" name="syscat" id="c-weather" data-hash="vejr" aria-label="Vejr"><input class="state" type="radio" name="syscat" id="c-network" data-hash="netvaerk" aria-label="Netværk"><input class="state" type="radio" name="syscat" id="c-firmware" data-hash="firmware" aria-label="Firmware og backup"><input class="state" type="radio" name="syscat" id="c-service" data-hash="service" aria-label="Service">
         <div class="sys">
-          <nav class="sys-nav" aria-label="Kategorier"><label for="c-device"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg>Enhed</label><label for="c-controllers"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h16M12 4v16"/></svg>Styringer</label><label for="c-heatsource"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg>Varmekilde</label><label for="c-prices"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M16 7H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H8"/></svg>Elpris</label><label for="c-pump"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/></svg>Cirkulationspumpe</label><label for="c-weather"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/></svg>Vejr</label><label for="c-network"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0"/><circle cx="12" cy="20" r="1"/></svg>Netværk</label><label for="c-firmware"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 10l4 4 4-4M5 19h14"/></svg>Firmware og backup</label><label for="c-service"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2 2-3-3z"/></svg>Service</label></nav>
+          <nav class="sys-nav" aria-label="Kategorier"><label for="c-device"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg>Enhed</label><label for="c-controllers"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h16M12 4v16"/></svg>Styringer</label><label for="c-heatsource"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg>Varmekilde</label><label for="c-prices"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M16 7H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H8"/></svg>Elpris</label><label for="c-pump"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.6 1.2-4.4 3.6-5M13.4 12.8c2.3 1.3 3.2 3.3 2.6 5.7M10.6 12.8c-2.3 1.3-4.5 1.2-6.2-.6"/></svg>Cirkulationspumpe</label><label for="c-weather"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/></svg>Vejr</label><label for="c-network"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0"/><circle cx="12" cy="20" r="1"/></svg>Netværk</label><label for="c-firmware"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 10l4 4 4-4M5 19h14"/></svg>Firmware og backup</label><label for="c-service"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2 2-3-3z"/></svg>Service</label></nav>
           <div class="sys-main"><section class="sys-cat" data-cat="device" aria-labelledby="h-c-device"><label class="sys-back" for="c-none">System</label><header><div><small>System</small><h2 id="h-c-device">Enhed</h2></div><span class="actions"><button class="help-btn" type="button" popovertarget="help-device" style="anchor-name:--a-help-device" aria-label="Hjælp: Identitet">?</button><div id="help-device" popover class="help-pop" style="position-anchor:--a-help-device"><p>Enhedsnavn og display-idle. Vejrplacering bevares, når du nulstiller registret under Service.</p><a href="https://github.com/Birkemosen/lune-coordinator/blob/main/docs/Manual.md#identity">Læs mere</a></div></span></header>
       <form data-save="settings">
         <section class="setting-group"><h4>Identitet</h4><div class="setting-list"><div class="setting"><div class="setting-label"><label for="dev_name">Enhedsnavn</label></div><div class="setting-control"><input class="input w-sm" type="text" id="dev_name" name="name" value="Huskoordinator"></div></div><div class="setting"><div class="setting-label"><label for="dev_idle">Display idle minutter</label><small>0 = aldrig</small></div><div class="setting-control"><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk display idle minutter">−</button><span class="value"><input type="number" inputmode="decimal" id="dev_idle" name="dev_idle" value="5" min="0" max="120" step="1"><span class="unit">min</span></span><button type="button" data-step="1" aria-label="Hæv display idle minutter">+</button></div></div></div></div></section>
@@ -2260,7 +2354,7 @@
   <div id="sheet-pump" popover class="sheet" role="dialog" aria-labelledby="sheet-pump-t" data-hash="cirkulation">
     <input class="state tab" type="radio" name="tab-pump" id="t-pump-o" value="overview" data-hash="overblik" aria-label="Overblik" checked>
     <header class="sheet-head">
-      <span class="chip-icon" data-tone="neutral" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/></svg></span>
+      <span class="chip-icon" data-tone="neutral" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.6 1.2-4.4 3.6-5M13.4 12.8c2.3 1.3 3.2 3.3 2.6 5.7M10.6 12.8c-2.3 1.3-4.5 1.2-6.2-.6"/></svg></span>
       <div><h2 id="sheet-pump-t">Cirkulation</h2><p data-bind="tile.pumpStatus">—</p></div>
       <button class="sheet-close" type="button" popovertarget="sheet-pump" popovertargetaction="hide" aria-label="Luk">×</button>
       
@@ -2327,7 +2421,7 @@
   </div></template>
 </div>
 
-<script type="application/json" id="i18n">{"rt.savedOk":"Gemt","rt.saveFailed":"Gem fejlede","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt — prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{n} s siden","rt.minutesAgo":"{n} min siden","rt.offline":"Offline","common.undo":"Fortryd","state.calling":"Kalder på varme","state.idle":"I ro","state.fault":"Fejl","state.off":"Ikke i brug","tile.fault":"Fejl","tile.off":"Fra","common.unnamed":"Unavngivet","common.cancel":"Annullér","common.days":"dage","common.none":"Ingen","device.this":"denne enhed","device.copied":"Kopieret","device.copyDiag":"Kopiér diagnostik","alert.boardFault":"{board} svarer ikke","alert.roomFault":"{name} ({m}, Z{z}) har motorfejl","alert.roomFaultBody":"Ventilen holdes lukket, indtil fejlen er nulstillet på V6. Tjek aktuatoren først.","common.open":"Åbn {x}","ctrl.removeAsk":"Fjern {name}?","ctrl.removeConfirm":"Fjern {name}? Rum der kun er mappet hertil bliver tomme.","ctrl.removeBtn":"Fjern…","ctrl.removeDo":"Fjern","ctrl.editName":"Redigér navn","ctrl.editHost":"Skift adresse","ctrl.hostInvalid":"Ikke en gyldig IP-adresse eller værtsnavn","ctrl.found":"Fundet","ctrl.addRow":"Tilføj","ctrl.empty":"Ingen styringer endnu. Scan netværket eller tilføj et værtsnavn.","ctrl.host":"Værtsnavn eller IP","ctrl.scanNone":"Ingen nye styringer fundet","heat.badge.off":"Slået fra","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Sendes ikke – slået fra","hs.notSentLease":"Ikke sendt – V6 har ikke givet Touch lease","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Tester…","hs.testReadOk":"Læsning OK · {time} · {code} · {ms} ms","hs.testPushOk":"Afsendelse OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C fra {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Tjek host og port, og at varmekilden kan nås.","hs.testCheckDns":"Tjek at værtsnavnet kan slås op.","hs.testCheckHttp":"Tjek endpoint, og at varmekilden svarer.","hs.testStatus.failed":"Fejl","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Adresse mangler","hs.testReason.network":"Intet netværk","hs.testReason.endpoint":"Ugyldigt endpoint","hs.testReason.notReady":"Varmekilde er ikke klar","hs.testReason.busy":"Optaget","hs.testReason.rejected":"Afvist","hs.host":"Vært","hs.writeUrl":"Skriv-URL-skabelon","hs.readUrl":"Læse-URL-skabelon","status.trusted":"Godkendt","status.paired":"Venter","status.unpaired":"Venter","status.waiting":"Venter","status.unreachable":"Ingen forbindelse","status.confirmed":"Bekræftet","status.sent":"Sendt","status.mismatch":"Afviger","status.blocked":"Blokeret","status.unknown":"Ukendt","status.disabled":"Slået fra","status.online":"Online","status.offline":"Offline","fc.sub":"72 timer · {model} · hentet {time}","fc.badge":"Preload +{v} °C","fc.windFrom":"fra {dir}","fc.dirTitle":"{time}: {speed} m/s fra {dir}","fc.now":"Nu","fc.preloadMsg":"Preload +{v} °C:","fc.sky.sun":"Sol","fc.sky.partly":"Delvis sol","fc.sky.cloud":"Skyet","fc.sky.rain":"Regn","fc.sky.snow":"Sne","fc.sky.moon":"Klar nat","diag.pollOk":"OK","diag.pollFail":"{n} fejlede polls","diag.ota.valid":"Bekræftet","diag.ota.pending_verify":"Afventer bekræftelse","diag.ota.new":"Ny, ikke startet","diag.ota.invalid":"Afvist","diag.ota.aborted":"Afvist","diag.ota.undefined":"Fabriksimage","m.supplyShort":"Frem","m.returnShort":"Ret","strip.lease.refused":"V6 afviste Touch-lease – kører lokalt","strip.lease.none":"Ingen Touch-lease – kører lokalt","strip.charge.now":"Lader gulvet op (+{c} °C) før vind og kulde","strip.charge.insufficient":"Lader op (+{c} °C) – gulvet kan ikke dække hele underskuddet","hp.compOn":"kompressor {hz} Hz","hp.compOff":"kompressor slukket","flow.none":"Ingen åbne sløjfer – pumpen kører på minimumsflow.","flow.note":"Omtrentlig: beregnet ud fra ventilåbningen. Rørlængde frem til hver manifold er ikke med.","flow.noteLpm":"Omtrentlig: beregnet ud fra ventilåbningen og pumpens flow. Rørlængde frem til hver manifold er ikke med.","flow.zoneTip":"{zone}: ventil {v} % · {pct} % af manifolden","role.reserve":"Reserve – Odin styrer. Asgard bruger målet (uløftet), hvis Odin stopper.","role.reserveNow":"Reserve – Odin styrer pumpen nu. Asgard bruger målet, hvis Odin stopper.","role.asgardNow":"Aktiv – Asgard styrer selv lige nu og varmer efter målet.","role.offOdin":"Fra – stopper Odin, bruger Asgard sit eget setpunkt. Slå synkronisering til.","role.drives":"Styrer – Asgard varmer efter målet (+{c} °C ved behov).","role.off":"Fra – Asgard får ikke husets mål.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Varmer {kw} kW","now.off":"Slukket","now.dhw":"Varmt vand","planG.odin":"Odin","planG.noOdin":"Ingen Odin-plan","planG.tip.heat":"{h} · rumvarme {kwh} kWh","planG.tip.dhw":"{h} · varmt vand {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Forvarme +{c} °C","planG.tipCharge":"Opladning +{c} °C","planG.tipInsufficient":"Opladning +{c} °C – gulvet kan ikke dække hele underskuddet","planG.tipLift":"Komfortbånd løftet +{c} °C","hs.mqttPasswordSet":"Gemt – lad feltet stå tomt for at beholde den","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"forbundet","hs.mqttDisconnected":"ikke forbundet","hs.mqttOff":"MQTT: slået fra","common.on":"Til","common.off":"Fra","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune Touch Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","hs.link.ok":"OK – Odin får data og lærer","hs.link.forwarder_off":"Asgard sender ikke til Odin – Odin lærer ikke","hs.link.telemetry_stale":"Odin får ikke frisk telemetri ({s} min) – Odin lærer ikke","hs.link.no_room_temperature":"Odin får ingen rumtemperatur – Odin lærer ikke","hs.link.odin_unreachable":"Odin svarer ikke","hs.link.unknown":"Ukendt","hs.odinStatus.disabled":"Fra","hs.odinStatus.idle":"Venter på første kontrol","hs.odinStatus.watching":"Overvåger – intet løft nu","hs.odinStatus.lifted":"Løftet +{c} °C fra kl. {h}:00 i {n} t","hs.odinStatus.yielded":"På pause – planen er ændret i Odin","hs.odinStatus.rate_limited":"Venter – højst én ændring pr. 20 min","hs.odinStatus.write_failed":"Kunne ikke skrive til Odin","hs.odinStatus.odin_unreachable":"Odin svarer ikke","hs.odinStatus.schedule_unreadable":"Odins plan kunne ikke læses","hs.odinStatus.clock_invalid":"Touch-uret er ikke sat","hs.odinWanted":"ønsket +{c} °C fra kl. {h}:00 i {n} t","hs.route.virtual_thermostat":"Asgards virtuelle termostat (+{c} °C)","hs.route.odin_schedule":"Odins komfortplan","hs.route.generic":"Varmekildens input (+{c} °C)","hs.route.none":"Ingen – Odin styrer efter sin egen plan","hs.leverState":"Mål {t} °C · varmebehov {r} · kurve +{c} °C","price.state.ok":"Sendt","price.state.waiting":"Venter","price.state.running":"Sender","price.state.error":"Fejlet","price.state.disabled":"Fra","price.state.odin":"Odin henter","price.odinMode.api":"Touch","price.odinMode.energy_charts":"Odins egen (Energy-Charts)","price.odinMode.unknown":"Ikke sat endnu","price.odinMode.pending":"Skiftes","price.odinMode.fixed":"Fast pris","price.odinMode.entsoe":"ENTSO-E","price.odinMode.dynamic":"Spotpris","price.err.spot":"Spotprisen kunne ikke hentes","price.err.spot_incomplete":"Dagens spotpris er ufuldstændig","price.err.grid":"Nettariffen kunne ikke hentes – tjek GLN og tarifkode","price.err.energinet":"Systemtariffen kunne ikke hentes","price.err.odin":"Odin tog ikke imod priserne","price.err.no_odin_host":"Ingen Odin-adresse – angiv den under Varmekilde","price.err.clock":"Touch kender ikke klokken endnu","price.err.other":"Prisen kunne ikke beregnes","price.err.datahub_dk_only":"DataHub og Energi Data Service dækker kun Danmark","price.err.no_token":"ENTSO-E kræver en token","price.cached":"Tarif fra seneste vellykkede hentning","price.noOdinHost":"Angiv først Odins adresse under Varmekilde.","price.pushOk":"Sendt til Odin · {time}","price.pushOkBody":"{n} timer fra kl. 00 i dag","price.pushFail":"Ikke sendt · {time}","price.pushPending":"Touch har ikke svaret endnu – se Status om lidt","price.pushDisabled":"Slå «Send priser til Odin» til først","price.schedRemove":"Fjern periode","price.schedHourAria":"Starttime","price.schedValueAria":"Pris i kr./kWh uden moms","price.atHour":"{v} kl. {h}","price.hoursValue":"{n} t fra kl. 00 i dag","price.noData":"Ingen priser endnu","price.lastPushValue":"{time}","price.tokenSet":"Angivet","price.tokenUnset":"Ikke angivet","price.tokenSaved":"Gemt – skriv en ny for at erstatte den","price.inclAll":"Samlet pris i {cur}/kWh inkl. tariffer, afgifter og moms.","price.defaultsApplied":"Standard for {zone} udfyldt – gem for at bruge den","price.defaultsUnknown":"{zone} findes ikke i tabellen: 0 i afgift og 21 % moms udfyldt","price.odinWriteOk":"Skrevet til Odin · {time}","price.odinWriteFail":"Ikke skrevet · {time}","price.spotUsed.eds":"Energi Data Service","price.spotUsed.energy_charts":"Energy-Charts","price.spotUsed.entsoe":"ENTSO-E","price.spotUsed.fixed":"Fast pris","price.spotFallback":"{src} (reserve)","price.srcEds":"Energi Data Service","price.srcDatahub":"DataHub","price.srcSchedule":"Eget skema","price.srcNone":"Ingen","price.srcFixed":"Fast","price.vat":"Moms","price.scale.1":"Meget billig","price.scale.2":"Billig","price.scale.3":"Middel","price.scale.4":"Dyr","price.scale.5":"Meget dyr","csys.fwChecking":"Tjekker GitHub…","csys.fwUpToDate":"Ajour","csys.fwAvailable":"Opdatering tilgængelig","csys.fwNoReleases":"Ingen publiceret udgivelse endnu","csys.fwCheckFailed":"Kunne ikke nå GitHub","csys.fwInstalling":"Henter og installerer…","csys.fwUploading":"Uploader…","csys.fwUploadDone":"Image flash’et. Enheden genstarter.","csys.fwUploadFailed":"Upload mislykkedes. Enheden beholdt sin nuværende firmware.","csys.fwNoFile":"Vælg først en .bin-fil","csys.backupExporting":"Læser indstillinger…","csys.backupExported":"Kopi gemt","csys.backupImporting":"Anvender kopi…","csys.backupImported":"Indstillinger gendannet","csys.backupInvalid":"Ikke en Lune Touch-indstillingskopi","csys.backupFailed":"Backup mislykkedes","home.greeting.morning":"God morgen","home.greeting.day":"God eftermiddag","home.greeting.evening":"God aften","home.greeting.night":"God nat","home.headline.below":"Huset varmes op.","home.headline.at":"Varmt nok overalt.","home.headline.above":"Varmere end målet.","home.headline.fault":"Et rum kræver opmærksomhed.","home.headline.none":"Venter på styringerne.","home.sentence.below":"Huset er {d}° under målet. Rum, der kalder på varme: {n}.","home.sentence.above":"Huset er {d}° over målet. Rum, der kalder på varme: {n}.","home.sentence.at":"Huset er på målet. Rum, der kalder på varme: {n}.","home.sentence.none":"Ingen hustemperatur endnu. Tilføj en styring under System › Styringer.","thermo.aria":"Huset er {t} °C, målet er {g} °C","tile.planNone":"Ingen plan endnu","tile.planVal":"kl. {a}–{b}","tile.planNow":"Varmer nu","tile.planKwh":"≈ {v} kWh","tile.planStatusOdin":"Planlagt af Odin","tile.price":"Elpris nu {p} {cur}/kWh","tile.weatherStatus":"Forvarmer {n} rum","tile.weatherStatusNone":"Ingen forvarmning","tile.weatherSub":"ude · vind {w} m/s","tile.pumpStatus":"Pumpen kører","tile.pumpNone":"Ingen data fra pumpen","tile.pumpSub":"l/min · {h} m · {w} W","tile.room.aria":"{name}, {state}, {temp}","v6.offline":"V6 er ikke tilgængelig · senest set for {h} t siden","v6.offlineBody":"Værdierne er fra for {h} t siden. Rummene kører videre lokalt.","v6.offlineNoTime":"V6 er ikke tilgængelig","sheet.manifoldStatus":"{flow}° → {ret}° · {n} rum","sheet.roomStatus":"{m} · Z{z} · {temp} · {open} % åben · {state}","room.loops":"Kredse fra {m}","room.valveShort":"{v} % åben","room.fromV6":"Fra V6 ({m}, Z{z})","room.wallsNone":"Ingen","room.floorUnset":"Gulv ikke angivet på V6","room.histCallingVal":"{pct} % af målingerne","room.next24Aria":"{name}: forventet temperatur og mål, de næste 24 timer","wx.pastN":"Ude, de seneste {n} timer","wx.past":"Ude, sidste 24 timer","hash.settings":"indstillinger","trend.now":"nu","_dec":",","_walls":{"n":"N","e":"Ø","s":"S","w":"V"},"_walls_full":{"n":"Nord","e":"Øst","s":"Syd","w":"Vest"},"_h":"t","_lang":"da"}</script>
+<script type="application/json" id="i18n">{"rt.savedOk":"Gemt","rt.saveFailed":"Gem fejlede","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt — prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{n} s siden","rt.minutesAgo":"{n} min siden","rt.offline":"Offline","common.undo":"Fortryd","state.calling":"Kalder på varme","state.idle":"I ro","state.fault":"Fejl","state.off":"Ikke i brug","tile.fault":"Fejl","tile.off":"Fra","common.unnamed":"Unavngivet","common.cancel":"Annullér","common.days":"dage","common.none":"Ingen","device.this":"denne enhed","device.copied":"Kopieret","device.copyDiag":"Kopiér diagnostik","alert.boardFault":"{board} svarer ikke","alert.roomFault":"{name} ({m}, Z{z}) har motorfejl","alert.roomFaultBody":"Ventilen holdes lukket, indtil fejlen er nulstillet på V6. Tjek aktuatoren først.","common.open":"Åbn {x}","ctrl.removeAsk":"Fjern {name}?","ctrl.removeConfirm":"Fjern {name}? Rum der kun er mappet hertil bliver tomme.","ctrl.removeBtn":"Fjern…","ctrl.removeDo":"Fjern","ctrl.editName":"Redigér navn","ctrl.editHost":"Skift adresse","ctrl.hostInvalid":"Ikke en gyldig IP-adresse eller værtsnavn","ctrl.found":"Fundet","ctrl.addRow":"Tilføj","ctrl.empty":"Ingen styringer endnu. Scan netværket eller tilføj et værtsnavn.","ctrl.host":"Værtsnavn eller IP","ctrl.scanNone":"Ingen nye styringer fundet","heat.badge.off":"Slået fra","hs.typeHttp":"Generic HTTP","hs.typeAsgard":"Asgard","hs.notSent":"Sendes ikke – slået fra","hs.notSentLease":"Ikke sendt – V6 har ikke givet Touch lease","hs.calcWeightArea":"{area} m² · {pct} %","hs.calcWeightUa":"{ua} W/K · {pct} %","hs.testing":"Tester…","hs.testReadOk":"Læsning OK · {time} · {code} · {ms} ms","hs.testPushOk":"Afsendelse OK · {time} · {code} · {ms} ms","hs.testReadBody":"{value} °C fra {entity}","hs.testPushBody":"{value} °C → {entity}","hs.testFailLine":"{status} · {time} · {reason}","hs.testCheckHost":"Tjek host og port, og at varmekilden kan nås.","hs.testCheckDns":"Tjek at værtsnavnet kan slås op.","hs.testCheckHttp":"Tjek endpoint, og at varmekilden svarer.","hs.testStatus.failed":"Fejl","hs.testReason.timeout":"Timeout","hs.testReason.http":"HTTP {code}","hs.testReason.dns":"DNS","hs.testReason.missing":"Adresse mangler","hs.testReason.network":"Intet netværk","hs.testReason.endpoint":"Ugyldigt endpoint","hs.testReason.notReady":"Varmekilde er ikke klar","hs.testReason.busy":"Optaget","hs.testReason.rejected":"Afvist","hs.host":"Vært","hs.writeUrl":"Skriv-URL-skabelon","hs.readUrl":"Læse-URL-skabelon","status.trusted":"Godkendt","status.paired":"Venter","status.unpaired":"Venter","status.waiting":"Venter","status.unreachable":"Ingen forbindelse","status.confirmed":"Bekræftet","status.sent":"Sendt","status.mismatch":"Afviger","status.blocked":"Blokeret","status.unknown":"Ukendt","status.disabled":"Slået fra","status.online":"Online","status.offline":"Offline","fc.sub":"72 timer · {model} · hentet {time}","fc.badge":"Preload +{v} °C","fc.windFrom":"fra {dir}","fc.dirTitle":"{time}: {speed} m/s fra {dir}","fc.now":"Nu","fc.preloadMsg":"Preload +{v} °C:","fc.sky.sun":"Sol","fc.sky.partly":"Delvis sol","fc.sky.cloud":"Skyet","fc.sky.rain":"Regn","fc.sky.snow":"Sne","fc.sky.moon":"Klar nat","diag.pollOk":"OK","diag.pollFail":"{n} fejlede polls","diag.ota.valid":"Bekræftet","diag.ota.pending_verify":"Afventer bekræftelse","diag.ota.new":"Ny, ikke startet","diag.ota.invalid":"Afvist","diag.ota.aborted":"Afvist","diag.ota.undefined":"Fabriksimage","m.supplyShort":"Frem","m.returnShort":"Ret","strip.lease.refused":"V6 afviste Touch-lease – kører lokalt","strip.lease.none":"Ingen Touch-lease – kører lokalt","strip.charge.now":"Lader gulvet op (+{c} °C) før vind og kulde","strip.charge.insufficient":"Lader op (+{c} °C) – gulvet kan ikke dække hele underskuddet","hp.compOn":"kompressor {hz} Hz","hp.compOff":"kompressor slukket","flow.none":"Ingen åbne sløjfer – pumpen kører på minimumsflow.","flow.note":"Omtrentlig: beregnet ud fra ventilåbningen. Rørlængde frem til hver manifold er ikke med.","flow.noteLpm":"Omtrentlig: beregnet ud fra ventilåbningen og pumpens flow. Rørlængde frem til hver manifold er ikke med.","flow.zoneTip":"{zone}: ventil {v} % · {pct} % af manifolden","role.reserve":"Reserve – Odin styrer. Asgard bruger målet (uløftet), hvis Odin stopper.","role.reserveNow":"Reserve – Odin styrer pumpen nu. Asgard bruger målet, hvis Odin stopper.","role.asgardNow":"Aktiv – Asgard styrer selv lige nu og varmer efter målet.","role.offOdin":"Fra – stopper Odin, bruger Asgard sit eget setpunkt. Slå synkronisering til.","role.drives":"Styrer – Asgard varmer efter målet (+{c} °C ved behov).","role.off":"Fra – Asgard får ikke husets mål.","driver.odin":"Odin","driver.asgard":"Asgard (Auto-Adaptive)","now.heat":"Varmer {kw} kW","now.off":"Slukket","now.dhw":"Varmt vand","planG.odin":"Odin","planG.noOdin":"Ingen Odin-plan","planG.tip.heat":"{h} · rumvarme {kwh} kWh","planG.tip.dhw":"{h} · varmt vand {kwh} kWh el","planG.tip.legionella":"{h} · legionella {kwh} kWh el","planG.tipPre":"Forvarme +{c} °C","planG.tipCharge":"Opladning +{c} °C","planG.tipInsufficient":"Opladning +{c} °C – gulvet kan ikke dække hele underskuddet","planG.tipLift":"Komfortbånd løftet +{c} °C","hs.mqttPasswordSet":"Gemt – lad feltet stå tomt for at beholde den","hs.mqttState":"MQTT: {s}","hs.mqttConnected":"forbundet","hs.mqttDisconnected":"ikke forbundet","hs.mqttOff":"MQTT: slået fra","common.on":"Til","common.off":"Fra","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune Touch Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","hs.link.ok":"OK – Odin får data og lærer","hs.link.forwarder_off":"Asgard sender ikke til Odin – Odin lærer ikke","hs.link.telemetry_stale":"Odin får ikke frisk telemetri ({s} min) – Odin lærer ikke","hs.link.no_room_temperature":"Odin får ingen rumtemperatur – Odin lærer ikke","hs.link.odin_unreachable":"Odin svarer ikke","hs.link.unknown":"Ukendt","hs.odinStatus.disabled":"Fra","hs.odinStatus.idle":"Venter på første kontrol","hs.odinStatus.watching":"Overvåger – intet løft nu","hs.odinStatus.lifted":"Løftet +{c} °C fra kl. {h}:00 i {n} t","hs.odinStatus.yielded":"På pause – planen er ændret i Odin","hs.odinStatus.rate_limited":"Venter – højst én ændring pr. 20 min","hs.odinStatus.write_failed":"Kunne ikke skrive til Odin","hs.odinStatus.odin_unreachable":"Odin svarer ikke","hs.odinStatus.schedule_unreadable":"Odins plan kunne ikke læses","hs.odinStatus.clock_invalid":"Touch-uret er ikke sat","hs.odinWanted":"ønsket +{c} °C fra kl. {h}:00 i {n} t","hs.route.virtual_thermostat":"Asgards virtuelle termostat (+{c} °C)","hs.route.odin_schedule":"Odins komfortplan","hs.route.generic":"Varmekildens input (+{c} °C)","hs.route.none":"Ingen – Odin styrer efter sin egen plan","hs.leverState":"Mål {t} °C · varmebehov {r} · kurve +{c} °C","price.state.ok":"Sendt","price.state.waiting":"Venter","price.state.running":"Sender","price.state.error":"Fejlet","price.state.disabled":"Fra","price.state.odin":"Odin henter","price.odinMode.api":"Touch","price.odinMode.energy_charts":"Odins egen (Energy-Charts)","price.odinMode.unknown":"Ikke sat endnu","price.odinMode.pending":"Skiftes","price.odinMode.fixed":"Fast pris","price.odinMode.entsoe":"ENTSO-E","price.odinMode.dynamic":"Spotpris","price.err.spot":"Spotprisen kunne ikke hentes","price.err.spot_incomplete":"Dagens spotpris er ufuldstændig","price.err.grid":"Nettariffen kunne ikke hentes – tjek GLN og tarifkode","price.err.energinet":"Systemtariffen kunne ikke hentes","price.err.odin":"Odin tog ikke imod priserne","price.err.no_odin_host":"Ingen Odin-adresse – angiv den under Varmekilde","price.err.clock":"Touch kender ikke klokken endnu","price.err.other":"Prisen kunne ikke beregnes","price.err.datahub_dk_only":"DataHub og Energi Data Service dækker kun Danmark","price.err.no_token":"ENTSO-E kræver en token","price.cached":"Tarif fra seneste vellykkede hentning","price.noOdinHost":"Angiv først Odins adresse under Varmekilde.","price.pushOk":"Sendt til Odin · {time}","price.pushOkBody":"{n} timer fra kl. 00 i dag","price.pushFail":"Ikke sendt · {time}","price.pushPending":"Touch har ikke svaret endnu – se Status om lidt","price.pushDisabled":"Slå «Send priser til Odin» til først","price.schedRemove":"Fjern periode","price.schedHourAria":"Starttime","price.schedValueAria":"Pris i kr./kWh uden moms","price.atHour":"{v} kl. {h}","price.hoursValue":"{n} t fra kl. 00 i dag","price.noData":"Ingen priser endnu","price.lastPushValue":"{time}","price.tokenSet":"Angivet","price.tokenUnset":"Ikke angivet","price.tokenSaved":"Gemt – skriv en ny for at erstatte den","price.inclAll":"Samlet pris i {cur}/kWh inkl. tariffer, afgifter og moms.","price.defaultsApplied":"Standard for {zone} udfyldt – gem for at bruge den","price.defaultsUnknown":"{zone} findes ikke i tabellen: 0 i afgift og 21 % moms udfyldt","price.odinWriteOk":"Skrevet til Odin · {time}","price.odinWriteFail":"Ikke skrevet · {time}","price.spotUsed.eds":"Energi Data Service","price.spotUsed.energy_charts":"Energy-Charts","price.spotUsed.entsoe":"ENTSO-E","price.spotUsed.fixed":"Fast pris","price.spotFallback":"{src} (reserve)","price.srcEds":"Energi Data Service","price.srcDatahub":"DataHub","price.srcSchedule":"Eget skema","price.srcNone":"Ingen","price.srcFixed":"Fast","price.vat":"Moms","price.scale.1":"Meget billig","price.scale.2":"Billig","price.scale.3":"Middel","price.scale.4":"Dyr","price.scale.5":"Meget dyr","csys.fwChecking":"Tjekker GitHub…","csys.fwUpToDate":"Ajour","csys.fwAvailable":"Opdatering tilgængelig","csys.fwNoReleases":"Ingen publiceret udgivelse endnu","csys.fwCheckFailed":"Kunne ikke nå GitHub","csys.fwInstalling":"Henter og installerer…","csys.fwUploading":"Uploader…","csys.fwUploadDone":"Image flash’et. Enheden genstarter.","csys.fwUploadFailed":"Upload mislykkedes. Enheden beholdt sin nuværende firmware.","csys.fwNoFile":"Vælg først en .bin-fil","csys.backupExporting":"Læser indstillinger…","csys.backupExported":"Kopi gemt","csys.backupImporting":"Anvender kopi…","csys.backupImported":"Indstillinger gendannet","csys.backupInvalid":"Ikke en Lune Touch-indstillingskopi","csys.backupFailed":"Backup mislykkedes","home.greeting.morning":"God morgen","home.greeting.day":"God eftermiddag","home.greeting.evening":"God aften","home.greeting.night":"God nat","home.headline.below":"Huset varmes op.","home.headline.at":"Varmt nok overalt.","home.headline.above":"Varmere end målet.","home.headline.fault":"Et rum kræver opmærksomhed.","home.headline.none":"Venter på styringerne.","home.sentence.below":"Huset er {d}° under målet. Rum, der kalder på varme: {n}.","home.sentence.above":"Huset er {d}° over målet. Rum, der kalder på varme: {n}.","home.sentence.at":"Huset er på målet. Rum, der kalder på varme: {n}.","home.sentence.none":"Ingen hustemperatur endnu. Tilføj en styring under System › Styringer.","thermo.aria":"Huset er {t} °C, målet er {g} °C","home.hp.on":"Varmepumpen kører.","home.hp.off":"Varmepumpen hviler.","hero.heatPump":"Varmepumpe","tile.heat":"Varme","thermo.outside":"ude {t}","tile.open":"{p} % åben","tile.closed":"lukket","tile.planNone":"Ingen plan endnu","tile.planVal":"kl. {a}–{b}","tile.planNow":"Varmer nu","tile.planKwh":"≈ {v} kWh","tile.planStatusOdin":"Planlagt af Odin","tile.price":"Elpris nu {p} {cur}/kWh","tile.weatherStatus":"Forvarmer {n} rum","tile.weatherStatusNone":"Ingen forvarmning","tile.weatherSub":"ude · vind {w} m/s","tile.pumpStatus":"Pumpen kører","tile.pumpNone":"Ingen data fra pumpen","tile.pumpSub":"l/min · {h} m · {w} W","tile.room.aria":"{name}, {state}, {temp}","v6.offline":"V6 er ikke tilgængelig · senest set for {h} t siden","v6.offlineBody":"Værdierne er fra for {h} t siden. Rummene kører videre lokalt.","v6.offlineNoTime":"V6 er ikke tilgængelig","sheet.manifoldStatus":"{flow}° → {ret}° · {n} rum","sheet.roomStatus":"{m} · Z{z} · {temp} · {open} % åben · {state}","room.loops":"Kredse fra {m}","room.valveShort":"{v} % åben","room.fromV6":"Fra V6 ({m}, Z{z})","room.wallsNone":"Ingen","room.floorUnset":"Gulv ikke angivet på V6","room.histCallingVal":"{pct} % af målingerne","room.next24Aria":"{name}: forventet temperatur og mål, de næste 24 timer","wx.pastN":"Ude, de seneste {n} timer","wx.past":"Ude, sidste 24 timer","hash.settings":"indstillinger","trend.now":"nu","_dec":",","_walls":{"n":"N","e":"Ø","s":"S","w":"V"},"_walls_full":{"n":"Nord","e":"Øst","s":"Syd","w":"Vest"},"_h":"t","_lang":"da"}</script>
 <script>window.LUNE_TOUCH_MOCK=true;</script>
 <script src="ui.js" defer></script>
 </body>

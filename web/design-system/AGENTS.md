@@ -38,7 +38,7 @@ Kopiér denne fil ind i projektets `CLAUDE.md` / `AGENTS.md`, eller henvis til d
 - Sjældne indstillinger: `details.subpage` («Avanceret ›») i samme ark/kategori.
 - System: radioer `name="syscat"` (`c-{kategori}` + `c-none`) før `.sys`; `.sys-nav` + `.sys-cat[data-cat]`; `.sys-back` til mobil.
 - Deep links via `data-hash` (`#z3/indstillinger`, `#system/varmekilde`).
-- Touch' Hjem: `.home-hero` med `.thermo` (autogem), maks. 4 `button.home-tile` (ét tal + én `.ht-viz`), `.heatmap` med `.room-group` pr. styring. Offline-styring: `data-offline` + `.offline-note`.
+- Touch' Hjem: `.home-hero` med `.hero-facts` (højst 2) og `.thermo` (bue = huset nu, mærke = mål; autogem), `.home-head`, maks. 4 `button.home-tile` (ét tal + én `.ht-viz`), `.heatmap` (`.heatmap-legend`, rumfelter efter areal) med `.room-group` pr. styring. Offline-styring: `data-offline` + `.offline-note`.
 - Delvis gem af én ressource fra to steder: `data-save="ressource.del"` + `data-patch` (sender kun ændrede felter som PATCH).
 - Ét felt pr. ting: en indstilling, der ejes af en anden enhed (fx V6' gulv i Touch), vises som læseværdi + «Redigér på V6 ›», aldrig som redigerbart felt to steder.
 

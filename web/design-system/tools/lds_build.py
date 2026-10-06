@@ -458,7 +458,7 @@ def build_css(cfg, project_id="cfg"):
 
 # ------------------------------------------------------------------ var-tjek
 # Inline-variabler: sættes i markup (style="--v:32%") eller af binderen, ikke i tokens.
-INLINE_VARS = frozenset({"v", "w", "a", "b", "deg", "now", "act", "bars-n", "fc-cols", "fc-dirs", "sub-n", "plan", "float"})
+INLINE_VARS = frozenset({"v", "w", "a", "b", "deg", "now", "act", "bars-n", "fc-cols", "fc-dirs", "sub-n", "plan", "float", "area"})
 
 def token_names():
     names = set()

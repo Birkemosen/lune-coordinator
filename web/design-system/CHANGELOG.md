@@ -1,5 +1,15 @@
 # Changelog — Lune Design System
 
+## 2.3.3
+
+Touch' Hjem tættere på designet (`docs/design/Overview.png`).
+
+- `.home-hero`: overskrift i to toner (`h2 .sub`), hilsen i `--accent-ink`, `.hero-facts`/`.hero-fact` (varmekilde og næste varme som genveje). Nyt token `--fs-display` (48 px).
+- `.thermo`: buen viser husets temperatur, mærket (`.tg`/`.tg-edge`) er målet; «ude x°» under tallet; gradtegnet hævet. Målet er et tekstfelt med `.unit`, så «21.6» / «21,6» følger sidens sprog (før: browserens sprog).
+- `.home-tile`: titel og status står samlet øverst, visualiseringen i bunden (rækken var strakt ud, når et felt manglede data). Højere `.ht-viz` (64); plan-søjler i violet (plan), vejr med flade.
+- `.home-head` over felterne.
+- Varmekort: `.heatmap-head` + `.heatmap-legend`; rumfelterne fylder efter areal (`--area`, `--room-min`), 5-trins ventilbjælke (`data-open`), «x % åben». Gruppe-ringen og zone-id er væk fra varmekortet. `--area` er tilføjet til de tilladte inline-variabler.
+
 ## 2.3.2
 
 - Budget (DESIGN.md 9) hævet ud fra målinger på V6 (8 MB flash, app-partition 3,93 MB, web-UI 117 kB, 2,3 MB fri): CSS ≤ 24 kB, `lune-forms.js` ≤ 5 kB, ≤ 20 kB pr. sprogside uden grafpunkter, binder ≤ 70 kB, hele web-UI'et ≤ 160 kB gzip.
