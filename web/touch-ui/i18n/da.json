@@ -718,6 +718,7 @@
   "hash.service": "service",
   "thermo.aria": "Huset er {t} °C, målet er {g} °C",
   "thermo.house": "Huset nu",
+  "scopes.aria": "Hus og styringer",
   "thermo.outside": "ude {t}",
   "alert.roomFault": "{name} ({m}, Z{z}) har motorfejl",
   "alert.roomFaultBody": "Ventilen holdes lukket, indtil fejlen er nulstillet på V6. Tjek aktuatoren først.",

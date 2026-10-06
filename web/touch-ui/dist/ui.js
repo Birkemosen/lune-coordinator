@@ -1061,6 +1061,29 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
 
   // Varmekort (DESIGN.md 15.10): rooms per controller; the head opens the
   // controller's sheet, each tile the room's sheet.
+  // Hjem: huset + ét kort pr. styring med én søjle pr. zone (ventil i 5 trin).
+  function renderScopes(list) {
+    var host = qs('[data-bind-scopes]');
+    if (!host) return;
+    qsa('button.scope', host).forEach(function (b) { b.remove(); });
+    host.insertAdjacentHTML('beforeend', list.map(function (m) {
+      var node = state.nodes[m - 1];
+      var name = nodeLabel(node) || (t('common.unnamed') + ' M' + m);
+      var zones = (state.byM[m] || []).filter(function (z) { return !z.is_group_secondary; })
+        .sort(function (a, b) { return mzOf(a).z - mzOf(b).z; });
+      var bars = zones.map(function (z) {
+        if (mapStatus(z.status) === 'fault') return '<i data-state="fault"></i>';
+        var lvl = tileLevel(z, z.valve_pct);
+        return '<i data-level="' + (lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(z.valve_pct) / 20)))) + '"></i>';
+      }).join('');
+      var isOff = node && node.reachable === false;
+      var off = isOff ? ' data-offline' : '';
+      var open = document.getElementById('sheet-m' + m) ? ' popovertarget="sheet-m' + m + '"' : ' disabled';
+      return '<button class="scope" type="button"' + open + off + ' aria-label="' + esc(t('common.open', { x: name })) + '">' +
+        '<small>M' + m + (isOff ? ' · <span>' + esc(t('status.offline')) + '</span>' : '') + '</small><b>' + esc(name) + '</b><span class="mini" aria-hidden="true">' + bars + '</span></button>';
+    }).join(''));
+  }
+
   function renderHeatmap() {
     var host = qs('[data-bind-heatmap]');
     if (!host) return;
@@ -1069,6 +1092,7 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     (state.nodes || []).forEach(function (n, i) { ms[i + 1] = 1; });
     var list = Object.keys(ms).map(Number).sort(function (a, b) { return a - b; });
     if (!list.length) return;
+    renderScopes(list);
     host.innerHTML = list.map(function (m) {
       var node = state.nodes[m - 1];
       var name = nodeLabel(node) || (t('common.unnamed') + ' M' + m);
@@ -1365,6 +1389,7 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     setText('house.outdoor', finite(state.outdoorC) ? t('thermo.outside', { t: deg(state.outdoorC) }) : '');
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
     setBind('house.temp', ht == null ? '—' : esc(num(ht)) + '<small>°</small>');
+    setText('scope.house', deg(ht));
     var ring = qs('[data-bind-thermo]');
     if (ring) {
       var pct = function (v) { return Math.max(0, Math.min(100, Math.round((v - THERMO_MIN) / (THERMO_MAX - THERMO_MIN) * 100))); };

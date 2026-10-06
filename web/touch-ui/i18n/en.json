@@ -718,6 +718,7 @@
   "hash.service": "service",
   "thermo.aria": "The house is {t} °C, the target is {g} °C",
   "thermo.house": "House now",
+  "scopes.aria": "House and controllers",
   "thermo.outside": "outside {t}",
   "alert.roomFault": "{name} ({m}, Z{z}) has a motor fault",
   "alert.roomFaultBody": "The valve stays closed until the fault is reset on the V6. Check the actuator first.",

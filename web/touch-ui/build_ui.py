@@ -25,6 +25,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -75,6 +76,29 @@ class Cat:
 
     def meta(self, k):
         return self.d[k]
+
+
+def hero_waves():
+    """Højdekurver bag Hjems hovedsektion (DESIGN.md 15.10). Deterministisk, ingen tilfældighed."""
+    W, H, n = 1200, 420, 15
+    paths = []
+    for i in range(n):
+        y0 = 18 + i * (H - 36) / (n - 1)
+        pts = []
+        for k in range(9):
+            x = k * W / 8
+            # to langsomme bølger + en svag samling nederst til højre (kurverne løber sammen)
+            y = (y0 + 9 * math.sin(x / 210 + i * .55) + 6 * math.sin(x / 95 - i * .3)
+                 - (x / W) ** 3 * (y0 - H * .62) * .45)
+            pts.append((x, y))
+        d = f"M{pts[0][0]:.0f},{pts[0][1]:.0f}"
+        for k in range(len(pts) - 1):
+            p0 = pts[max(k - 1, 0)]; p1 = pts[k]; p2 = pts[k + 1]; p3 = pts[min(k + 2, len(pts) - 1)]
+            c1 = (p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6)
+            c2 = (p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6)
+            d += f"C{c1[0]:.0f} {c1[1]:.0f} {c2[0]:.0f} {c2[1]:.0f} {p2[0]:.0f} {p2[1]:.0f}"
+        paths.append(f'<path d="{d}"/>')
+    return f'<svg class="hero-waves" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">{"".join(paths)}</svg>'
 
 
 def ensure_css(path: pathlib.Path) -> str:
@@ -315,7 +339,11 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     home = f'''
       <section class="view" id="v-home-house" aria-labelledby="h-home">
         {alerts}
+        <div class="home-scopes" role="group" aria-label="{T("scopes.aria")}" data-bind-scopes>
+          <div class="scope" aria-current="page"><small>{T("scope.house")}</small><b data-bind="scope.house">{DASH}</b></div>
+        </div>
         <section class="home-hero">
+          {hero_waves()}
           <div class="hero-text">
             <small data-bind="home.greeting">{T("home.greeting.day")}</small>
             <h2 id="h-home"><span data-bind="home.headline">{T("home.headline.none")}</span> <span class="sub" data-bind="home.headline2"></span></h2>
@@ -327,7 +355,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </div>
           <form class="thermo" data-save="house-target">
             <div class="thermo-ring" style="--v:60;--now:0" role="img" aria-label="{T("climate.now")}" data-bind-thermo>
-              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="tg-edge" cx="50" cy="50" r="44" pathLength="100"/><circle class="tg" cx="50" cy="50" r="44" pathLength="100"/></svg>
+              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="knob" cx="50" cy="50" r="44" pathLength="100"/></svg>
               <div class="thermo-val"><span>{T("thermo.house")}</span><b data-bind="house.temp">{DASH}</b><span data-bind="house.outdoor"></span></div>
             </div>
             <div class="climate">
@@ -862,7 +890,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
