@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.5
+
+- `.hero-fact`: egen flade og skygge over højdekurverne (nye tokens `--lift-bg`, `--lift-shadow-c`, `--lift`; kontrast fg/muted på lift-bg). Ikonbrikken fik ved en fejl tekstliniens grå farve — rettet.
+
 ## 2.3.4
 
 - `.thermo`: håndtaget (`.knob`) sidder for enden af buen (begge = huset nu); målet vises kun under ringen. `.tg`/`.tg-edge` er fjernet.
