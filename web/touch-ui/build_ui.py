@@ -435,7 +435,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                  (T("hs.odinState"), "dash.odinPlan"), (T("hs.route"), "odin.route")])}
           </div>
           {sent}
-          {sheet_link("heatsource", "link.heatsource")}
         </div>'''
     heat_set = f'''
         <form data-save="heat_source.behavior" data-patch>
@@ -446,7 +445,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {ggroup(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
                   sstep("odin_max_lift_c", T("heat.odinMaxLift"), 1.5, 0.3, 3.0, 0.1, "°C"), extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
           <p class="note hs-type-http">{T("heat.httpBehavior")}</p>
-          <p class="note">{T("heat.connOnSystem")}</p>
+          {sheet_link("heatsource", "link.heatConn")}
           </div>
           {savebar("heat-behavior", T("hs.save"))}
         </form>'''
@@ -538,10 +537,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     wx_set = f'''
         <form data-save="weather.boost" data-patch>
           {group(T("wx.preload"), sstep("wx_boost", T("wx.boost"), 1.5, 0, 3, 0.1, "°C", hint=T("wx.boostHint")))}
-          <p class="note">{T("wx.locationOnSystem")}</p>
+          {sheet_link("weather", "link.wxLocation")}
           {savebar("weather-boost", T("weatherCfg.save"))}
-        </form>
-        {sheet_link("weather", "link.weather")}'''
+        </form>'''
     sheet_wx = sheet("weather", T("hash.weather"), I["wx"], "info", T("tile.weather"), None,
                      [("overview", wx_over), ("history", wx_hist), ("settings", wx_set)], status_attrs=' data-bind="tile.weatherStatus"')
 
