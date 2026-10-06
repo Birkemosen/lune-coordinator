@@ -364,6 +364,16 @@
       };
     }
     if (path === '/heat-source') return mockHeat;
+    if (path === '/heat-source/history/24h' || path === '/heat-source/history/7d') {
+      var wk = /7d$/.test(path), hn = wk ? 84 : 96, hstep = wk ? 7200 : 900;
+      var hf = [], hr2 = [];
+      for (var hi = 0; hi < hn; hi++) {
+        var ph = Math.sin(hi / hn * Math.PI * (wk ? 14 : 2) - 1.2);
+        hf.push(Math.round((31.5 + 4.5 * ph + Math.sin(hi * 1.7) * 0.4) * 10) / 10);
+        hr2.push(Math.round((26.5 + 3.2 * ph + Math.sin(hi * 2.3) * 0.5) * 10) / 10);
+      }
+      return { available: true, range: wk ? '7d' : '24h', from_ts: Math.floor(Date.now() / 1000) - hn * hstep, step_s: hstep, age_s: 30, feed_c: hf, return_c: hr2 };
+    }
     if (path === '/plan') {
       var hk = Array.from({ length: 24 }, function (_, i) { return (i >= 3 && i <= 5) ? 2.7 : (i === 14 ? 2.1 : 0); });
       return {
@@ -404,6 +414,7 @@
   }
 
   async function mockPost(path, body) {
+    if (path === '/forecast/estimate-location') return { result: 'ok', source: 'network', latitude: 55.384697, longitude: 10.1402, city: 'Vissenbjerg', country: 'Denmark' };
     var bool = function (v) { return v === '1' || v === 1 || v === true; };
     if (path === '/heat-source/test-read' || path === '/heat-source/test-push') {
       await new Promise(function (r) { setTimeout(r, 450); });
@@ -1091,6 +1102,74 @@
     } catch (e) { box.setAttribute('data-empty', ''); }
   }
 
+  // Heat sheet: flow/return from Asgard's own history (the Touch averages it into
+  // 96 × 15 min and 84 × 2 h, GET /heat-source/history/24h|7d). Loaded when the sheet opens.
+  async function loadHeatHistory() {
+    var box = qs('[data-bind-hchart]');
+    if (state.heatHistAt && Date.now() - state.heatHistAt < 300000) return;
+    state.heatHistAt = Date.now();
+    ['24h', '7d'].forEach(async function (rng) {
+      var panel = box && qs('[data-f="h' + rng + '"]', box);
+      try {
+        var h = await get('/heat-source/history/' + rng);
+        drawHeatHistory(panel, rng, h);
+        if (rng === '24h') drawHeatTile(h);
+      }
+      catch (e) { if (panel) panel.setAttribute('data-empty', ''); }
+    });
+  }
+
+  // Home's Heat tile: the same 24 h, drawn small. Page samples are only the fallback.
+  function drawHeatTile(h) {
+    var fs = (h && h.feed_c) || [], rs = (h && h.return_c) || [];
+    if (!(h && h.available && fs.filter(finite).length >= 2)) return;
+    state.heatTileFromHistory = true;
+    var viz = qs('[data-bind-viz="heat"]'), tile = qs('[data-tile="heat"]');
+    if (tile) tile.removeAttribute('data-empty');
+    if (!viz) return;
+    var r = axisRange([fs, rs], 3), n = fs.length;
+    var pts = function (arr) {
+      return arr.map(function (v, i) { return finite(v) ? (i * 240 / (n - 1)).toFixed(1) + ',' + (64 - (Number(v) - r.lo) / (r.hi - r.lo) * 64).toFixed(1) : null; })
+        .filter(Boolean);
+    };
+    var fp = pts(fs);
+    viz.querySelector('polyline.f').setAttribute('points', fp.join(' '));
+    viz.querySelector('polyline.r').setAttribute('points', pts(rs).join(' '));
+    viz.querySelector('path.a').setAttribute('d', 'M' + fp[0].split(',')[0] + ',64 L' + fp.join(' L') + ' L' + fp[fp.length - 1].split(',')[0] + ',64Z');
+  }
+
+  function drawHeatHistory(panel, rng, h) {
+    if (!panel) return;
+    var fs = (h && h.feed_c) || [], rs = (h && h.return_c) || [];
+    var ok = h && h.available && fs.filter(finite).length >= 2;
+    panel.toggleAttribute('data-empty', !ok);
+    if (!ok) return;
+    var n = Math.max(fs.length, rs.length), W = 240, H = 100;
+    var r = axisRange([fs, rs], 6);
+    var lo = Math.floor(r.lo), hi = Math.ceil(r.hi);
+    var pts = function (arr) {
+      var out = [];
+      arr.forEach(function (v, i) {
+        if (!finite(v)) return;
+        out.push((n === 1 ? 0 : i * W / (n - 1)).toFixed(1) + ',' + (H - (Number(v) - lo) / (hi - lo) * H).toFixed(1));
+      });
+      return out;
+    };
+    var fp = pts(fs), rp = pts(rs);
+    var svg = qs('svg', panel);
+    svg.querySelector('polyline.f').setAttribute('points', fp.join(' '));
+    svg.querySelector('polyline.r').setAttribute('points', rp.join(' '));
+    svg.querySelector('path.dt').setAttribute('d', 'M' + fp[0].split(',')[0] + ',' + H + ' L' + fp.join(' L') + ' L' + fp[fp.length - 1].split(',')[0] + ',' + H + 'Z');
+    fHtml(panel, 'y', [hi, Math.round((hi + lo) / 2), lo].map(function (v) { return '<span>' + esc(v) + '°</span>'; }).join(''));
+    // x: four ticks + "now" (24 h: hour of day; 7 d: weekday in the page language).
+    var from = Number(h.from_ts) || 0, span = n * (Number(h.step_s) || 0), lang = document.documentElement.lang || 'en';
+    var ticks = [0, .25, .5, .75].map(function (f) {
+      var d = new Date((from + f * span) * 1000);
+      return '<span>' + esc(rng === '7d' ? d.toLocaleDateString(lang, { weekday: 'short' }) : String(d.getHours()).padStart(2, '0')) + '</span>';
+    });
+    fHtml(panel, 'x', ticks.join('') + '<span><b>' + esc(t('trend.now')) + '</b></span>');
+  }
+
   function renderAlerts() {
     var host = qs('[data-bind-alerts]');
     if (!host) return;
@@ -1232,6 +1311,7 @@
     if (hist.length && now - hist[hist.length - 1].at < 60000) return;
     hist.push({ at: now, f: Number(fl), r: Number(rt) });
     if (hist.length > HEAT_HIST_MAX) hist.shift();
+    if (state.heatTileFromHistory) return;
     var viz = qs('[data-bind-viz="heat"]');
     var tile = qs('[data-tile="heat"]');
     var ok = hist.length >= 3;
@@ -1580,6 +1660,17 @@
     renderHeatDelivery(hs);
     paintTargetRole();
     var hp = hs.heat_pump || {};
+    if (hs.type === 'asgard') loadHeatHistory();   // throttled to every 5 min
+    // Heat sheet chart head: flow, return, ΔT and the compressor as a pill.
+    var hpOk = hp.available && finite(hp.feed_c) && finite(hp.return_c);
+    setBind('hp.feed', hpOk ? esc(deg(hp.feed_c)) : '—');
+    setBind('hp.ret', hpOk ? esc(deg(hp.return_c)) : '—');
+    setBind('hp.dt', hpOk ? esc(num(Number(hp.feed_c) - Number(hp.return_c))) : '—');
+    qsa('[data-bind="hp.pill"]').forEach(function (b) {
+      b.hidden = !(hp.available && hp.compressor_on != null);
+      b.textContent = t(hp.compressor_on ? 'hp.pillOn' : 'hp.pillOff');
+      b.className = 'badge' + (hp.compressor_on ? ' ok' : '');
+    });
     setText('dash.hpTemps', hp.available && hp.feed_c != null && hp.return_c != null
       ? num(hp.feed_c) + ' → ' + num(hp.return_c) + ' °C · ' +
         (hp.compressor_on ? t('hp.compOn', { hz: num(hp.compressor_hz, 0) }) : t('hp.compOff'))
@@ -2316,7 +2407,9 @@
     var solar = hours.map(function (h) { return h.solar_wm2 != null ? Number(h.solar_wm2) : 0; });
     var sPeak = solar.reduce(function (m, v) { return isFinite(v) && v > m ? v : m; }, 0);
     var sMax = Math.max(200, Math.ceil(sPeak / 100) * 100);
-    var sp = seriesPoints(solar, W, 100, 0, sMax);
+    var sunSvg = qs('[data-bind-fc="sun"]');   // stacked layout: the sun has its own row
+    var sH = sunSvg ? 60 : 100;
+    var sp = seriesPoints(solar, W, sH, 0, sMax);
     var wp = seriesPoints(winds, W, 60, 0, wMax);
     var nowX = (start / n) * W;
     var svgT = qs('[data-bind-fc="temp"]');
@@ -2333,6 +2426,20 @@
       if (past) past.setAttribute('width', String(nowX));
       setLine(svgT.querySelector('line.now'), nowX);
     }
+    if (sunSvg) {
+      var sa2 = sunSvg.querySelector('polygon.sa');
+      if (sa2) sa2.setAttribute('points', '0,60 ' + sp + ' ' + W + ',60');
+      var sl2 = sunSvg.querySelector('polyline.sl');
+      if (sl2) sl2.setAttribute('points', sp);
+      var pastS = sunSvg.querySelector('rect.past');
+      if (pastS) pastS.setAttribute('width', String(nowX));
+      setLine(sunSvg.querySelector('line.now'), nowX);
+    }
+    // Row labels in the stacked layout: the span each small chart covers.
+    var rng = function (k, txt) { qsa('[data-fc-range="' + k + '"]').forEach(function (el) { el.textContent = txt; }); };
+    rng('temp', Math.round(tMin) + '–' + Math.round(tMax) + ' °C');
+    rng('sun', '0–' + sMax + ' W/m²');
+    rng('wind', '0–' + Math.round(wMax) + ' m/s');
     if (svgW) {
       var wl = svgW.querySelector('polyline.wl');
       if (wl) wl.setAttribute('points', wp);
@@ -3221,7 +3328,27 @@
       else if (action === 'trust-node') await post('/nodes/' + encodeURIComponent(id) + '/trust', { trust: 2, confirm: id });
       else if (action === 'remove-node') await post('/nodes/' + encodeURIComponent(id) + '/remove', { confirm: id });
       else if (action === 'hs-test-read' || action === 'hs-test-push') { await runHeatTest(btn, action); return; }
-      else if (action === 'wx-geo') await post('/forecast/estimate-location', {});
+      else if (action === 'wx-geo') {
+        // The device only estimates; the fields are filled and the form turns
+        // dirty, so the person saves (or discards) the new location themselves.
+        btn.setAttribute('aria-busy', 'true');
+        try {
+          var g = await post('/forecast/estimate-location', {});
+          if (!g || !finite(g.latitude) || !finite(g.longitude)) throw new Error('no location');
+          [['#wx_lat', g.latitude], ['#wx_lon', g.longitude]].forEach(function (p) {
+            var el = qs(p[0]);
+            if (!el) return;
+            el.value = Number(p[1]).toFixed(4);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          setText('wx.geoResult', t('wx.geoFound', { place: [g.city, g.country].filter(Boolean).join(', ') || '—' }));
+        } catch (ge) {
+          setText('wx.geoResult', t('wx.geoFail'));
+        }
+        btn.removeAttribute('aria-busy');
+        return;
+      }
       else if (action === 'reset-registry') await post('/recovery/reset-registry', { confirm: 'reset' });
       refresh();
     } catch (e) {
@@ -3378,6 +3505,7 @@
     // A room sheet fetches its 24 h comfort chart when it opens.
     var m = /^sheet-r(\d+)$/.exec(tg.id || '');
     if (m) loadComfortChart(Number(m[1]));
+    if (tg.id === 'sheet-heat') loadHeatHistory();
   }, true);
 
   document.addEventListener('click', function (e) {

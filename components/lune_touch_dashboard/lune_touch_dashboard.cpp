@@ -858,6 +858,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/heat-source/history/24h") == 0 || strcmp(path, "/heat-source/history/7d") == 0) {
+      if (coordinator_)
+        coordinator_->write_heat_history_json(data_buf_, DATA_BUF_SIZE, path[21] == '7' ? 1 : 0);
+      else
+        snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/heat-source") == 0) {
       if (coordinator_)
         coordinator_->write_heat_source_json(data_buf_, DATA_BUF_SIZE);
