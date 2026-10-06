@@ -26,7 +26,8 @@ Billederne i `mockups/png/` er facit for udseendet: `Home4`, `Home2`, `Home2_Day
 | Mellemrum mellem rækker | 10 (husrække → manifolds), 8 mellem kompakte rækker, 10 mellem store |
 | Kort (`lds_card`) | bg `card`, radius 20, ingen kant, ingen skygge |
 | Zonefelt (`lds_tile`) | bg `raised`, radius 14 (kompakt) / 16 (stort) |
-| Niveaubjælke | 5 segmenter, vandret, højde 5, gap 3, radius 3. Tændt `accent`, slukket `seg-off`, fejl: første segment `danger` |
+| Niveaubjælke | 5 segmenter, vandret, højde 5, gap 3, radius 3. Tændt `fg` (ventilåbning, alle zoner), slukket `seg-off`, fejl: første segment `danger` |
+| Afvigelses-chip | Pille h 22, `dev-1…5` efter afstand til mål (LDS 13.4); erstatter gul temperatur og «mål» i felterne |
 | Mindste tekst | 16 |
 | Mindste trykflade | 64×64 |
 

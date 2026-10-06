@@ -1,5 +1,14 @@
 # Changelog — Lune Design System
 
+## 2.3.8
+
+Vægskærmen (LVGL) på det nye LDS — samme struktur, nyt udseende.
+
+- `display.palette` afledt af web-tokens og kvantiseret til RGB565: kølige neutrale grå, Apex-orange, nye `heat-fill`, `water`/`water-fill`, `on-fill`, `on-warn-fill`, `*-fill`, afvigelses-skalaen `dev-1…5` + `on-dev-1`. `lds_display.py --check` tjekker de nye par; `--install` eksporterer dem.
+- DESIGN 13.4: zonefeltet har afvigelses-chip i stedet for gul temperatur, og ventilbjælken er neutral og viser åbningen for alle zoner.
+- Web: `.tile-dev` bruger `var(--on-warn-fill)` i stedet for #111214, og trin 1 har hvid tekst i lyst tema (var 3,4:1).
+- Fonte: `±` i tegnsættet.
+
 ## 2.3.7
 
 - `.chip-icon[data-tone="water"]` med nyt token `--water-fill` (dom-water, solid i begge temaer, on-fill 5,2:1): cirkulation/flow.

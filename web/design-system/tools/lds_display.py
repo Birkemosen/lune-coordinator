@@ -45,7 +45,12 @@ PAIRS = [("fg","card",7),("fg","raised",7),("muted","card",4.5),("muted","raised
          ("accent-ink","card",4.5),("on-accent","accent-ink",4.5),("info","card",4.5),("ok","card",4.5),
          ("warn","card",4.5),("danger","card",4.5),("violet","card",4.5),("danger","danger-bg",4.5),
          ("info","info-bg",4.5),("ok","ok-bg",4.5),("warn","warn-bg",4.5),("violet","violet-bg",4.5),
-         ("bg","danger",4.5),("inv-fg","inv-bg",7)]
+         ("bg","danger",4.5),("inv-fg","inv-bg",7),
+         # Solide flader (ikonbrikker, badges) og afvigelses-chips (5 trin), som på web.
+         ("on-fill","heat-fill",3),("on-fill","water-fill",4.5),("on-fill","danger-fill",4.5),("on-fill","violet-fill",4.5),
+         ("on-fill","ok-fill",4.5),("on-fill","info-fill",4.5),("on-warn-fill","warn-fill",4.5),
+         ("on-dev-1","dev-1",4.5),("on-warn-fill","dev-2",4.5),("on-warn-fill","dev-4",4.5),("on-warn-fill","dev-5",4.5),
+         ("fg","dev-3",4.5),("water","card",3)]
 # Kort mod baggrund (dybde uden skygge) — kun lyst tema, som på web (3.3).
 LIGHT_ONLY = [("card","bg",1.24)]
 
@@ -99,7 +104,7 @@ def yaml():
             Y.append(f"    glyphs: \"{digits}\"")
         else:
             Y.append("    glyphsets: [GF_Latin_Kernel]")
-            Y.append("    glyphs: \"æøåÆØÅéü°−·→×²³–…\"")
+            Y.append("    glyphs: \"æøåÆØÅéü°−±·→←×²³–—…●‹›<>+\"")
     Y += ["", "lvgl:", "  color_depth: 16", "  bg_color: ${lds_bg}", "  default_font: lds_font_sm",
           "  style_definitions:",
           f"    - id: lds_card           # panel: huset, manifold-række, zone-kort",
@@ -134,6 +139,9 @@ PALETTE_ORDER = (
     "bg", "card", "raised", "field", "line", "seg-off", "fg", "muted", "faint",
     "accent", "accent-ink", "on-accent", "info", "ok", "warn", "danger", "violet",
     "info-bg", "ok-bg", "warn-bg", "danger-bg", "violet-bg", "inv-bg", "inv-fg",
+    # 2.3.8: solide flader, vand (cirkulation) og afvigelses-skalaen (5 trin) som på web.
+    "heat-fill", "water-fill", "water", "on-fill", "on-warn-fill", "danger-fill", "warn-fill",
+    "violet-fill", "ok-fill", "info-fill", "dev-1", "on-dev-1", "dev-2", "dev-3", "dev-4", "dev-5",
 )
 PNG_NAMES = ("lune_v6_mark.png", "lune_halo.png", "lune_touch_lockup.png")
 SVG_NAMES = ("lune-mark.svg", "lune-mark-card.svg", "lune-touch-lockup.svg",

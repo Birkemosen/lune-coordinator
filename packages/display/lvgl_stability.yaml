@@ -357,6 +357,13 @@ text_sensor:
             const uint32_t c_seg_off = light ? ${lds_light_seg_off} : ${lds_seg_off};
             const uint32_t c_line = light ? ${lds_light_line} : ${lds_line};
             const uint32_t c_field = light ? ${lds_light_field} : ${lds_field};
+            // LDS 2.3.8: afvigelse fra mål i 5 trin (blå ← neutral → orange), som web-varmekortet.
+            const uint32_t c_dev[5] = {
+              light ? ${lds_light_dev_1} : ${lds_dev_1}, light ? ${lds_light_dev_2} : ${lds_dev_2},
+              light ? ${lds_light_dev_3} : ${lds_dev_3}, light ? ${lds_light_dev_4} : ${lds_dev_4},
+              light ? ${lds_light_dev_5} : ${lds_dev_5}};
+            const uint32_t c_on_dev1 = light ? ${lds_light_on_dev_1} : ${lds_on_dev_1};
+            const uint32_t c_on_warn_fill = light ? ${lds_light_on_warn_fill} : ${lds_on_warn_fill};
 
             set_label(id(dashboard_system_status_label), id(lune_touch_app).display_header_text());
             set_label(id(page_home_meta_label), id(lune_touch_app).display_zone_detail_meta_text());
@@ -687,6 +694,8 @@ text_sensor:
                   if (st == 4) {
                     set_label(ztemp[node][zone], "Fejl");
                     lv_obj_set_style_text_color(ztemp[node][zone], lv_color_hex(c_danger), LV_PART_MAIN);
+                    lv_obj_set_style_bg_opa(zset[node][zone], LV_OPA_TRANSP, LV_PART_MAIN);
+                    lv_obj_set_style_text_align(zset[node][zone], LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
                     if (large && std::isfinite(tc)) {
                       set_label(zset[node][zone], std::string("Motorfejl · ") + fmt_c(tc, false));
                       lv_obj_set_style_text_color(zset[node][zone], lv_color_hex(c_danger), LV_PART_MAIN);
@@ -697,26 +706,30 @@ text_sensor:
                     set_label(ztemp[node][zone], "Slukket");
                     lv_obj_set_style_text_color(ztemp[node][zone], lv_color_hex(c_muted), LV_PART_MAIN);
                     set_label(zset[node][zone], "");
+                    lv_obj_set_style_bg_opa(zset[node][zone], LV_OPA_TRANSP, LV_PART_MAIN);
                   } else {
                     set_label(ztemp[node][zone], fmt_c(tc, false));
-                    const bool lagging = std::isfinite(tc) && std::isfinite(sc) && (sc - tc > 0.5f);
-                    lv_obj_set_style_text_color(ztemp[node][zone],
-                        lv_color_hex(lagging ? c_warn : c_fg), LV_PART_MAIN);
-                    if (large) {
-                      set_label(zset[node][zone],
-                                std::isfinite(sc) ? ("mål " + fmt_c(sc, false)) : "");
+                    lv_obj_set_style_text_color(ztemp[node][zone], lv_color_hex(c_fg), LV_PART_MAIN);
+                    // Afvigelses-chip (som web): ≤ −1 | ≤ −0,3 | ±0,3 | < +1 | ≥ +1 °C fra målet.
+                    if (std::isfinite(tc) && std::isfinite(sc)) {
+                      const float d = tc - sc;
+                      const uint8_t k = d <= -1.0f ? 0 : d <= -0.3f ? 1 : d < 0.3f ? 2 : d < 1.0f ? 3 : 4;
+                      char chip[16];
+                      const char *sign = d > 0.05f ? "+" : (d < -0.05f ? "\u2212" : "\u00B1");
+                      std::snprintf(chip, sizeof(chip), "%s%.1f°", sign, std::fabs(d));
+                      for (char *c = chip; *c; c++) if (*c == '.') *c = ',';
+                      set_label(zset[node][zone], chip);
+                      lv_obj_set_style_bg_color(zset[node][zone], lv_color_hex(c_dev[k]), LV_PART_MAIN);
+                      lv_obj_set_style_bg_opa(zset[node][zone], LV_OPA_COVER, LV_PART_MAIN);
+                      lv_obj_set_style_radius(zset[node][zone], LV_RADIUS_CIRCLE, LV_PART_MAIN);
+                      lv_obj_set_style_text_align(zset[node][zone], LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+                      lv_obj_set_style_text_color(zset[node][zone],
+                          lv_color_hex(k == 0 ? c_on_dev1 : (k == 2 ? c_fg : c_on_warn_fill)), LV_PART_MAIN);
                       lv_obj_clear_flag(zset[node][zone], LV_OBJ_FLAG_HIDDEN);
-                    } else if (std::isfinite(sc)) {
-                      std::string setpart = "/" + fmt_c(sc, false);
-                      // Hide /mål if pair would exceed ~108 px (heuristic: long names)
-                      if (setpart.size() > 6)
-                        set_label(zset[node][zone], "");
-                      else
-                        set_label(zset[node][zone], setpart);
                     } else {
                       set_label(zset[node][zone], "");
+                      lv_obj_set_style_bg_opa(zset[node][zone], LV_OPA_TRANSP, LV_PART_MAIN);
                     }
-                    lv_obj_set_style_text_color(zset[node][zone], lv_color_hex(c_muted), LV_PART_MAIN);
                   }
                   lv_obj_set_style_text_font(ztemp[node][zone],
                       large ? id(lds_font_d36) : id(lds_font_d28), LV_PART_MAIN);
@@ -732,26 +745,24 @@ text_sensor:
                     // d36 needs font+10 height; keep clearance above «mål»
                     lv_obj_set_pos(ztemp[node][zone], pad_x, pad_y + 26);
                     lv_obj_set_size(ztemp[node][zone], tile_w - pad_x * 2, 46);
-                    lv_obj_set_pos(zset[node][zone], pad_x, pad_y + 72);
-                    lv_obj_set_size(zset[node][zone], tile_w - pad_x * 2, 22);
+                    lv_obj_set_pos(zset[node][zone], pad_x, pad_y + 74);
+                    lv_obj_set_size(zset[node][zone], st == 4 ? tile_w - pad_x * 2 : 64, 22);
                     // TODO(trin2): mini chart needs history — keep hidden
                     lv_obj_add_flag(zchart[node][zone], LV_OBJ_FLAG_HIDDEN);
                   } else {
                     lv_obj_set_pos(ztemp[node][zone], pad_x, pad_y + 20);
-                    lv_obj_set_size(ztemp[node][zone], std::max(48, tile_w - pad_x * 2 - 44), 36);
-                    lv_obj_set_pos(zset[node][zone], pad_x + 72, pad_y + 26);
-                    lv_obj_set_size(zset[node][zone], 40, 22);
+                    lv_obj_set_size(ztemp[node][zone], std::max(48, tile_w - pad_x * 2 - 56), 36);
+                    lv_obj_set_pos(zset[node][zone], tile_w - pad_x - 52, pad_y + 28);
+                    lv_obj_set_size(zset[node][zone], 52, 22);
                     lv_obj_add_flag(zchart[node][zone], LV_OBJ_FLAG_HIDDEN);
                   }
 
-                  // Level bar: 5 segments
-                  uint8_t segs = 1;
-                  if (st == 3) {
+                  // Ventilbjælke: 5 segmenter á 20 % åbning for alle zoner (lukket = 0).
+                  // Mængde → tekstfarve, ikke orange (LDS 13.4); fejl: første segment rødt.
+                  uint8_t segs = 0;
+                  if (st != 4 && st != 1) {
                     const uint8_t valve = id(lune_touch_app).display_zone_valve_pct(node, zone);
-                    segs = static_cast<uint8_t>(std::max(1, (valve + 19) / 20));
-                    if (segs > 5) segs = 5;
-                  } else if (st == 4) {
-                    segs = 1;
+                    segs = valve == 0 ? 0 : static_cast<uint8_t>(std::min(5, (valve + 19) / 20));
                   }
                   const int seg_y = tile_h - pad_y - 5;
                   const int seg_gap = 3;
@@ -764,7 +775,7 @@ text_sensor:
                     if (st == 4 && s == 0)
                       col = c_danger;
                     else if (s < segs)
-                      col = c_accent;
+                      col = c_fg;
                     lv_obj_set_style_bg_color(zseg[node][zone][s], lv_color_hex(col), LV_PART_MAIN);
                   }
                 }
@@ -810,8 +821,8 @@ text_sensor:
                 lv_obj_set_y(id(page_zone_chart_legend), 150);
                 lv_obj_set_y(id(page_zone_chart), 184);
               } else {
-                lv_obj_set_style_bg_color(id(page_zone_badge), lv_color_hex(${lds_accent_ink}), LV_PART_MAIN);
-                lv_obj_set_style_text_color(id(page_zone_badge_text), lv_color_hex(${lds_on_accent}), LV_PART_MAIN);
+                lv_obj_set_style_bg_color(id(page_zone_badge), lv_color_hex(${lds_heat_fill}), LV_PART_MAIN);
+                lv_obj_set_style_text_color(id(page_zone_badge_text), lv_color_hex(${lds_on_fill}), LV_PART_MAIN);
                 set_label(id(page_zone_badge_text), st == 3 ? "Kalder varme" : (st == 1 ? "Slukket" : "Hviler"));
                 lv_obj_add_flag(id(page_zone_fault_box), LV_OBJ_FLAG_HIDDEN);
                 lv_obj_set_y(id(page_zone_chart_title), 18);
@@ -910,7 +921,8 @@ text_sensor:
             if (active_page == 3) {
               const auto paint_toggle = [](lv_obj_t *track, lv_obj_t *knob, bool on) {
                 lv_obj_set_style_bg_color(track,
-                    lv_color_hex(on ? ${lds_ok} : ${lds_seg_off}), LV_PART_MAIN);
+                    lv_color_hex(on ? ${lds_inv_bg} : ${lds_seg_off}), LV_PART_MAIN);
+                lv_obj_set_style_bg_color(knob, lv_color_hex(on ? ${lds_inv_fg} : ${lds_fg}), LV_PART_MAIN);
                 lv_obj_set_x(knob, on ? 36 : 4);
               };
               paint_toggle(id(page_settings_weather_track), id(page_settings_weather_knob),
