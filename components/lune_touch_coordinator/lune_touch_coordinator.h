@@ -1,6 +1,7 @@
 #pragma once
 
 #include "coordinator_model.h"
+#include "energy_price.h"
 #include "flow_trim.h"
 #include "house_demand.h"
 #include "odin_comfort.h"
@@ -348,6 +349,62 @@ struct OdinMqttState {
   bool http_fallback_active{false};
 };
 
+// Energy price → Odin (energy_price.h): configuration + push status.
+struct PriceState {
+  lune_touch_price::Config cfg{};
+  lune_touch_price::SchedulerState sched{};
+  bool push_requested{false};
+  bool run_pending{false};
+  lune_touch_price::Due due{lune_touch_price::Due::NONE};
+  /// Odin price_source write still owed: 0 none, 1 "api", 2 "energy_charts".
+  uint8_t source_pending{0};
+  uint32_t source_last_try_ms{0};
+  char odin_source[16]{"unknown"};
+  uint32_t last_fetch_ok_ms{0};
+  int64_t last_push_ok_epoch{0};
+  int64_t last_attempt_epoch{0};
+  uint8_t hours_pushed{0};
+  float fx{NAN};
+  bool grid_from_cache{false};
+  bool energinet_from_cache{false};
+  char last_reason[12]{};
+  char last_error[48]{};
+};
+
+/// Large price buffers live in PSRAM (allocated once in setup()).
+struct PriceRuntime {
+  lune_touch_price::TariffSeries grid{};
+  lune_touch_price::TariffSeries energinet_transmission{};
+  lune_touch_price::TariffSeries energinet_system{};
+  lune_touch_price::TariffSeries scratch{};
+  lune_touch_price::TariffSeries scratch2{};
+  bool have_grid{false};
+  bool have_energinet{false};
+  char grid_key[48]{};  // gln/code of the cached grid series
+  lune_touch_price::DayPrices today{};
+  lune_touch_price::DayPrices tomorrow{};
+  lune_touch_price::DayPrices next_today{};
+  lune_touch_price::DayPrices next_tomorrow{};
+  lune_touch_price::SpotSample samples[lune_touch_price::MAX_SPOT_SAMPLES]{};
+  char payload[640]{};
+};
+
+/// POST /prices/settings: null / NAN / has_* false = unchanged.
+struct PriceSettingsUpdate {
+  bool has_enabled{false};
+  bool enabled{false};
+  const char *area{nullptr};
+  const char *grid_source{nullptr};
+  const char *grid_gln{nullptr};
+  const char *grid_code{nullptr};
+  const char *grid_schedule{nullptr};
+  const char *energinet_source{nullptr};
+  float energinet_fixed_dkk{NAN};
+  float elafgift_dkk{NAN};
+  float markup_dkk{NAN};
+  float vat_pct{NAN};
+};
+
 struct OdinPhysicsState {
   bool available{false};
   float heat_loss_kw_per_k{NAN};
@@ -570,6 +627,10 @@ class LuneTouchCoordinator : public esphome::Component {
                                const char *curve_offset_url_template, float curve_gain,
                                float curve_max_offset_c, char *response, size_t capacity);
   bool request_heat_source_push(char *response, size_t capacity);
+  /// Energy price → Odin: config, status and today's/tomorrow's breakdown.
+  void write_prices_json(char *buffer, size_t capacity) const;
+  bool set_price_settings(const PriceSettingsUpdate &update, char *response, size_t capacity);
+  bool request_price_push(char *response, size_t capacity);
   bool request_heat_source_test_read(char *response, size_t capacity);
   bool request_heat_source_test_push(char *response, size_t capacity);
   bool set_circulation_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
@@ -935,6 +996,19 @@ class LuneTouchCoordinator : public esphome::Component {
   volatile uint8_t mqtt_absorb_action_{0};  // 0 none, 1 arm, 2 disarm
   char mqtt_absorb_reason_[24]{};
   void run_mqtt_followups_();
+  // Energy price → Odin. Runs on the forecast task (the TLS task), which wakes
+  // for either job; forecast_task_fetch_pending_ marks a forecast wake.
+  bool forecast_task_fetch_pending_{false};
+  PriceState price_{};
+  PriceRuntime *price_rt_{nullptr};
+  void load_price_settings_();
+  void save_price_settings_();
+  void run_price_cycle_();
+  void fail_price_cycle_(const char *error);
+  bool local_today_(int *ymd, uint16_t *minute_of_day) const;
+  bool fetch_https_(const char *url, char *body, size_t capacity, int *status, char *error, size_t error_len);
+  bool fetch_datahub_series_(const char *gln, const char *codes_json, char *body, size_t capacity,
+                             char *error, size_t error_len);
 };
 
 }  // namespace lune_touch_coordinator

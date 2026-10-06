@@ -1937,6 +1937,25 @@
   /* Dashboard: skjul type-fremmed indhold */
   [data-hs-type="http"] .hs-type-asgard { display: none; }
   [data-hs-type="asgard"] .hs-type-http { display: none; }
+
+  /* Typeafhængige felter: gruppe 'gt' */
+  #gt-datahub:checked ~ .typed-fields[data-type="datahub"],
+  #gt-schedule:checked ~ .typed-fields[data-type="schedule"],
+  #gt-none:checked ~ .typed-fields[data-type="none"] { display: grid; }
+  #gt-datahub:checked ~ .seg label[for="gt-datahub"] > span,
+  #gt-schedule:checked ~ .seg label[for="gt-schedule"] > span,
+  #gt-none:checked ~ .seg label[for="gt-none"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #gt-datahub:focus-visible ~ .seg label[for="gt-datahub"] > span,
+  #gt-schedule:focus-visible ~ .seg label[for="gt-schedule"] > span,
+  #gt-none:focus-visible ~ .seg label[for="gt-none"] > span { outline: 2px solid var(--focus); }
+
+  /* Typeafhængige felter: gruppe 'en' */
+  #en-datahub:checked ~ .typed-fields[data-type="datahub"],
+  #en-fixed:checked ~ .typed-fields[data-type="fixed"] { display: grid; }
+  #en-datahub:checked ~ .seg label[for="en-datahub"] > span,
+  #en-fixed:checked ~ .seg label[for="en-fixed"] > span { background: var(--inv-bg); color: var(--inv-fg); }
+  #en-datahub:focus-visible ~ .seg label[for="en-datahub"] > span,
+  #en-fixed:focus-visible ~ .seg label[for="en-fixed"] > span { outline: 2px solid var(--focus); }
   /* @end:state */
 
   /* I konfiguration viser zonefelterne en lille prik: "redigerer" */

@@ -1223,6 +1223,57 @@ Runs a synchronous push attempt (same safety gates as a normal publish) and
 returns `write_url`, `read_url`, `http_status`, confirmation `status`,
 requested/confirmed values, and `error` for commissioning logs.
 
+### `GET /prices`
+
+Energy price → Odin: settings, status and the hourly breakdown (DKK/kWh) for the
+current local day and, once published, tomorrow.
+
+```json
+{"available":true,"enabled":true,"area":"DK1",
+ "grid":{"source":"datahub","gln":"5790000610976","code":"TNT1009",
+         "schedule":[{"h":0,"v":0.077},{"h":6,"v":0.231},{"h":17,"v":0.692},{"h":21,"v":0.231}]},
+ "energinet":{"source":"datahub","fixed_dkk":0.1150},
+ "elafgift_dkk":0.0080,"markup_dkk":0.0000,"vat_pct":25.00,"odin_host_set":true,
+ "status":{"state":"ok","reason":"day_ahead","odin_source":"api","source_pending":false,
+           "last_fetch_age_s":120,"last_push_epoch":1791296100,"last_attempt_epoch":1791296100,
+           "hours_pushed":48,"fx":7.473600,"grid_from_cache":false,"energinet_from_cache":false,
+           "last_error":""},
+ "today":{"date":"2026-10-06","spot":[…24],"grid":[…24],"energinet":[…24],"total":[…24]},
+ "tomorrow":null}
+```
+
+`status.state`: `disabled` | `waiting` (nothing pushed for today yet) | `running` |
+`ok` (today's array is in Odin) | `error` (`last_error`, e.g. `spot_http_503`,
+`spot_incomplete`, `grid_no_records`, `energinet_…`, `odin_http_400`, `no_odin_host`,
+`clock_invalid`). `reason` is what triggered the last attempt: `boot`, `midnight`,
+`day_ahead`, `retry`, `request`. `spot`/`grid`/`energinet` exclude VAT; `total` is the
+all-in price incl. elafgift, markup and VAT.
+
+### `POST /prices/settings`
+
+Form or JSON; absent or empty fields are unchanged.
+
+| Field | Meaning |
+|---|---|
+| `enabled` | `1`/`0`. On → Odin `price_source=api` and a push; off → `price_source=energy_charts` |
+| `area` | `DK1` / `DK2` (`off` disables spot and therefore pushing) |
+| `grid_source` | `datahub` / `schedule` / `none` |
+| `grid_gln`, `grid_code` | DataHub GLN (13 digits) and ChargeTypeCode |
+| `grid_schedule` | JSON string (or JSON array) `[{"h":0,"v":0.077},…]`, DKK/kWh excl. VAT, hours 0–23 unique |
+| `energinet_source` | `datahub` (codes 40000 + 41000 at GLN 5790000432752) / `fixed` |
+| `energinet_fixed_dkk` | −1…5 (default 0.115) |
+| `elafgift_dkk` | 0…5 (default 0.008) |
+| `markup_dkk` | −1…5 (default 0) |
+| `vat_pct` | 0…50 (default 25) |
+
+Response `{"result":"saved","enabled":true,"push_queued":true}`; invalid values →
+`400` with `invalid_area` / `invalid_gln` / `invalid_charge_code` / `invalid_schedule` / `invalid_value`.
+
+### `POST /prices/push`
+
+Queues an immediate fetch + push (`{"result":"queued"}`); rejected with `disabled` or
+`no_odin_host`. Follow the outcome in `GET /prices` (`status.last_attempt_epoch`, `state`).
+
 ### `POST /forecast/fetch`
 
 Fetches Open-Meteo, recomputes per-zone preload decisions, dispatches active

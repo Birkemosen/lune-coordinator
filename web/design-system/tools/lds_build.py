@@ -136,6 +136,19 @@ def validate_cfg(cfg, path=""):
                         f"known: {', '.join(sorted(KNOWN_HEAT_SOURCE_TYPES))}"
                     )
 
+    groups = cfg.get("typed_groups")
+    if groups is not None:
+        if not isinstance(groups, dict):
+            errs.append("typed_groups must be an object {prefix: [type, ...]}")
+        else:
+            for prefix, types in groups.items():
+                if prefix == "hs" or not re.fullmatch(r"[a-z][a-z0-9]*", str(prefix)):
+                    errs.append(f"typed_groups prefix {prefix!r} must be lowercase [a-z0-9] and not 'hs'")
+                if not isinstance(types, list) or len(types) < 2:
+                    errs.append(f"typed_groups[{prefix!r}] needs 2+ types")
+                elif not all(re.fullmatch(r"[a-z][a-z0-9_]*", str(t)) for t in types):
+                    errs.append(f"typed_groups[{prefix!r}] types must be lowercase ids")
+
     if errs:
         where = f" in {path}" if path else ""
         print(f"Config validation failed{where}:", file=sys.stderr)
@@ -251,6 +264,25 @@ def typed_fields_rules(types, prefix="hs"):
             )
     return "\n".join(L)
 
+def typed_group_rules(prefix, types, base=True):
+    """Extra typed-field groups (config `typed_groups`): same mechanics as the
+    heat-source type, own radio ids `#{prefix}-{type}`. Each group's radios,
+    `.seg` and fieldsets share one parent (sibling selectors)."""
+    L = []
+    if base:
+        L.append("  .typed-fields { display: none; gap: var(--space-4); }")
+    L.append(f"  /* Typeafhængige felter: gruppe '{prefix}' */")
+    L.append(",\n".join(
+        f'  #{prefix}-{t}:checked ~ .typed-fields[data-type="{t}"]' for t in types
+    ) + " { display: grid; }")
+    L.append(",\n".join(
+        f'  #{prefix}-{t}:checked ~ .seg label[for="{prefix}-{t}"] > span' for t in types
+    ) + " { background: var(--inv-bg); color: var(--inv-fg); }")
+    L.append(",\n".join(
+        f'  #{prefix}-{t}:focus-visible ~ .seg label[for="{prefix}-{t}"] > span' for t in types
+    ) + " { outline: 2px solid var(--focus); }")
+    return "\n".join(L)
+
 # ------------------------------------------------------------------ state ---
 def state_css(cfg):
     modes = cfg["modes"]
@@ -304,6 +336,10 @@ def state_css(cfg):
     if hs:
         L.append("")
         L.append(typed_fields_rules(hs))
+
+    for prefix, types in (cfg.get("typed_groups") or {}).items():
+        L.append("")
+        L.append(typed_group_rules(prefix, types, base=not hs))
 
     return "\n".join(L)
 
