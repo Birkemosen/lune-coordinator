@@ -28,7 +28,7 @@
   "help.addController": "Tilføj en nåbar V6 via værtsnavn eller IP. Scan finder boards på LAN; godkend efter parring, så Touch må styre dem.",
   "help.heatSource": "Direkte forbindelse til varmekilden. Touch sender vægtet hustemperatur med et interval. Forkert vært eller skabeloner blokerer levering.",
   "help.pump": "Cirkulationspumpens vært, port og ESPHome-entiteter til flow, løftehøjde og effekt på hus-dashboardet.",
-  "help.weather": "Koordinater og max preload-boost til vejrstyret forvarmning. Forkert placering mistimer øst/vest-eksponering.",
+  "help.weather": "Koordinater til vejrudsigten. En forkert placering giver forkert timing for vest- og østvendte rum. Maks. preload-boost sættes i Vejr-arket.",
   "help.energy": "Energimåling er reserveret til en senere udgivelse. Ingen indstillinger her endnu.",
   "help.identity": "Enhedsnavn og display-idle. Vejrplacering bevares, når du nulstiller registret under Service.",
   "help.firmware": "Søg efter opdateringer, installer fra netværket, eller upload en .bin. Enheden genstarter, når flash er færdig.",

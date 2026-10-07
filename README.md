@@ -2,11 +2,11 @@
 
 House coordinator for one or more [Lune V6](https://github.com/Birkemosen/lune)
 manifold boards. **Lune Touch** is the 7-inch ESP32-S3 wall unit with LVGL and a
-local web dashboard; **Lune Mini** is the same coordinator without a display.
+local web UI; **Lune Mini** is the same coordinator without a display.
 
 **Documentation:** [docs/README.md](docs/README.md) — index of all Touch documentation, with links to Lune V6 and the design system.
 
-![Lune Touch dashboard — light and dark](docs/images/lune-touch-dashboard-split.png)
+![Lune Touch web UI — Home, light and dark](docs/images/lune-touch-home-split.png)
 
 ## Firmware
 
@@ -48,9 +48,9 @@ make release-mini
 `make build-verify` compiles without touching `version.yaml`. Firmware is checked
 against the 0x640000 OTA slot in `partitions/lune_touch_16mb_ota.csv`.
 
-## Web dashboard
+## Web UI
 
-The on-device dashboard is **Lune Design System 2** — tokens and components in
+The on-device web UI (Home / sheets / System) is built on the **Lune design system** — tokens and components in
 `web/design-system/`, pages and i18n in `web/touch-ui/`. Firmware serves the gzip
 bundle from `packages/dashboard/` (`/`, `/en/`, `/da/`, plus `/api/lune-touch/v1/*`).
 

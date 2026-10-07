@@ -1,5 +1,11 @@
 # Lune Touch vægskærm — handoff til Cursor
 
+> **Mockups er fra før LDS 2.3.8.** Billederne i `mockups/png/` har den gamle palet (varme grå,
+> orange ventilbjælke, gul temperatur). Siden LDS 2.3.8 bruger vægskærmen kølige neutrale grå, en neutral
+> ventilbjælke og en afvigelses-chip i 5 trin (`dev-1…5`). Opbygning og mål i mockups gælder stadig;
+> for farver er temaet (`theme/`, `packages/display/lvgl/tokens.generated.yaml`) og
+> [`SCREENS.md`](SCREENS.md) facit.
+
 Alt Cursor skal bruge for at bygge vægskærmen i LVGL. Designet er lavet på et Claude-canvas, som Cursor ikke kan åbne, så her er indholdet som filer.
 
 | Fil | Hvad |

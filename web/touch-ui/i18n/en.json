@@ -28,7 +28,7 @@
   "help.addController": "Add a reachable V6 by hostname or IP. Scan lists boards on the LAN; approve after pairing so Touch may steer them.",
   "help.heatSource": "Direct connection to the heat source. Touch publishes weighted house temperature on an interval. Wrong host or templates block delivery.",
   "help.pump": "Circulation pump host, port and ESPHome entities for flow, head and power on the house dashboard.",
-  "help.weather": "Coordinates and max preload boost for forecast-driven room warm-up. Wrong location mis-times west/east exposure.",
+  "help.weather": "Coordinates for the weather forecast. A wrong location mis-times west/east exposure. The max preload boost is set in the Weather sheet.",
   "help.energy": "Energy metering is reserved for a later release. No settings here yet.",
   "help.identity": "Device name and display idle time. Forecast location is kept when you reset the registry from Service.",
   "help.firmware": "Check for updates, install from the network, or upload a .bin. The device reboots when flashing finishes.",
