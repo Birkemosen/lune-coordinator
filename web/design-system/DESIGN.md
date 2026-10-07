@@ -4,6 +4,119 @@ Fælles designsystem for **Lune V6** (6-zoners manifold-controller) og **Lune To
 
 Når dette dokument og koden er uenige, er det en fejl i et af dem. Ret den ene, så de passer igen.
 
+<!-- toc -->
+**[1. Principper](#1-principper)**
+
+**[2. Arkitektur og navigation](#2-arkitektur-og-navigation)**
+
+- `2.1` [Skallen](#21-skallen)
+- `2.2` [To akser: tilstand × omfang](#22-to-akser-tilstand--omfang)
+- `2.3` [Hvad hører til hvilken tilstand](#23-hvad-hører-til-hvilken-tilstand)
+- `2.4` [Omfang pr. projekt](#24-omfang-pr-projekt)
+
+**[3. Grundelementer](#3-grundelementer)**
+
+- `3.1` [Farver og temaer](#31-farver-og-temaer)
+- `3.2` [Farvernes betydning](#32-farvernes-betydning)
+- `3.2.0` [Statusfarver: tekst-tone og fyld-tone](#320-statusfarver-tekst-tone-og-fyld-tone)
+- `3.2.1` [Undgå brunt i mørkt tema](#321-undgå-brunt-i-mørkt-tema)
+- `3.2.2` [Farver i grafer: gradienter og blanding](#322-farver-i-grafer-gradienter-og-blanding)
+- `3.3` [Kontrast](#33-kontrast)
+- `3.4` [Typografi](#34-typografi)
+- `3.5` [Afstand](#35-afstand)
+- `3.6` [Radier](#36-radier)
+- `3.7` [Dybde](#37-dybde)
+- `3.8` [Bevægelse](#38-bevægelse)
+- `3.9` [Tæthed og trykflader](#39-tæthed-og-trykflader)
+
+**[4. Layout](#4-layout)**
+
+- `4.1` [Container og grid](#41-container-og-grid)
+- `4.2` [Brudpunkter](#42-brudpunkter)
+- `4.3` [Sektioner (kun Konfiguration)](#43-sektioner-kun-konfiguration)
+
+**[5. Komponenter](#5-komponenter)**
+
+- `5.1` [Navbar](#51-navbar)
+- `5.2` [Zonestrimmel og zonefelt](#52-zonestrimmel-og-zonefelt)
+- `5.2.1` [Manifoldfelt og understrimmel](#521-manifoldfelt-og-understrimmel)
+- `5.3` [Panel](#53-panel)
+- `5.3b` [Hjælp (tre lag)](#53b-hjælp-tre-lag)
+- `5.4` [Badge](#54-badge)
+- `5.5` [Besked](#55-besked)
+- `5.6` [Tal: metric, kv, bar](#56-tal-metric-kv-bar)
+- `5.7` [Klima-kontrol](#57-klima-kontrol)
+- `5.8` [Komfortliste med sparkline](#58-komfortliste-med-sparkline)
+- `5.9` [Grafer](#59-grafer)
+- `5.10` [Felter](#510-felter)
+- `5.11` [Stepper](#511-stepper)
+- `5.12` [Switch og gating](#512-switch-og-gating)
+- `5.13` [Segment](#513-segment)
+- `5.14` [Kompas](#514-kompas)
+- `5.15` [Knapper](#515-knapper)
+- `5.16` [Bekræftelse](#516-bekræftelse)
+- `5.17` [Tabel og log](#517-tabel-og-log)
+- `5.18` [Typeafhængige felter](#518-typeafhængige-felter)
+
+**[6. Mønstre](#6-mønstre)**
+
+- `6.1` [Gem](#61-gem)
+- `6.1b` [Tilstandsafhængige handlinger](#61b-tilstandsafhængige-handlinger)
+- `6.2` [Fejl og advarsler](#62-fejl-og-advarsler)
+- `6.3` [Grupperede zoner](#63-grupperede-zoner)
+- `6.4` [Live-data](#64-live-data)
+- `6.5` [Tomme tilstande](#65-tomme-tilstande)
+- `6.6` [Integrationer med typer](#66-integrationer-med-typer)
+- `6.7` [Test af forbindelser](#67-test-af-forbindelser)
+- `6.8` [Firmware-tilstande](#68-firmware-tilstande)
+
+**[7. Indhold og sprog](#7-indhold-og-sprog)**
+
+**[8. Internationalisering](#8-internationalisering)**
+
+**[9. ESP32 og budget](#9-esp32-og-budget)**
+
+**[10. Lune Touch](#10-lune-touch)**
+
+**[11. Tjekliste for en ny visning eller komponent](#11-tjekliste-for-en-ny-visning-eller-komponent)**
+
+**[12. Filer og arbejdsgang](#12-filer-og-arbejdsgang)**
+
+**[13. Vægskærmen på Lune Touch (LVGL)](#13-vægskærmen-på-lune-touch-lvgl)**
+
+- `13.1` [Principper for væggen](#131-principper-for-væggen)
+- `13.2` [Skærmene](#132-skærmene)
+- `13.3` [Layout (px)](#133-layout-px)
+- `13.4` [Zonefelt på skærmen](#134-zonefelt-på-skærmen)
+- `13.5` [Trykflader og kontroller](#135-trykflader-og-kontroller)
+- `13.6` [Farver i RGB565](#136-farver-i-rgb565)
+- `13.7` [Typografi](#137-typografi)
+- `13.8` [Grafer](#138-grafer)
+- `13.9` [LVGL-opbygning](#139-lvgl-opbygning)
+- `13.10` [Sprog](#1310-sprog)
+- `13.11` [Firmwarefiler og brand](#1311-firmwarefiler-og-brand)
+
+**[14. Hele huset: Home Assistant og andre systemer](#14-hele-huset-home-assistant-og-andre-systemer)**
+
+- `14.1` [Husets farvesprog: tre lag](#141-husets-farvesprog-tre-lag)
+- `14.2` [Home Assistant](#142-home-assistant)
+- `14.3` [Dashboards i Home Assistant](#143-dashboards-i-home-assistant)
+- `14.4` [Kendte begrænsninger](#144-kendte-begrænsninger)
+
+**[15. Informationsarkitektur: hjem, ark og system](#15-informationsarkitektur-hjem-ark-og-system)**
+
+- `15.1` [Tre niveauer](#151-tre-niveauer)
+- `15.2` [Navbar](#152-navbar)
+- `15.3` [Arket](#153-arket)
+- `15.4` [System-siden](#154-system-siden)
+- `15.5` [Indstillinger præsenteres som grupperede lister — ikke kort](#155-indstillinger-præsenteres-som-grupperede-lister--ikke-kort)
+- `15.6` [Bredde på kontroller](#156-bredde-på-kontroller)
+- `15.7` [Hjem: hvor mange kort, og hvad står på dem](#157-hjem-hvor-mange-kort-og-hvad-står-på-dem)
+- `15.8` [Hvordan information præsenteres](#158-hvordan-information-præsenteres)
+- `15.9` [Markup: ark, faner, gem-bjælke, underside og System](#159-markup-ark-faner-gem-bjælke-underside-og-system)
+- `15.10` [Hjem: hovedsektion, termostat-ring, felter og varmekort](#1510-hjem-hovedsektion-termostat-ring-felter-og-varmekort)
+<!-- /toc -->
+
 ---
 
 ## 1. Principper
