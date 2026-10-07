@@ -54,6 +54,7 @@ class Bucketer {
     feed_ = ret_ = ASGARD_NONE;
     flags_ = -1;
     rows_ = 0;
+    max_ts_ = 0;
   }
 
   // Feed any slice of the body.
@@ -62,6 +63,8 @@ class Bucketer {
   }
 
   uint32_t rows() const { return rows_; }
+  /// Newest row timestamp seen (0 = none). Used to detect a clock offset.
+  uint32_t max_ts() const { return max_ts_; }
 
   // Write the averages into out; returns the number of buckets with data.
   uint8_t finish(Series *out) const {
@@ -100,6 +103,7 @@ class Bucketer {
 
   void end_row_() {
     rows_++;
+    if (ts_ > max_ts_) max_ts_ = ts_;
     if (ts_ >= from_ts_) {
       const uint32_t b = (ts_ - from_ts_) / step_s_;
       if (b < n_) {
@@ -151,6 +155,17 @@ class Bucketer {
   int32_t ret_{ASGARD_NONE};
   int32_t flags_{-1};
   uint32_t rows_{0};
+  uint32_t max_ts_{0};
 };
+
+// Asgard has served history timestamps either as true UTC or as local time written as
+// epoch (2026-10-07.01: two hours ahead in CEST). Given the newest row and the true time,
+// return the offset to add to a UTC window, rounded to 15 minutes; 0 when it looks like UTC.
+inline int32_t clock_offset_s(uint32_t newest_row_ts, uint32_t now_utc) {
+  if (newest_row_ts == 0) return 0;
+  const int32_t diff = static_cast<int32_t>(newest_row_ts - now_utc);
+  if (diff < 600 || diff > 14 * 3600) return 0;   // within 10 min of now (or absurd) → UTC
+  return ((diff + 450) / 900) * 900;
+}
 
 }  // namespace esphome::lune_touch_coordinator::hp_history

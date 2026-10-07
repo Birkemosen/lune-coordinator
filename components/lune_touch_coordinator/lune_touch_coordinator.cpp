@@ -2427,37 +2427,51 @@ bool LuneTouchCoordinator::poll_asgard_history_(uint8_t range) {
   const uint32_t from_ts = to_ts - static_cast<uint32_t>(step_s) * n;
   // ~1.3 KiB of sums: static, only the heat-source task calls this.
   static hp_history::Bucketer bucketer;
-  bucketer.begin(from_ts, step_s, n);
 
-  char url[160];
-  std::snprintf(url, sizeof(url), "http://%s:%u/dashboard/history?type=min&from=%lu&to=%lu", host,
-                static_cast<unsigned>(port), static_cast<unsigned long>(from_ts),
-                static_cast<unsigned long>(to_ts + 60));
-  esp_http_client_config_t cfg{};
-  cfg.url = url;
-  cfg.method = HTTP_METHOD_GET;
-  cfg.timeout_ms = 10000;
-  cfg.disable_auto_redirect = true;
-  cfg.user_data = &bucketer;
-  cfg.event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
-    if (evt != nullptr && evt->user_data != nullptr && evt->event_id == HTTP_EVENT_ON_DATA &&
-        evt->data != nullptr && evt->data_len > 0)
-      static_cast<hp_history::Bucketer *>(evt->user_data)
-          ->feed(static_cast<const char *>(evt->data), static_cast<size_t>(evt->data_len));
-    return ESP_OK;
+  // Stream GET /dashboard/history?type=min&from=&to= into the bucketer.
+  auto fetch = [&](uint32_t from, uint32_t to) -> bool {
+    char url[160];
+    std::snprintf(url, sizeof(url), "http://%s:%u/dashboard/history?type=min&from=%lu&to=%lu", host,
+                  static_cast<unsigned>(port), static_cast<unsigned long>(from), static_cast<unsigned long>(to));
+    esp_http_client_config_t cfg{};
+    cfg.url = url;
+    cfg.method = HTTP_METHOD_GET;
+    cfg.timeout_ms = 10000;
+    cfg.disable_auto_redirect = true;
+    cfg.user_data = &bucketer;
+    cfg.event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
+      if (evt != nullptr && evt->user_data != nullptr && evt->event_id == HTTP_EVENT_ON_DATA &&
+          evt->data != nullptr && evt->data_len > 0)
+        static_cast<hp_history::Bucketer *>(evt->user_data)
+            ->feed(static_cast<const char *>(evt->data), static_cast<size_t>(evt->data_len));
+      return ESP_OK;
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (client == nullptr)
+      return false;
+    const esp_err_t err = esp_http_client_perform(client);
+    const int status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
+    esp_http_client_cleanup(client);
+    if (err != ESP_OK || status != 200)
+      ESP_LOGD(TAG, "Asgard history %s failed: %s / %d", range == 0 ? "24h" : "7d", esp_err_to_name(err), status);
+    return err == ESP_OK && status == 200;
   };
-  esp_http_client_handle_t client = esp_http_client_init(&cfg);
-  if (client == nullptr)
+
+  // Asgard may write its timestamps in local time. Probe the last 15 minutes plus a
+  // generous look-ahead, and shift the window by the offset the newest row shows.
+  bucketer.begin(to_ts - 900, 900, 1);
+  if (!fetch(to_ts - 900, to_ts + 14 * 3600))
     return false;
-  const esp_err_t err = esp_http_client_perform(client);
-  const int status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
-  esp_http_client_cleanup(client);
-  if (err != ESP_OK || status != 200) {
-    ESP_LOGD(TAG, "Asgard history %s failed: %s / %d", range == 0 ? "24h" : "7d", esp_err_to_name(err), status);
+  const int32_t offset = hp_history::clock_offset_s(bucketer.max_ts(), to_ts);
+  if (offset != 0)
+    ESP_LOGD(TAG, "Asgard history clock is %ld s ahead of UTC", static_cast<long>(offset));
+
+  bucketer.begin(from_ts + offset, step_s, n);
+  if (!fetch(from_ts + offset, to_ts + offset + 60))
     return false;
-  }
   static hp_history::Series series;
   bucketer.finish(&series);
+  series.from_ts = from_ts;   // report the window in UTC, whatever Asgard's clock is
   series.fetched_ms = esphome::millis();
   if (take_state_lock_(100)) {
     hp_history_[range] = series;
