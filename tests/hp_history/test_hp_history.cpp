@@ -71,6 +71,15 @@ int main() {
   CHECK("legionella marked", sm.marks[1] == MARK_LEGIONELLA);
   CHECK("heating not marked", sm.marks[2] == 0);
 
+  CHECK("clock offset: UTC rows give 0", clock_offset_s(1000000, 1000000 + 30) == 0);
+  CHECK("clock offset: rows 2 h ahead give 7200", clock_offset_s(1000000 + 7170, 1000000) == 7200);
+  CHECK("clock offset: no rows give 0", clock_offset_s(0, 1000000) == 0);
+  Bucketer t;
+  t.begin(0, 60, 1);
+  const char *ts = "[[1791400000,300,250],[1791407190,300,250]]";
+  t.feed(ts, std::strlen(ts));
+  CHECK("max_ts tracks newest row", t.max_ts() == 1791407190);
+
   if (failures) std::printf("%d failure(s)\n", failures);
   return failures ? 1 : 0;
 }
