@@ -397,7 +397,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 f'<div class="hchart-y" aria-hidden="true" data-f="y"></div>'
                 f'<svg class="trend" viewBox="0 0 240 100" preserveAspectRatio="none" role="img" aria-label="{aria}">'
                 f'<line class="grid" x1="0" x2="240" y1="0.5" y2="0.5"/><line class="grid" x1="0" x2="240" y1="50" y2="50"/>'
-                f'<line class="grid" x1="0" x2="240" y1="99.5" y2="99.5"/><path class="dt" d=""/><polyline class="r" points=""/>'
+                f'<line class="grid" x1="0" x2="240" y1="99.5" y2="99.5"/><g class="marks"></g><path class="dt" d=""/><polyline class="r" points=""/>'
                 f'<polyline class="f" points=""/><line class="nowl" x1="239.5" x2="239.5" y1="0" y2="100"/></svg>'
                 f'<div class="axis" aria-hidden="true" data-f="x"></div></div>')
 
@@ -419,7 +419,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <div class="hchart-range" aria-hidden="true"><label for="hr-heat-24h" data-range="24h">{T("hchart.r24")}</label><label for="hr-heat-7d" data-range="7d">{T("hchart.r7")}</label></div>
             {hchart_panel("24h", T("hchart.aria24"))}
             {hchart_panel("7d", T("hchart.aria7"))}
-            <p class="chart-legend" aria-hidden="true"><span><i class="lf"></i>{T("m.supply")}</span><span><i class="lr"></i>{T("m.return")}</span></p>
+            <p class="chart-legend" aria-hidden="true"><span><i class="lf"></i>{T("m.supply")}</span><span><i class="lr"></i>{T("m.return")}</span><span data-bind-show="hchart.dhw" hidden><i class="ldhw"></i>{T("hchart.lDhw")}</span><span data-bind-show="hchart.leg" hidden><i class="lleg"></i>{T("hchart.lLeg")}</span></p>
           </div>'''
     heat_over = f'''
         <div data-hs-type="{hs_type}" style="display:grid;gap:var(--space-5)">
@@ -924,7 +924,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "csys.fwChecking", "csys.fwUpToDate", "csys.fwAvailable", "csys.fwNoReleases", "csys.fwCheckFailed", "csys.fwInstalling",
         "csys.fwUploading", "csys.fwUploadDone", "csys.fwUploadFailed", "csys.fwNoFile",
         "csys.backupExporting", "csys.backupExported", "csys.backupImporting", "csys.backupImported", "csys.backupInvalid", "csys.backupFailed",
-        "home.greeting.morning", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
+        "home.greeting.morning", "home.greeting.forenoon", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
         "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",

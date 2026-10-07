@@ -60,6 +60,17 @@ int main() {
   r.finish(&sr);
   CHECK("10-digit unix timestamps", sr.feed_x10[0] == 290 && sr.feed_x10[1] == 300 && sr.return_x10[1] == 250);
 
+  // Mode in flags (column 10, bit 6–9): 1 = hot water → bucket 0; 6 = legionella → bucket 1; 2 = heating → none.
+  Bucketer m;
+  m.begin(0, 60, 3);
+  const char *modes = "[[10,300,250,0,0,0,0,0,0,0,64],[70,300,250,0,0,0,0,0,0,0,384],[130,300,250,0,0,0,0,0,0,0,128]]";
+  m.feed(modes, std::strlen(modes));
+  Series sm{};
+  m.finish(&sm);
+  CHECK("hot water marked", sm.marks[0] == MARK_DHW);
+  CHECK("legionella marked", sm.marks[1] == MARK_LEGIONELLA);
+  CHECK("heating not marked", sm.marks[2] == 0);
+
   if (failures) std::printf("%d failure(s)\n", failures);
   return failures ? 1 : 0;
 }

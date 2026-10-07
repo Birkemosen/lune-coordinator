@@ -372,7 +372,8 @@
         hf.push(Math.round((31.5 + 4.5 * ph + Math.sin(hi * 1.7) * 0.4) * 10) / 10);
         hr2.push(Math.round((26.5 + 3.2 * ph + Math.sin(hi * 2.3) * 0.5) * 10) / 10);
       }
-      return { available: true, range: wk ? '7d' : '24h', from_ts: Math.floor(Date.now() / 1000) - hn * hstep, step_s: hstep, age_s: 30, feed_c: hf, return_c: hr2 };
+      var mks = Array.from({ length: hn }, function (_, i) { return wk ? (i % 12 === 3 ? '1' : '0') : (i >= 26 && i <= 28) || (i >= 70 && i <= 72) ? '1' : '0'; }).join('');
+      return { available: true, range: wk ? '7d' : '24h', from_ts: Math.floor(Date.now() / 1000) - hn * hstep, step_s: hstep, age_s: 30, feed_c: hf, return_c: hr2, marks: mks };
     }
     if (path === '/plan') {
       var hk = Array.from({ length: 24 }, function (_, i) { return (i >= 3 && i <= 5) ? 2.7 : (i === 14 ? 2.1 : 0); });
@@ -1161,6 +1162,21 @@
     svg.querySelector('polyline.r').setAttribute('points', rp.join(' '));
     svg.querySelector('path.dt').setAttribute('d', 'M' + fp[0].split(',')[0] + ',' + H + ' L' + fp.join(' L') + ' L' + fp[fp.length - 1].split(',')[0] + ',' + H + 'Z');
     fHtml(panel, 'y', [hi, Math.round((hi + lo) / 2), lo].map(function (v) { return '<span>' + esc(v) + '°</span>'; }).join(''));
+    // Hot water / legionella from Asgard's mode: hatched bands behind the lines.
+    var marks = String((h && h.marks) || ''), bw = W / Math.max(n - 1, 1), mh = '', anyD = false, anyL = false;
+    for (var mi = 0; mi < marks.length; mi++) {
+      var mk = Number(marks.charAt(mi)) || 0;
+      if (!mk) continue;
+      var x0 = Math.max(0, mi * bw - bw / 2);
+      if (mk & 1) { anyD = true; mh += '<rect class="dhw" x="' + x0.toFixed(1) + '" y="0" width="' + bw.toFixed(1) + '" height="' + H + '"/>'; }
+      if (mk & 2) { anyL = true; mh += '<rect class="leg" x="' + x0.toFixed(1) + '" y="0" width="' + bw.toFixed(1) + '" height="' + H + '"/>'; }
+    }
+    var mg = svg.querySelector('g.marks');
+    if (mg) mg.innerHTML = mh;
+    var hm = state.heatMarks || (state.heatMarks = {});
+    hm[rng] = { d: anyD, l: anyL };
+    setShow('hchart.dhw', Object.keys(hm).some(function (k) { return hm[k].d; }));
+    setShow('hchart.leg', Object.keys(hm).some(function (k) { return hm[k].l; }));
     // x: four ticks + "now" (24 h: hour of day; 7 d: weekday in the page language).
     var from = Number(h.from_ts) || 0, span = n * (Number(h.step_s) || 0), lang = document.documentElement.lang || 'en';
     var ticks = [0, .25, .5, .75].map(function (f) {
@@ -1256,7 +1272,9 @@
   // Home: one sentence about the house, the thermostat ring and the four tiles.
   function renderHome() {
     var hr = new Date().getHours();
-    setText('home.greeting', t(hr < 5 ? 'home.greeting.night' : hr < 10 ? 'home.greeting.morning' : hr < 17 ? 'home.greeting.day' : hr < 22 ? 'home.greeting.evening' : 'home.greeting.night'));
+    // morgen 5–10 · formiddag 10–12 · eftermiddag 12–18 · aften 18–22 · nat
+    setText('home.greeting', t(hr < 5 ? 'home.greeting.night' : hr < 10 ? 'home.greeting.morning' : hr < 12 ? 'home.greeting.forenoon'
+      : hr < 18 ? 'home.greeting.day' : hr < 22 ? 'home.greeting.evening' : 'home.greeting.night'));
     var ht = houseTemp(), tg = houseTarget();
     var primaries = (state.zones || []).filter(function (z) { return z && !z.is_group_secondary && !z.unassigned; });
     var calling = primaries.filter(function (z) { return mapStatus(z.status) === 'calling'; }).length;

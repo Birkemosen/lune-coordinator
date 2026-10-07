@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.9
+
+- `.trend .dhw` / `.trend .leg`: skraverede bånd for varmt vand og legionella i grafer over fremløb/retur; `.ldhw`/`.lleg` også i `.chart-legend`.
+
 ## 2.3.8
 
 Vægskærmen (LVGL) på det nye LDS — samme struktur, nyt udseende.
