@@ -1,49 +1,178 @@
 # Lune Touch — installer / operator manual
 
-Short guide for the web UI. Deep engineering notes stay in linked docs.
+Guide for the Touch web UI. The `?` help in the UI links here. Deep engineering notes stay
+in the linked docs.
 
 <!-- toc -->
-**[House configuration](#house-configuration)**
+**[The web UI](#the-web-ui)**
 
-- [Controllers](#controllers)
-- [Heat source](#heat-source)
-- [Electricity price to Odin](#electricity-price-to-odin)
-- [Pump](#pump)
-- [Weather location](#weather-location)
-- [Identity](#identity)
-- [WiFi](#wifi)
-- [Firmware](#firmware)
-- [Backup](#backup)
-- [Service](#service)
-
-**[Room configuration](#room-configuration)**
-
-- [Room](#room)
-- [Exterior walls and factors](#exterior-walls-and-factors)
-
-**[Dashboard concepts](#dashboard-concepts)**
+**[Home](#home)**
 
 - [House temperature](#house-temperature)
-- [Preload](#preload)
-- [Plan vs reality](#plan-vs-reality)
-- [Alerts](#alerts)
+
+**[Sheets](#sheets)**
+
+- [Heat](#heat)
+- [Next heating](#next-heating)
+- [Weather and preload](#weather-and-preload)
+- [Circulation](#circulation)
+- [Controller](#controller)
+- [Room](#room)
+
+**[System](#system)**
+
+- [Device](#device)
+- [Controllers](#controllers)
+- [Heat source](#heat-source)
+- [Power price](#power-price)
+- [Circulation pump](#circulation-pump)
+- [Weather location](#weather-location)
+- [Network](#network)
+- [Firmware and backup](#firmware-and-backup)
+- [Service](#service)
 
 **[Device menu](#device-menu)**
 <!-- /toc -->
 
-## House configuration
+---
+
+## The web UI
+
+The UI has three places, following the Lune design system:
+
+- **Home** — the house now: temperature and target, heat, plan, weather, circulation and
+  every room. The target saves by itself; nothing else to save.
+- **Sheets** — one per thing: **Heat**, **Next heating**, **Weather**, **Circulation**, one per
+  **controller** (V6) and one per **room**. A sheet slides in over Home, with the tabs
+  **Overview**, **History** and **Settings** where they apply. Settings for that one thing live
+  in its sheet.
+- **System** — the device and its connections: identity, controllers, heat source, power
+  price, circulation pump, weather location, network, firmware and backup, service.
+
+Each settings tab and System category has one save bar at the bottom: **Undo** and **Save**.
+Switches save immediately (MQTT settings wait for Save); leaving with unsaved changes asks
+first. When a thing's connection lives on System, its sheet links there at the bottom of the
+Settings tab (or of Overview when the sheet has no Settings tab).
+
+---
+
+## Home
+
+- **House and controllers** — the **House** card (current, with the house temperature) and
+  one card per V6 controller with a bar per zone showing the valve opening. A controller card
+  opens its sheet; an offline controller says so.
+- **The house now** — a greeting, one line about the situation (and whether the heat pump
+  runs), and the thermostat ring: the arc is the house temperature now, with the outdoor
+  temperature under it. **Target** with − / + saves by itself. Two shortcuts open the heat
+  source and the next heating.
+- **Heat, plan and weather** — four tiles that open their sheets:
+  - **Heat** — flow → return and the last 24 hours (from the heat source's own history).
+  - **Next heating** — Odin's next block, its energy and today's price with a price chip.
+  - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched.
+  - **Circulation** — flow (m³/h), power and the split per controller.
+- **Heat map** — rooms per controller. Each room shows its temperature, a chip with the
+  distance to target (blue below, neutral near, orange above), a five-step valve bar and the
+  opening. Rooms are sized by floor area. A room opens its sheet; a controller heading opens
+  the controller.
+- **Alerts** — an unreachable V6 or heat source appears at the top with a link to the place to
+  fix it. Rooms on an unreachable V6 keep their last known values, dimmed.
+
+### House temperature
+
+Weighted average of rooms marked "include in house temperature". Coverage shows
+how many approved manifolds contribute. Authority is Touch when it holds the lease.
+**How is it calculated?** in the Heat sheet shows each room's weight.
+
+---
+
+## Sheets
+
+### Heat
+
+**Overview** — flow, return and ΔT with the compressor state, and a chart for the last
+**24 h** or **7 d** taken from the heat pump's own history (Asgard). Hatched bands mark where
+the heat pump made **hot water** or ran **legionella**. Below: status, last push, the comfort
+target's role, Odin (link, who drives the pump, this hour, comfort schedule) and what is sent
+to Asgard.
+
+**Settings** — the behaviour Touch controls: **Comfort target** (send the house target to
+Asgard's climate entity), **Odin plan** (use Odin's heat windows for warm-up and preload) and
+**Odin control** (let Touch raise Odin's comfort band, up to a max lift, when a room lags).
+The connection lives on System — see [Heat source](#heat-source).
+
+### Next heating
+
+Odin's planned heat for the next 24 hours together with Touch's preheating and charging per
+room, today's price per hour, and under **History** plan vs. actual for the last 12 hours.
+See [Odin plan ingestion](odin_plan_ingestion.md). The price settings are on System — see
+[Power price](#electricity-price-to-odin).
+
+### Weather and preload
+
+**Overview** — the next 72 hours as five small charts: sky, temperature (preheating hatched),
+sun, wind and wind direction. **History** — outdoor temperature for the last 24 hours.
+**Settings** — **max preload boost**.
+
+Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
+Walls, wind and solar factors on each room decide which spaces preload.
+See [forecast preload](forecast_preload.md) and
+[falsify heat-gain preload](falsify_heat_gain_preload.md).
+
+### Circulation
+
+Flow, head and power from the circulation pump, and the approximate split per controller and
+zone (worked out from valve openings). The pump's connection is on System — see
+[Circulation pump](#pump).
+
+### Controller
+
+One sheet per V6 (M1, M2 …): status, flow and return, its rooms and a link to the V6's own
+page. Zones are configured on the V6 itself, not in Touch.
+
+### Room
+
+**Overview** — temperature, target and status, the loops from V6 (valve, return) and the
+expected next 24 hours. **History** — recent readings.
+
+**Settings** — only what Touch owns:
+
+- **House temperature** — include the room in the house temperature, and its weight.
+
+<a id="room-factors"></a>
+
+- **Weather** — wind and solar factors (0–1) that scale preload.
+- **From V6** — area and exterior walls, read from the V6 (read-only). **Edit on V6 ›** opens
+  the zone's settings on that V6. When the V6 is offline, the values are dimmed.
+
+---
+
+## System
+
+<a id="identity"></a>
+
+### Device
+
+Device name and display idle minutes.
 
 ### Controllers
+
 Pair and approve Lune V6 boards so Touch can import rooms and steer heat calls.
-Unapproved boards stay local. Scan the LAN or add a hostname, then approve.
+Unapproved boards stay local. **Find controllers** scans the LAN; **Add manually** takes a
+hostname. Approve, rename or remove from the list.
 
 ### Heat source
-Publish house temperature to the heat bridge (Asgard / Ecodan path) and optionally
-sync the comfort target. Wrong host or disabled push blocks delivery.
-See [whole-house flow temperature](lune_whole_house_flow_temperature.md) and
+
+Type (**HTTP** or **Asgard**), connection, mapping and **Test read / Test send** with a result
+that stays visible. Publishes the house temperature to the heat bridge (Asgard / Ecodan path)
+and optionally syncs the comfort target. A wrong host or a disabled push blocks delivery.
+**Advanced** holds HTTP control and optional MQTT. See
+[whole-house flow temperature](lune_whole_house_flow_temperature.md) and
 [Asgard authority](lune_asgard_authority_state_machine.md).
 
-### Electricity price to Odin
+<a id="electricity-price-to-odin"></a>
+
+### Power price
+
 Odin 2.0 plans the heat pump on hourly electricity prices. With **Manage Odin's
 electricity price** on, pick one of two models:
 
@@ -92,24 +221,26 @@ used. Turning the feature off from "Touch calculates" sets Odin back to `energy_
 API: `GET /prices`, `GET /prices/zone-defaults/{zone}`, `POST /prices/settings`,
 `POST /prices/push` ([api_v1.md](api_v1.md)).
 
-### Pump
-Circulation pump host, port and ESPHome entities for flow, head and power on the
-house dashboard (`GET`/`POST /circulation`).
+<a id="pump"></a>
+
+### Circulation pump
+
+Host, port and the ESPHome entities for flow, head and power (`GET`/`POST /circulation`).
+Entities are the sensor names on the pump node. Newer ESPHome addresses them by name
+(`Pump Flow`), older by object id (`pump_flow`); Touch tries the other form when one gives 404.
 
 <a id="weather"></a>
 
 ### Weather location
 
-Coordinates and max preload boost for forecast-driven warm-up. Walls and wind/solar
-on each room decide which spaces preload.
-See [forecast preload](forecast_preload.md).
+Coordinates for the forecast. **Estimate from network** fills latitude and longitude from the
+device's network location; check them and save. The preload boost is in the Weather sheet.
 
-### Identity
-Device name and display idle minutes.
+<a id="wifi"></a>
 
-### WiFi
+### Network
 
-System › Network shows the network Touch uses and its status. To change it, enter the
+System › Network shows the WiFi Touch uses and its status. To change it, enter the
 network name (SSID) and password and choose **Change network**. Touch tries the new
 network; if it does not connect within 30 seconds, Touch goes back to the current one.
 The setting survives firmware updates.
@@ -118,58 +249,29 @@ If Touch cannot reach any network (for example after a router password change), 
 the setup network **"Lune Touch Setup"** after 5 minutes. Join it and open
 `http://192.168.4.1` to enter the new password.
 
-### Firmware
-Check GitHub for a newer release, install it from the browser, or upload a local
-`.bin`. The device reboots when flashing finishes. OTA actions live under
-Configuration › Service — not in the device menu.
+### Firmware and backup
 
-### Backup
-Export or import coordinator settings as JSON. Secrets are never included.
-Import overwrites settings on this device (heat source, pump, weather, identity).
+<a id="firmware"></a>
+
+**Firmware**: check GitHub for a newer release, install it from the browser, or upload a
+local `.bin`. The device reboots when flashing finishes.
+
+<a id="backup"></a>
+
+**Backup**: export or import coordinator settings as JSON (import asks first). Secrets are
+never included. Import overwrites settings on this device (heat source, pump, weather,
+identity).
 
 ### Service
-Commissioning checklist, command log, live diagnostics (heap, poll, OTA) and
-destructive registry reset. Restart and firmware actions belong here — not in the
-device menu. API detail: [api_v1](api_v1.md).
 
-## Room configuration
+The house (coverage, authority, Odin link, distribution, nodes, poll, OTA), diagnostics, the
+command log and **Reset the registry** (asks first). Restart and firmware actions belong on
+System — not in the device menu. API detail: [api_v1](api_v1.md).
 
-### Room
-Name, floor area and merge list for V6 circuits that share one comfort sensor.
-Merged circuits open together and share the room target.
-
-<a id="room-factors"></a>
-
-### Exterior walls and factors
-
-Mark exterior walls (N/E/S/W). Wind and solar factors (0–1) scale preload.
-Include in house temperature when the room should weight the house average.
-
-## Dashboard concepts
-
-### House temperature
-
-Weighted average of rooms marked “include in house temperature”. Coverage shows
-how many approved manifolds contribute. Authority is Touch when it holds the lease.
-
-### Preload
-
-Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
-Cap with max preload boost under Weather. See [forecast preload](forecast_preload.md)
-and [falsify heat-gain preload](falsify_heat_gain_preload.md).
-
-### Plan vs reality
-
-Odin planned heat demand compared with what the house actually drew.
-See [Odin plan ingestion](odin_plan_ingestion.md).
-
-### Alerts
-
-An unreachable V6 board appears as a house alert with a link to Controllers.
-Rooms keep last known values until the board answers again.
+---
 
 ## Device menu
 
 **About device** shows name, location, IP, MAC, firmware, ESPHome and uptime, plus
-Copy diagnostics. Other Lune devices are links only. No restart, OTA or reset in
-the menu — those live under Configuration › Service.
+**Copy diagnostics**. Other Lune devices are links only. No restart, OTA or reset in
+the menu — those live under System.

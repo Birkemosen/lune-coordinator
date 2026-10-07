@@ -13,7 +13,7 @@ Skærm 1024×600, RGB565. Alle mål i px. Farvenavne refererer til `theme/displa
 
 Tilføj dem i `theme/lune_theme.yaml` ved siden af de eksisterende (samme mønster som `2xl`/`hero`).
 
-Billederne i `mockups/png/` er facit for udseendet: `Home4`, `Home2`, `Home2_Day`, `Zone`, `ZoneFault`, `Night`, `Components` (samme navne som mockup-kilderne). Denne fil er facit for mål og opbygning. `mockups/*.dc.html` er kildekoden til mockupsene og kan læses for detaljer (inline-styles), men skal ikke køres.
+Billederne i `mockups/png/` er facit for opbygningen: `Home4`, `Home2`, `Home2_Day`, `Zone`, `ZoneFault`, `Night`, `Components` (samme navne som mockup-kilderne). Deres farver er fra før LDS 2.3.8 (varme grå, orange ventilbjælke, gul temperatur); farver følger temaet. Denne fil er facit for mål og opbygning. `mockups/*.dc.html` er kildekoden til mockupsene og kan læses for detaljer (inline-styles), men skal ikke køres.
 
 ---
 

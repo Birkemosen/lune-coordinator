@@ -2,9 +2,11 @@
 
 Fælles designsystem for **Lune V6** og **Lune Touch**: tokens, CSS-komponenter, regler og en visuel reference. Bygget til ESP32: ren CSS/HTML, tilstand uden JavaScript, ingen eksterne ressourcer.
 
+**Dokumentation:** [docs/README.md](docs/README.md) — indeks over designsystemets dokumenter, med links til Lune V6 og Lune Touch.
+
 **Repo:** https://github.com/Birkemosen/lune-design-system
 
-![Lune Touch hus-dashboard — hierarkisk strimmel + varmekilde (Asgard)](docs/shots/touch-dashboard-1440.png)
+![Lune Touch — Hjem i lyst og mørkt tema](docs/shots/touch-home-split.png)
 
 Designændringer lander **her først**, derefter genbyg i produkterne. Ret aldrig kun den kopierede CSS/HTML i et produktrepo. Se [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -14,15 +16,16 @@ Designændringer lander **her først**, derefter genbyg i produkterne. Ret aldri
 | [`AGENTS.md`](AGENTS.md) | Korte regler til kodeagenter — kopiér ind i projektets `CLAUDE.md` |
 | `tokens/tokens.json` | Alle værdier (lys + mørk) og kontrastkrav |
 | `css/lune-ui.src.css` | Komponenter og layout (kilde) |
-| `config/v6.json`, `config/touch.json` | Projektets omfang og flag (Touch: `tiers`, `manifolds`, `heat_source_types`, `typed_groups`) |
+| `config/v6.json`, `config/touch.json` | Projektets tilstande (Hjem/System), System-kategorier og flag (`heat_source_types`, `typed_groups`) |
 | `tools/lds_build.py` | Bygger `dist/<projekt>/lune-ui.css` og tjekker kontrast |
 | `tools/build_docs.py` | Bygger `docs/design-system.html` |
 | `tools/lds_ha.py` | Bygger Home Assistant-temaet (`dist/home-assistant/`) |
 | `tools/lds_display.py` | Bygger vægskærmens LVGL-tema (`dist/display/lune_theme.h` og ESPHome-pakke); `--install` skriver firmwarefilerne i produktrepoet |
 | `tools/lds_brand.py`, `tokens/brand.json` | Brand-mærker (seksrørs-halo) som PNG/SVG |
+| `tools/md_toc.py` | Indholdsfortegnelser i Markdown (`<!-- toc -->`), fx i `DESIGN.md` og manualerne |
 | `js/lune-forms.js` | Ugemt/gem, autogem og placering af popovers (progressiv) |
-| `examples/v6/` | Det færdige V6-dashboard bygget på systemet, med en/da og `web_ui.h` |
-| `examples/touch/` | Touch-dashboard: hierarki + typeafhængig varmekilde |
+| `examples/v6/` | V6 på systemet (Hjem, zone- og manifold-ark, System), med en/da og `web_ui.h` |
+| `examples/touch/` | Touch på systemet: Hjem med termostatring, felter og varmekort, ark og System |
 
 ## Kom i gang
 
