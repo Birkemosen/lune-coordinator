@@ -2500,6 +2500,14 @@ void LuneTouchCoordinator::write_heat_history_json(char *buffer, size_t capacity
   if (asgard && series.valid) {
     put_series("feed_c", series.feed_x10);
     put_series("return_c", series.return_x10);
+    // Asgard's operation mode per bucket: "0" none, "1" hot water, "2" legionella (bits).
+    if (off + series.n + 16 < capacity) {
+      off += static_cast<size_t>(std::snprintf(buffer + off, capacity - off, ",\"marks\":\""));
+      for (uint8_t i = 0; i < series.n; i++)
+        buffer[off++] = static_cast<char>('0' + (series.marks[i] & 3));
+      buffer[off] = '\0';
+      off += static_cast<size_t>(std::snprintf(buffer + off, capacity - off, "\""));
+    }
   }
   if (off + 2 < capacity)
     std::snprintf(buffer + off, capacity - off, "}");
