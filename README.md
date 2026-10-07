@@ -4,6 +4,8 @@ House coordinator for one or more [Lune V6](https://github.com/Birkemosen/lune)
 manifold boards. **Lune Touch** is the 7-inch ESP32-S3 wall unit with LVGL and a
 local web dashboard; **Lune Mini** is the same coordinator without a display.
 
+**Documentation:** [docs/README.md](docs/README.md) — index of all Touch documentation, with links to Lune V6 and the design system.
+
 ![Lune Touch dashboard — light and dark](docs/images/lune-touch-dashboard-split.png)
 
 ## Firmware

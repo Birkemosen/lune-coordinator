@@ -3,6 +3,57 @@
 The cross-product v1 envelope, compatibility rules, and fixtures are in
 [`shared/contracts/lune_api_v1.md`](../../../shared/contracts/lune_api_v1.md).
 
+<!-- toc -->
+**[Reads](#reads)**
+
+- [`GET /strategy`](#get-strategy)
+- [`GET /rooms`](#get-rooms)
+- [`GET /heat-source`](#get-heat-source)
+- [`GET /events`](#get-events)
+- [`GET /commands`](#get-commands)
+- [`GET /zones`](#get-zones)
+
+**[Writes](#writes)**
+
+- [`POST /zones/{room_id}/room`](#post-zonesroom_idroom)
+- [`POST /nodes`](#post-nodes)
+- [`POST /nodes/{node_id}/trust` (compatibility)](#post-nodesnode_idtrust-compatibility)
+- [`POST /nodes/{node_id}/profile`](#post-nodesnode_idprofile)
+- [`POST /nodes/{node_id}/remove`](#post-nodesnode_idremove)
+- [`POST /nodes/scan`](#post-nodesscan)
+- [`POST /zones/{room_id}`](#post-zonesroom_id)
+- [`POST /zones/{room_id}/comfort`](#post-zonesroom_idcomfort)
+- [`POST /zones/{room_id}/schedule`](#post-zonesroom_idschedule)
+- [`POST /zones/{room_id}/forecast-profile`](#post-zonesroom_idforecast-profile)
+- [`POST /zones/{room_id}/setpoint-command`](#post-zonesroom_idsetpoint-command)
+- [`POST /forecast/settings`](#post-forecastsettings)
+- [`POST /forecast/estimate-location`](#post-forecastestimate-location)
+- [`POST /weather/settings`](#post-weathersettings)
+- [`POST /settings`](#post-settings)
+- [`POST /display/wake`](#post-displaywake)
+- [`POST /heat-source/settings`](#post-heat-sourcesettings)
+- [`POST /rooms`](#post-rooms)
+- [`POST /rooms/{room_id}/groups`](#post-roomsroom_idgroups)
+- [`POST /rooms/{room_id}/sensor`](#post-roomsroom_idsensor)
+- [`POST /rooms/{room_id}/remove`](#post-roomsroom_idremove)
+- [`GET /circulation`](#get-circulation)
+- [`POST /circulation/settings`](#post-circulationsettings)
+- [`POST /circulation/refresh`](#post-circulationrefresh)
+- [`GET /heat-source/control`](#get-heat-sourcecontrol)
+- [`GET /plan`](#get-plan)
+- [`POST /heat-source/control`](#post-heat-sourcecontrol)
+- [`POST /heat-source/push`](#post-heat-sourcepush)
+- [`POST /heat-source/test-read`](#post-heat-sourcetest-read)
+- [`POST /heat-source/test-push`](#post-heat-sourcetest-push)
+- [`GET /prices`](#get-prices)
+- [`GET /prices/zone-defaults/{zone}`](#get-priceszone-defaultszone)
+- [`POST /prices/settings`](#post-pricessettings)
+- [`POST /prices/push`](#post-pricespush)
+- [`POST /forecast/fetch`](#post-forecastfetch)
+- [`POST /zones/{room_id}/motor-action`](#post-zonesroom_idmotor-action)
+- [`POST /recovery/reset-registry`](#post-recoveryreset-registry)
+<!-- /toc -->
+
 The embedded browser dashboard and external commissioning tools use:
 
 ```text
