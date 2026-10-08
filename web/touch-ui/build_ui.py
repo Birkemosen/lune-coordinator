@@ -284,7 +284,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <div class="panel alert" data-bind-alert="heat" hidden>
           <div class="panel-head"><h3>{T("alert.heatConn")}</h3></div>
           <p class="note">{T("alert.heatConnBody")}</p>
-          <div class="panel-foot" style="justify-content:flex-start"><a class="btn" href="#{T("hash.system")}/{T("hash.heatsource")}">{T("alert.openHeat")}</a></div>
+          <div class="panel-foot" style="justify-content:flex-start"><a class="btn" href="#{T("hash.heat")}/{T("hash.settings")}">{T("alert.openHeat")}</a></div>
         </div>
         <div class="panel alert" data-bind-alert="board" hidden>
           <div class="panel-head"><h3 data-bind="alert.boardTitle">{T("alert.boardFault", board="V6")}</h3></div>
@@ -375,7 +375,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       </section>'''
 
     # ================================================================ ARK
-    # ---- Varme: varmekildens status, det der sendes, Odin; adfærd (heat_source.behavior)
+    # ---- Varme: varmekildens status, det der sendes, Odin; adfærd og forbindelse (heat_source)
     calc_table = (f'<details class="more"><summary>{T("hs.howCalc")}</summary>'
                   f'<div class="table-wrap"><table class="table"><thead><tr><th>{T("hs.calcName")}</th><th class="num">{T("hs.calcTemp")}</th>'
                   f'<th>{T("hs.calcWeight")}</th><th class="num">{T("hs.calcContrib")}</th></tr></thead>'
@@ -437,21 +437,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </div>
           {sent}
         </div>'''
-    heat_set = f'''
-        <form data-save="heat_source.behavior" data-patch>
-          <div data-hs-type="{hs_type}" style="display:grid;gap:var(--space-5)">
-          {ggroup(T("heat.comfortSync"), sswitch("target_sync_enabled", T("heat.targetSync"), T("heat.targetSyncSub"), True),
-                  sinput("climate_entity", T("hs.asgardClimate"), "Virtual Thermostat z1"), extra=note(T("hs.targetSyncHint")), cls="hs-type-asgard")}
-          {group(T("heat.odinPlan"), sswitch("odin_plan_enabled", T("heat.odinPlanSw"), T("hs.odinPlanHint"), True), cls="hs-type-asgard")}
-          {ggroup(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
-                  sstep("odin_max_lift_c", T("heat.odinMaxLift"), 1.5, 0.3, 3.0, 0.1, "°C"), extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
-          <p class="note hs-type-http">{T("heat.httpBehavior")}</p>
-          {sheet_link("heatsource", "link.heatConn")}
-          </div>
-          {savebar("heat-behavior", T("hs.save"))}
-        </form>'''
-    sheet_heat = sheet("heat", T("hash.heat"), I["heat"], "", T("tile.heat"), None,
-                       [("overview", heat_over), ("settings", heat_set)], status_attrs=' data-bind="heat.badgeText"')
 
     # ---- Næste varme: Odins plan + Touch' forvarmning; elpris i dag; plan mod virkelighed
     plan_over = f'''
@@ -475,8 +460,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
           <p class="note" data-bind="price.inclAll">{T("price.inclAll", cur="DKK")}</p>
           {kv([(T("price.now"), "price.now"), (T("price.cheapest"), "price.min"), (T("price.dearest"), "price.max"), (T("price.peakAvg"), "price.peak")])}
-        </div>
-        {sheet_link("prices", "link.prices")}'''
+        </div>'''
     plan_hist = f'''
         <div class="sub" data-empty data-f="pvr"><h4>{T("plan.vsActual")}</h4>
           <p class="empty">{T("room.noHistory")}</p>
@@ -484,8 +468,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <div class="bars-legend"><span><i class="lp"></i>{T("plan.planned")}</span><span><i class="la"></i>{T("plan.actual")}</span></div></div>
           {kv([(T("plan.planned"), "plan.planned"), (T("plan.actual"), "plan.actual")])}
         </div>'''
-    sheet_plan = sheet("plan", T("hash.plan"), I["plan"], "violet", T("tile.plan"), None,
-                       [("overview", plan_over), ("history", plan_hist)], status_attrs=' data-bind="tile.planStatus"')
 
     # ---- Vejr: prognose (produktets dobbelte graf), fortid, boost (weather.boost)
     wx_over = f'''
@@ -559,10 +541,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
-        <p class="note">{T("flow.sub")}</p>
-        {sheet_link("pump", "link.pump")}'''
-    sheet_pump = sheet("pump", T("hash.pump"), I["pump"], "water", T("tile.pump"), None,
-                       [("overview", pump_over)], status_attrs=' data-bind="tile.pumpStatus"')
+        <p class="note">{T("flow.sub")}</p>'''
 
     # ---- Styring (skabelon; binderen kloner én pr. styring): status, fremløb/retur, rum, link til V6
     def manifold_sheet(n):
@@ -618,9 +597,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                      [("overview", over), ("history", hist), ("settings", settings)],
                      head_attrs=' data-f="name"', status_attrs=' data-f="status"')
 
-    sheets = (sheet_heat + sheet_plan + sheet_wx + sheet_pump
-              + f'\n  <template id="tpl-mani">{manifold_sheet(SLOT)}</template>'
-              + f'\n  <template id="tpl-room">{room_sheet(SLOT)}</template>')
 
     # ================================================================ SYSTEM
     def syscat(cat, title, body, badge="", help_=""):
@@ -661,14 +637,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                sinput("name", T("ctrl.name"), "", "w-sm", id_="node_name", extra=f' placeholder="{T("ctrl.namePh")}"') +
                sinput("host", T("ctrl.host"), "", "w-md", id_="node_host", extra=' placeholder="lune-v6.local" inputmode="url" autocomplete="off" spellcheck="false"'),
                extra=f'<div class="actions"><button class="btn primary" type="submit">{T("ctrl.add")}</button></div>{form_status()}')))}
-      </form>
-      <form data-save="heat_source.balance" data-patch>
-        {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
-                "", extra=note(T("heat.houseBalanceHint")))}
-        {savebar("house-balance")}
       </form>''', "", hhelp("controllers", "ctrl.title", ["help.controllers", "help.addController"], "docs/Manual.md#controllers")))
 
-    # Varmekilde: forbindelsen (heat_source.connection, PATCH)
+    # Varmekilde: forbindelsen (del af heat_source i Varme-arket)
     r_hs, seg_hs = seg("hs_type", "hs", [("http", T("hs.typeHttp")), ("asgard", T("hs.typeAsgard"))], hs_type, T("hs.type"))
     http_f = typed("http",
         group(T("hs.connection"), sinput("http_host", T("hs.host"), "heat-bridge.local") +
@@ -706,15 +677,13 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     test = (f'<div class="actions"><button class="btn" type="button" data-action="hs-test-read">{T("hs.testRead")}</button>'
             f'<button class="btn" type="button" data-action="hs-test-push">{T("hs.testPush")}</button></div>'
             f'<div class="test-result" aria-live="polite"></div>')
-    cats.append(("heatsource", f'''
-      <form data-save="heat_source.connection" data-patch>
+    # Varmekildens forbindelse: underside «Forbindelse ›» i Varme-arkets Indstillinger
+    heat_conn = f'''
         {r_hs}
         {group(T("hs.title"), sswitch("enabled", T("hs.enabled"), "", True, id_="hs_enabled") + srow(f'<span>{T("hs.type")}</span>', seg_hs))}
         {http_f}{asg_f}
         {test}
-        {savebar("heat-connection", T("hs.save"))}
-      </form>''', f'<span class="badge" data-bind="heat.badge">{T("status.waiting")}</span>',
-                 hhelp("heatsource", "hs.title", ["help.heatSource", "help.heatAsgard"], "docs/Manual.md#heat-source")))
+'''
 
     # Elpris (efter Varmekilde): model + zone som hovedgruppe, dele som undersider
     zone_groups = {}
@@ -787,7 +756,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
               rrow(T("price.spotUsed"), "price.spotUsed") + rrow(T("price.odinMode"), "price.odinMode") + rrow(T("price.problem"), "price.problem") +
               sbtn(T("price.pushNow"), f'<button class="btn" type="button" data-action="price-push">{T("price.pushNow")}</button>'),
               extra=note("", ' data-bind="price.note"') + '<div class="test-result" data-bind-price-result aria-live="polite"></div>'))
-    cats.append(("prices", f'''
+    # Elpris: Næste varme-arkets Indstillinger
+    price_form = f'''
       <form data-save="prices">
         {r_pm}
         {group(T("price.title"), sswitch("enabled", T("price.enabled"), T("price.enabledHint"), False, id_="price_enabled") +
@@ -797,19 +767,20 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                       extra=' autocomplete="new-password" spellcheck="false" maxlength="63"'))}
         {odin_f}{touch_f}
         {savebar("prices", T("price.save"))}
-      </form>''', f'<span class="badge" data-bind="price.badge">{T("price.state.disabled")}</span>',
-                 hhelp("prices", "price.title", ["help.price"], "docs/Manual.md#electricity-price-to-odin")))
+      </form>'''
 
-    # Cirkulationspumpe
-    cats.append(("pump", f'''
-      <form data-save="circulation">
+    # Cirkulation: pumpens forbindelse og husbalancering (fordelingen mellem styringer)
+    pump_form = f'''
+      <form data-save="circulation" data-patch>
+        {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
+                "", extra=note(T("heat.houseBalanceHint")))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
                sport("pump_port", T("pumpCfg.port")))}
         {group(T("pump.entities"), sinput("flow_entity", T("pumpCfg.flowEntity"), "pump_flow", id_="pump_flow_entity") +
                sinput("head_entity", T("pumpCfg.headEntity"), "pump_head_pressure", id_="pump_head_entity") +
                sinput("power_entity", T("pumpCfg.powerEntity"), "pump_power", id_="pump_power_entity"))}
         {savebar("circulation", T("pumpCfg.save"))}
-      </form>''', "", hhelp("pump", "pumpCfg.title", ["help.pump"], "docs/Manual.md#pump")))
+      </form>'''
 
     # Vejr (placering, PATCH)
     # Netværk
@@ -850,8 +821,32 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <div class="actions">{confirm("confirm-reset", T("svc.reset"), T("id.resetConfirm"), T("id.resetNote"), T("common.reset"), action="reset-registry", btn_type="button")}</div>
       </section>''', "", hhelp("service", "svc.title", ["help.service"], "docs/Manual.md#service")))
 
-    titles = {"device": "cat.device", "controllers": "cat.controllers", "heatsource": "cat.heatsource", "prices": "cat.prices",
-              "pump": "cat.pump", "network": "cat.network", "firmware": "cat.firmware", "service": "cat.service"}
+    # ---- Ark med indstillinger fra de tidligere System-kategorier (DESIGN.md 15: alt, der hører til et ark,
+    # indstilles i arket). Bygges her, fordi formularerne ovenfor skal findes først.
+    heat_set = f'''
+        <form data-save="heat_source" data-patch>
+          <div data-hs-type="{hs_type}" style="display:grid;gap:var(--space-5)">
+          {ggroup(T("heat.comfortSync"), sswitch("target_sync_enabled", T("heat.targetSync"), T("heat.targetSyncSub"), True),
+                  sinput("climate_entity", T("hs.asgardClimate"), "Virtual Thermostat z1"), extra=note(T("hs.targetSyncHint")), cls="hs-type-asgard")}
+          {group(T("heat.odinPlan"), sswitch("odin_plan_enabled", T("heat.odinPlanSw"), T("hs.odinPlanHint"), True), cls="hs-type-asgard")}
+          {ggroup(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
+                  sstep("odin_max_lift_c", T("heat.odinMaxLift"), 1.5, 0.3, 3.0, 0.1, "°C"), extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
+          <p class="note hs-type-http">{T("heat.httpBehavior")}</p>
+          {group(T("hs.connection"), subpage(T("link.heatConn"), heat_conn, vbind="heat.badgeText"))}
+          </div>
+          {savebar("heat", T("hs.save"))}
+        </form>'''
+    sheet_heat = sheet("heat", T("hash.heat"), I["heat"], "", T("tile.heat"), None,
+                       [("overview", heat_over), ("settings", heat_set)], status_attrs=' data-bind="heat.badgeText"')
+    sheet_plan = sheet("plan", T("hash.plan"), I["plan"], "violet", T("tile.plan"), None,
+                       [("overview", plan_over), ("history", plan_hist), ("settings", price_form)], status_attrs=' data-bind="tile.planStatus"')
+    sheet_pump = sheet("pump", T("hash.pump"), I["pump"], "water", T("tile.pump"), None,
+                       [("overview", pump_over), ("settings", pump_form)], status_attrs=' data-bind="tile.pumpStatus"')
+    sheets = (sheet_heat + sheet_plan + sheet_wx + sheet_pump
+              + f'\n  <template id="tpl-mani">{manifold_sheet(SLOT)}</template>'
+              + f'\n  <template id="tpl-room">{room_sheet(SLOT)}</template>')
+
+    titles = {"device": "cat.device", "controllers": "cat.controllers", "network": "cat.network", "firmware": "cat.firmware", "service": "cat.service"}
     sys_radios = f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">' + "".join(
         f'<input class="state" type="radio" name="syscat" id="c-{c}" data-hash="{T("hash." + c)}" aria-label="{T(titles[c])}">' for c, *_ in cats)
     sys_nav = "".join(f'<label for="c-{c}"><svg viewBox="0 0 24 24" aria-hidden="true">{CAT_ICONS[c]}</svg>{T(titles[c])}</label>' for c, *_ in cats)

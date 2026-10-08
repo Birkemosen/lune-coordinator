@@ -23,10 +23,6 @@ in the linked docs.
 
 - [Device](#device)
 - [Controllers](#controllers)
-- [Heat source](#heat-source)
-- [Power price](#power-price)
-- [Circulation pump](#circulation-pump)
-- [Weather location](#weather-location)
 - [Network](#network)
 - [Firmware and backup](#firmware-and-backup)
 - [Service](#service)
@@ -45,14 +41,14 @@ The UI has three places, following the Lune design system:
 - **Sheets** — one per thing: **Heat**, **Next heating**, **Weather**, **Circulation**, one per
   **controller** (V6) and one per **room**. A sheet slides in over Home, with the tabs
   **Overview**, **History** and **Settings** where they apply. Settings for that one thing live
-  in its sheet.
-- **System** — the device and its connections: identity, controllers, heat source, power
-  price, circulation pump, weather location, network, firmware and backup, service.
+  in its sheet, including its connection.
+- **System** — what belongs to no sheet: identity, controllers (pairing), network, firmware
+  and backup, service.
 
 Each settings tab and System category has one save bar at the bottom: **Undo** and **Save**.
 Switches save immediately (MQTT settings wait for Save); leaving with unsaved changes asks
-first. When a thing's connection lives on System, its sheet links there at the bottom of the
-Settings tab (or of Overview when the sheet has no Settings tab).
+first. Everything that belongs to a sheet is set in that sheet, including its connection
+(under **Connection ›**); System holds only what belongs to no sheet.
 
 ---
 
@@ -98,76 +94,12 @@ to Asgard.
 **Settings** — the behaviour Touch controls: **Comfort target** (send the house target to
 Asgard's climate entity), **Odin plan** (use Odin's heat windows for warm-up and preload) and
 **Odin control** (let Touch raise Odin's comfort band, up to a max lift, when a room lags).
-The connection lives on System — see [Heat source](#heat-source).
+**Connection to heat source and Odin ›** opens the connection in the same tab; one save bar
+saves both.
 
-### Next heating
+<a id="heat-source"></a>
 
-Odin's planned heat for the next 24 hours together with Touch's preheating and charging per
-room, today's price per hour, and under **History** plan vs. actual for the last 12 hours.
-See [Odin plan ingestion](odin_plan_ingestion.md). The price settings are on System — see
-[Power price](#electricity-price-to-odin).
-
-### Weather and preload
-
-**Overview** — the next 72 hours as five small charts: sky, temperature (preheating hatched),
-sun, wind and wind direction. **History** — outdoor temperature for the last 24 hours.
-**Settings** — **max preload boost**.
-
-Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
-Walls, wind and solar factors on each room decide which spaces preload.
-See [forecast preload](forecast_preload.md) and
-[falsify heat-gain preload](falsify_heat_gain_preload.md).
-
-### Circulation
-
-Flow, head and power from the circulation pump, and the approximate split per controller and
-zone (worked out from valve openings). The pump's connection is on System — see
-[Circulation pump](#pump).
-
-### Controller
-
-One sheet per V6 (M1, M2 …): status, flow and return, its rooms and a link to the V6's own
-page. Zones are configured on the V6 itself, not in Touch.
-
-### Room
-
-**Overview** — temperature, target and status, the loops from V6 (valve, return) and the
-expected next 24 hours. **History** — recent readings.
-
-**Settings** — only what Touch owns:
-
-- **House temperature** — include the room in the house temperature, and its weight.
-
-<a id="room-factors"></a>
-
-- **Weather** — wind and solar factors (0–1) that scale preload.
-- **From V6** — area and exterior walls, read from the V6 (read-only). **Edit on V6 ›** opens
-  the zone's settings on that V6. When the V6 is offline, the values are dimmed.
-
----
-
-## System
-
-<a id="identity"></a>
-
-### Device
-
-Device name and display idle minutes.
-
-### Controllers
-
-Pair and approve Lune V6 boards so Touch can import rooms and steer heat calls.
-Unapproved boards stay local. **Find controllers** scans the LAN; **Add manually** takes a
-hostname. Approve, rename or remove from the list.
-
-**House balance** (*Balance between manifolds*, off by default): without balancing valves the
-manifold with short, wide loops takes flow from the others. Touch estimates each loop's
-pressure need from area, pipe and spacing and throttles the easy manifold; the rows show
-each board's scale. V6 keeps its own split within a manifold and returns to it by itself
-15 min after Touch stops sending. See
-[house balancing](house_balancing_and_weather.md#4-balancing-between-manifolds).
-
-### Heat source
+#### Connection
 
 Type (**HTTP** or **Asgard**), connection, mapping and **Test read / Test send** with a result
 that stays visible. Publishes the house temperature to the heat bridge (Asgard / Ecodan path)
@@ -176,9 +108,16 @@ and optionally syncs the comfort target. A wrong host or a disabled push blocks 
 [whole-house flow temperature](lune_whole_house_flow_temperature.md) and
 [Asgard authority](lune_asgard_authority_state_machine.md).
 
+
+### Next heating
+
+Odin's planned heat for the next 24 hours together with Touch's preheating and charging per
+room, today's price per hour, and under **History** plan vs. actual for the last 12 hours.
+See [Odin plan ingestion](odin_plan_ingestion.md). **Settings** holds the power price.
+
 <a id="electricity-price-to-odin"></a>
 
-### Power price
+#### Power price
 
 Odin 2.0 plans the heat pump on hourly electricity prices. With **Manage Odin's
 electricity price** on, pick one of two models:
@@ -228,21 +167,85 @@ used. Turning the feature off from "Touch calculates" sets Odin back to `energy_
 API: `GET /prices`, `GET /prices/zone-defaults/{zone}`, `POST /prices/settings`,
 `POST /prices/push` ([api_v1.md](api_v1.md)).
 
+
+### Weather and preload
+
+**Overview** — the next 72 hours as five small charts: sky, temperature (preheating hatched),
+sun, wind and wind direction. **History** — outdoor temperature for the last 24 hours.
+**Settings** — **max preload boost** and the location.
+
+<a id="weather"></a>
+
+#### Weather location
+
+In the **Weather** sheet › **Settings**, together with the preload boost. Coordinates for the
+forecast; **Estimate from network** fills latitude and longitude from the device's network
+location; check them and save.
+
+
+Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
+Walls, wind and solar factors on each room decide which spaces preload.
+See [forecast preload](forecast_preload.md) and
+[falsify heat-gain preload](falsify_heat_gain_preload.md).
+
+### Circulation
+
+Flow, head and power from the circulation pump, and the approximate split per controller and
+zone (worked out from valve openings). A warning appears when the pump moves more water than
+the heat pump while heating (mixing in the buffer tank). **Settings** holds the house balance
+and the pump's connection.
+
+**House balance** (*Balance between manifolds*, off by default): without balancing valves the
+manifold with short, wide loops takes flow from the others. Touch estimates each loop's
+pressure need from area, pipe and spacing and throttles the easy manifold; the rows show
+each board's scale. V6 keeps its own split within a manifold and returns to it by itself
+15 min after Touch stops sending. See
+[house balancing](house_balancing_and_weather.md#4-balancing-between-manifolds).
+
 <a id="pump"></a>
 
-### Circulation pump
+#### Pump connection
 
 Host, port and the ESPHome entities for flow, head and power (`GET`/`POST /circulation`).
 Entities are the sensor names on the pump node. Newer ESPHome addresses them by name
 (`Pump Flow`), older by object id (`pump_flow`); Touch tries the other form when one gives 404.
 
-<a id="weather"></a>
 
-### Weather location
+### Controller
 
-In the **Weather** sheet › **Settings**, together with the preload boost. Coordinates for the
-forecast; **Estimate from network** fills latitude and longitude from the device's network
-location; check them and save.
+One sheet per V6 (M1, M2 …): status, flow and return, its rooms and a link to the V6's own
+page. Zones are configured on the V6 itself, not in Touch.
+
+### Room
+
+**Overview** — temperature, target and status, the loops from V6 (valve, return) and the
+expected next 24 hours. **History** — recent readings.
+
+**Settings** — only what Touch owns:
+
+- **House temperature** — include the room in the house temperature, and its weight.
+
+<a id="room-factors"></a>
+
+- **Weather** — wind and solar factors (0–1) that scale preload.
+- **From V6** — area and exterior walls, read from the V6 (read-only). **Edit on V6 ›** opens
+  the zone's settings on that V6. When the V6 is offline, the values are dimmed.
+
+---
+
+## System
+
+<a id="identity"></a>
+
+### Device
+
+Device name and display idle minutes.
+
+### Controllers
+
+Pair and approve Lune V6 boards so Touch can import rooms and steer heat calls.
+Unapproved boards stay local. **Find controllers** scans the LAN; **Add manually** takes a
+hostname. Approve, rename or remove from the list.
 
 <a id="wifi"></a>
 

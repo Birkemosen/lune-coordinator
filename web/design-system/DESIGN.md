@@ -1249,9 +1249,9 @@ Erstatter tilstandspillen Dashboard/Konfiguration (afsnit 2.2–2.3). I stedet f
 |---|---|---|---|
 | **Hjem** (overblik) | Det vigtigste nu + hverdagshandlinger (autogem) | Navbar › Hjem | Hustemperatur og mål, varmefelter, varmekort |
 | **Ark** (pr. ting) | Alt om én ting: overblik, historik, **dens** indstillinger | Tryk på tingen på Hjem | Et rum, en manifold, varmepumpen, vejret, pumpen |
-| **System** (side) | Det der gælder hele enheden | Navbar › System | Enhed, styringer, varmekilde-forbindelse, netværk, firmware, backup, service |
+| **System** (side) | Det der ikke hører til et ark: enheden selv | Navbar › System | Enhed, styringer (parring), netværk, firmware, backup, service |
 
-Testen for, hvor en indstilling hører til: *Hører den til én ting, man kan pege på i huset?* → arket for den ting. *Gælder den enheden eller forbindelser?* → System. *Ændres den i en almindelig uge?* → også som hurtig kontrol på Hjem.
+Testen for, hvor en indstilling hører til: *Hører den til en ting, der har et ark?* → arket for den ting — **også tingens forbindelse** (vært, port, entiteter, MQTT), som en underside «Forbindelse ›» i Indstillinger-fanen. *Hører den ikke til noget ark?* → System. Omvendt står intet på System, der hører til et ark, og ingen indstilling findes begge steder. *Ændres den i en almindelig uge?* → også som hurtig kontrol på Hjem (betjening, ikke opsætning).
 
 ### 15.2 Navbar
 
@@ -1269,7 +1269,7 @@ Midten har altid de samme to punkter: **Hjem** og **System** (på Touch og i HA 
 ### 15.4 System-siden
 
 - To kolonner på bred skærm: kategoriliste til venstre (**240 px**, klæber), indhold til højre (**maks. 640 px**, venstrestillet). Mobil: kategorilisten er en side; tryk åbner kategorien.
-- Kategorier (V6): Enhed · Manifold og motorer · Forbindelser · Firmware og backup · Service. (Touch): Enhed · Styringer · Varmekilde · Elpris · Cirkulationspumpe · Vejr · Netværk · Firmware og backup · Service. Udvikler kun i dev-builds, sidst.
+- Kategorier (Touch): Enhed · Styringer · Netværk · Firmware og backup · Service. Varmekilde, elpris, cirkulationspumpe og vejr har ark og indstilles dér (Varme, Næste varme, Cirkulation, Vejr). (V6): Enhed · Forbindelser · Firmware og backup · Service; *Manifold og motorer* hører til manifold-arket og flyttes dertil. Udvikler kun i dev-builds, sidst.
 - Én kategori ad gangen; én gem-bjælke pr. kategori.
 
 ### 15.5 Indstillinger præsenteres som grupperede lister — ikke kort
@@ -1418,7 +1418,7 @@ Touch' Hjem (15.7) bygges af disse komponenter (`@only touch` i CSS'en):
 
 **Grafer i ark.** `.hchart` (fx Varme: fremløb/retur fra varmekildens egen historik): tal øverst (`.metrics` med `.c-heat`/`.c-info` + status-badge), intervalvalg som radioer + labels (`.hchart-range`, 24 t / 7 d, ingen JS), én `.hchart-panel[data-range]` pr. interval med y-akse (`.hchart-y`), `svg.trend` (`.grid`, `.dt`-glød under fremløb, `.r`, stiplet `.nowl`, og bag linjerne skraverede bånd for varmt vand `.dhw` / legionella `.leg` ud fra varmekildens driftsform, med `.ldhw`/`.lleg` i forklaringen, når de forekommer) og x-akse i HTML, og fælles `.chart-legend`. Uden data: `data-empty` på panelet. Vejrprognosen er `.fc.fc--stack`: én lille graf pr. størrelse over hinanden (vejr, temperatur med forvarmning, sol, vind, vindretning) med navn og spænd i venstre kolonne (`.fc-lab`), fælles x-akse og nu-linje; på mobil står navnet over grafen.
 
-**Link til indstillinger.** Står en tings forbindelse eller enhedsindstillinger på System, er der ét `a.sheet-link` til dem (`href="#system/<kategori>"`), aldrig to veje til indstillinger. Har arket en Indstillinger-fane, står linket nederst i fanen («Forbindelse til varmekilde og Odin ›»), ikke i Overblik. Har arket ingen fane, slutter Overblik med linket («Indstillinger for cirkulationspumpe ›»). `lune-forms.js` lukker åbne ark, når et link skifter tilstand.
+**Indstillinger i arket, ikke links til System.** En tings indstillinger — også forbindelsen — står i arkets Indstillinger-fane; sjældne dele (forbindelse, MQTT) som `details.subpage` («Forbindelse til varmekilde og Odin ›»). Fanen har én formular og én gem-bjælke, så adfærd og forbindelse gemmes sammen. `a.sheet-link` bruges kun til noget, der faktisk hører til System (fx «Firmware ›» fra en enhedsadvarsel). `lune-forms.js` lukker åbne ark, når et link skifter tilstand.
 
 **Navbar ved scroll.** På ≥ 768 px bliver `.header` kun så bred som indholdet, når `.navbar-wrap` sidder fast øverst (`container-type: scroll-state` + `@container scroll-state(stuck: top)`); uden understøttelse forbliver den bred.
 

@@ -28,7 +28,7 @@ Kopiér denne fil ind i projektets `CLAUDE.md` / `AGENTS.md`, eller henvis til d
 - Vis rå firmwaretekster aldrig direkte. Tilstande oversættes og får badge-farve efter betydning.
 
 ## Struktur (DESIGN.md 15)
-- Hjem / Ark / System. Indstillinger for én ting ligger i tingens ark (fane Indstillinger); enhedsindstillinger på System.
+- Hjem / Ark / System. Alt, der hører til et ark, indstilles i arket (fane Indstillinger) — også tingens forbindelse som underside «Forbindelse ›». System har kun det, der ikke hører til et ark (enhed, styringer, netværk, firmware, service). Ingen indstilling begge steder, ingen links fra et ark til dets egne indstillinger på System.
 - Indstillinger er grupperede lister (maks. 6 rækker pr. gruppe, 5 grupper pr. side), ikke kort. Kontrolbredder efter tabellen i 15.6.
 - Hjem: én hovedsektion, maks. 4 felter pr. række, ét hovedtal og én visualisering pr. felt.
 - Config: `"modes": ["home", "sys"]` + `systemCategories`. `dash`/`conf` er udfaset.
