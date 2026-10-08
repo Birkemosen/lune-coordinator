@@ -336,6 +336,9 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     read_url_template: '',
     climate_entity: 'Virtual Thermostat z1',
     target_sync_enabled: true,
+    house_balance: { enabled: false, boards: [
+      { node_id: 'lune-v6-cbe680', name: 'Stue', worst_kpa: 17.6, scale: 0.74, applied: 1 },
+      { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: 32.1, scale: 1, applied: 1 }] },
     odin_plan_enabled: true,
     odin_host: 'odin.local',
     physical_house_temperature_c: 21.6,
@@ -737,6 +740,7 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
       if (body.enabled != null) mockHeat.enabled = bool(body.enabled);
       if (body.target_sync_enabled != null) mockHeat.target_sync_enabled = bool(body.target_sync_enabled);
       if (body.odin_plan_enabled != null) mockHeat.odin_plan_enabled = bool(body.odin_plan_enabled);
+      if (body.house_balance_enabled != null) mockHeat.house_balance.enabled = bool(body.house_balance_enabled);
       if (body.climate_entity) mockHeat.climate_entity = body.climate_entity;
       if (body.write_url_template) mockHeat.write_url_template = body.write_url_template;
       if (body.read_url_template) mockHeat.read_url_template = body.read_url_template;
@@ -1915,8 +1919,11 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
       putVal(bf.querySelector('[name="climate_entity"]'), hs.climate_entity || '');
       putVal(bf.querySelector('[name="target_sync_enabled"]'), !!(hs.target_sync_enabled || (hs.asgard && hs.asgard.sync_enabled)));
       putVal(bf.querySelector('[name="odin_plan_enabled"]'), !!hs.odin_plan_enabled);
+      var hb = hs.house_balance || {};
+      putVal(bf.querySelector('[name="house_balance_enabled"]'), !!hb.enabled);
       if (bf.luneResnap) bf.luneResnap();
     }
+    drawHouseBalance(hs.house_balance);
     var circ = hs.circulation || {};
     state.circ = circ;
     var lpm = finite(circ.flow_m3h) ? Number(circ.flow_m3h) * 1000 / 60 : null;
@@ -3254,11 +3261,27 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     if (pw && has(ch, 'mqtt_password')) { pw.value = ''; pw.defaultValue = ''; }
   }
 
+  // House balance: one read-value row per V6 board (scale Touch sends) under the switch.
+  function drawHouseBalance(hb) {
+    var sw = qs('input[name="house_balance_enabled"]');
+    var body = sw && sw.closest('.gated') && sw.closest('.gated').querySelector('.gated-body');
+    if (!body) return;
+    var boards = (hb && hb.boards) || [];
+    body.innerHTML = boards.map(function (b) {
+      var none = b.worst_kpa == null;
+      var hint = none ? t('heat.houseBalanceNone') : t('heat.houseBalanceRow', { kpa: num(b.worst_kpa, 1) });
+      return '<div class="setting"><div class="setting-label"><span>' + esc(b.name || b.node_id || '—') +
+        '</span><small>' + hint + '</small></div><div class="setting-control"><span class="setting-value">' +
+        (none ? '—' : num(b.scale, 2)) + '</span></div></div>';
+    }).join('');
+  }
+
   async function saveHeatBehavior(form, ch) {
     var p = {}, c = {};
     if (has(ch, 'target_sync_enabled')) p.target_sync_enabled = bit(fval(form, 'target_sync_enabled'));
     if (has(ch, 'climate_entity')) p.climate_entity = String(fval(form, 'climate_entity') || '').trim();
     if (has(ch, 'odin_plan_enabled')) p.odin_plan_enabled = bit(fval(form, 'odin_plan_enabled'));
+    if (has(ch, 'house_balance_enabled')) p.house_balance_enabled = bit(fval(form, 'house_balance_enabled'));
     if (has(ch, 'odin_control_enabled')) c.odin_enabled = bit(fval(form, 'odin_control_enabled'));
     if (has(ch, 'odin_max_lift_c')) c.odin_max_lift_c = fval(form, 'odin_max_lift_c');
     if (Object.keys(p).length) await post('/heat-source/settings', p);

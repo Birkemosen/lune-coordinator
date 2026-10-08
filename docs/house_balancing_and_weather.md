@@ -97,6 +97,20 @@ For Asgard **without** Odin the route is the **demand-led target**: the target s
 virtual thermostat is `max(house_target, house_temp + required)`, capped at
 `house_target + 1.5 °C` (`target_sync.demand_uplift_c`). Requires "Sync comfort target".
 
+**Hydraulic balance between manifolds (opt-in, `house_balance.h`).** Each V6 balances
+its own loops, but two manifolds on one pump see the same pressure, so a manifold with
+short, wide loops (20×2 PEX, cc 300) takes flow from one with long, narrow loops (16×2,
+cc 200). With the switch *Balance between manifolds* (Heat › Settings) Touch estimates,
+from V6's area, pipe inner diameter, spacing and lead length, the pressure each loop needs
+for its design flow (40 W/m², ΔT 5 K, Blasius), and scales every board by
+`sqrt(board's worst loop / house's worst loop)`, at least 0.4. The board with the most
+demanding loop stays at 1.0; V6 keeps its own split inside a board. Touch sends the scale
+every 5 min to `POST /api/v1/zones/{n}/house-balance` (`factor`, `ttl_s` 900, Touch
+authentication); V6 multiplies it onto the zone's balance factor and falls back to 1.0
+when the TTL lapses. Turning the switch off sends 1.0 with a 60 s TTL. Scales are
+computed and shown (`GET /heat-source → house_balance`) even while the switch is off.
+Rough by design: no valve, manifold or riser resistance.
+
 Not done yet: actively **throttling** the satisfied manifold (e.g. negative offsets on
 the ground floor while the upper floor catches up). In heat-pump mode a satisfied zone
 holds its base opening and trims only above setpoint, so the ground floor may still run

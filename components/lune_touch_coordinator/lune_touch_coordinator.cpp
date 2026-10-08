@@ -8,6 +8,7 @@
 #include "forecast_model.h"
 #include "slab_charge.h"
 #include "house_demand.h"
+#include "house_balance.h"
 #include "room_physics.h"
 #include "v6_zones_parse.h"
 #include "esphome/components/network/util.h"
@@ -2055,6 +2056,7 @@ void LuneTouchCoordinator::poll_task_() {
       poll_once_();
       if (lease_due)
         renew_authority_lease_();
+      run_house_balance_(esphome::millis());
 
       if (circulation_due)
         schedule_circulation_fetch_();
@@ -4953,6 +4955,17 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     if (zone_number < 1 || zone_number > static_cast<int>(::lune_touch::ZONES_PER_NODE))
       continue;
     fields.zone_number = zone_number;
+    if (node_index < ::lune_touch::MAX_NODES) {
+      // Pipe data for the house balance (V6 >= 1.1.0-247); absent fields keep the loop unmodelled.
+      HouseBalanceLoop &hl = hb_loops_[node_index][zone_number - 1];
+      hl.area_m2 = zone["area_m2"] | 0.0f;
+      hl.inner_mm = zone["pipe_inner_mm"] | 0.0f;
+      hl.spacing_mm = zone["pipe_spacing_mm"] | 0.0f;
+      hl.supply_m = zone["supply_pipe_length_m"] | 2.0f;
+      hl.applied = zone["house_balance"] | 1.0f;
+      hl.enabled = zone["enabled"] | true;
+      hl.seen_ms = now_ms;
+    }
 
     fields.has_temperature = !zone["temperature_c"].isNull();
     fields.has_setpoint = !zone["setpoint_c"].isNull();
@@ -7177,6 +7190,9 @@ void LuneTouchCoordinator::load_settings_() {
                    sizeof(heat_source_.climate_entity) - 1);
       heat_source_.climate_entity[sizeof(heat_source_.climate_entity) - 1] = '\0';
     }
+    uint8_t house_balance = 0;
+    if (nvs_get_u8(handle, "hs_hbal_en", &house_balance) == ESP_OK)
+      heat_source_.house_balance_enabled = house_balance != 0;
     uint8_t target_sync = heat_source_.target_sync_enabled ? 1 : 0;
     if (nvs_get_u8(handle, "hs_target_en", &target_sync) == ESP_OK)
       heat_source_.target_sync_enabled = target_sync != 0;
@@ -7390,6 +7406,7 @@ void LuneTouchCoordinator::save_settings_() {
     }
     if (err == ESP_OK) err = nvs_set_str(handle, "hs_climate", heat_source_.climate_entity);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_target_en", heat_source_.target_sync_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_u8(handle, "hs_hbal_en", heat_source_.house_balance_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_en", odin_plan_.enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_absorb", odin_plan_.absorb_arm_enabled ? 1 : 0);
     if (err == ESP_OK)
@@ -12941,6 +12958,7 @@ void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity)
            source.hp_compressor_on ? "true" : "false", hp_hz, static_cast<int>(source.hp_operation_mode),
            static_cast<unsigned long>(hp_age_s),
            circulation_json);
+  append_house_balance_json_(buffer, capacity);
 }
 
 void LuneTouchCoordinator::write_circulation_json(char *buffer, size_t capacity) const {
@@ -15026,6 +15044,172 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
   write_day("tomorrow", d_tomorrow);
   appendf_(buffer, capacity, off, "}");
   give_state_lock_();
+}
+
+// -----------------------------------------------------------------------------
+// House balance (house_balance.h): scale each V6 board so a manifold with easy
+// loops cannot take another manifold's flow. Pushed every 5 min with a 15 min
+// TTL, so V6 falls back to 1.0 by itself when Touch or the feature goes away.
+// -----------------------------------------------------------------------------
+namespace {
+constexpr uint32_t HOUSE_BALANCE_PERIOD_MS = 5UL * 60UL * 1000UL;
+constexpr uint32_t HOUSE_BALANCE_TTL_S = 15UL * 60UL;
+constexpr uint32_t HOUSE_BALANCE_STALE_MS = 20UL * 60UL * 1000UL;
+}  // namespace
+
+bool LuneTouchCoordinator::set_house_balance_enabled(bool enabled) {
+  if (!take_state_lock_(100))
+    return false;
+  const bool changed = heat_source_.house_balance_enabled != enabled;
+  heat_source_.house_balance_enabled = enabled;
+  if (changed) {
+    hb_last_push_ms_ = 0;               // push (or release) on the next poll
+    hb_release_pending_ = !enabled;
+  }
+  give_state_lock_();
+  if (changed) {
+    save_settings_();
+    log_event_("info", "settings", enabled ? "house balance on" : "house balance off");
+  }
+  return true;
+}
+
+void LuneTouchCoordinator::run_house_balance_(uint32_t now_ms) {
+  namespace hb = ::lune_touch_house_balance;
+  constexpr size_t N = ::lune_touch::MAX_NODES;
+  constexpr size_t Z = ::lune_touch::ZONES_PER_NODE;
+  struct Target {
+    char host[64];
+    bool zone_on[Z];
+  };
+  Target targets[N]{};
+  bool has_target[N]{};
+  float scale[N];
+  bool release = false;
+
+  if (!take_state_lock_(100))
+    return;
+  const bool enabled = heat_source_.house_balance_enabled;
+  release = hb_release_pending_;
+  // Scales are computed even when off, so the UI can show them before the switch is on.
+  const bool due = release || hb_last_push_ms_ == 0 || now_ms - hb_last_push_ms_ >= HOUSE_BALANCE_PERIOD_MS;
+  if (!due) {
+    give_state_lock_();
+    return;
+  }
+  hb::Loop loops[N * Z]{};
+  for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+      continue;
+    const char *h = node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
+    if (h[0] == '\0')
+      continue;
+    std::strncpy(targets[i].host, h, sizeof(targets[i].host) - 1);
+    has_target[i] = true;
+    for (size_t z = 0; z < Z; z++) {
+      const HouseBalanceLoop &src = hb_loops_[i][z];
+      const bool fresh = src.seen_ms != 0 && now_ms - src.seen_ms < HOUSE_BALANCE_STALE_MS;
+      targets[i].zone_on[z] = fresh && src.enabled;
+      if (!fresh)
+        continue;
+      loops[i * Z + z] = hb::Loop{src.area_m2, src.inner_mm, src.spacing_mm, src.supply_m, src.enabled};
+    }
+  }
+  hb::board_scales(loops, N, Z, hb::Params{}, hb_worst_pa_, scale);
+  for (size_t i = 0; i < N; i++)
+    hb_scale_[i] = scale[i];
+  hb_last_push_ms_ = now_ms == 0 ? 1 : now_ms;
+  hb_release_pending_ = false;
+  give_state_lock_();
+
+  if (!enabled && !release)
+    return;
+  if (current_epoch_s_() <= 0)
+    return;  // V6 rejects Touch commands without a valid UTC timestamp
+  // Release: 1.0 with the shortest TTL, then V6 drops the command entirely.
+  const uint32_t ttl_s = release ? 60 : HOUSE_BALANCE_TTL_S;
+  for (size_t i = 0; i < N; i++) {
+    if (!has_target[i])
+      continue;
+    for (size_t z = 0; z < Z; z++) {
+      if (targets[i].zone_on[z])
+        send_v6_house_balance_(targets[i].host, static_cast<uint8_t>(z), release ? 1.0f : scale[i], ttl_s);
+    }
+  }
+}
+
+bool LuneTouchCoordinator::send_v6_house_balance_(const char *host, uint8_t zone_index, float factor,
+                                                  uint32_t ttl_s) {
+  if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
+    return false;
+  const int64_t ts = current_epoch_s_();
+  char nonce[48];
+  snprintf(nonce, sizeof(nonce), "hb-%lld-%u-%lu", static_cast<long long>(ts),
+           static_cast<unsigned>(zone_index + 1), static_cast<unsigned long>(++hb_nonce_));
+  char payload[192];
+  snprintf(payload, sizeof(payload),
+           "{\"factor\":%.3f,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+           factor, static_cast<unsigned long>(ttl_s), static_cast<long long>(ts), nonce);
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/house-balance", host,
+           static_cast<unsigned>(zone_index + 1));
+  char body[256];
+  int status = 0;
+  if (!post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+    // 404 = V6 firmware without the route; the loop simply keeps 1.0 there.
+    ESP_LOGD(TAG, "V6 house balance via %s zone %u failed (%d)", host,
+             static_cast<unsigned>(zone_index + 1), status);
+    return false;
+  }
+  return true;
+}
+
+void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capacity) const {
+  // Turns {...} into {..., "house_balance":{...}}.
+  const size_t len = std::strlen(buffer);
+  if (len < 2 || buffer[len - 1] != '}')
+    return;
+  size_t off = len - 1;
+  auto add = [&](const char *fmt, auto... args) {
+    if (off >= capacity)
+      return;
+    const int n = snprintf(buffer + off, capacity - off, fmt, args...);
+    off = n > 0 ? off + static_cast<size_t>(n) : off;
+  };
+  if (!take_state_lock_(50))
+    return;
+  add(",\"house_balance\":{\"enabled\":%s,\"boards\":[",
+      heat_source_.house_balance_enabled ? "true" : "false");
+  bool first = true;
+  for (size_t i = 0; i < model_.node_count() && i < ::lune_touch::MAX_NODES; i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+      continue;
+    char label[64];
+    json_escape_(node_device_name_[i][0] != '\0' ? node_device_name_[i] : node->node_id, label,
+                 sizeof(label));
+    float applied = 1.0f;
+    for (size_t z = 0; z < ::lune_touch::ZONES_PER_NODE; z++) {
+      if (hb_loops_[i][z].enabled) {
+        applied = hb_loops_[i][z].applied;
+        break;
+      }
+    }
+    if (hb_worst_pa_[i] > 0.0f)
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":%.1f,\"scale\":%.2f,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, hb_worst_pa_[i] / 1000.0f, hb_scale_[i], applied);
+    else
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":null,\"scale\":1.00,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, applied);
+    first = false;
+  }
+  give_state_lock_();
+  add("]}}");
+  if (off >= capacity) {  // did not fit: restore the original document
+    buffer[len - 1] = '}';
+    buffer[len] = '\0';
+  }
 }
 
 }  // namespace lune_touch_coordinator

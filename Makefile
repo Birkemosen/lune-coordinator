@@ -258,6 +258,8 @@ test-forecast:
 	$(FORECAST_TIMELINE_OUT)-charge
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(FORECAST_TEST_DIR)/test_house_demand.cpp -o $(FORECAST_TIMELINE_OUT)-house
 	$(FORECAST_TIMELINE_OUT)-house
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(FORECAST_TEST_DIR)/test_house_balance.cpp -o $(FORECAST_TIMELINE_OUT)-balance
+	$(FORECAST_TIMELINE_OUT)-balance
 
 test-coordinator:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(COORDINATOR_SRCS) -o $(COORDINATOR_OUT)

@@ -121,6 +121,8 @@ struct HeatSourceState {
   // Default object id matches ESPHome climate "Virtual Thermostat" (not Input z1).
   char climate_entity[64]{"Virtual Thermostat z1"};
   bool target_sync_enabled{true};
+  // Rough balance between V6 manifolds (house_balance.h). Opt-in.
+  bool house_balance_enabled{false};
   float last_target_written_c{NAN};
   float last_target_confirmed_c{NAN};
   uint32_t last_target_write_ms{0};
@@ -620,6 +622,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_forecast_location(float latitude, float longitude, const char *mode,
                              char *response, size_t capacity);
   bool set_weather_settings(float max_boost_c, char *response, size_t capacity);
+  bool set_house_balance_enabled(bool enabled);
   bool request_forecast_fetch(char *response, size_t capacity);
   bool estimate_forecast_location(char *response, size_t capacity);
   bool set_heat_source_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
@@ -736,6 +739,26 @@ class LuneTouchCoordinator : public esphome::Component {
   bool post_json_(const char *url, const char *payload, char *body, size_t body_capacity,
                   int *status_code, const char *authority_key = nullptr);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
+  // House balance: per-loop hydraulics mirrored from V6 /zones (RAM only), the
+  // computed board scales, and the push to V6 (/zones/{n}/house-balance).
+  struct HouseBalanceLoop {
+    float area_m2{0.0f};
+    float inner_mm{0.0f};
+    float spacing_mm{0.0f};
+    float supply_m{2.0f};
+    float applied{1.0f};
+    bool enabled{false};
+    uint32_t seen_ms{0};
+  };
+  HouseBalanceLoop hb_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
+  float hb_worst_pa_[::lune_touch::MAX_NODES]{};
+  float hb_scale_[::lune_touch::MAX_NODES]{1.0f, 1.0f, 1.0f, 1.0f};
+  uint32_t hb_last_push_ms_{0};
+  uint32_t hb_nonce_{0};
+  bool hb_release_pending_{false};
+  void run_house_balance_(uint32_t now_ms);
+  bool send_v6_house_balance_(const char *host, uint8_t zone_index, float factor, uint32_t ttl_s);
+  void append_house_balance_json_(char *buffer, size_t capacity) const;
   bool ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
                                const char *body, uint32_t now_ms);
   bool fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
