@@ -928,8 +928,9 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     syncHsTypedFields();
   }
 
-  function connForm() { return qs('form[data-save="heat_source.connection"]'); }
-  function behaviorForm() { return qs('form[data-save="heat_source.behavior"]'); }
+  // One form in the Heat sheet: behaviour + the connection under «Connection ›».
+  function connForm() { return qs('form[data-save="heat_source"]'); }
+  function behaviorForm() { return connForm(); }
 
   function syncHsTypedFields() {
     var form = connForm();
@@ -1922,7 +1923,7 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
       putVal(bf.querySelector('[name="odin_plan_enabled"]'), !!hs.odin_plan_enabled);
       if (bf.luneResnap) bf.luneResnap();
     }
-    var hbf = qs('form[data-save="heat_source.balance"]');
+    var hbf = qs('form[data-save="circulation"]');
     if (hbf && !formBusy(hbf)) {
       putVal(hbf.querySelector('[name="house_balance_enabled"]'), !!(hs.house_balance || {}).enabled);
       if (hbf.luneResnap) hbf.luneResnap();
@@ -3351,9 +3352,8 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
         renderHome();
       } else if (key === 'rooms') {
         await saveRoom(form, ch);
-      } else if (key === 'heat_source.connection') {
+      } else if (key === 'heat_source') {
         await saveHeatConnection(form, ch);
-      } else if (key === 'heat_source.behavior' || key === 'heat_source.balance') {
         await saveHeatBehavior(form, ch);
       } else if (key === 'weather') {
         var wxAll = !Object.keys(ch).length;   // no patch info: save both parts
@@ -3371,7 +3371,10 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
         form.reset();
         formStatus(form, t('rt.savedOk'), true);
       } else if (key === 'circulation') {
-        await post('/circulation/settings', {
+        if (has(ch, 'house_balance_enabled'))
+          await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
+        var balanceOnly = Object.keys(ch).length === 1 && has(ch, 'house_balance_enabled');
+        if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',
           host: data.host || '',
           port: data.pump_port || data.port || 80,
@@ -3519,8 +3522,9 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     ch[sw.name] = on;
     var repaint = function () { sw.dispatchEvent(new Event('input', { bubbles: true })); };
     try {
-      if (key === 'heat_source.connection') await saveHeatConnection(form, ch);
-      else if (key === 'heat_source.behavior' || key === 'heat_source.balance') await saveHeatBehavior(form, ch);
+      if (key === 'heat_source') { await saveHeatConnection(form, ch); await saveHeatBehavior(form, ch); }
+      else if (key === 'circulation' && sw.name === 'house_balance_enabled')
+        await post('/heat-source/settings', { house_balance_enabled: on ? 1 : 0 });
       else if (key === 'rooms') await saveRoom(form, ch);
       else if (key === 'prices' && sw.name === 'enabled') await post('/prices/settings', { enabled: on ? '1' : '0' });  // absent keys = unchanged
       else return;   // no single-field path: the switch waits for the save bar
@@ -3640,7 +3644,7 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
-  function testBox() { return qs('form[data-save="heat_source.connection"] .test-result'); }
+  function testBox() { return qs('form[data-save="heat_source"] .test-result'); }
 
   function paintTestRunning() {
     var box = testBox();

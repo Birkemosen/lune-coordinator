@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.11
+
+- DESIGN 15.1/15.4/15.10 og AGENTS: alt, der hører til et ark, indstilles i arket — også forbindelsen (underside «Forbindelse ›») — og System har kun det, der ikke hører til et ark. Touch' System: Enhed · Styringer · Netværk · Firmware og backup · Service. V6' *Manifold og motorer* skal flyttes til manifold-arket.
+
 ## 2.3.10
 
 - `.home-tile[data-state="warn"]`: advarsel i et felt på Hjem — statuslinjen i `warn` (kontrast mod `card` er allerede tjekket) og ikonbrikken med `data-tone="warn"`. Bruges af Cirkulation ved risiko for opblanding.
