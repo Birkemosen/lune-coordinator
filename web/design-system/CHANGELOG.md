@@ -2,7 +2,7 @@
 
 ## 2.3.11
 
-- DESIGN 15.1/15.4/15.10 og AGENTS: alt, der hører til et ark, indstilles i arket — også forbindelsen (underside «Forbindelse ›») — og System har kun det, der ikke hører til et ark. Touch' System: Enhed · Styringer · Netværk · Firmware og backup · Service. V6' *Manifold og motorer* skal flyttes til manifold-arket.
+- DESIGN 15.1/15.4/15.10 og AGENTS: alt, der hører til et ark, indstilles i arket — også forbindelsen (underside «Forbindelse ›») — og System har kun det, der ikke hører til et ark. Touch' System: Enhed · Styringer · Netværk · Firmware og backup · Service. V6 er uændret: på V6 er manifolden selve enheden, så *Manifold og motorer* står på System.
 
 ## 2.3.10
 
