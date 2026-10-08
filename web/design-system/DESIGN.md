@@ -1269,7 +1269,7 @@ Midten har altid de samme to punkter: **Hjem** og **System** (på Touch og i HA 
 ### 15.4 System-siden
 
 - To kolonner på bred skærm: kategoriliste til venstre (**240 px**, klæber), indhold til højre (**maks. 640 px**, venstrestillet). Mobil: kategorilisten er en side; tryk åbner kategorien.
-- Kategorier (Touch): Enhed · Styringer · Netværk · Firmware og backup · Service. Varmekilde, elpris, cirkulationspumpe og vejr har ark og indstilles dér (Varme, Næste varme, Cirkulation, Vejr). (V6): Enhed · Forbindelser · Firmware og backup · Service; *Manifold og motorer* hører til manifold-arket og flyttes dertil. Udvikler kun i dev-builds, sidst.
+- Kategorier (Touch): Enhed · Styringer · Netværk · Firmware og backup · Service. Varmekilde, elpris, cirkulationspumpe og vejr har ark og indstilles dér (Varme, Næste varme, Cirkulation, Vejr). (V6): Enhed · Manifold og motorer · Forbindelser · Firmware og backup · Service — på V6 er manifolden selve enheden, så det, der gælder hele manifolden, hører til System; manifold-arket viser status. Udvikler kun i dev-builds, sidst.
 - Én kategori ad gangen; én gem-bjælke pr. kategori.
 
 ### 15.5 Indstillinger præsenteres som grupperede lister — ikke kort
