@@ -1298,10 +1298,13 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 400, "invalid_param", "port or push_interval_s is outside range");
       return;
     }
+    // The switch saves on its own (one field); the full settings call below rejects a body
+    // without heat-source fields ("settings_required"), so that alone is not a failure here.
+    bool house_balance_saved = false;
     if (present("house_balance_enabled")) {
       uint32_t house_balance = 0;
       parse_uint_param(api, api.json_body, "house_balance_enabled", &house_balance);
-      coordinator_->set_house_balance_enabled(house_balance != 0);
+      house_balance_saved = coordinator_->set_house_balance_enabled(house_balance != 0);
     }
     const bool accepted = coordinator_->set_heat_source_settings(
         has_enabled, enabled != 0, host, static_cast<uint16_t>(port), weighted_temperature_variable,
@@ -1321,7 +1324,12 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
         present("mqtt_password") ? mqtt_password : nullptr,
         present("mqtt_topic_prefix") ? mqtt_topic_prefix : nullptr,
         present("mqtt_hp_id") ? mqtt_hp_id : nullptr);
-    send_write_result_(api, accepted, 400);
+    if (!accepted && house_balance_saved && strstr(data_buf_, "settings_required") != nullptr) {
+      snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"saved\"}");
+      send_write_result_(api, true, 400);
+    } else {
+      send_write_result_(api, accepted, 400);
+    }
   } else if (strcmp(path, "/rooms") == 0) {
     char room_id[48]{};
     char name[64]{};
