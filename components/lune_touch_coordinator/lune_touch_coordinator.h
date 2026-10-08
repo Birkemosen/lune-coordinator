@@ -167,6 +167,8 @@ struct HeatSourceState {
   float hp_outside_c{NAN};
   float hp_flow_target_c{NAN};
   float hp_compressor_hz{NAN};
+  float hp_flow_lmin{NAN};       // primary flow (Ecodan flow_rate)
+  bool hp_water_pump_on{false};  // primary pump (status_water_pump)
   bool hp_compressor_on{false};
   int8_t hp_operation_mode{-1};
   uint32_t hp_telemetry_ms{0};
@@ -256,6 +258,11 @@ struct CirculationPumpState {
   uint32_t last_success_ms{0};
   int last_http_status{0};
   char last_error[96]{};
+  // Last usable mixing sample (secondary vs. primary flow while heating); see circulation_pump.h.
+  float mix_ratio{NAN};
+  float mix_primary_lmin{NAN};
+  float mix_secondary_lmin{NAN};
+  uint32_t mix_ms{0};
 };
 
 struct OdinPlanState {

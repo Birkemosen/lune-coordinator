@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.10
+
+- `.home-tile[data-state="warn"]`: advarsel i et felt på Hjem — statuslinjen i `warn` (kontrast mod `card` er allerede tjekket) og ikonbrikken med `data-tone="warn"`. Bruges af Cirkulation ved risiko for opblanding.
+
 ## 2.3.9
 
 - `.trend .dhw` / `.trend .leg`: skraverede bånd for varmt vand og legionella i grafer over fremløb/retur; `.ldhw`/`.lleg` også i `.chart-legend`.

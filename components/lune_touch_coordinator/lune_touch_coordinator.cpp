@@ -1498,6 +1498,17 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
                               : NAN;
   char flow_lmin_tok[16];
   json_float_token_(flow_lmin_tok, sizeof(flow_lmin_tok), flow_lmin, 1);
+  // Mixing: the last sample taken while heating, shown for MIXING_HOLD_MS after it.
+  const bool mix_held = source.mix_ms != 0 && now_ms - source.mix_ms <= circulation_pump::MIXING_HOLD_MS;
+  const auto mix = mix_held ? circulation_pump::mixing_state(source.mix_ratio) : circulation_pump::Mixing::Unknown;
+  char mix_ratio[16], mix_primary[16], mix_secondary[16], mix_age[16];
+  json_float_token_(mix_ratio, sizeof(mix_ratio), mix_held ? source.mix_ratio : NAN, 2);
+  json_float_token_(mix_primary, sizeof(mix_primary), mix_held ? source.mix_primary_lmin : NAN, 1);
+  json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
+  if (mix_held)
+    snprintf(mix_age, sizeof(mix_age), "%lu", static_cast<unsigned long>((now_ms - source.mix_ms) / 1000UL));
+  else
+    snprintf(mix_age, sizeof(mix_age), "null");
   snprintf(buffer, capacity,
            "{\"enabled\":%s,\"host\":\"%s\",\"port\":%u,\"refresh_interval_s\":%u,"
            "\"refresh_interval_idle_s\":%u,\"refresh_interval_active_s\":%u,"
@@ -1505,14 +1516,17 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            "\"reachable\":%s,\"fresh\":%s,\"status\":\"%s\",\"http_status\":%d,\"age_s\":%lu,"
            "\"flow_m3h\":%s,\"flow_l_min\":%s,\"head_m\":%s,\"power_w\":%s,"
            "\"thermal_kw\":%s,\"thermal_kw_source\":\"%s\","
-           "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\"}",
+           "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\","
+           "\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
+           "\"age_s\":%s}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port),
            static_cast<unsigned>(source.refresh_interval_s),
            static_cast<unsigned>(source.refresh_interval_idle_s),
            static_cast<unsigned>(source.refresh_interval_active_s), flow_entity, head_entity,
            power_entity, source.reachable ? "true" : "false", fresh ? "true" : "false",
            status, source.last_http_status, age_s, flow, flow_lmin_tok, head, power, thermal,
-           thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error);
+           thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error,
+           circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age);
 }
 
 enum class CirculationUiStatus : uint8_t { Hidden, Waiting, Ok, Stale, Offline };
@@ -2371,11 +2385,14 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
   bool ok = fetch_json_(url, body, CAP, &status);
   float feed = NAN, ret = NAN, outside = NAN, target = NAN, hz = NAN;
   bool comp = false;
+  bool water_pump = false;
+  float flow_lmin = NAN;
   int mode = -1;
   if (ok) {
     JsonDocument filter;
     for (const char *k : {"hp_feed_temp", "hp_return_temp", "outside_temp", "z1_flow_temp_target",
-                          "compressor_frequency", "status_compressor", "operation_mode"})
+                          "compressor_frequency", "status_compressor", "operation_mode",
+                          "flow_rate", "status_water_pump"})
       filter[k] = true;
     JsonDocument doc;
     ok = !deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -2388,6 +2405,8 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       hz = f("compressor_frequency");
       comp = doc["status_compressor"] | false;
       mode = doc["operation_mode"] | -1;
+      flow_lmin = f("flow_rate");
+      water_pump = doc["status_water_pump"] | false;
       ok = std::isfinite(feed) || std::isfinite(ret);
     }
   }
@@ -2400,7 +2419,20 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     heat_source_.hp_compressor_hz = hz;
     heat_source_.hp_compressor_on = comp;
     heat_source_.hp_operation_mode = static_cast<int8_t>(mode);
+    heat_source_.hp_flow_lmin = flow_lmin;
+    heat_source_.hp_water_pump_on = water_pump;
     heat_source_.hp_telemetry_ms = esphome::millis();
+    // Mixing sample: Alpha2 secondary flow against the heat pump's primary flow.
+    const uint32_t now_ms = esphome::millis();
+    const bool circ_fresh = circulation_.has_flow && circulation_.last_success_ms != 0 &&
+                            now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
+    const float secondary_lmin = circ_fresh ? circulation_.flow_m3h * (1000.0f / 60.0f) : NAN;
+    if (circulation_pump::mixing_sample_usable(flow_lmin, secondary_lmin, water_pump, mode)) {
+      circulation_.mix_primary_lmin = flow_lmin;
+      circulation_.mix_secondary_lmin = secondary_lmin;
+      circulation_.mix_ratio = secondary_lmin / flow_lmin;
+      circulation_.mix_ms = now_ms == 0 ? 1 : now_ms;
+    }
     give_state_lock_();
   }
   return ok;

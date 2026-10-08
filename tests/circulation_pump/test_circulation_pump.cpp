@@ -33,5 +33,16 @@ int main() {
   assert(alternate_entity("Pump Flow", alt, sizeof(alt)) && std::strcmp(alt, "pump_flow") == 0);
   assert(!alternate_entity("Power", alt, sizeof(alt)) || std::strcmp(alt, "Power") != 0);
   assert(alternate_entity("power", alt, sizeof(alt)) && std::strcmp(alt, "Power") == 0);
+  // Mixing: only while the primary pump runs for space heating, with a real primary flow.
+  assert(mixing_sample_usable(17.0f, 32.0f, true, 2));
+  assert(!mixing_sample_usable(17.0f, 32.0f, true, 1));    // hot water: primary goes to the tank
+  assert(!mixing_sample_usable(17.0f, 32.0f, false, 2));   // primary pump off
+  assert(!mixing_sample_usable(1.0f, 32.0f, true, 2));     // start-up transient
+  assert(!mixing_sample_usable(17.0f, NAN, true, 2));
+  assert(mixing_state(32.0f / 17.0f) == Mixing::Risk);     // the 2026-10-07 block
+  assert(mixing_state(1.04f) == Mixing::Ok);               // within sensor noise
+  assert(mixing_state(0.9f) == Mixing::Ok);
+  assert(mixing_state(NAN) == Mixing::Unknown);
+  assert(std::strcmp(mixing_name(Mixing::Risk), "risk") == 0);
   std::puts("Circulation pump tests passed.");
 }

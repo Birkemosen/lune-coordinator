@@ -1481,6 +1481,9 @@
   /* Én ekstra linje (fx aktuel elpris + skala-chip i Næste varme). */
   .home-tile > .ht-price { grid-area: price; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--muted); }
   .home-tile > .ht-price[hidden] { display: none; }
+  /* Advarsel i et felt (fx opblanding ved cirkulationspumpen): statuslinjen siger hvad i warn-tone,
+     og ikonbrikken får data-tone="warn". Teksten er signalet; farven støtter (3.2). */
+  .home-tile[data-state="warn"] > .ht-status { color: var(--warn); font-weight: 600; }
   /* Fordeling i et felt (Cirkulation): donut + forklaring. Én kulør (dom-water) i nuancer pr. del,
      som .dist i arket — ikke flere kulører (3.2.2). Segmenterne: circle med pathLength 100. */
   .home-tile > .ht-dist { grid-area: viz; align-self: end; display: flex; align-items: center; gap: var(--space-5); margin-top: var(--space-4); }
