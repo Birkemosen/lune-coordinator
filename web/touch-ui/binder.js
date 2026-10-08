@@ -1720,9 +1720,12 @@
       putVal(bf.querySelector('[name="climate_entity"]'), hs.climate_entity || '');
       putVal(bf.querySelector('[name="target_sync_enabled"]'), !!(hs.target_sync_enabled || (hs.asgard && hs.asgard.sync_enabled)));
       putVal(bf.querySelector('[name="odin_plan_enabled"]'), !!hs.odin_plan_enabled);
-      var hb = hs.house_balance || {};
-      putVal(bf.querySelector('[name="house_balance_enabled"]'), !!hb.enabled);
       if (bf.luneResnap) bf.luneResnap();
+    }
+    var hbf = qs('form[data-save="heat_source.balance"]');
+    if (hbf && !formBusy(hbf)) {
+      putVal(hbf.querySelector('[name="house_balance_enabled"]'), !!(hs.house_balance || {}).enabled);
+      if (hbf.luneResnap) hbf.luneResnap();
     }
     drawHouseBalance(hs.house_balance);
     var circ = hs.circulation || {};
@@ -2717,16 +2720,12 @@
       if (df.luneResnap) df.luneResnap();
     }
     var wx = s.weather || s.forecast || {};
-    var lf = qs('form[data-save="weather.location"]');
-    if (lf && !formBusy(lf) && s.forecast) {
-      if (s.forecast.latitude != null) putVal(qs('#wx_lat'), s.forecast.latitude);
-      if (s.forecast.longitude != null) putVal(qs('#wx_lon'), s.forecast.longitude);
-      if (lf.luneResnap) lf.luneResnap();
-    }
-    var bf = qs('form[data-save="weather.boost"]');
-    if (bf && !formBusy(bf) && wx.max_boost_c != null) {
-      putVal(qs('#wx_boost'), Number(wx.max_boost_c).toFixed(1));
-      if (bf.luneResnap) bf.luneResnap();
+    var wf = qs('form[data-save="weather"]');
+    if (wf && !formBusy(wf)) {
+      if (s.forecast && s.forecast.latitude != null) putVal(qs('#wx_lat'), s.forecast.latitude);
+      if (s.forecast && s.forecast.longitude != null) putVal(qs('#wx_lon'), s.forecast.longitude);
+      if (wx.max_boost_c != null) putVal(qs('#wx_boost'), Number(wx.max_boost_c).toFixed(1));
+      if (wf.luneResnap) wf.luneResnap();
     }
   }
 
@@ -3154,13 +3153,14 @@
         await saveRoom(form, ch);
       } else if (key === 'heat_source.connection') {
         await saveHeatConnection(form, ch);
-      } else if (key === 'heat_source.behavior') {
+      } else if (key === 'heat_source.behavior' || key === 'heat_source.balance') {
         await saveHeatBehavior(form, ch);
-      } else if (key === 'weather.location') {
+      } else if (key === 'weather') {
+        var wxAll = !Object.keys(ch).length;   // no patch info: save both parts
+        if (wxAll || has(ch, 'wx_boost')) await post('/weather/settings', { max_boost_c: fval(form, 'wx_boost') });
         // Latitude and longitude are both required by the endpoint.
-        await post('/forecast/settings', { latitude: fval(form, 'latitude'), longitude: fval(form, 'longitude') });
-      } else if (key === 'weather.boost') {
-        await post('/weather/settings', { max_boost_c: fval(form, 'wx_boost') });
+        if (wxAll || has(ch, 'latitude') || has(ch, 'longitude'))
+          await post('/forecast/settings', { latitude: fval(form, 'latitude'), longitude: fval(form, 'longitude') });
       } else if (key === 'add-node') {
         var addr = String(data.host || '').trim();
         if (!addr) throw new Error(t('ctrl.host'));
@@ -3320,7 +3320,7 @@
     var repaint = function () { sw.dispatchEvent(new Event('input', { bubbles: true })); };
     try {
       if (key === 'heat_source.connection') await saveHeatConnection(form, ch);
-      else if (key === 'heat_source.behavior') await saveHeatBehavior(form, ch);
+      else if (key === 'heat_source.behavior' || key === 'heat_source.balance') await saveHeatBehavior(form, ch);
       else if (key === 'rooms') await saveRoom(form, ch);
       else if (key === 'prices' && sw.name === 'enabled') await post('/prices/settings', { enabled: on ? '1' : '0' });  // absent keys = unchanged
       else return;   // no single-field path: the switch waits for the save bar
