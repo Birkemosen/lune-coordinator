@@ -3,6 +3,7 @@
 #include "asgard_adapter.h"
 #include "asgard_url.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -58,6 +59,36 @@ inline bool alternate_entity(const char *entity, char *out, size_t out_len) {
 
 inline bool parse_sensor_response(const char *body, float *value) {
   return asgard_adapter::parse_number_response(body, value);
+}
+
+// Mixing in the separator: when the secondary pump moves more water than the heat pump,
+// return water is drawn back into the supply and the zones get a cooler flow, so the
+// heat pump has to run hotter for the same room temperature. Only judged while the
+// heat pump's own pump runs for space heating (operation_mode 2): during hot water the
+// primary flow goes to the tank, and a stopped primary says nothing about the ratio.
+enum class Mixing : uint8_t { Unknown, Ok, Risk };
+
+/// Secondary may exceed primary by this much before it counts as mixing (sensor noise).
+constexpr float MIXING_RISK_RATIO = 1.05f;
+/// Below this the primary flow is a start-up/stop transient, not a steady value.
+constexpr float MIXING_MIN_PRIMARY_LMIN = 3.0f;
+/// How long a measured ratio is shown after the heat pump stops.
+constexpr uint32_t MIXING_HOLD_MS = 6UL * 60UL * 60UL * 1000UL;
+
+inline bool mixing_sample_usable(float primary_lmin, float secondary_lmin, bool primary_pump_on,
+                                 int operation_mode) {
+  return primary_pump_on && operation_mode == 2 && std::isfinite(primary_lmin) &&
+         primary_lmin >= MIXING_MIN_PRIMARY_LMIN && std::isfinite(secondary_lmin) && secondary_lmin > 0.0f;
+}
+
+inline Mixing mixing_state(float ratio) {
+  if (!std::isfinite(ratio) || ratio <= 0.0f)
+    return Mixing::Unknown;
+  return ratio > MIXING_RISK_RATIO ? Mixing::Risk : Mixing::Ok;
+}
+
+inline const char *mixing_name(Mixing m) {
+  return m == Mixing::Risk ? "risk" : m == Mixing::Ok ? "ok" : "unknown";
 }
 
 }  // namespace esphome::lune_touch_coordinator::circulation_pump

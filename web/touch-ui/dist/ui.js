@@ -354,7 +354,8 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     heat_pump: { available: true, feed_c: 36.0, return_c: 29.0, compressor_on: true, compressor_hz: 38 },
     circulation: {
       host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38,
-      flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power'
+      flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
+      mixing: { state: 'risk', ratio: 1.31, primary_l_min: 17.0, secondary_l_min: 22.3, age_s: 120 }
     }
   };
 
@@ -1934,7 +1935,22 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     setText('pump.host', circ.host || '—');
     setText('tile.pumpVal', finite(circ.flow_m3h) ? num(circ.flow_m3h, 1) + ' m³/h' : '—');
     setText('tile.pumpSub', finite(circ.power_w) ? num(circ.power_w, 0) + ' W' : '');
-    setText('tile.pumpStatus', lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
+    // Mixing in the buffer tank: secondary flow above primary while heating (Touch judges it).
+    var mx = circ.mixing || {};
+    var risk = mx.state === 'risk';
+    var mxVars = { sec: num(mx.secondary_l_min, 1), pri: num(mx.primary_l_min, 1),
+      pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—' };
+    var pumpTile = qs('[data-tile="pump"]');
+    if (pumpTile) {
+      if (risk) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');
+      var chip = pumpTile.querySelector('.chip-icon');
+      if (chip) chip.setAttribute('data-tone', risk ? 'warn' : 'water');
+    }
+    setShow('pump.mixing', risk);
+    setText('pump.mixBody', risk ? t('pump.mixBody', mxVars) : '');
+    setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
+    setText('tile.pumpStatus', risk ? t('tile.pumpMixing')
+      : lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
     if (state.zones) renderDist();
     applyCirculation(circ);
     renderHome();

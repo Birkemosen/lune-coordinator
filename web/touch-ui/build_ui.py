@@ -548,12 +548,13 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
 
     # ---- Cirkulation: pumpen og fordeling pr. styring
     pump_over = f'''
+        <p class="msg warn" data-bind-show="pump.mixing" hidden><span><b>{T("pump.mixStrong")}</b> <span data-bind="pump.mixBody"></span></span></p>
         <dl class="metrics">
           {metric(T("pump.flow"), "l/min", "pump.flow")}
           {metric(T("pump.head"), "m", "pump.head")}
           {metric(T("pump.power"), "W", "pump.power")}
         </dl>
-        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.host"), "pump.host")])}
+        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <p class="note">{T("flow.sub")}</p>
@@ -934,7 +935,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "room.loops", "room.valveShort", "room.fromV6", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
