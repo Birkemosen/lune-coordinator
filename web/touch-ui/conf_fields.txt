@@ -61,6 +61,7 @@ heat-source/odin_max_lift_c
 heat-source/odin_plan_enabled
 heat-source/read_url_template
 heat-source/target_sync_enabled
+heat-source/house_balance_enabled
 heat-source/target_url_template
 heat-source/write_url_template
 house-target/house_target

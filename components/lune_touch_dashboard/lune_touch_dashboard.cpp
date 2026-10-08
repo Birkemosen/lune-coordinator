@@ -1298,6 +1298,11 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 400, "invalid_param", "port or push_interval_s is outside range");
       return;
     }
+    if (present("house_balance_enabled")) {
+      uint32_t house_balance = 0;
+      parse_uint_param(api, api.json_body, "house_balance_enabled", &house_balance);
+      coordinator_->set_house_balance_enabled(house_balance != 0);
+    }
     const bool accepted = coordinator_->set_heat_source_settings(
         has_enabled, enabled != 0, host, static_cast<uint16_t>(port), weighted_temperature_variable,
         static_cast<uint16_t>(push_interval_s), data_buf_, DATA_BUF_SIZE, has_write_url,
