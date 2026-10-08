@@ -443,8 +443,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {ggroup(T("heat.comfortSync"), sswitch("target_sync_enabled", T("heat.targetSync"), T("heat.targetSyncSub"), True),
                   sinput("climate_entity", T("hs.asgardClimate"), "Virtual Thermostat z1"), extra=note(T("hs.targetSyncHint")), cls="hs-type-asgard")}
           {group(T("heat.odinPlan"), sswitch("odin_plan_enabled", T("heat.odinPlanSw"), T("hs.odinPlanHint"), True), cls="hs-type-asgard")}
-          {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
-                  "", extra=note(T("heat.houseBalanceHint")))}
           {ggroup(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
                   sstep("odin_max_lift_c", T("heat.odinMaxLift"), 1.5, 0.3, 3.0, 0.1, "°C"), extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
           <p class="note hs-type-http">{T("heat.httpBehavior")}</p>
@@ -537,11 +535,15 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </p>
         </div>'''
     wx_hist = trend("wx.past", "wx-past", T("wx.pastAria"), f="wxpast")
+    # Vejrets indstillinger samlet ét sted (DESIGN.md 15): preload og placering.
     wx_set = f'''
-        <form data-save="weather.boost" data-patch>
+        <form data-save="weather" data-patch>
           {group(T("wx.preload"), sstep("wx_boost", T("wx.boost"), 1.5, 0, 3, 0.1, "°C", hint=T("wx.boostHint")))}
-          {sheet_link("weather", "link.wxLocation")}
-          {savebar("weather-boost", T("weatherCfg.save"))}
+          {group(T("wx.location"), sinput("latitude", T("weatherCfg.lat"), "55.6761", "w-sm", id_="wx_lat", extra=' inputmode="decimal"') +
+                 sinput("longitude", T("weatherCfg.lon"), "12.5683", "w-sm", id_="wx_lon", extra=' inputmode="decimal"') +
+                 sbtn(T("wx.geoLabel"), f'<button class="btn" type="button" data-action="wx-geo">{T("weatherCfg.geo")}</button>'),
+                 extra='<p class="note" data-bind="wx.geoResult" aria-live="polite"></p>')}
+          {savebar("weather", T("weatherCfg.save"))}
         </form>'''
     sheet_wx = sheet("weather", T("hash.weather"), I["wx"], "info", T("tile.weather"), None,
                      [("overview", wx_over), ("history", wx_hist), ("settings", wx_set)], status_attrs=' data-bind="tile.weatherStatus"')
@@ -659,6 +661,11 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                sinput("name", T("ctrl.name"), "", "w-sm", id_="node_name", extra=f' placeholder="{T("ctrl.namePh")}"') +
                sinput("host", T("ctrl.host"), "", "w-md", id_="node_host", extra=' placeholder="lune-v6.local" inputmode="url" autocomplete="off" spellcheck="false"'),
                extra=f'<div class="actions"><button class="btn primary" type="submit">{T("ctrl.add")}</button></div>{form_status()}')))}
+      </form>
+      <form data-save="heat_source.balance" data-patch>
+        {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
+                "", extra=note(T("heat.houseBalanceHint")))}
+        {savebar("house-balance")}
       </form>''', "", hhelp("controllers", "ctrl.title", ["help.controllers", "help.addController"], "docs/Manual.md#controllers")))
 
     # Varmekilde: forbindelsen (heat_source.connection, PATCH)
@@ -805,15 +812,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       </form>''', "", hhelp("pump", "pumpCfg.title", ["help.pump"], "docs/Manual.md#pump")))
 
     # Vejr (placering, PATCH)
-    cats.append(("weather", f'''
-      <form data-save="weather.location" data-patch>
-        {group(T("wx.location"), sinput("latitude", T("weatherCfg.lat"), "55.6761", "w-sm", id_="wx_lat", extra=' inputmode="decimal"') +
-               sinput("longitude", T("weatherCfg.lon"), "12.5683", "w-sm", id_="wx_lon", extra=' inputmode="decimal"') +
-               sbtn(T("wx.geoLabel"), f'<button class="btn" type="button" data-action="wx-geo">{T("weatherCfg.geo")}</button>'),
-               extra='<p class="note" data-bind="wx.geoResult" aria-live="polite"></p>' + note(T("wx.boostOnSheet")))}
-        {savebar("weather-location", T("weatherCfg.save"))}
-      </form>''', "", hhelp("weather", "weatherCfg.title", ["help.weather"], "docs/Manual.md#weather")))
-
     # Netværk
     cats.append(("network", f'''
       <form data-save="wifi">
@@ -853,7 +851,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       </section>''', "", hhelp("service", "svc.title", ["help.service"], "docs/Manual.md#service")))
 
     titles = {"device": "cat.device", "controllers": "cat.controllers", "heatsource": "cat.heatsource", "prices": "cat.prices",
-              "pump": "cat.pump", "weather": "cat.weather", "network": "cat.network", "firmware": "cat.firmware", "service": "cat.service"}
+              "pump": "cat.pump", "network": "cat.network", "firmware": "cat.firmware", "service": "cat.service"}
     sys_radios = f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">' + "".join(
         f'<input class="state" type="radio" name="syscat" id="c-{c}" data-hash="{T("hash." + c)}" aria-label="{T(titles[c])}">' for c, *_ in cats)
     sys_nav = "".join(f'<label for="c-{c}"><svg viewBox="0 0 24 24" aria-hidden="true">{CAT_ICONS[c]}</svg>{T(titles[c])}</label>' for c, *_ in cats)

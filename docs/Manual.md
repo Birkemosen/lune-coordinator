@@ -160,6 +160,13 @@ Pair and approve Lune V6 boards so Touch can import rooms and steer heat calls.
 Unapproved boards stay local. **Find controllers** scans the LAN; **Add manually** takes a
 hostname. Approve, rename or remove from the list.
 
+**House balance** (*Balance between manifolds*, off by default): without balancing valves the
+manifold with short, wide loops takes flow from the others. Touch estimates each loop's
+pressure need from area, pipe and spacing and throttles the easy manifold; the rows show
+each board's scale. V6 keeps its own split within a manifold and returns to it by itself
+15 min after Touch stops sending. See
+[house balancing](house_balancing_and_weather.md#4-balancing-between-manifolds).
+
 ### Heat source
 
 Type (**HTTP** or **Asgard**), connection, mapping and **Test read / Test send** with a result
@@ -233,8 +240,9 @@ Entities are the sensor names on the pump node. Newer ESPHome addresses them by 
 
 ### Weather location
 
-Coordinates for the forecast. **Estimate from network** fills latitude and longitude from the
-device's network location; check them and save. The preload boost is in the Weather sheet.
+In the **Weather** sheet › **Settings**, together with the preload boost. Coordinates for the
+forecast; **Estimate from network** fills latitude and longitude from the device's network
+location; check them and save.
 
 <a id="wifi"></a>
 
