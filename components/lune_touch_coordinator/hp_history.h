@@ -16,6 +16,8 @@ static constexpr int16_t NONE = INT16_MIN;
 static constexpr uint8_t MAX_BUCKETS = 96;
 static constexpr int32_t ASGARD_NONE = -32768;
 static constexpr uint8_t COL_FLAGS = 10;
+/// Heat produced today, kWh x 10; Asgard resets it at local midnight.
+static constexpr uint8_t COL_PROD = 12;
 static constexpr uint8_t MODE_HOT_WATER = 1;
 static constexpr uint8_t MODE_LEGIONELLA = 6;
 // Bucket marks (any minute in the bucket).
@@ -30,6 +32,7 @@ struct Series {
   int16_t feed_x10[MAX_BUCKETS];
   int16_t return_x10[MAX_BUCKETS];
   uint8_t marks[MAX_BUCKETS];   // MARK_* bits
+  uint16_t heat_x10[MAX_BUCKETS];   // heat produced in the bucket, kWh x 10
   uint32_t fetched_ms{0};   // 0 = never fetched
   bool valid{false};
 };
@@ -44,7 +47,9 @@ class Bucketer {
       sum_f_[i] = sum_r_[i] = 0;
       cnt_f_[i] = cnt_r_[i] = 0;
       marks_[i] = 0;
+      heat_[i] = 0;
     }
+    prod_ = last_prod_ = ASGARD_NONE;
     depth_ = 0;
     col_ = 0;
     in_num_ = false;
@@ -76,6 +81,7 @@ class Bucketer {
       out->feed_x10[i] = cnt_f_[i] ? static_cast<int16_t>(round_div_(sum_f_[i], cnt_f_[i])) : NONE;
       out->return_x10[i] = cnt_r_[i] ? static_cast<int16_t>(round_div_(sum_r_[i], cnt_r_[i])) : NONE;
       out->marks[i] = marks_[i];
+      out->heat_x10[i] = heat_[i];
       if (cnt_f_[i] || cnt_r_[i]) filled++;
     }
     out->valid = filled >= 2;
@@ -95,6 +101,7 @@ class Bucketer {
       else if (col_ == 1) feed_ = static_cast<int32_t>(v);
       else if (col_ == 2) ret_ = static_cast<int32_t>(v);
       else if (col_ == COL_FLAGS) flags_ = static_cast<int32_t>(v);
+      else if (col_ == COL_PROD) prod_ = static_cast<int32_t>(v);
     }
     in_num_ = false;
     neg_ = false;
@@ -104,8 +111,18 @@ class Bucketer {
   void end_row_() {
     rows_++;
     if (ts_ > max_ts_) max_ts_ = ts_;
+    // Heat since the previous row. The counter is daily: a drop is midnight, and
+    // the new value is what was produced since then.
+    int32_t heat = 0;
+    if (prod_ != ASGARD_NONE && prod_ >= 0 && prod_ < 100000) {
+      if (last_prod_ != ASGARD_NONE)
+        heat = prod_ >= last_prod_ ? prod_ - last_prod_ : prod_;
+      if (heat > 500) heat = 0;   // > 50 kWh between two minute rows: a glitch, not heat
+      last_prod_ = prod_;
+    }
     if (ts_ >= from_ts_) {
       const uint32_t b = (ts_ - from_ts_) / step_s_;
+      if (b < n_ && heat > 0 && heat_[b] < 60000) heat_[b] = static_cast<uint16_t>(heat_[b] + heat);
       if (b < n_) {
         // Plausible water temperatures only (−20 … 90 °C).
         if (feed_ != ASGARD_NONE && feed_ > -200 && feed_ < 900) { sum_f_[b] += feed_; cnt_f_[b]++; }
@@ -121,6 +138,7 @@ class Bucketer {
     ts_ = 0;
     feed_ = ret_ = ASGARD_NONE;
     flags_ = -1;
+    prod_ = ASGARD_NONE;
   }
 
   void step_(char c) {
@@ -154,6 +172,9 @@ class Bucketer {
   int32_t feed_{ASGARD_NONE};
   int32_t ret_{ASGARD_NONE};
   int32_t flags_{-1};
+  int32_t prod_{ASGARD_NONE};
+  int32_t last_prod_{ASGARD_NONE};
+  uint16_t heat_[MAX_BUCKETS]{};
   uint32_t rows_{0};
   uint32_t max_ts_{0};
 };

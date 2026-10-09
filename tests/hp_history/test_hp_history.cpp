@@ -52,6 +52,22 @@ int main() {
   CHECK("implausible feed/return dropped", sg.feed_x10[0] == NONE && sg.return_x10[0] == NONE);
   CHECK("negative feed kept", sg.feed_x10[1] == -35 && sg.return_x10[1] == 12);
 
+  // Heat produced: the daily counter (column 12, kWh x 10) per bucket, across midnight.
+  Bucketer h;
+  h.begin(0, 60, 3);
+  const char *heat =
+      "[[0,350,300,0,0,0,0,0,0,0,0,10,420],"     // first row: baseline only
+      "[30,350,300,0,0,0,0,0,0,0,0,10,425],"     // +0.5 kWh in bucket 0
+      "[60,350,300,0,0,0,0,0,0,0,0,10,430],"     // +0.5 in bucket 1
+      "[90,350,300,0,0,0,0,0,0,0,0,0,3],"        // midnight: counter restarts, +0.3
+      "[120,350,300,0,0,0,0,0,0,0,0,0,9000]]";   // +900 kWh in a minute: glitch, dropped
+  h.feed(heat, std::strlen(heat));
+  Series sh{};
+  h.finish(&sh);
+  CHECK("heat in bucket 0", sh.heat_x10[0] == 5);
+  CHECK("heat across midnight", sh.heat_x10[1] == 8);
+  CHECK("glitch dropped", sh.heat_x10[2] == 0);
+
   Bucketer r;
   r.begin(1791324000, 900, 2);   // real Asgard timestamps have 10 digits
   const char *real = "[[1791324060,290,245,216],[1791324987,300,250]]";

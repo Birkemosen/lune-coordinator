@@ -13181,20 +13181,53 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
   appendf_(buffer, capacity, off, "],\"plan_vs_reality\":[");
   const uint8_t pvr_start =
       odin_plan.past_count > 12 ? static_cast<uint8_t>(odin_plan.past_count - 12) : 0;
+  // The last past slot is the current hour. Odin 2.0 does not report actual heat,
+  // so the actual comes from Asgard's own heat counter (24 h history, 15 min buckets).
+  static hp_history::Series hist;   // single dashboard request task
+  hist = hp_history::Series{};
+  if (take_state_lock_(50)) {
+    hist = hp_history_[0];
+    give_state_lock_();
+  }
+  ESPTime pvr_now{};
+  if (time_ != nullptr)
+    pvr_now = time_->now();
+  const bool pvr_clock = pvr_now.is_valid();
+  const uint32_t hour_now_ts = pvr_clock ? static_cast<uint32_t>(pvr_now.timestamp) / 3600u * 3600u : 0;
+  auto asgard_heat_kwh = [&](uint32_t from_ts) -> float {
+    if (!hist.valid || hist.step_s == 0 || from_ts < hist.from_ts)
+      return NAN;
+    uint32_t sum = 0;
+    uint8_t buckets = 0;
+    for (uint32_t t = from_ts; t < from_ts + 3600u; t += hist.step_s) {
+      const uint32_t b = (t - hist.from_ts) / hist.step_s;
+      if (b >= hist.n)
+        break;
+      sum += hist.heat_x10[b];
+      buckets++;
+    }
+    return buckets ? static_cast<float>(sum) / 10.0f : NAN;
+  };
   bool pvr_first = true;
   for (uint8_t i = pvr_start; i < odin_plan.past_count && off + 96 < capacity; i++) {
+    const uint8_t back = static_cast<uint8_t>(odin_plan.past_count - 1 - i);   // hours before now
+    float act = odin_plan.actual_prod_past[i];
+    if (!std::isfinite(act) && pvr_clock)
+      act = asgard_heat_kwh(hour_now_ts - back * 3600u);   // kWh in one hour = mean kW
     char planned[16];
     char actual[16];
     char delta[16];
     json_float_token_(planned, sizeof(planned), odin_plan.plan_heat_past[i], 2);
-    json_float_token_(actual, sizeof(actual), odin_plan.actual_prod_past[i], 2);
+    json_float_token_(actual, sizeof(actual), act, 2);
     float dlt = NAN;
-    if (std::isfinite(odin_plan.plan_heat_past[i]) && std::isfinite(odin_plan.actual_prod_past[i]))
-      dlt = odin_plan.actual_prod_past[i] - odin_plan.plan_heat_past[i];
+    if (std::isfinite(odin_plan.plan_heat_past[i]) && std::isfinite(act))
+      dlt = act - odin_plan.plan_heat_past[i];
     json_float_token_(delta, sizeof(delta), dlt, 2);
+    // h = local hour of day (it was the slot index); -1 without a clock.
+    const int hour = pvr_clock ? ((pvr_now.hour - back) % 24 + 24) % 24 : -1;
     appendf_(buffer, capacity, off,
-             "%s{\"h\":%u,\"planned_kw\":%s,\"actual_kw\":%s,\"delta_kw\":%s}",
-             pvr_first ? "" : ",", static_cast<unsigned>(i), planned, actual, delta);
+             "%s{\"h\":%d,\"now\":%s,\"planned_kw\":%s,\"actual_kw\":%s,\"delta_kw\":%s}",
+             pvr_first ? "" : ",", hour, back == 0 ? "true" : "false", planned, actual, delta);
     pvr_first = false;
   }
   appendf_(buffer, capacity, off, "]}");
