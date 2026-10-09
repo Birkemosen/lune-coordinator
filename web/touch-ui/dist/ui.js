@@ -2803,7 +2803,9 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     var box = qs('[data-f="pvr"]');
     if (box) box.toggleAttribute('data-empty', !plan.length);
     var kw = function (v) { var x = num(v); return x === '—' ? x : esc(x) + ' <small>kW</small>'; };
-    var last = plan[plan.length - 1] || {};
+    // The newest slot is the hour in progress (partial actual): show the last whole hour.
+    var whole = plan.filter(function (p) { return !p.now; });
+    var last = whole[whole.length - 1] || plan[plan.length - 1] || {};
     setBind('plan.planned', plan.length ? kw(last.planned_kw) : '—');
     setBind('plan.actual', plan.length ? kw(last.actual_kw) : '—');
     var plot = qs('[data-bind-pvr]');
