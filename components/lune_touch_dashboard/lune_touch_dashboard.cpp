@@ -1326,6 +1326,11 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       parse_uint_param(api, api.json_body, "house_balance_enabled", &house_balance);
       house_balance_saved = coordinator_->set_house_balance_enabled(house_balance != 0);
     }
+    if (present("valves_follow_hp_enabled")) {
+      uint32_t follow = 0;
+      parse_uint_param(api, api.json_body, "valves_follow_hp_enabled", &follow);
+      house_balance_saved = coordinator_->set_valves_follow_hp_enabled(follow != 0) || house_balance_saved;
+    }
     const bool accepted = coordinator_->set_heat_source_settings(
         has_enabled, enabled != 0, host, static_cast<uint16_t>(port), weighted_temperature_variable,
         static_cast<uint16_t>(push_interval_s), data_buf_, DATA_BUF_SIZE, has_write_url,

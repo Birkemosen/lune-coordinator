@@ -299,7 +299,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <button class="home-tile" type="button" popovertarget="sheet-heat" data-empty data-tile="heat">
             <span class="chip-icon" aria-hidden="true">{I["heat"]}</span><b>{T("tile.heat")}</b>
             <span class="ht-status" data-bind="heat.badgeText">{T("status.waiting")}</span>
-            <span class="ht-val"><span data-bind="tile.heatVal">{DASH}</span> <small>{T("tile.heatSub")}</small></span>
+            <span class="ht-fr"><small>{T("tile.flow")}</small><b data-bind="tile.heatFlow">{DASH}</b><svg class="fr-arc" viewBox="0 0 12 40" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="lds-fr" x1="0" y1="0" x2="0" y2="1"><stop offset="0"/><stop offset=".25"/><stop offset=".5"/><stop offset=".75"/><stop offset="1"/></linearGradient></defs><path d="M1 1 A 11 19 0 0 1 1 39"/></svg><span class="fr-dt"><small>ΔT</small><b data-bind="tile.heatDt">{DASH}</b></span><small>{T("tile.return")}</small><b data-bind="tile.heatRet">{DASH}</b></span>
             <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>'''
     tile_plan = f'''
@@ -542,7 +542,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {metric(T("pump.head"), "m", "pump.head")}
           {metric(T("pump.power"), "W", "pump.power")}
         </dl>
-        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.recommended"), "pump.recommended"), (T("pump.host"), "pump.host")])}
+        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.recommended"), "pump.recommended"), (T("heat.valvesNow"), "heat.valvesNow"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <p class="note">{T("flow.sub")}</p>'''
@@ -779,6 +779,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       <form data-save="circulation" data-patch>
         {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
                 "", extra=note(T("heat.houseBalanceHint")))}
+        {group(T("heat.valves"), sswitch("valves_follow_hp_enabled", T("heat.valvesSw"), T("heat.valvesSub"), False), extra=note(T("heat.valvesHint")))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
                sport("pump_port", T("pumpCfg.port")))}
         {group(T("pump.entities"), sinput("flow_entity", T("pumpCfg.flowEntity"), "pump_flow", id_="pump_flow_entity") +
@@ -935,7 +936,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "room.loops", "room.valveShort", "room.fromV6", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
