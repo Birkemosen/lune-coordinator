@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.14
+
+- Termostat-ringen: huset nu er et stiplet orange skalamærke på tværs af sporet (`line.now`, roteret til `--now`) i stedet for en lille prik uden for sporet.
+
 ## 2.3.13
 
 - `.thermo-facts`: «Huset nu» og «Ude» som to små kort (`--lift-bg` + `--lift`) til venstre for termostat-ringen, på mobil på én række under den. Ringen viser kun «Mål» og målet. Hvert kort har en ikonbrik i domænets farve: huset i varme (husikon, som buen), ude i vejr (sol bag sky, blå som Vejr-feltet).
