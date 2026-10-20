@@ -262,6 +262,8 @@ test-forecast:
 	$(FORECAST_TIMELINE_OUT)-balance
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(FORECAST_TEST_DIR)/test_solar_holdoff.cpp -o $(FORECAST_TIMELINE_OUT)-solar
 	$(FORECAST_TIMELINE_OUT)-solar
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(FORECAST_TEST_DIR)/test_exposure_learning.cpp -o $(FORECAST_TIMELINE_OUT)-exposure
+	$(FORECAST_TIMELINE_OUT)-exposure
 
 test-coordinator:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(COORDINATOR_SRCS) -o $(COORDINATOR_OUT)

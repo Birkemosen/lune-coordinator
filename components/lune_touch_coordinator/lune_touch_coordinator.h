@@ -2,6 +2,7 @@
 
 #include "coordinator_model.h"
 #include "energy_price.h"
+#include "exposure_learning.h"
 #include "flow_trim.h"
 #include "hp_history.h"
 #include "house_demand.h"
@@ -970,6 +971,26 @@ class LuneTouchCoordinator : public esphome::Component {
   lune_touch_odin::Lift compute_odin_lift_(uint8_t now_hour, float *energy_kwh, const char **reason);
   bool post_odin_json_(const char *path, const char *body, int *status);
   void load_odin_control_();
+  // Exposure learning (exposure_learning.h): per room, hourly samples teach the
+  // solar and wind factors. RAM state, saved to NVS every few hours.
+  struct ExposureLearnSlot {
+    char room_id[32]{};
+    lune_touch_learn::State state{};
+    lune_touch_learn::Sample start{};
+    int64_t start_ts{0};
+    bool has_start{false};
+  };
+  ExposureLearnSlot exposure_learn_[::lune_touch::MAX_HOUSE_ZONES]{};
+  uint32_t exposure_learn_saved_ms_{0};
+  bool exposure_learn_dirty_{false};
+  void run_exposure_learning_();
+  ExposureLearnSlot *exposure_slot_(const char *room_id, bool create);
+  const ExposureLearnSlot *exposure_slot_(const char *room_id) const;
+  /// Learned factors replace the room's own only while those are at the defaults
+  /// (solar 0.3, wind 0.5): a value someone set by hand always wins.
+  void effective_exposure_(const char *room_id, float *solar_gain, float *wind_exposure) const;
+  void load_exposure_learning_();
+  void save_exposure_learning_();
   void save_odin_control_();
   /// Generic heat source: write target / heat request / curve offset templates.
   bool push_generic_levers_();

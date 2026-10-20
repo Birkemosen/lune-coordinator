@@ -1586,6 +1586,7 @@ void LuneTouchCoordinator::setup() {
   load_preload_learning_();
   load_settings_();
   load_odin_control_();
+  load_exposure_learning_();
   load_price_settings_();
   {
     // PSRAM: tariff caches, two days of quarter-hour spot samples and the
@@ -2072,6 +2073,7 @@ void LuneTouchCoordinator::poll_task_() {
       if (lease_due)
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
+      run_exposure_learning_();
 
       if (circulation_due)
         schedule_circulation_fetch_();
@@ -5673,6 +5675,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
                                                           : zone->exterior_walls;
     exposure.wind_exposure = room != nullptr ? room->wind_exposure : zone->wind_exposure;
     exposure.solar_gain = room != nullptr ? room->solar_gain : zone->solar_gain;
+    effective_exposure_(zone->room_id, &exposure.solar_gain, &exposure.wind_exposure);
     exposure.thermal_lead_h = house_active_lead;
 
     hv6fc::PreloadParams params{};
@@ -12393,6 +12396,12 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
         static_cast<float>(zone->thermal_samples) / 24.0f;
     const uint8_t learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
     const uint8_t active_thermal_lead_h = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
+    const ExposureLearnSlot *learn_slot = exposure_slot_(zone->room_id);
+    const lune_touch_learn::Learned learn =
+        learn_slot != nullptr ? lune_touch_learn::result(learn_slot->state) : lune_touch_learn::Learned{};
+    char learn_solar[12], learn_wind[12];
+    json_float_token_(learn_solar, sizeof(learn_solar), learn.solar_valid ? learn.solar : NAN, 2);
+    json_float_token_(learn_wind, sizeof(learn_wind), learn.wind_valid ? learn.wind : NAN, 2);
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"name_source\":\"%s\","
                   "\"node_index\":%u,\"zone_index\":%u,"
@@ -12401,6 +12410,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"ua_effective_w_per_k\":%.1f,\"ua_confidence\":%.2f,\"ua_observed_days\":%u,"
                   "\"delivered_kwh_today\":%.2f,\"include_in_house_temperature\":%s,"
                   "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"weather_seeded\":%s,"
+                  "\"learned\":{\"solar\":%s,\"solar_hours\":%u,\"wind\":%s,\"wind_hours\":%u,"
+                  "\"solar_in_use\":%s,\"wind_in_use\":%s},"
                   "\"exterior_walls_union\":%u,\"floor_unset\":%s,\"physics_conflict\":%s,"
                   "\"ble_sensor_mismatch\":%s,\"ownership\":{\"walls\":\"v6\",\"area\":\"v6\","
                   "\"floor\":\"v6\",\"weather\":\"touch\"}},"
@@ -12447,6 +12458,10 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   room != nullptr ? room->wind_exposure : zone->wind_exposure,
                   room != nullptr ? room->solar_gain : zone->solar_gain,
                   room != nullptr && room->weather_seeded ? "true" : "false",
+                  learn_solar, static_cast<unsigned>(learn_slot != nullptr ? learn_slot->state.solar_n : 0),
+                  learn_wind, static_cast<unsigned>(learn_slot != nullptr ? learn_slot->state.wind_n : 0),
+                  learn.solar_valid && room != nullptr && std::fabs(room->solar_gain - 0.3f) < 0.005f ? "true" : "false",
+                  learn.wind_valid && room != nullptr && std::fabs(room->wind_exposure - 0.5f) < 0.005f ? "true" : "false",
                   static_cast<unsigned>(room != nullptr ? room->exterior_walls_union
                                                         : zone->exterior_walls),
                   room != nullptr && room->floor_unset ? "true" : "false",
@@ -15383,6 +15398,172 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
   if (off >= capacity) {  // did not fit: restore the original document
     buffer[len - 1] = '}';
     buffer[len] = '\0';
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Exposure learning: solar and wind factors per room (exposure_learning.h)
+// -----------------------------------------------------------------------------
+namespace {
+constexpr uint32_t EXPOSURE_SAVE_MS = 6UL * 60UL * 60UL * 1000UL;
+}  // namespace
+
+LuneTouchCoordinator::ExposureLearnSlot *LuneTouchCoordinator::exposure_slot_(const char *room_id, bool create) {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return nullptr;
+  ExposureLearnSlot *free_slot = nullptr;
+  for (auto &slot : exposure_learn_) {
+    if (std::strcmp(slot.room_id, room_id) == 0)
+      return &slot;
+    if (free_slot == nullptr && slot.room_id[0] == '\0')
+      free_slot = &slot;
+  }
+  if (!create || free_slot == nullptr)
+    return nullptr;
+  std::strncpy(free_slot->room_id, room_id, sizeof(free_slot->room_id) - 1);
+  lune_touch_learn::reset(free_slot->state);
+  return free_slot;
+}
+
+const LuneTouchCoordinator::ExposureLearnSlot *LuneTouchCoordinator::exposure_slot_(const char *room_id) const {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return nullptr;
+  for (const auto &slot : exposure_learn_)
+    if (std::strcmp(slot.room_id, room_id) == 0)
+      return &slot;
+  return nullptr;
+}
+
+void LuneTouchCoordinator::effective_exposure_(const char *room_id, float *solar_gain, float *wind_exposure) const {
+  const ExposureLearnSlot *slot = exposure_slot_(room_id);
+  if (slot == nullptr)
+    return;
+  const auto learned = lune_touch_learn::result(slot->state);
+  if (solar_gain != nullptr && learned.solar_valid && std::fabs(*solar_gain - 0.3f) < 0.005f)
+    *solar_gain = learned.solar;
+  if (wind_exposure != nullptr && learned.wind_valid && std::fabs(*wind_exposure - 0.5f) < 0.005f)
+    *wind_exposure = learned.wind;
+}
+
+void LuneTouchCoordinator::run_exposure_learning_() {
+  const int64_t now_s = current_epoch_s_();
+  if (now_s <= 0 || !take_state_lock_(100))
+    return;
+  // The forecast hour that contains now.
+  int hour = -1;
+  for (uint8_t i = 0; i < forecast_hours_count_; i++) {
+    if (forecast_hours_[i].timestamp_s <= now_s && now_s < forecast_hours_[i].timestamp_s + 3600)
+      hour = i;
+  }
+  if (hour < 0) {
+    give_state_lock_();
+    return;
+  }
+  const ForecastHourState &fh = forecast_hours_[hour];
+  // Outdoor: the heat pump's own sensor while fresh, else the forecast.
+  const uint32_t now_ms = esphome::millis();
+  const bool hp_fresh = heat_source_.hp_telemetry_ms != 0 && now_ms - heat_source_.hp_telemetry_ms < 30UL * 60UL * 1000UL;
+  const float out_c = hp_fresh && std::isfinite(heat_source_.hp_outside_c) ? heat_source_.hp_outside_c : fh.temp_c;
+  // Supply: a manifold's own flow probe, else another manifold's (one buffer feeds both).
+  float shared_supply = NAN;
+  for (size_t n = 0; n < ::lune_touch::MAX_NODES; n++) {
+    if (node_telemetry_[n].has_flow && std::isfinite(node_telemetry_[n].flow_c) && node_telemetry_[n].flow_c > 5.0f) {
+      shared_supply = node_telemetry_[n].flow_c;
+      break;
+    }
+  }
+  for (size_t i = 0; i < model_.zone_count(); i++) {
+    const auto *zone = model_.zone(i);
+    const auto *live = model_.zone_live(i);
+    if (zone == nullptr || live == nullptr || !zone->enabled || zone->is_group_secondary || !live->fresh ||
+        !live->has_temperature || !std::isfinite(live->temperature_c))
+      continue;
+    const auto *room = model_.room_by_id(zone->room_id);
+    const uint8_t walls = room != nullptr && room->exterior_walls_union != 0 ? room->exterior_walls_union : zone->exterior_walls;
+    lune_touch_learn::Sample now_sample{};
+    now_sample.temp_c = live->temperature_c;
+    now_sample.out_c = out_c;
+    now_sample.wind = hv6fc::wind_alignment(walls, fh.wind_dir_deg) * fh.wind_speed_ms / 10.0f;
+    now_sample.ghi_wm2 = fh.shortwave_wm2;
+    now_sample.valve = live->has_valve ? live->valve_pct / 100.0f : 0.0f;
+    const auto &tel = zone->node_index < ::lune_touch::MAX_NODES ? node_telemetry_[zone->node_index] : node_telemetry_[0];
+    now_sample.supply_c = tel.has_flow && std::isfinite(tel.flow_c) && tel.flow_c > 5.0f ? tel.flow_c : shared_supply;
+    ExposureLearnSlot *slot = exposure_slot_(zone->room_id, true);
+    if (slot == nullptr)
+      continue;
+    if (!slot->has_start) {
+      slot->start = now_sample;
+      slot->start_ts = now_s;
+      slot->has_start = true;
+      continue;
+    }
+    const float dt_h = static_cast<float>(now_s - slot->start_ts) / 3600.0f;
+    if (dt_h < 0.75f)
+      continue;   // one sample per hour
+    if (dt_h <= 1.5f) {
+      lune_touch_learn::Sample x = slot->start;   // conditions at the start of the hour
+      x.dtdt_c_per_h = (now_sample.temp_c - slot->start.temp_c) / dt_h;
+      if (lune_touch_learn::update(slot->state, x))
+        exposure_learn_dirty_ = true;
+    }
+    slot->start = now_sample;   // a gap over 1.5 h just restarts the hour
+    slot->start_ts = now_s;
+  }
+  const bool save = exposure_learn_dirty_ &&
+                    (exposure_learn_saved_ms_ == 0 || now_ms - exposure_learn_saved_ms_ >= EXPOSURE_SAVE_MS);
+  give_state_lock_();
+  if (save)
+    save_exposure_learning_();
+}
+
+void LuneTouchCoordinator::save_exposure_learning_() {
+  struct Rec {
+    char room_id[32];
+    lune_touch_learn::State state;
+  };
+  static Rec *recs = psram_scratch_<Rec>(::lune_touch::MAX_HOUSE_ZONES);
+  if (recs == nullptr || !take_state_lock_(100))
+    return;
+  size_t count = 0;
+  for (const auto &slot : exposure_learn_) {
+    if (slot.room_id[0] == '\0')
+      continue;
+    std::memcpy(recs[count].room_id, slot.room_id, sizeof(recs[count].room_id));
+    recs[count].state = slot.state;
+    count++;
+  }
+  exposure_learn_dirty_ = false;
+  exposure_learn_saved_ms_ = esphome::millis();
+  give_state_lock_();
+  nvs_handle_t handle;
+  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  if (nvs_set_blob(handle, "xlearn", recs, count * sizeof(Rec)) == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::load_exposure_learning_() {
+  struct Rec {
+    char room_id[32];
+    lune_touch_learn::State state;
+  };
+  static Rec *recs = psram_scratch_<Rec>(::lune_touch::MAX_HOUSE_ZONES);
+  if (recs == nullptr)
+    return;
+  nvs_handle_t handle;
+  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  size_t len = ::lune_touch::MAX_HOUSE_ZONES * sizeof(Rec);
+  const esp_err_t err = nvs_get_blob(handle, "xlearn", recs, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len % sizeof(Rec) != 0)
+    return;   // none yet, or a different layout: start learning afresh
+  const size_t count = len / sizeof(Rec);
+  for (size_t i = 0; i < count && i < ::lune_touch::MAX_HOUSE_ZONES; i++) {
+    recs[i].room_id[sizeof(recs[i].room_id) - 1] = '\0';
+    std::memcpy(exposure_learn_[i].room_id, recs[i].room_id, sizeof(exposure_learn_[i].room_id));
+    exposure_learn_[i].state = recs[i].state;
   }
 }
 
