@@ -1499,13 +1499,17 @@
   .thermo > .thermo-ring { grid-column: 2; grid-row: 1; }
   .thermo > .autosave { grid-column: 2; justify-self: center; }
   .thermo-facts { grid-column: 1; grid-row: 1; display: grid; gap: var(--space-2); margin: 0; }
+  /* Hvert kort: ikonbrik i domænets farve (huset = varme, ude = vejr) + label og tal. */
   .thermo-facts > div {
-    display: grid; gap: 2px; min-width: 7rem; padding: var(--space-2) var(--space-4);
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--space-3);
+    min-width: 8.5rem; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
     border-radius: var(--r-tile); background: var(--lift-bg); box-shadow: var(--lift);
   }
   .thermo-facts > div:has(> dd:empty) { display: none; }
-  .thermo-facts dt { font-size: var(--fs-xs); color: var(--muted); }
-  .thermo-facts dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .thermo-facts dt { display: contents; }
+  .thermo-facts dt > .chip-icon { grid-row: 1 / 3; }
+  .thermo-facts dt > span:not(.chip-icon) { grid-column: 2; align-self: end; font-size: var(--fs-xs); color: var(--muted); }
+  .thermo-facts dd { grid-column: 2; align-self: start; margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   @media (max-width: 767.98px) {
     .thermo { grid-template-columns: minmax(0, 1fr); justify-items: center; }
     .thermo > .thermo-ring, .thermo > .autosave { grid-column: 1; }

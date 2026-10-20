@@ -1395,13 +1395,17 @@
   .thermo > .thermo-ring { grid-column: 2; grid-row: 1; }
   .thermo > .autosave { grid-column: 2; justify-self: center; }
   .thermo-facts { grid-column: 1; grid-row: 1; display: grid; gap: var(--space-2); margin: 0; }
+  /* Hvert kort: ikonbrik i domænets farve (huset = varme, ude = vejr) + label og tal. */
   .thermo-facts > div {
-    display: grid; gap: 2px; min-width: 7rem; padding: var(--space-2) var(--space-4);
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--space-3);
+    min-width: 8.5rem; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
     border-radius: var(--r-tile); background: var(--lift-bg); box-shadow: var(--lift);
   }
   .thermo-facts > div:has(> dd:empty) { display: none; }
-  .thermo-facts dt { font-size: var(--fs-xs); color: var(--muted); }
-  .thermo-facts dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .thermo-facts dt { display: contents; }
+  .thermo-facts dt > .chip-icon { grid-row: 1 / 3; }
+  .thermo-facts dt > span:not(.chip-icon) { grid-column: 2; align-self: end; font-size: var(--fs-xs); color: var(--muted); }
+  .thermo-facts dd { grid-column: 2; align-self: start; margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   @media (max-width: 767.98px) {
     .thermo { grid-template-columns: minmax(0, 1fr); justify-items: center; }
     .thermo > .thermo-ring, .thermo > .autosave { grid-column: 1; }
@@ -2257,8 +2261,8 @@
           </div>
           <form class="thermo" data-save="house-target">
             <dl class="thermo-facts">
-              <div><dt>Huset nu</dt><dd data-bind="house.now"></dd></div>
-              <div><dt>Ude</dt><dd data-bind="house.outdoor"></dd></div>
+              <div><dt><span class="chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4z"/></svg></span><span>Huset nu</span></dt><dd data-bind="house.now"></dd></div>
+              <div><dt><span class="chip-icon" data-tone="info" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8.5 3.5v1.5M3.6 5.6l1.1 1.1M2 10.5h1.5M13.4 5.6l-1.1 1.1"/><path d="M5.4 12.6A3.5 3.5 0 1 1 11.8 9"/><path d="M9 20h8.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.4 1.3A2.9 2.9 0 0 0 9 20z"/></svg></span><span>Ude</span></dt><dd data-bind="house.outdoor"></dd></div>
             </dl>
             <div class="thermo-ring" style="--v:60" data-min="15" data-max="25" data-bind-thermo>
               <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="42" pathLength="100"/><circle class="arc" cx="50" cy="50" r="42" pathLength="100"/><circle class="knob" cx="50" cy="50" r="42" pathLength="100"/><circle class="now" cx="50" cy="50" r="48.5" pathLength="100"/></svg>
