@@ -1243,7 +1243,7 @@
       : (o.house_comfort_target_c != null ? o.house_comfort_target_c : (o.house_target && o.house_target.value_c));
     var tgt = qs('#house_target');
     if (tgt && !editingTarget(tgt) && finite(target)) {
-      putVal(tgt, num(target));
+      putVal(tgt, num(Math.round(Number(target) * 2) / 2));   // half degrees, like the steps
       if (tgt.form && tgt.form.luneResnap) tgt.form.luneResnap();
     }
     renderHome();
