@@ -112,3 +112,6 @@ not be presented as Lune or as endorsed by this project.
 Lune is developed in spare time and paid for out of pocket. If it heats your home and you
 want to give something back, you can sponsor it through
 [GitHub Sponsors](https://github.com/sponsors/Birkemosen).
+
+If you use Lune Touch, a small one-time thank-you is welcome but never expected.
+Sponsoring comes with no rewards or promises: Lune is built at its own pace.
