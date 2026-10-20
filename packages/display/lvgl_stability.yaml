@@ -524,9 +524,11 @@ text_sensor:
                 set_label(id(page_home_house_hs_label), id(lune_touch_app).display_heat_source_name());
                 lv_obj_set_style_text_color(id(page_home_hs_odin_label), lv_color_hex(odin_st == 0 ? c_faint : c_muted), LV_PART_MAIN);
               }
-              // TODO(trin2): composed weather message; show wind as interim hint
-              if (!wx_wind.empty() && wx_wind != "--") {
-                set_label(id(page_home_house_msg_text), wx_wind);
+              // What Touch does because of the weather (preload, charge, solar hold-off).
+              // The weather itself is in the status bar; nothing to say = no box.
+              const std::string wx_msg = id(lune_touch_app).display_weather_message();
+              if (!wx_msg.empty()) {
+                set_label(id(page_home_house_msg_text), wx_msg);
                 lv_obj_clear_flag(id(page_home_house_msg), LV_OBJ_FLAG_HIDDEN);
               } else {
                 lv_obj_add_flag(id(page_home_house_msg), LV_OBJ_FLAG_HIDDEN);

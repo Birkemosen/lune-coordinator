@@ -10517,13 +10517,13 @@ std::string LuneTouchCoordinator::display_header_text() const {
   }
   char buffer[112];
   if (strategy.has_physical_temperature) {
-    snprintf(buffer, sizeof(buffer), "%s %.1f C  |  %u heating  |  %u/%u manifolds", DISPLAY_ICON_OK,
+    snprintf(buffer, sizeof(buffer), "%.1f C  |  %u heating  |  %u/%u manifolds",
              strategy.physical_temperature_c,
              static_cast<unsigned>(model_.calling_zone_count()),
              static_cast<unsigned>(ready_nodes),
              static_cast<unsigned>(model_.node_count()));
   } else if (model_.node_count() > 0) {
-    snprintf(buffer, sizeof(buffer), "%s --.- C  |  %u heating  |  %u/%u manifolds", DISPLAY_ICON_WARNING,
+    snprintf(buffer, sizeof(buffer), "--.- C  |  %u heating  |  %u/%u manifolds",
              static_cast<unsigned>(model_.calling_zone_count()),
              static_cast<unsigned>(ready_nodes),
              static_cast<unsigned>(model_.node_count()));
@@ -11064,6 +11064,34 @@ std::string LuneTouchCoordinator::display_forecast_text() const {
   return buffer;
 }
 
+std::string LuneTouchCoordinator::display_weather_message() const {
+  if (!take_state_lock_(50))
+    return "";
+  unsigned preload = 0, charge = 0, solar = 0;
+  for (size_t i = 0; i < forecast_decision_count_; i++) {
+    const auto &d = forecast_decisions_[i];
+    if (d.solar_holdoff && d.offset_c < 0.0f)
+      solar++;
+    else if (d.charge_episode)
+      charge++;
+    else if (d.active && d.offset_c > 0.0f)
+      preload++;
+  }
+  give_state_lock_();
+  char buffer[96];
+  if (charge > 0)
+    snprintf(buffer, sizeof(buffer), "Lader gulvet op i %u rum før kulde", charge);
+  else if (preload > 0 && solar > 0)
+    snprintf(buffer, sizeof(buffer), "Forvarmer %u rum · solpause i %u rum", preload, solar);
+  else if (preload > 0)
+    snprintf(buffer, sizeof(buffer), "Forvarmer %u rum før vind og kulde", preload);
+  else if (solar > 0)
+    snprintf(buffer, sizeof(buffer), "Solpause i %u rum", solar);
+  else
+    buffer[0] = '\0';
+  return buffer;
+}
+
 uint8_t LuneTouchCoordinator::display_forecast_visible_hours() const {
   if (!take_state_lock_(50))
     return 0;
@@ -11248,18 +11276,17 @@ std::string LuneTouchCoordinator::display_problem_text() const {
   }
   char buffer[160];
   if (std::strcmp(authority_state_, "conflict") == 0)
-    snprintf(buffer, sizeof(buffer), "%s Control conflict | open Diagnostics in the web interface",
-             DISPLAY_ICON_WARNING);
+    snprintf(buffer, sizeof(buffer), "Control conflict | open Diagnostics in the web interface");
   else if (motor_faults > 0)
-    snprintf(buffer, sizeof(buffer), "%s %u motor fault%s | check the affected manifold",
-             DISPLAY_ICON_WARNING, static_cast<unsigned>(motor_faults), motor_faults == 1 ? "" : "s");
+    snprintf(buffer, sizeof(buffer), "%u motor fault%s | check the affected manifold",
+             static_cast<unsigned>(motor_faults), motor_faults == 1 ? "" : "s");
   else if (offline_nodes > 0)
-    snprintf(buffer, sizeof(buffer), "%s %u manifold%s offline | heating continues locally",
-             DISPLAY_ICON_WARNING, static_cast<unsigned>(offline_nodes), offline_nodes == 1 ? "" : "s");
+    snprintf(buffer, sizeof(buffer), "%u manifold%s offline | heating continues locally",
+             static_cast<unsigned>(offline_nodes), offline_nodes == 1 ? "" : "s");
   else if (heat_source_.enabled && heat_source_.failure_streak > 0)
-    snprintf(buffer, sizeof(buffer), "%s Heat source connection needs attention", DISPLAY_ICON_WARNING);
+    snprintf(buffer, sizeof(buffer), "Heat source connection needs attention");
   else if (stale_zones > 0)
-    snprintf(buffer, sizeof(buffer), "%s %u zone sensor%s need attention", DISPLAY_ICON_WARNING,
+    snprintf(buffer, sizeof(buffer), "%u zone sensor%s need attention",
              static_cast<unsigned>(stale_zones), stale_zones == 1 ? "" : "s");
   else
     buffer[0] = '\0';
