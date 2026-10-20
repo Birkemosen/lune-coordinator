@@ -701,13 +701,19 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         for g, zs in zone_groups.items()) + "</select>"
     price_currency_select = '<select class="select" id="price_currency" name="currency">' + "".join(
         f'<option value="{c}" data-fx="{fx}"{" selected" if c == "DKK" else ""}>{c}</option>' for c, fx in PRICE_CURRENCIES) + "</select>"
+    def token_row(id_, name, cls=""):
+        """ENTSO-E-token: skrives kun (vises aldrig igen); står ved det valg, der bruger det."""
+        return srow(lab(id_, T("price.token")),
+                    f'<input class="input w-md" type="password" id="{id_}" name="{name}" value="" autocomplete="new-password" spellcheck="false" maxlength="63">',
+                    T("price.tokenHint"), cls=cls)
     r_pm, seg_pm = seg("model", "pm", [("odin", T("price.modelOdin")), ("touch", T("price.modelTouch"))], "touch", T("price.model"))
     r_om, seg_om = seg("odin_mode", "om", [("dynamic", T("price.odinDynamic")), ("fixed", T("price.odinFixed"))], "dynamic", T("price.odinModeLabel"))
     odin_src = ('<select class="select" id="odin_source" name="odin_source"><option value="energy_charts" selected>Energy-Charts</option>'
                 '<option value="entsoe">ENTSO-E</option></select>')
     odin_f = typed("odin", r_om +
         group(T("price.subOdinOwn"), srow(f'<span>{T("price.odinModeLabel")}</span>', seg_om)) +
-        typed("dynamic", group(T("price.odinDynamic"), srow(lab("odin_source", T("price.odinSourceLabel")), odin_src),
+        typed("dynamic", group(T("price.odinDynamic"), srow(lab("odin_source", T("price.odinSourceLabel")), odin_src) +
+                               token_row("price_token_odin", "entsoe_token_odin", "price-token"),
                                extra=note(T("price.odinDynamicHint")))) +
         typed("fixed", group(T("price.odinFixed"), sstep("odin_fixed_price", T("price.odinFixedPrice"), 0.25, 0, 5, 0.01, "€/kWh", dec=3))) +
         group(T("price.subOdinNow"), rrow(T("price.odinNowMode"), "price.odin.mode") + rrow(T("price.odinNowZone"), "price.odin.zone") +
@@ -719,7 +725,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                        "eds", T("price.spotSource"), dk_only=("eds",))
     spot = (r_ss + group(T("price.spot"), srow(f'<span>{T("price.spotSource")}</span>', seg_ss)) +
             typed("eds", note(T("price.spotEdsHint"))) + typed("energy_charts", note(T("price.spotEcHint"))) +
-            typed("entsoe", note(T("price.spotEntsoeHint"))) +
+            typed("entsoe", group("ENTSO-E", token_row("price_token", "entsoe_token"), extra=note(T("price.spotEntsoeHint")))) +
             typed("fixed", group(T("price.srcFixed"), sstep("spot_fixed_eur", T("price.spotFixed"), 0.10, -1, 5, 0.01, "€/kWh", dec=3))))
     taxes = group(T("price.subTaxes"),
         srow(lab("price_currency", T("price.currency")), price_currency_select) +
@@ -768,10 +774,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {r_pm}
         {group(T("price.title"), sswitch("enabled", T("price.enabled"), T("price.enabledHint"), False, id_="price_enabled") +
                srow(f'<span>{T("price.model")}</span>', seg_pm) +
-               srow(lab("price_zone", T("price.zone")), price_zone_select) +
-               srow(lab("price_token", T("price.token")),
-                    '<input class="input w-md" type="password" id="price_token" name="entsoe_token" value="" autocomplete="new-password" spellcheck="false" maxlength="63">',
-                    T("price.tokenHint"), cls="price-token"))}
+               srow(lab("price_zone", T("price.zone")), price_zone_select))}
         {odin_f}{touch_f}
         {savebar("prices", T("price.save"))}
       </form>'''

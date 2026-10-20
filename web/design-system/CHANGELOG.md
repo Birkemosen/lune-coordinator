@@ -3,7 +3,7 @@
 ## 2.3.20
 
 - `.setting`: labelen har en minimumsbredde (8rem), og rækken brydes ved alle bredder, så en bred kontrol (fx et segment med fire valg) lægger sig under labelen i stedet for at klemme den.
-- Elpris (Touch): ENTSO-E-tokenet (`.setting.price-token`) vises kun, når ENTSO-E er valgt — som spotkilde eller som Odins egen kilde (`:has()`, ingen JS).
+- Elpris (Touch): ENTSO-E-tokenet står ved det valg, der bruger det — i spotkilde-undersiden under «ENTSO-E» (typed-fields) og under Odins kilde, når ENTSO-E er valgt (`.setting.price-token`, `:has()`, ingen JS).
 
 ## 2.3.19
 

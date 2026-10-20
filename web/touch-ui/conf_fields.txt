@@ -72,6 +72,7 @@ prices/currency
 prices/enabled
 prices/energy_tax
 prices/entsoe_token
+prices/entsoe_token_odin
 prices/fx
 prices/grid_code
 prices/grid_gln

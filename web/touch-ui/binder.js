@@ -2033,8 +2033,9 @@
       ['price.min', 'price.max', 'price.peak'].forEach(function (k2) { setText(k2, '—'); });
     }
     setShow('tile.price', showTile);
-    var tok = qs('#price_token');
-    if (tok) tok.placeholder = p.entsoe_token_set ? t('price.tokenSaved') : '';
+    qsa('#price_token, #price_token_odin').forEach(function (tok) {
+      tok.placeholder = p.entsoe_token_set ? t('price.tokenSaved') : '';
+    });
 
     // Settings: never overwrite what the user is editing.
     var f = priceForm();
@@ -2066,8 +2067,9 @@
     putRadio(f, 'odin_mode', o.mode || 'dynamic');
     put('odin_source', o.source || 'energy_charts');
     put('odin_fixed_price', o.fixed_price, 3);
-    var tok = f.querySelector('input[name="entsoe_token"]');
-    if (tok) { tok.value = ''; tok.defaultValue = ''; }
+    f.querySelectorAll('input[name="entsoe_token"], input[name="entsoe_token_odin"]').forEach(function (tok) {
+      tok.value = ''; tok.defaultValue = '';
+    });
     var sched = g.schedule || [];
     var hidden = f.querySelector('input[name="grid_schedule"]');
     if (hidden) { hidden.value = JSON.stringify(sched.map(function (b) { return { h: b.h, v: b.v }; })); hidden.defaultValue = hidden.value; }
@@ -3268,11 +3270,11 @@
           odin_source: data.odin_source || 'energy_charts',
           odin_fixed_price: data.odin_fixed_price
         };
-        var token = String(data.entsoe_token || '').trim();
+        // One token, entered where ENTSO-E is chosen (spot source or Odin's source).
+        var token = String((data.model === 'odin' ? data.entsoe_token_odin : data.entsoe_token) || '').trim();
         if (token) pricePayload.entsoe_token = token;
         await post('/prices/settings', pricePayload);
-        var tokEl = form.querySelector('input[name="entsoe_token"]');
-        if (tokEl) tokEl.value = '';
+        form.querySelectorAll('input[name="entsoe_token"], input[name="entsoe_token_odin"]').forEach(function (el) { el.value = ''; });
       } else if (key === 'wifi') {
         var ssid = String(data.ssid || '').trim();
         if (!ssid) throw new Error(t('wifi.needSsid'));
