@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.15
+
+- `.thermo-facts` står til højre for ringen, og en stiplet orange linje går fra «huset nu»-mærket til kortet «Huset nu» (ren CSS ud fra `--now`; skjult under 768 px og når mærket står på venstre halvdel).
+
 ## 2.3.14
 
 - Termostat-ringen: huset nu er et stiplet orange skalamærke på tværs af sporet (`line.now`, roteret til `--now`) i stedet for en lille prik uden for sporet.
