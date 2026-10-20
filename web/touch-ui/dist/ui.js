@@ -1521,9 +1521,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('home.headline', t('home.headline.' + (faults ? 'fault' : rel)));
     var hpx = (state.heat && state.heat.heat_pump) || {};
     setText('home.headline2', hpx.available && hpx.compressor_on != null ? t(hpx.compressor_on ? 'home.hp.on' : 'home.hp.off') : '');
-    setText('house.outdoor', finite(state.outdoorC) ? t('thermo.outside', { t: deg(state.outdoorC) }) : '');
+    setText('house.outdoor', finite(state.outdoorC) ? deg(state.outdoorC) : '');
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
-    setText('house.now', ht == null ? '' : t('thermo.now', { t: num(ht) }));
+    setText('house.now', ht == null ? '' : deg(ht));
     setText('scope.house', deg(ht));
     var ring = qs('[data-bind-thermo]');
     if (ring) {

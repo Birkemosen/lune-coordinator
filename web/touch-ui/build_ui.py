@@ -351,12 +351,15 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <p data-bind="home.sentence">{T("home.sentence.none")}</p>
           </div>
           <form class="thermo" data-save="house-target">
+            <dl class="thermo-facts">
+              <div><dt>{T("thermo.house")}</dt><dd data-bind="house.now"></dd></div>
+              <div><dt>{T("thermo.outsideLabel")}</dt><dd data-bind="house.outdoor"></dd></div>
+            </dl>
             <div class="thermo-ring" style="--v:60" data-min="15" data-max="25" data-bind-thermo>
               <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="42" pathLength="100"/><circle class="arc" cx="50" cy="50" r="42" pathLength="100"/><circle class="knob" cx="50" cy="50" r="42" pathLength="100"/><circle class="now" cx="50" cy="50" r="48.5" pathLength="100"/></svg>
               <div class="thermo-val">
                 <small>{T("climate.target")}</small>
                 <label class="thermo-target"><input type="text" inputmode="decimal" id="house_target" name="house_target" value="{T.num(21.0)}" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off" aria-label="{ta}"><span class="unit" aria-hidden="true">°</span></label>
-                <span data-bind="house.now"></span><span data-bind="house.outdoor"></span>
               </div>
               <div class="thermo-steps">
                 <button type="button" data-step="-1" aria-label="{T("common.decrease", x=ta)}">−</button>
@@ -925,7 +928,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.forenoon", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "tile.heat", "thermo.outside", "thermo.now", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
