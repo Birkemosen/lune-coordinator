@@ -1,5 +1,10 @@
 # Changelog — Lune Design System
 
+## 2.3.18
+
+- `.ht-fr`: buen fra frem til retur er lavere (én rækkehøjde, fra midten af frem-tallet til midten af retur-tallet).
+- DESIGN 14.3 og `examples/home-assistant/varme-dashboard.yaml`: varme-dashboard med to visninger, Overblik og Historik med lange grafer.
+
 ## 2.3.17
 
 - Termostat-ringen: den stiplede linje fra «huset nu»-mærket til kortet er fjernet igen; mærket på ringen og kortene til højre bliver.

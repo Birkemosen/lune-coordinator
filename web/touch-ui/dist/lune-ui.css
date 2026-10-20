@@ -1506,11 +1506,12 @@
      buens midte. Buen er systemets eneste gradient mellem to kulører (undtagelse fra 3.2.2): den
      viser vandet, der køler af fra frem (varme) til retur (blå). Mellemstop er blandet i OKLab,
      så midten ikke bliver mudret. Én forekomst pr. side (id lds-fr). */
-  .home-tile > .ht-fr { grid-area: val; display: grid; grid-template-columns: auto auto 18px auto; grid-template-rows: auto auto;
+  .home-tile > .ht-fr { grid-area: val; display: grid; grid-template-columns: auto auto 14px auto; grid-template-rows: auto auto;
     align-items: baseline; gap: 0 var(--space-2); justify-content: start; margin-top: var(--space-4); }
   .ht-fr > small { font-size: var(--fs-sm); color: var(--muted); }
   .ht-fr > b { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; font-variant-numeric: tabular-nums; text-align: right; }
-  .ht-fr > .fr-arc { grid-column: 3; grid-row: 1 / 3; align-self: stretch; width: 18px; height: calc(100% - 1.2em); margin-block: .6em; overflow: visible; }
+  /* Buen går fra midten af frem-tallet til midten af retur-tallet: én rækkehøjde (fs-xl × 1,2). */
+  .ht-fr > .fr-arc { grid-column: 3; grid-row: 1 / 3; align-self: center; width: 14px; height: calc(var(--fs-xl) * 1.2); overflow: visible; }
   .fr-arc path { fill: none; stroke: url(#lds-fr); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
   .fr-arc stop:nth-child(1) { stop-color: var(--accent); }
   .fr-arc stop:nth-child(2) { stop-color: color-mix(in oklab, var(--accent) 75%, var(--data-return)); }
