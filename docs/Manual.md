@@ -61,7 +61,7 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   runs), and the thermostat ring. The ring **sets the target**: drag the handle along the arc,
   type the number in the middle, or use − / + in the ring's opening. The target moves in steps
   of 0.5 °C and saves by itself. The small mark outside the arc is the house temperature now;
-  the house and outdoor temperatures are also written under the target.
+  **House now** and **Outside** stand as two small cards beside the ring (below it on a phone).
 - **Heat, plan and weather** — four tiles that open their sheets:
   - **Heat** — flow → return and the last 24 hours (from the heat source's own history).
   - **Next heating** — Odin's next block, its energy and today's price with a price chip.
