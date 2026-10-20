@@ -8,6 +8,18 @@ local web UI; **Lune Mini** is the same coordinator without a display.
 
 ![Lune Touch web UI — Home, light and dark](docs/images/lune-touch-home-split.png)
 
+## Works with
+
+- **[Asgard](https://github.com/gekkekoe/esphome-ecodan-hp)** — ESPHome firmware and PCB
+  for Mitsubishi Ecodan heat pumps. Touch sends the house temperature and comfort target to
+  Asgard's virtual thermostat and reads the heat pump's flow, return, compressor and history.
+  See [Asgard authority](docs/lune_asgard_authority_state_machine.md).
+- **[Odin](https://github.com/gekkekoe/heatpump-optimizer)** — heat pump cost optimizer.
+  Touch reads Odin's heating plan, can keep Odin's setpoint on the house target and push
+  electricity prices to it. See [Odin plan ingestion](docs/odin_plan_ingestion.md).
+
+Asgard and Odin are separate projects by their own authors; Lune is not affiliated with them.
+
 ## Firmware
 
 Active entrypoints (standalone checkout):
