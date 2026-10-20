@@ -9,6 +9,7 @@
 #include "slab_charge.h"
 #include "house_demand.h"
 #include "house_balance.h"
+#include "solar_holdoff.h"
 #include "room_physics.h"
 #include "v6_zones_parse.h"
 #include "esphome/components/network/util.h"
@@ -5540,7 +5541,7 @@ void LuneTouchCoordinator::apply_preload_outcome_learning_() {
   bool changed = false;
   for (size_t i = 0; i < forecast_decision_count_; i++) {
     const ForecastDecisionState &decision = forecast_decisions_[i];
-    if (!decision.active)
+    if (!decision.active || decision.solar_holdoff)   // preload learning only
       continue;
     size_t zone_index = ::lune_touch::MAX_HOUSE_ZONES;
     for (size_t z = 0; z < model_.zone_count(); z++) {
@@ -5729,6 +5730,26 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
         out.active = out.offset_c > 0.01f;
       }
     }
+
+    // Solar hold-off: only when nothing asks for extra heat (wind, cold, charge).
+    // Sun reaches a room through an east, south or west facade (or roof windows
+    // on such a room); an interior or north-only room is left alone.
+    const bool sun_side = (exposure.exterior_walls & (hv6fc::WALL_EAST | hv6fc::WALL_SOUTH | hv6fc::WALL_WEST)) != 0;
+    if (solar_holdoff_enabled_ && !out.active && sun_side) {
+      float ghi[72]{};
+      for (size_t k = 0; k < hour_count; k++)
+        ghi[k] = model_hours[k].shortwave_wm2;
+      const auto sun = lune_touch_solar::plan(
+          ghi, hour_count, now_index, exposure.solar_gain,
+          params.has_current_temp ? params.current_temp_c : NAN, out.comfort_setpoint_c);
+      out.solar_peak_wm2 = sun.peak_wm2;
+      out.solar_peak_in_h = sun.peak_in_h;
+      if (sun.active) {
+        out.offset_c = sun.offset_c;
+        out.active = true;
+        out.solar_holdoff = true;
+      }
+    }
   }
 
   apply_preload_outcome_learning_();
@@ -5758,14 +5779,15 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
     return summary;
   for (size_t i = 0; i < forecast_decision_count_ && item_count < ::lune_touch::MAX_HOUSE_ZONES; i++) {
     const ForecastDecisionState &decision = forecast_decisions_[i];
-    if (!decision.active || decision.offset_c <= 0.01f)
+    if (!decision.active || std::fabs(decision.offset_c) <= 0.01f)
       continue;
     summary.active++;
     const auto target = model_.resolve_room(decision.room_id);
     if (target.node == nullptr || target.binding == nullptr)
       continue;
     if (ledger_.has_recent_similar(
-            decision.odin_timing_bias ? "odin_timing_bias" : "forecast", target.node->node_id,
+            decision.solar_holdoff ? "solar" : decision.odin_timing_bias ? "odin_timing_bias" : "forecast",
+            target.node->node_id,
             target.binding->loop_id, decision.offset_c, now, FORECAST_COMMAND_DEDUPE_MS,
             FORECAST_COMMAND_EPSILON_C, current_epoch_s_())) {
       summary.skipped++;
@@ -5829,7 +5851,8 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "fc-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(i));
-    std::strncpy(record.source, decision.odin_timing_bias ? "odin_timing_bias" : "forecast",
+    std::strncpy(record.source,
+                 decision.solar_holdoff ? "solar" : decision.odin_timing_bias ? "odin_timing_bias" : "forecast",
                  sizeof(record.source) - 1);
     if (decision.odin_timing_bias)
       snprintf(record.reason, sizeof(record.reason), "odin heat window + weather peak in %dh",
@@ -7317,6 +7340,9 @@ void LuneTouchCoordinator::load_settings_() {
       if (weather_max_boost_c_ > 0.05f)
         weather_max_boost_resume_c_ = weather_max_boost_c_;
     }
+    uint8_t solar_holdoff = solar_holdoff_enabled_ ? 1 : 0;
+    if (nvs_get_u8(handle, "wx_solar", &solar_holdoff) == ESP_OK)
+      solar_holdoff_enabled_ = solar_holdoff != 0;
     uint16_t display_idle_timeout_s = display_idle_timeout_s_;
     if (nvs_get_u16(handle, "disp_idle", &display_idle_timeout_s) == ESP_OK &&
         display_idle_timeout_allowed_(display_idle_timeout_s))
@@ -7472,6 +7498,8 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_pwr", circulation_.power_entity);
     if (err == ESP_OK)
       err = nvs_set_blob(handle, "weather_boost", &weather_max_boost_c_, sizeof(weather_max_boost_c_));
+    if (err == ESP_OK)
+      err = nvs_set_u8(handle, "wx_solar", solar_holdoff_enabled_ ? 1 : 0);
     if (err == ESP_OK)
       err = nvs_set_u16(handle, "disp_idle", display_idle_timeout_s_);
     if (err == ESP_OK)
@@ -9128,6 +9156,21 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
            "\"fetch_pending\":true}",
            latitude, longitude);
   log_event_("info", "forecast", "location updated");
+  return true;
+}
+
+bool LuneTouchCoordinator::set_solar_holdoff_enabled(bool enabled) {
+  if (!take_state_lock_(100))
+    return false;
+  const bool changed = solar_holdoff_enabled_ != enabled;
+  solar_holdoff_enabled_ = enabled;
+  if (changed)
+    recompute_forecast_decisions_();
+  give_state_lock_();
+  if (changed) {
+    save_settings_();
+    log_event_("info", "settings", enabled ? "solar hold-off on" : "solar hold-off off");
+  }
   return true;
 }
 
@@ -12765,7 +12808,7 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
            "\"control_mode\":\"%s\",\"control_mode_effective\":\"%s\",\"v6_sync\":{"
            "\"last_fallback_value_c\":%s,\"last_asgard_value_c\":%s,"
            "\"local_zones\":%u,\"peer_zones\":%u,\"peer_status\":\"%s\"}},"
-           "\"weather\":{\"max_boost_c\":%s},\"display\":{\"idle_timeout_s\":%u}}",
+           "\"weather\":{\"max_boost_c\":%s,\"solar_holdoff_enabled\":%s},\"display\":{\"idle_timeout_s\":%u}}",
            name, install_id, site, mode, authority_leader, authority_coordinator,
            authority_shared_key_[0] != '\0' ? "true" : "false", authority_state, authority_reason,
            static_cast<unsigned long>(authority_generation_),
@@ -12773,7 +12816,8 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
            control_mode, control_mode_eff,
            authority_last_fallback, authority_last_asgard,
            static_cast<unsigned>(authority_v6_local_zones_), static_cast<unsigned>(authority_v6_peer_zones_), authority_peer_status,
-           weather_max_boost, static_cast<unsigned>(display_idle_timeout_s_));
+           weather_max_boost, solar_holdoff_enabled_ ? "true" : "false",
+           static_cast<unsigned>(display_idle_timeout_s_));
 }
 
 void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity) const {
@@ -13075,7 +13119,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
   appendf_(buffer, capacity, off,
            "{\"status\":\"%s\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
            "\"fetch_pending\":%s,\"last_fetch_age_s\":%lu,"
-           "\"weather\":{\"max_boost_c\":%s},"
+           "\"weather\":{\"max_boost_c\":%s,\"solar_holdoff_enabled\":%s},"
            "\"odin_plan\":{\"enabled\":%s,\"active\":%s,\"source\":\"%s\",\"plan_source\":\"%s\",\"odin_version\":\"%s\",\"available\":%s,"
            "\"fresh\":%s,\"status\":\"%s\",\"http_status\":%d,\"age_s\":%lu,"
            "\"current_hour\":%u,\"current_index\":%u,\"target_c\":%s,\"min_c\":%s,\"max_c\":%s,"
@@ -13096,7 +13140,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
            forecast_status_, forecast_location_mode, forecast_latitude_, forecast_longitude_,
            forecast_fetch_requested_ ? "true" : "false",
            fetch_age_s,
-           weather_max_boost,
+           weather_max_boost, solar_holdoff_enabled_ ? "true" : "false",
            odin_plan.enabled ? "true" : "false", odin_active ? "true" : "false",
            odin_source_esc, odin_plan_source_esc, odin_version_esc,
            (odin_active && odin_plan.available) ? "true" : "false",
@@ -13157,6 +13201,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              "\"timing_scale\":%.2f,\"heuristic_offset_c\":%.2f,\"min_temp_c\":%.2f,"
              "\"horizon_ok\":%s,\"used_horizon\":%s,\"used_thermal_sizing\":%s,"
              "\"preload_start_h\":%u,\"preload_end_h\":%u,\"active\":%s,\"odin_timing_bias\":%s,"
+             "\"solar\":{\"holdoff\":%s,\"peak_wm2\":%.0f,\"peak_in_h\":%d},"
              "\"charge\":{\"episode\":%s,\"now\":%s,\"insufficient\":%s,\"store_c\":%.2f,"
              "\"deficit_kwh\":%.2f,\"floor_capacity_w\":%.0f,\"peak_loss_w\":%.0f,"
              "\"start_in_h\":%d,\"episode_in_h\":%d,\"end_in_h\":%d}}",
@@ -13171,6 +13216,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              d.used_horizon ? "true" : "false", d.used_thermal_sizing ? "true" : "false",
              static_cast<unsigned>(d.preload_start_h), static_cast<unsigned>(d.preload_end_h),
              d.active ? "true" : "false", d.odin_timing_bias ? "true" : "false",
+             d.solar_holdoff ? "true" : "false", d.solar_peak_wm2, static_cast<int>(d.solar_peak_in_h),
              d.charge_episode ? "true" : "false", d.charge_now ? "true" : "false",
              d.charge_insufficient ? "true" : "false", d.charge_store_c, d.charge_deficit_kwh,
              d.floor_capacity_w, d.peak_loss_w, static_cast<int>(d.charge_start_in_h),

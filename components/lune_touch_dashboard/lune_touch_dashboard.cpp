@@ -1195,12 +1195,22 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     const bool accepted = coordinator_->set_forecast_location(latitude, longitude, source, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/weather/settings") == 0) {
+    // Either field alone is a valid save (the solar switch saves on its own).
     float max_boost_c = 1.5f;
-    if (!parse_float_param(api, api.json_body, "max_boost_c", &max_boost_c)) {
-      send_error_(api, 400, "missing_param", "max_boost_c is required");
+    uint32_t solar = 0;
+    const bool has_boost = parse_float_param(api, api.json_body, "max_boost_c", &max_boost_c);
+    const bool has_solar = parse_uint_param(api, api.json_body, "solar_holdoff_enabled", &solar);
+    if (!has_boost && !has_solar) {
+      send_error_(api, 400, "missing_param", "max_boost_c or solar_holdoff_enabled is required");
       return;
     }
-    const bool accepted = coordinator_->set_weather_settings(max_boost_c, data_buf_, DATA_BUF_SIZE);
+    bool accepted = true;
+    if (has_solar)
+      accepted = coordinator_->set_solar_holdoff_enabled(solar != 0);
+    if (has_boost)
+      accepted = coordinator_->set_weather_settings(max_boost_c, data_buf_, DATA_BUF_SIZE) && accepted;
+    else
+      snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"saved\"}");
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/heat-source/settings") == 0) {
     // Optional text fields: absent = unchanged (nullptr); present (even "") = set.
