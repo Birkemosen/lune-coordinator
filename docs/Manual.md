@@ -58,9 +58,10 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   one card per V6 controller with a bar per zone showing the valve opening. A controller card
   opens its sheet; an offline controller says so.
 - **The house now** — a greeting, one line about the situation (and whether the heat pump
-  runs), and the thermostat ring: the arc is the house temperature now, with the outdoor
-  temperature under it. **Target** with − / + moves in steps of 0.5 °C and saves by itself. Two shortcuts open the heat
-  source and the next heating.
+  runs), and the thermostat ring. The ring **sets the target**: drag the handle along the arc,
+  type the number in the middle, or use − / + in the ring's opening. The target moves in steps
+  of 0.5 °C and saves by itself. The small mark outside the arc is the house temperature now;
+  the house and outdoor temperatures are also written under the target.
 - **Heat, plan and weather** — four tiles that open their sheets:
   - **Heat** — flow → return and the last 24 hours (from the heat source's own history).
   - **Next heating** — Odin's next block, its energy and today's price with a price chip.
@@ -234,7 +235,13 @@ See [forecast preload](forecast_preload.md),
 
 Flow, head and power from the circulation pump, and the approximate split per controller and
 zone (worked out from valve openings). A warning appears when the pump moves more water than
-the heat pump while heating (mixing in the buffer tank). **Settings** holds the house balance
+the heat pump while heating (mixing in the buffer tank).
+
+**Recommended flow** is 90 % of the heat pump's measured flow while heating, rounded down to
+0.5 l/min, so no return water is drawn into the supply. The warning also says what to set:
+with a pump that reports its head, the constant pressure (m) that gives that flow through the
+valves as they are now (head ∝ flow²), otherwise the flow to turn the pump down to. Touch only
+advises — the pump is set on the pump itself. **Settings** holds the house balance
 and the pump's connection.
 
 **House balance** (*Balance between manifolds*, off by default): without balancing valves the

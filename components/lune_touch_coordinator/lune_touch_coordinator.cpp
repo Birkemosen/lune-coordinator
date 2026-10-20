@@ -1506,6 +1506,13 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   json_float_token_(mix_ratio, sizeof(mix_ratio), mix_held ? source.mix_ratio : NAN, 2);
   json_float_token_(mix_primary, sizeof(mix_primary), mix_held ? source.mix_primary_lmin : NAN, 1);
   json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
+  // Recommended secondary flow from the held primary sample, and the head it needs through
+  // the valves as they are now (live head and flow).
+  const float rec_lmin = mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin) : NAN;
+  const float rec_head = circulation_pump::head_for_flow_m(source.has_head ? source.head_m : NAN, flow_lmin, rec_lmin);
+  char mix_rec[16], mix_rec_head[16];
+  json_float_token_(mix_rec, sizeof(mix_rec), rec_lmin, 1);
+  json_float_token_(mix_rec_head, sizeof(mix_rec_head), rec_head, 1);
   if (mix_held)
     snprintf(mix_age, sizeof(mix_age), "%lu", static_cast<unsigned long>((now_ms - source.mix_ms) / 1000UL));
   else
@@ -1519,7 +1526,7 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            "\"thermal_kw\":%s,\"thermal_kw_source\":\"%s\","
            "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\","
            "\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
-           "\"age_s\":%s}}",
+           "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port),
            static_cast<unsigned>(source.refresh_interval_s),
            static_cast<unsigned>(source.refresh_interval_idle_s),
@@ -1527,7 +1534,8 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            power_entity, source.reachable ? "true" : "false", fresh ? "true" : "false",
            status, source.last_http_status, age_s, flow, flow_lmin_tok, head, power, thermal,
            thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error,
-           circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age);
+           circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
+           mix_rec_head);
 }
 
 enum class CirculationUiStatus : uint8_t { Hidden, Waiting, Ok, Stale, Offline };
@@ -13599,7 +13607,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     circulation = circulation_;
     give_state_lock_();
   }
-  char circulation_json[768];
+  static char circulation_json[1024];   // static: off the httpd stack
   format_circulation_json_(circulation, now_ms, CIRCULATION_STALE_MS, circulation_json,
                            sizeof(circulation_json));
 
