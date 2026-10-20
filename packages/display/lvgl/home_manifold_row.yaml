@@ -34,7 +34,7 @@ obj:
         text: "M${human}"
         text_color: ${lds_muted}
         text_font: lds_font_xs
-        long_mode: clip
+        long_mode: dot
         bg_opa: 0%
     - label:
         id: page_home_mrow_${node}_flow
