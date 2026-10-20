@@ -8,7 +8,7 @@ local web UI; **Lune Mini** is the same coordinator without a display.
 
 ![Lune Touch web UI — Home, light and dark](docs/images/lune-touch-home-split.png)
 
-## Works with
+## Integrates with
 
 - **[Asgard](https://github.com/gekkekoe/esphome-ecodan-hp)** — ESPHome firmware and PCB
   for Mitsubishi Ecodan heat pumps. Touch sends the house temperature and comfort target to
