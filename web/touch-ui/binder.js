@@ -2641,8 +2641,10 @@
       setText('fc.sub', t('fc.sub', { model: fc.cache.provider_timezone || 'Open-Meteo', time: ageMin != null ? (ageMin + ' min') : '—' }));
     }
     var active = (fc.decisions || []).filter(function (d) { return d && d.active && d.offset_c > 0; });
+    var sunny = (fc.decisions || []).filter(function (d) { return d && d.active && d.solar && d.solar.holdoff; });
     setShow('fc.preload', active.length > 0);
-    setText('tile.weatherStatus', active.length ? t('tile.weatherStatus', { n: active.length }) : t('tile.weatherStatusNone'));
+    setText('tile.weatherStatus', active.length ? t('tile.weatherStatus', { n: active.length })
+      : sunny.length ? t('tile.weatherSolar', { n: sunny.length }) : t('tile.weatherStatusNone'));
     if (active.length) {
       var maxOff = active.reduce(function (m, d) { return Math.max(m, Number(d.offset_c) || 0); }, 0);
       var names = active.slice(0, 4).map(function (d) { return d.name || d.room_id; }).join(', ');
@@ -2728,6 +2730,7 @@
       if (s.forecast && s.forecast.latitude != null) putVal(qs('#wx_lat'), s.forecast.latitude);
       if (s.forecast && s.forecast.longitude != null) putVal(qs('#wx_lon'), s.forecast.longitude);
       if (wx.max_boost_c != null) putVal(qs('#wx_boost'), Number(wx.max_boost_c).toFixed(1));
+      if (wx.solar_holdoff_enabled != null) putVal(wf.querySelector('[name="solar_holdoff_enabled"]'), !!wx.solar_holdoff_enabled);
       if (wf.luneResnap) wf.luneResnap();
     }
   }
@@ -3160,6 +3163,8 @@
       } else if (key === 'weather') {
         var wxAll = !Object.keys(ch).length;   // no patch info: save both parts
         if (wxAll || has(ch, 'wx_boost')) await post('/weather/settings', { max_boost_c: fval(form, 'wx_boost') });
+        if (has(ch, 'solar_holdoff_enabled'))
+          await post('/weather/settings', { solar_holdoff_enabled: bit(fval(form, 'solar_holdoff_enabled')) });
         // Latitude and longitude are both required by the endpoint.
         if (wxAll || has(ch, 'latitude') || has(ch, 'longitude'))
           await post('/forecast/settings', { latitude: fval(form, 'latitude'), longitude: fval(form, 'longitude') });
@@ -3325,6 +3330,8 @@
     var repaint = function () { sw.dispatchEvent(new Event('input', { bubbles: true })); };
     try {
       if (key === 'heat_source') { await saveHeatConnection(form, ch); await saveHeatBehavior(form, ch); }
+      else if (key === 'weather' && sw.name === 'solar_holdoff_enabled')
+        await post('/weather/settings', { solar_holdoff_enabled: on ? 1 : 0 });
       else if (key === 'circulation' && sw.name === 'house_balance_enabled')
         await post('/heat-source/settings', { house_balance_enabled: on ? 1 : 0 });
       else if (key === 'rooms') await saveRoom(form, ch);

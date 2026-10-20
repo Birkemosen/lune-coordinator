@@ -34,6 +34,10 @@ struct ForecastHourState {
 };
 
 struct ForecastDecisionState {
+  // Solar hold-off (solar_holdoff.h): a negative offset ahead of forecast sun.
+  bool solar_holdoff{false};
+  float solar_peak_wm2{0.0f};
+  int8_t solar_peak_in_h{-1};
   char room_id[32]{};
   char room_name[48]{};
   uint8_t node_index{0};
@@ -629,6 +633,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_forecast_location(float latitude, float longitude, const char *mode,
                              char *response, size_t capacity);
   bool set_weather_settings(float max_boost_c, char *response, size_t capacity);
+  bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
   bool request_forecast_fetch(char *response, size_t capacity);
   bool estimate_forecast_location(char *response, size_t capacity);
@@ -1030,6 +1035,7 @@ class LuneTouchCoordinator : public esphome::Component {
   CirculationPumpState circulation_{};
   bool circulation_poll_requested_{false};
   float weather_max_boost_c_{1.5f};
+  bool solar_holdoff_enabled_{true};
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};

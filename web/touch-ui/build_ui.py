@@ -520,7 +520,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     # Vejrets indstillinger samlet ét sted (DESIGN.md 15): preload og placering.
     wx_set = f'''
         <form data-save="weather" data-patch>
-          {group(T("wx.preload"), sstep("wx_boost", T("wx.boost"), 1.5, 0, 3, 0.1, "°C", hint=T("wx.boostHint")))}
+          {group(T("wx.preload"), sstep("wx_boost", T("wx.boost"), 1.5, 0, 3, 0.1, "°C", hint=T("wx.boostHint")) +
+                 sswitch("solar_holdoff_enabled", T("wx.solarHoldoff"), T("wx.solarHoldoffSub"), True),
+                 extra=note(T("wx.solarHoldoffHint")))}
           {group(T("wx.location"), sinput("latitude", T("weatherCfg.lat"), "55.6761", "w-sm", id_="wx_lat", extra=' inputmode="decimal"') +
                  sinput("longitude", T("weatherCfg.lon"), "12.5683", "w-sm", id_="wx_lon", extra=' inputmode="decimal"') +
                  sbtn(T("wx.geoLabel"), f'<button class="btn" type="button" data-action="wx-geo">{T("weatherCfg.geo")}</button>'),
@@ -928,7 +930,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "room.loops", "room.valveShort", "room.fromV6", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
