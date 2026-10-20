@@ -1378,8 +1378,24 @@
   /* Termostat-ring: 270°-bue, der indstiller målet. Sporet er neutralt, buen og håndtaget er
      målet (varme, én farve, 3.2.2). Et lille mærke uden for sporet viser huset nu. Træk i ringen,
      tast i tallet eller brug − / + i ringens åbning; det autogemmes. --v = målet og --now = huset
-     nu, begge 0–100 % af skalaen (data-min/data-max på ringen). */
-  .thermo { display: grid; justify-items: center; gap: var(--space-1); }
+     nu, begge 0–100 % af skalaen (data-min/data-max på ringen). Huset nu og ude står som to små
+     kort til venstre for ringen (.thermo-facts), på mobil på én række under den. */
+  .thermo { display: grid; grid-template-columns: auto auto; align-items: center; gap: var(--space-1) var(--space-5); }
+  .thermo > .thermo-ring { grid-column: 2; grid-row: 1; }
+  .thermo > .autosave { grid-column: 2; justify-self: center; }
+  .thermo-facts { grid-column: 1; grid-row: 1; display: grid; gap: var(--space-2); margin: 0; }
+  .thermo-facts > div {
+    display: grid; gap: 2px; min-width: 7rem; padding: var(--space-2) var(--space-4);
+    border-radius: var(--r-tile); background: var(--lift-bg); box-shadow: var(--lift);
+  }
+  .thermo-facts > div:has(> dd:empty) { display: none; }
+  .thermo-facts dt { font-size: var(--fs-xs); color: var(--muted); }
+  .thermo-facts dd { margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  @media (max-width: 767.98px) {
+    .thermo { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+    .thermo > .thermo-ring, .thermo > .autosave { grid-column: 1; }
+    .thermo-facts { grid-column: 1; grid-row: 2; grid-auto-flow: column; margin-top: var(--space-3); }
+  }
   .thermo-ring { position: relative; width: min(212px, 60vw); aspect-ratio: 1; touch-action: none; cursor: pointer; user-select: none; }
   .thermo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(135deg); }
   .thermo-ring circle { fill: none; stroke-linecap: round; }
@@ -1392,9 +1408,6 @@
   .thermo-val { position: absolute; inset: 14%; display: grid; place-content: center; justify-items: center; gap: 0; text-align: center; pointer-events: none; }
   .thermo-val > * { pointer-events: auto; }
   .thermo-val > small { font-size: var(--fs-sm); color: var(--muted); }
-  .thermo-val > span { font-size: var(--fs-xs); line-height: 1.3; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .thermo-target + span { margin-top: var(--space-1); }
-  .thermo-val > span:empty { display: none; }
   /* Målet er selve tallet: et tekstfelt (sprogets decimaltegn), stort og uden ramme. */
   .thermo-target { display: flex; align-items: flex-start; justify-content: center; }
   .thermo-target input {

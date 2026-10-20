@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.13
+
+- `.thermo-facts`: «Huset nu» og «Ude» som to små kort (`--lift-bg` + `--lift`) til venstre for termostat-ringen, på mobil på én række under den. Ringen viser kun «Mål» og målet.
+
 ## 2.3.12
 
 - `.thermo`: ringen indstiller målet. Bue og håndtag er målet (`--v`); et lille mærke (`circle.now`, r 48,5) uden for sporet er huset nu (`--now`, intet mærke uden måling). Målet står stort i midten som selve tekstfeltet (`.thermo-target`), med «Huset nu x°» og «ude y°» under; − / + ligger i ringens åbning (`.thermo-steps`). Træk i ringen (kun nær sporet) via `lune-forms.js`, som skriver i feltet; formularen autogemmer (`form.thermo` tæller som autogem uden `.climate`). Ringen har `data-min`/`data-max` for skalaen og er mindre (212 px).

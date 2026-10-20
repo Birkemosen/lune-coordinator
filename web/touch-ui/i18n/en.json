@@ -746,7 +746,7 @@
   "hash.service": "service",
   "thermo.aria": "The house is {t} °C, the target is {g} °C",
   "thermo.house": "House now",
-  "thermo.now": "House now {t}°",
+  "thermo.outsideLabel": "Outside",
   "scopes.aria": "House and controllers",
   "thermo.outside": "outside {t}",
   "alert.roomFault": "{name} ({m}, Z{z}) has a motor fault",
