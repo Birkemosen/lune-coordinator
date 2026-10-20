@@ -1232,6 +1232,8 @@ Brug samme opbygning som Lune Touch: **overblik → detaljer → indstillinger**
 - Kortfarver følger datapaletten (fremløb orange, retur blå).
 - To visninger i ét dashboard: **Overblik** (tal nu i tile-kort pr. emne — huset og vejret, varmepumpen, cirkulationen, rummene pr. etage — og 24 timer for frem/retur og kompressor) og **Historik** (lange grafer i fuld bredde: 7 døgn for frem/retur/ude og rummene pr. etage, 48 timer for ventiler, kompressor, drift og flow, og energi pr. døgn i 30 dage som `statistics-graph` med `stat_types: [change]`). Historikken har `max_columns: 2`, og graferne fylder hele rækken (`column_span: 2`, `grid_options.columns: full`).
 - Rum som climate-tile med `state_content: [current_temperature, temperature]` (nu · mål); tryk åbner more-info, hvor målet ændres.
+- Sæt aldrig `theme:` på et dashboard eller en visning: det overstyrer brugerens valgte HA-tema. Lune-farverne kommer, når brugeren vælger temaet "Lune" i sin profil.
+- Sammenlign kun serier i samme enhed i én graf. Alpha2 rapporterer m³/h og varmepumpen l/min; en template-hjælper regner om (se eksemplet), så primær- og sekundærflow kan stå sammen.
 
 Se `examples/home-assistant/varme-dashboard.yaml`.
 

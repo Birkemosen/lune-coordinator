@@ -3,7 +3,7 @@
 ## 2.3.18
 
 - `.ht-fr`: buen fra frem til retur er lavere (én rækkehøjde, fra midten af frem-tallet til midten af retur-tallet).
-- DESIGN 14.3 og `examples/home-assistant/varme-dashboard.yaml`: varme-dashboard med to visninger, Overblik og Historik med lange grafer.
+- DESIGN 14.3 og `examples/home-assistant/varme-dashboard.yaml`: varme-dashboard med to visninger, Overblik og Historik med lange grafer, primær- og sekundærflow i samme graf (template-hjælper til l/min), og intet tvunget tema.
 
 ## 2.3.17
 
