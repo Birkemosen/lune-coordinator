@@ -458,7 +458,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </p>
         </div>
         <div class="sub" data-bind-price-today><h4>{T("price.subToday")}</h4>
-          <div class="bars" style="--bars-n:24"><div class="bars-plot" data-bind-price-bars></div>
+          <div class="bars" style="--bars-n:24" data-readout><div class="bars-plot" data-bind-price-bars></div>
+            <div class="bars-readout" aria-live="polite" hidden></div>
             <div class="axis" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
           <p class="note" data-bind="price.inclAll">{T("price.inclAll", cur="DKK")}</p>
           {kv([(T("price.now"), "price.now"), (T("price.cheapest"), "price.min"), (T("price.dearest"), "price.max"), (T("price.peakAvg"), "price.peak")])}
