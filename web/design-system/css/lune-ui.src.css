@@ -965,11 +965,10 @@
   .bars-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
   .bars-legend .lp { background: var(--seg-off); }
   .bars-legend .la { background: var(--accent); }
-  /* Elpris: ENTSO-E-token kun, når ENTSO-E er valgt — som spotkilde (Touch beregner) eller
-     som Odins egen kilde (Odin henter, dynamisk). Ét felt, vist med :has() — ingen JS. */
+  /* Elpris: ENTSO-E-tokenet står ved det valg, der bruger det. Som spotkilde ligger det i
+     typed-fields «entsoe»; under Odins kilde (en select) vises det med :has() — ingen JS. */
   .setting.price-token { display: none; }
-  form:has(#pm-touch:checked):has(#ss-entsoe:checked) .price-token,
-  form:has(#pm-odin:checked):has(#om-dynamic:checked):has(#odin_source option[value="entsoe"]:checked) .price-token { display: flex; }
+  form:has(#odin_source option[value="entsoe"]:checked) .setting.price-token { display: flex; }
   /* Aflæsning pr. søjle (fx dagens elpris): hover/tryk fremhæver søjlen, og en boks over
      plottet viser time og værdi. Den aktuelle time (data-now) står lidt kraftigere.
      Binderen sætter data-active på søjlen og left på boksen i px. */
