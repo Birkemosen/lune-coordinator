@@ -9,7 +9,7 @@ o[k]=el.type==="checkbox"||el.type==="radio"?el.checked:el.value});return o}
 function wrap(el){return el.closest(".setting,.field,.switch,.seg,.compass")}
 function btn(f){return f.querySelector(':is(.panel-foot,.savebar) .btn.primary[type="submit"]')}
 function st(f){return f.querySelector(".save-status")}
-function auto(f){return!!f.querySelector(".climate")}
+function auto(f){return f.classList.contains("thermo")||!!f.querySelector(".climate")}
 function track(f){return!!st(f)}
 function cross(){
 document.querySelectorAll('.tile[data-dirty],.mode label[data-dirty],.section-nav a[data-dirty],.section[data-dirty],details.section[data-dirty],.sys-nav label[data-dirty],[popovertarget][data-dirty]').forEach(function(el){
@@ -197,6 +197,34 @@ requestAnimationFrame(function(){if(e.target.matches(":popover-open"))placeConfi
 window.addEventListener("resize",function(){
 document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
 });
+/* ---- Termostat-ring (DESIGN.md 15.7): træk i ringen for at sætte målet ----
+   Ringen skriver i målfeltet (samme vej som − / +), så autogem og sprogets decimaltegn
+   følger med. Kun tryk nær sporet tæller; midten er feltet. */
+function ringValue(ring,e){
+var r=ring.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2;
+var d=Math.sqrt(x*x+y*y);if(d<r.width*.3)return null;
+var a=Math.atan2(y,x)*180/Math.PI,rel=(a-135+720)%360;
+if(rel>270)rel=rel>315?0:270;
+var lo=Number(ring.dataset.min),hi=Number(ring.dataset.max);return lo+rel/270*(hi-lo)}
+function ringSet(ring,v){
+var i=ring.querySelector("input");if(!i)return;
+var sz=Number(i.dataset.stepSize)||.5,lo=Number(i.dataset.min),hi=Number(i.dataset.max);
+v=Math.max(lo,Math.min(hi,Math.round(v/sz)*sz));
+var txt=v.toLocaleString(document.documentElement.lang||undefined,{minimumFractionDigits:1,maximumFractionDigits:1});
+if(i.value===txt)return;
+i.value=txt;
+var rl=Number(ring.dataset.min),rh=Number(ring.dataset.max);
+ring.style.setProperty("--v",Math.max(0,Math.min(100,Math.round((v-rl)/(rh-rl)*100))));
+i.dispatchEvent(new Event("input",{bubbles:true}))}
+document.addEventListener("pointerdown",function(e){
+var ring=e.target.closest&&e.target.closest(".thermo-ring[data-min][data-max]");
+if(!ring||e.target.closest("input,button"))return;
+var v=ringValue(ring,e);if(v==null)return;
+e.preventDefault();ring.setPointerCapture(e.pointerId);ringSet(ring,v);
+function mv(ev){var w=ringValue(ring,ev);if(w!=null)ringSet(ring,w)}
+function up(){ring.removeEventListener("pointermove",mv);ring.removeEventListener("pointerup",up);ring.removeEventListener("pointercancel",up);
+var i=ring.querySelector("input");if(i)i.dispatchEvent(new Event("change",{bubbles:true}))}
+ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ring.addEventListener("pointercancel",up)});
 })();
 /* Lune Touch binder — live data + save hooks for the Home / sheet / System page
    (Lune Design System 2.3, DESIGN.md 15). Progressive enhancement only.
@@ -1495,14 +1523,15 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     setText('home.headline2', hpx.available && hpx.compressor_on != null ? t(hpx.compressor_on ? 'home.hp.on' : 'home.hp.off') : '');
     setText('house.outdoor', finite(state.outdoorC) ? t('thermo.outside', { t: deg(state.outdoorC) }) : '');
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
-    setBind('house.temp', ht == null ? '—' : esc(num(ht)) + '<small>°</small>');
+    setText('house.now', ht == null ? '' : t('thermo.now', { t: num(ht) }));
     setText('scope.house', deg(ht));
     var ring = qs('[data-bind-thermo]');
     if (ring) {
       var pct = function (v) { return Math.max(0, Math.min(100, Math.round((v - THERMO_MIN) / (THERMO_MAX - THERMO_MIN) * 100))); };
       if (tg != null) ring.style.setProperty('--v', pct(tg));
-      ring.style.setProperty('--now', ht == null ? 0 : pct(ht));
-      if (ht != null && tg != null) ring.setAttribute('aria-label', t('thermo.aria', { t: num(ht), g: num(tg) }));
+      // The small mark outside the arc is the house now; no mark without a reading.
+      if (ht == null) ring.style.removeProperty('--now');
+      else ring.style.setProperty('--now', pct(ht));
     }
     // Heat tile: heat pump flow → return, else the controllers' average.
     var hp = (state.heat && state.heat.heat_pump) || {};
@@ -1520,12 +1549,6 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     }
     var heatVal = fl == null && rt == null ? '—' : deg(fl) + ' → ' + deg(rt);
     setText('tile.heatVal', heatVal);
-    // Hero shortcut: heat source (flow → return) and its compressor state.
-    setShow('hero.heat', heatVal !== '—');
-    setText('hero.heatLabel', hp.available ? t('hero.heatPump') : t('tile.heat'));
-    setText('hero.heatVal', heatVal);
-    setText('hero.heatSub', hp.available && hp.compressor_on != null
-      ? (hp.compressor_on ? t('hp.compOn', { hz: num(hp.compressor_hz, 0) }) : t('hp.compOff')) : (qs('[data-bind="heat.badgeText"]') || {}).textContent || '');
     pushHeatSample(fl, rt);
   }
 
@@ -1947,7 +1970,11 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     var mx = circ.mixing || {};
     var risk = mx.state === 'risk';
     var mxVars = { sec: num(mx.secondary_l_min, 1), pri: num(mx.primary_l_min, 1),
-      pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—' };
+      pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
+      rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1) };
+    // Advice: the head to set (constant pressure) when the pump reports one, else the flow.
+    var advice = !finite(mx.recommended_l_min) ? ''
+      : t(finite(mx.recommended_head_m) ? 'pump.mixAdviceHead' : 'pump.mixAdvice', mxVars);
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
       if (risk) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');
@@ -1955,7 +1982,8 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
       if (chip) chip.setAttribute('data-tone', risk ? 'warn' : 'water');
     }
     setShow('pump.mixing', risk);
-    setText('pump.mixBody', risk ? t('pump.mixBody', mxVars) : '');
+    setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
+    setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
     setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
     setText('tile.pumpStatus', risk ? t('tile.pumpMixing')
       : lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
@@ -2406,9 +2434,6 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
       setText('tile.planKwh', '');
     }
     var planVal = (qs('[data-bind="tile.planVal"]') || {}).textContent || '—';
-    setShow('hero.plan', planVal !== '—');
-    setText('hero.planVal', planVal);
-    setText('hero.planSub', (qs('[data-bind="tile.planKwh"]') || {}).textContent || '');
     setText('tile.planStatus', odin.available ? t('tile.planStatusOdin') : (p.rooms && p.rooms.length ? t('planG.noOdin') : t('tile.planNone')));
     setBind('plan.energyKwh', odin.available ? esc(num(totalKwh)) + ' <small>kWh</small>' : '—');
     var viz = qs('[data-bind-viz="plan"]');
@@ -3807,7 +3832,7 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-step]');
     if (b && !b.disabled) {
-      var i = b.parentNode.querySelector('input');
+      var i = (b.closest('.target, .thermo') || b.parentNode).querySelector('input');
       if (i && i.type === 'number') {
         if (Number(b.dataset.step) > 0) i.stepUp(); else i.stepDown();
         i.dispatchEvent(new Event('change', { bubbles: true }));

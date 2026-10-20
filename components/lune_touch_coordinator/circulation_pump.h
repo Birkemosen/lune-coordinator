@@ -87,6 +87,27 @@ inline Mixing mixing_state(float ratio) {
   return ratio > MIXING_RISK_RATIO ? Mixing::Risk : Mixing::Ok;
 }
 
+// Recommended secondary flow: a little below the heat pump's flow, so no return water is
+// drawn into the supply, and not so far below that the floors lose ΔT. Rounded down to
+// 0.5 l/min, the resolution a pump setting is made in.
+constexpr float RECOMMENDED_SECONDARY_SHARE = 0.9f;
+
+inline float recommended_secondary_lmin(float primary_lmin) {
+  if (!std::isfinite(primary_lmin) || primary_lmin < MIXING_MIN_PRIMARY_LMIN)
+    return NAN;
+  return std::floor(primary_lmin * RECOMMENDED_SECONDARY_SHARE * 2.0f) / 2.0f;
+}
+
+/// Head the pump would need for target_lmin through the same open valves: the system
+/// curve is quadratic (H ∝ Q²). This is the constant-pressure setting to start from.
+inline float head_for_flow_m(float head_m, float flow_lmin, float target_lmin) {
+  if (!std::isfinite(head_m) || !std::isfinite(flow_lmin) || !std::isfinite(target_lmin) ||
+      head_m <= 0.0f || flow_lmin < 1.0f || target_lmin <= 0.0f)
+    return NAN;
+  const float r = target_lmin / flow_lmin;
+  return std::round(head_m * r * r * 10.0f) / 10.0f;
+}
+
 inline const char *mixing_name(Mixing m) {
   return m == Mixing::Risk ? "risk" : m == Mixing::Ok ? "ok" : "unknown";
 }

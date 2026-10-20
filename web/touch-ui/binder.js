@@ -1295,14 +1295,15 @@
     setText('home.headline2', hpx.available && hpx.compressor_on != null ? t(hpx.compressor_on ? 'home.hp.on' : 'home.hp.off') : '');
     setText('house.outdoor', finite(state.outdoorC) ? t('thermo.outside', { t: deg(state.outdoorC) }) : '');
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
-    setBind('house.temp', ht == null ? '—' : esc(num(ht)) + '<small>°</small>');
+    setText('house.now', ht == null ? '' : t('thermo.now', { t: num(ht) }));
     setText('scope.house', deg(ht));
     var ring = qs('[data-bind-thermo]');
     if (ring) {
       var pct = function (v) { return Math.max(0, Math.min(100, Math.round((v - THERMO_MIN) / (THERMO_MAX - THERMO_MIN) * 100))); };
       if (tg != null) ring.style.setProperty('--v', pct(tg));
-      ring.style.setProperty('--now', ht == null ? 0 : pct(ht));
-      if (ht != null && tg != null) ring.setAttribute('aria-label', t('thermo.aria', { t: num(ht), g: num(tg) }));
+      // The small mark outside the arc is the house now; no mark without a reading.
+      if (ht == null) ring.style.removeProperty('--now');
+      else ring.style.setProperty('--now', pct(ht));
     }
     // Heat tile: heat pump flow → return, else the controllers' average.
     var hp = (state.heat && state.heat.heat_pump) || {};
@@ -1320,12 +1321,6 @@
     }
     var heatVal = fl == null && rt == null ? '—' : deg(fl) + ' → ' + deg(rt);
     setText('tile.heatVal', heatVal);
-    // Hero shortcut: heat source (flow → return) and its compressor state.
-    setShow('hero.heat', heatVal !== '—');
-    setText('hero.heatLabel', hp.available ? t('hero.heatPump') : t('tile.heat'));
-    setText('hero.heatVal', heatVal);
-    setText('hero.heatSub', hp.available && hp.compressor_on != null
-      ? (hp.compressor_on ? t('hp.compOn', { hz: num(hp.compressor_hz, 0) }) : t('hp.compOff')) : (qs('[data-bind="heat.badgeText"]') || {}).textContent || '');
     pushHeatSample(fl, rt);
   }
 
@@ -1747,7 +1742,11 @@
     var mx = circ.mixing || {};
     var risk = mx.state === 'risk';
     var mxVars = { sec: num(mx.secondary_l_min, 1), pri: num(mx.primary_l_min, 1),
-      pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—' };
+      pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
+      rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1) };
+    // Advice: the head to set (constant pressure) when the pump reports one, else the flow.
+    var advice = !finite(mx.recommended_l_min) ? ''
+      : t(finite(mx.recommended_head_m) ? 'pump.mixAdviceHead' : 'pump.mixAdvice', mxVars);
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
       if (risk) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');
@@ -1755,7 +1754,8 @@
       if (chip) chip.setAttribute('data-tone', risk ? 'warn' : 'water');
     }
     setShow('pump.mixing', risk);
-    setText('pump.mixBody', risk ? t('pump.mixBody', mxVars) : '');
+    setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
+    setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
     setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
     setText('tile.pumpStatus', risk ? t('tile.pumpMixing')
       : lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
@@ -2206,9 +2206,6 @@
       setText('tile.planKwh', '');
     }
     var planVal = (qs('[data-bind="tile.planVal"]') || {}).textContent || '—';
-    setShow('hero.plan', planVal !== '—');
-    setText('hero.planVal', planVal);
-    setText('hero.planSub', (qs('[data-bind="tile.planKwh"]') || {}).textContent || '');
     setText('tile.planStatus', odin.available ? t('tile.planStatusOdin') : (p.rooms && p.rooms.length ? t('planG.noOdin') : t('tile.planNone')));
     setBind('plan.energyKwh', odin.available ? esc(num(totalKwh)) + ' <small>kWh</small>' : '—');
     var viz = qs('[data-bind-viz="plan"]');
@@ -3607,7 +3604,7 @@
   document.addEventListener('click', function (e) {
     var b = e.target.closest('[data-step]');
     if (b && !b.disabled) {
-      var i = b.parentNode.querySelector('input');
+      var i = (b.closest('.target, .thermo') || b.parentNode).querySelector('input');
       if (i && i.type === 'number') {
         if (Number(b.dataset.step) > 0) i.stepUp(); else i.stepDown();
         i.dispatchEvent(new Event('change', { bubbles: true }));

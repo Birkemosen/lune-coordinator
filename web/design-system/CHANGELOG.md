@@ -1,5 +1,10 @@
 # Changelog — Lune Design System
 
+## 2.3.12
+
+- `.thermo`: ringen indstiller målet. Bue og håndtag er målet (`--v`); et lille mærke (`circle.now`, r 48,5) uden for sporet er huset nu (`--now`, intet mærke uden måling). Målet står stort i midten som selve tekstfeltet (`.thermo-target`), med «Huset nu x°» og «ude y°» under; − / + ligger i ringens åbning (`.thermo-steps`). Træk i ringen (kun nær sporet) via `lune-forms.js`, som skriver i feltet; formularen autogemmer (`form.thermo` tæller som autogem uden `.climate`). Ringen har `data-min`/`data-max` for skalaen og er mindre (212 px).
+- `.home-hero` er lavere: overskrift `--fs-2xl`, sætning `--fs-md`, mindre polstring. `.hero-facts`/`.hero-fact` er fjernet — de gentog felterne lige under.
+
 ## 2.3.11
 
 - DESIGN 15.1/15.4/15.10 og AGENTS: alt, der hører til et ark, indstilles i arket — også forbindelsen (underside «Forbindelse ›») — og System har kun det, der ikke hører til et ark. Touch' System: Enhed · Styringer · Netværk · Firmware og backup · Service. V6 er uændret: på V6 er manifolden selve enheden, så *Manifold og motorer* står på System.

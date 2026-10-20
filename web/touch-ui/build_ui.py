@@ -349,24 +349,21 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <small data-bind="home.greeting">{T("home.greeting.day")}</small>
             <h2 id="h-home"><span data-bind="home.headline">{T("home.headline.none")}</span> <span class="sub" data-bind="home.headline2"></span></h2>
             <p data-bind="home.sentence">{T("home.sentence.none")}</p>
-            <div class="hero-facts">
-              <button class="hero-fact" type="button" popovertarget="sheet-heat" data-bind-show="hero.heat" hidden><span class="chip-icon" aria-hidden="true">{I["heat"]}</span><small data-bind="hero.heatLabel">{T("tile.heat")}</small><b data-bind="hero.heatVal">{DASH}</b><span data-bind="hero.heatSub"></span></button>
-              <button class="hero-fact" type="button" popovertarget="sheet-plan" data-bind-show="hero.plan" hidden><span class="chip-icon" data-tone="violet" aria-hidden="true">{I["plan"]}</span><small>{T("tile.plan")}</small><b data-bind="hero.planVal">{DASH}</b><span data-bind="hero.planSub"></span></button>
-            </div>
           </div>
           <form class="thermo" data-save="house-target">
-            <div class="thermo-ring" style="--v:60;--now:0" role="img" aria-label="{T("climate.now")}" data-bind-thermo>
-              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44" pathLength="100"/><circle class="arc" cx="50" cy="50" r="44" pathLength="100"/><circle class="knob" cx="50" cy="50" r="44" pathLength="100"/></svg>
-              <div class="thermo-val"><span>{T("thermo.house")}</span><b data-bind="house.temp">{DASH}</b><span data-bind="house.outdoor"></span></div>
-            </div>
-            <div class="climate">
-              <div class="target">
+            <div class="thermo-ring" style="--v:60" data-min="15" data-max="25" data-bind-thermo>
+              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="42" pathLength="100"/><circle class="arc" cx="50" cy="50" r="42" pathLength="100"/><circle class="knob" cx="50" cy="50" r="42" pathLength="100"/><circle class="now" cx="50" cy="50" r="48.5" pathLength="100"/></svg>
+              <div class="thermo-val">
+                <small>{T("climate.target")}</small>
+                <label class="thermo-target"><input type="text" inputmode="decimal" id="house_target" name="house_target" value="{T.num(21.0)}" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off" aria-label="{ta}"><span class="unit" aria-hidden="true">°</span></label>
+                <span data-bind="house.now"></span><span data-bind="house.outdoor"></span>
+              </div>
+              <div class="thermo-steps">
                 <button type="button" data-step="-1" aria-label="{T("common.decrease", x=ta)}">−</button>
-                <label class="value"><small>{T("climate.target")}</small><input type="text" inputmode="decimal" id="house_target" name="house_target" value="{T.num(21.0)}" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off"><span class="unit" aria-hidden="true">°</span></label>
                 <button type="button" data-step="1" aria-label="{T("common.increase", x=ta)}">+</button>
               </div>
-              <p class="autosave" aria-live="polite"></p>
             </div>
+            <p class="autosave" aria-live="polite"></p>
           </form>
         </section>
         <header class="home-head"><small>{T("home.nowEyebrow")}</small><h3>{T("home.nowTitle")}</h3></header>
@@ -540,7 +537,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {metric(T("pump.head"), "m", "pump.head")}
           {metric(T("pump.power"), "W", "pump.power")}
         </dl>
-        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.host"), "pump.host")])}
+        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.recommended"), "pump.recommended"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <p class="note">{T("flow.sub")}</p>'''
@@ -928,12 +925,12 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.forenoon", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "hero.heatPump", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "tile.heat", "thermo.outside", "thermo.now", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "room.loops", "room.valveShort", "room.fromV6", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

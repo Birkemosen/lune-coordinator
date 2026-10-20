@@ -9,7 +9,7 @@ o[k]=el.type==="checkbox"||el.type==="radio"?el.checked:el.value});return o}
 function wrap(el){return el.closest(".setting,.field,.switch,.seg,.compass")}
 function btn(f){return f.querySelector(':is(.panel-foot,.savebar) .btn.primary[type="submit"]')}
 function st(f){return f.querySelector(".save-status")}
-function auto(f){return!!f.querySelector(".climate")}
+function auto(f){return f.classList.contains("thermo")||!!f.querySelector(".climate")}
 function track(f){return!!st(f)}
 function cross(){
 document.querySelectorAll('.tile[data-dirty],.mode label[data-dirty],.section-nav a[data-dirty],.section[data-dirty],details.section[data-dirty],.sys-nav label[data-dirty],[popovertarget][data-dirty]').forEach(function(el){
@@ -197,4 +197,32 @@ requestAnimationFrame(function(){if(e.target.matches(":popover-open"))placeConfi
 window.addEventListener("resize",function(){
 document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
 });
+/* ---- Termostat-ring (DESIGN.md 15.7): træk i ringen for at sætte målet ----
+   Ringen skriver i målfeltet (samme vej som − / +), så autogem og sprogets decimaltegn
+   følger med. Kun tryk nær sporet tæller; midten er feltet. */
+function ringValue(ring,e){
+var r=ring.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2;
+var d=Math.sqrt(x*x+y*y);if(d<r.width*.3)return null;
+var a=Math.atan2(y,x)*180/Math.PI,rel=(a-135+720)%360;
+if(rel>270)rel=rel>315?0:270;
+var lo=Number(ring.dataset.min),hi=Number(ring.dataset.max);return lo+rel/270*(hi-lo)}
+function ringSet(ring,v){
+var i=ring.querySelector("input");if(!i)return;
+var sz=Number(i.dataset.stepSize)||.5,lo=Number(i.dataset.min),hi=Number(i.dataset.max);
+v=Math.max(lo,Math.min(hi,Math.round(v/sz)*sz));
+var txt=v.toLocaleString(document.documentElement.lang||undefined,{minimumFractionDigits:1,maximumFractionDigits:1});
+if(i.value===txt)return;
+i.value=txt;
+var rl=Number(ring.dataset.min),rh=Number(ring.dataset.max);
+ring.style.setProperty("--v",Math.max(0,Math.min(100,Math.round((v-rl)/(rh-rl)*100))));
+i.dispatchEvent(new Event("input",{bubbles:true}))}
+document.addEventListener("pointerdown",function(e){
+var ring=e.target.closest&&e.target.closest(".thermo-ring[data-min][data-max]");
+if(!ring||e.target.closest("input,button"))return;
+var v=ringValue(ring,e);if(v==null)return;
+e.preventDefault();ring.setPointerCapture(e.pointerId);ringSet(ring,v);
+function mv(ev){var w=ringValue(ring,ev);if(w!=null)ringSet(ring,w)}
+function up(){ring.removeEventListener("pointermove",mv);ring.removeEventListener("pointerup",up);ring.removeEventListener("pointercancel",up);
+var i=ring.querySelector("input");if(i)i.dispatchEvent(new Event("change",{bubbles:true}))}
+ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ring.addEventListener("pointercancel",up)});
 })();

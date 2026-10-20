@@ -44,5 +44,14 @@ int main() {
   assert(mixing_state(0.9f) == Mixing::Ok);
   assert(mixing_state(NAN) == Mixing::Unknown);
   assert(std::strcmp(mixing_name(Mixing::Risk), "risk") == 0);
+  // Recommended secondary flow: 90 % of the primary, rounded down to 0.5 l/min.
+  assert(recommended_secondary_lmin(19.0f) == 17.0f);
+  assert(recommended_secondary_lmin(28.7f) == 25.5f);
+  assert(std::isnan(recommended_secondary_lmin(1.0f)));
+  assert(std::isnan(recommended_secondary_lmin(NAN)));
+  // 29 l/min at 6.6 m through the same valves: 17 l/min needs about 2.3 m.
+  assert(std::fabs(head_for_flow_m(6.6f, 29.0f, 17.0f) - 2.3f) < 0.05f);
+  assert(std::isnan(head_for_flow_m(NAN, 29.0f, 17.0f)));
+  assert(std::isnan(head_for_flow_m(6.6f, 0.0f, 17.0f)));
   std::puts("Circulation pump tests passed.");
 }
