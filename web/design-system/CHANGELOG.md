@@ -1,5 +1,10 @@
 # Changelog — Lune Design System
 
+## 2.3.20
+
+- `.setting`: labelen har en minimumsbredde (8rem), og rækken brydes ved alle bredder, så en bred kontrol (fx et segment med fire valg) lægger sig under labelen i stedet for at klemme den.
+- Elpris (Touch): ENTSO-E-tokenet (`.setting.price-token`) vises kun, når ENTSO-E er valgt — som spotkilde eller som Odins egen kilde (`:has()`, ingen JS).
+
 ## 2.3.19
 
 - `.bars[data-readout]` + `.bars-readout`: hover/tryk på en søjle viser time og værdi (dagens elpris i Touch); `.col[data-now]` markerer den aktuelle time.

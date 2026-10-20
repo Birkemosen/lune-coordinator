@@ -769,8 +769,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {group(T("price.title"), sswitch("enabled", T("price.enabled"), T("price.enabledHint"), False, id_="price_enabled") +
                srow(f'<span>{T("price.model")}</span>', seg_pm) +
                srow(lab("price_zone", T("price.zone")), price_zone_select) +
-               sinput("entsoe_token", T("price.token"), "", "w-md", id_="price_token", typ="password", hint=T("price.tokenHint"),
-                      extra=' autocomplete="new-password" spellcheck="false" maxlength="63"'))}
+               srow(lab("price_token", T("price.token")),
+                    '<input class="input w-md" type="password" id="price_token" name="entsoe_token" value="" autocomplete="new-password" spellcheck="false" maxlength="63">',
+                    T("price.tokenHint"), cls="price-token"))}
         {odin_f}{touch_f}
         {savebar("prices", T("price.save"))}
       </form>'''
