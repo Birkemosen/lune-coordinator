@@ -33,9 +33,9 @@ obj:
         widgets:
           - label:
               align: CENTER
-              text: "<"
+              text: "\uF053"
               text_color: ${lds_fg}
-              text_font: lds_font_lg
+              text_font: montserrat_22
         on_click:
           - lambda: |-
               id(zone_pending_dirty) = false;
@@ -109,9 +109,9 @@ obj:
         widgets:
           - label:
               align: CENTER
-              text: "<"
+              text: "\uF053"
               text_color: ${lds_fg}
-              text_font: lds_font_lg
+              text_font: montserrat_22
         on_click:
           - lambda: |-
               id(zone_pending_dirty) = false;
@@ -133,9 +133,9 @@ obj:
         widgets:
           - label:
               align: CENTER
-              text: ">"
+              text: "\uF054"
               text_color: ${lds_fg}
-              text_font: lds_font_lg
+              text_font: montserrat_22
         on_click:
           - lambda: |-
               id(zone_pending_dirty) = false;

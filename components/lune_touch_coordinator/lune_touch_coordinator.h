@@ -544,6 +544,9 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t display_circulation_status_color() const;
   std::string display_heat_source_text() const;
   std::string display_forecast_text() const;
+  /// Home: what Touch does because of the weather (preload, slab charge, solar hold-off);
+  /// empty = nothing (the box hides; the status bar already shows the weather itself).
+  std::string display_weather_message() const;
   uint8_t display_forecast_visible_hours() const;
   std::string display_forecast_hour_label(uint8_t index) const;
   std::string display_forecast_hour_temp(uint8_t index) const;
