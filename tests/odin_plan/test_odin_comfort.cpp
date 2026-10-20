@@ -158,6 +158,50 @@ int main() {
     assert(r.action == Action::YIELD);
   }
 
+  // ---- Setpoint sync: Odin's setpoint follows the house target, band ±0.5 ----
+  {
+    Profile user{};
+    assert(parse_profile("[{\"h\":0,\"sp\":22,\"min\":-1,\"max\":1},{\"h\":6,\"sp\":22,\"min\":-0.5,\"max\":1.5}]", &user));
+    OwnerState s{};
+    Sync sync{};
+    sync.on = true;
+    sync.sp = 21.63f;
+    sync.band_c = 0.5f;
+    StepResult r = step(s, user, Lift{}, sync);
+    assert(r.action == Action::WRITE_LIFT);
+    assert(r.profile.count == 1 && std::fabs(r.profile.blocks[0].sp - 21.6f) < 0.01f);
+    assert(std::fabs(r.profile.blocks[0].min + 0.5f) < 0.01f && std::fabs(r.profile.blocks[0].max - 0.5f) < 0.01f);
+    commit(s, r, Lift{}, sync);
+    // Same target (within 0.1): nothing to write.
+    Sync near_same = sync;
+    near_same.sp = 21.66f;
+    assert(step(s, r.profile, Lift{}, near_same).action == Action::NONE);
+    // Target moves 0.2: rewrite.
+    Sync moved = sync;
+    moved.sp = 21.83f;
+    StepResult r2 = step(s, r.profile, Lift{}, moved);
+    assert(r2.action == Action::WRITE_LIFT && std::fabs(r2.profile.blocks[0].sp - 21.8f) < 0.01f);
+    commit(s, r2, Lift{}, moved);
+    // A lift goes on top of the synced band.
+    Lift lift{};
+    lift.start_hour = 3;
+    lift.hours = 2;
+    lift.lift_c = 1.0f;
+    StepResult r3 = step(s, r2.profile, lift, moved);
+    assert(r3.action == Action::WRITE_LIFT);
+    assert(std::fabs(block_at(r3.profile, 3).sp - 22.8f) < 0.01f && std::fabs(block_at(r3.profile, 10).sp - 21.8f) < 0.01f);
+    commit(s, r3, lift, moved);
+    // Edited in Odin's UI while synced: adopted and synced again (no yield).
+    Profile edited = r3.profile;
+    edited.blocks[0].sp = 23.0f;
+    StepResult r4 = step(s, edited, lift, moved);
+    assert(r4.action == Action::WRITE_LIFT && !s.yielded);
+    commit(s, r4, lift, moved);
+    // Sync and lift off: the baseline (the last user edit) is restored.
+    StepResult r5 = step(s, r4.profile, Lift{}, Sync{});
+    assert(r5.action == Action::RESTORE);
+  }
+
   std::puts("odin_comfort: all assertions passed");
   return 0;
 }

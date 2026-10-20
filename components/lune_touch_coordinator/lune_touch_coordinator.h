@@ -199,6 +199,10 @@ struct OdinControlState {
   // Opt-in: Touch lifts Odin's comfort schedule (sched_ui) temporarily.
   bool enabled{false};
   float max_lift_c{1.5f};
+  // Opt-in: Odin's comfort setpoint follows Touch's house target, band ±sync_band_c.
+  bool sync_enabled{false};
+  float sync_band_c{0.5f};
+  float sync_target_c{NAN};   // house target sent in the last cycle (NAN = none)
   // Asgard binary sensor that is ON while Asgard forwards to Odin.
   char forwarder_entity[64]{"ODIN Forwarder Active"};
   // Link health (read-only, also when control is disabled).
@@ -633,6 +637,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_forecast_location(float latitude, float longitude, const char *mode,
                              char *response, size_t capacity);
   bool set_weather_settings(float max_boost_c, char *response, size_t capacity);
+  bool set_odin_sync(bool has_enabled, bool enabled, float band_c);
   bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
   bool request_forecast_fetch(char *response, size_t capacity);

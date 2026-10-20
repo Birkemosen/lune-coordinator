@@ -1459,6 +1459,15 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       parse_text_param(api, api.json_body, "heat_request_url_template", request_tmpl, sizeof(request_tmpl));
     if (has_curve)
       parse_text_param(api, api.json_body, "curve_offset_url_template", curve_tmpl, sizeof(curve_tmpl));
+    uint32_t odin_sync = 0;
+    const bool has_odin_sync = parse_uint_param(api, api.json_body, "odin_sync_enabled", &odin_sync);
+    float odin_sync_band = NAN;
+    parse_float_param(api, api.json_body, "odin_sync_band_c", &odin_sync_band);
+    if ((has_odin_sync || std::isfinite(odin_sync_band)) &&
+        !coordinator_->set_odin_sync(has_odin_sync, odin_sync != 0, odin_sync_band)) {
+      send_error_(api, 400, "invalid_param", "odin_sync_band_c must be 0.2-2.0");
+      return;
+    }
     const bool accepted = coordinator_->set_heat_source_control(
         has_odin_enabled, odin_enabled != 0, max_lift_c, has_forwarder ? forwarder : nullptr,
         has_target ? target_tmpl : nullptr, has_request ? request_tmpl : nullptr,
