@@ -965,6 +965,21 @@
   .bars-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
   .bars-legend .lp { background: var(--seg-off); }
   .bars-legend .la { background: var(--accent); }
+  /* Aflæsning pr. søjle (fx dagens elpris): hover/tryk fremhæver søjlen, og en boks over
+     plottet viser time og værdi. Den aktuelle time (data-now) står lidt kraftigere.
+     Binderen sætter data-active på søjlen og left på boksen i px. */
+  .bars[data-readout] { position: relative; }
+  .bars[data-readout] .bars-plot { cursor: crosshair; touch-action: pan-y; }
+  .bars-plot .col[data-now] i.plan { background: color-mix(in srgb, var(--fg) 40%, transparent); }
+  .bars-plot .col[data-active] i.plan { background: var(--fg); }
+  .bars-readout {
+    position: absolute; top: 0; z-index: 2; display: flex; gap: var(--space-2);
+    padding: var(--space-1) var(--space-2); border-radius: var(--r-field); background: var(--raised);
+    font-size: var(--fs-xs); line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums;
+    pointer-events: none; transform: translate(-50%, calc(-100% - var(--space-1)));
+  }
+  .bars-readout b { font-weight: 600; }
+  .bars-readout[hidden] { display: none; }
   /* @end */
 
   /* ---- Vejrudsigt: ikoner + temperatur + vind på fælles tidsakse -----

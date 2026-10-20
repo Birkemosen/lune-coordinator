@@ -1993,11 +1993,14 @@
     if (plot) {
       var max = 0;
       total.forEach(function (v) { if (Number(v) > max) max = Number(v); });
+      var nowH = new Date().getHours();
       plot.innerHTML = total.length ? total.map(function (v, h) {
         var pct = max > 0 ? Math.max(2, Math.round(Math.max(0, Number(v)) / max * 100)) : 0;
-        return '<div class="col"><i class="plan" style="--plan:' + pct + '" title="' +
-          esc(t('price.atHour', { v: num(v, 2) + ' ' + cur + '/kWh', h: String(h).padStart(2, '0') })) + '"></i></div>';
+        var label = t('price.atHour', { v: num(v, 2) + ' ' + cur + '/kWh', h: String(h).padStart(2, '0') });
+        return '<div class="col"' + (h === nowH ? ' data-now' : '') + ' data-label="' + esc(label) + '">' +
+          '<i class="plan" style="--plan:' + pct + '"></i></div>';
       }).join('') : '';
+      bindBarsReadout(plot.closest('.bars'));
     }
     var today = qs('[data-bind-price-today]');
     if (today) today.hidden = !total.length;
@@ -2403,6 +2406,40 @@
     if (night) return 'moon';
     if (cloud < 35) return 'sun';
     return 'partly';
+  }
+
+  // Bars with a readout (today's price): hover or touch a column to see its hour
+  // and value in a box above the plot (LDS .bars-readout).
+  function bindBarsReadout(bars) {
+    if (!bars || bars.dataset.readoutBound) return;
+    bars.dataset.readoutBound = '1';
+    var plot = qs('.bars-plot', bars);
+    var box = qs('.bars-readout', bars);
+    if (!plot || !box) return;
+    var clear = function () {
+      qsa('.col[data-active]', plot).forEach(function (c) { c.removeAttribute('data-active'); });
+      box.hidden = true;
+    };
+    var show = function (ev) {
+      var cols = qsa('.col', plot);
+      if (!cols.length) return;
+      var pr = plot.getBoundingClientRect();
+      var frac = (ev.clientX - pr.left) / pr.width;
+      if (!(frac >= 0 && frac <= 1)) { clear(); return; }
+      var i = Math.min(cols.length - 1, Math.floor(frac * cols.length));
+      var col = cols[i];
+      qsa('.col[data-active]', plot).forEach(function (c) { if (c !== col) c.removeAttribute('data-active'); });
+      col.setAttribute('data-active', '');
+      box.textContent = col.getAttribute('data-label') || '';
+      box.hidden = false;   // visible before measuring its width
+      var br = bars.getBoundingClientRect(), cr = col.getBoundingClientRect();
+      var x = cr.left - br.left + cr.width / 2;
+      var half = box.offsetWidth / 2;
+      box.style.left = Math.max(half, Math.min(br.width - half, x)) + 'px';
+    };
+    plot.addEventListener('pointermove', show);
+    plot.addEventListener('pointerdown', show);
+    plot.addEventListener('pointerleave', clear);
   }
 
   // Slider over the forecast: a dashed line through both plots that follows the

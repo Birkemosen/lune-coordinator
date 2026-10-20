@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.19
+
+- `.bars[data-readout]` + `.bars-readout`: hover/tryk på en søjle viser time og værdi (dagens elpris i Touch); `.col[data-now]` markerer den aktuelle time.
+
 ## 2.3.18
 
 - `.ht-fr`: buen fra frem til retur er lavere (én rækkehøjde, fra midten af frem-tallet til midten af retur-tallet).
