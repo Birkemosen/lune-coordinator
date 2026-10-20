@@ -1995,6 +1995,9 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     if (bf && !formBusy(bf)) {
       putVal(bf.querySelector('[name="odin_control_enabled"]'), !!o.enabled);
       putVal(bf.querySelector('[name="odin_max_lift_c"]'), Number(o.max_lift_c != null ? o.max_lift_c : 1.5).toFixed(1));
+      var sy = o.sync || {};
+      putVal(bf.querySelector('[name="odin_sync_enabled"]'), !!sy.enabled);
+      putVal(bf.querySelector('[name="odin_sync_band_c"]'), Number(sy.band_c != null ? sy.band_c : 0.5).toFixed(1));
       if (bf.luneResnap) bf.luneResnap();
     }
     var cf = connForm();
@@ -3305,6 +3308,8 @@ document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);
     if (has(ch, 'house_balance_enabled')) p.house_balance_enabled = bit(fval(form, 'house_balance_enabled'));
     if (has(ch, 'odin_control_enabled')) c.odin_enabled = bit(fval(form, 'odin_control_enabled'));
     if (has(ch, 'odin_max_lift_c')) c.odin_max_lift_c = fval(form, 'odin_max_lift_c');
+    if (has(ch, 'odin_sync_enabled')) c.odin_sync_enabled = bit(fval(form, 'odin_sync_enabled'));
+    if (has(ch, 'odin_sync_band_c')) c.odin_sync_band_c = fval(form, 'odin_sync_band_c');
     if (Object.keys(p).length) await post('/heat-source/settings', p);
     if (Object.keys(c).length) {
       var saved = await post('/heat-source/control', c);

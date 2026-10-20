@@ -235,6 +235,42 @@ inline Profile apply_lift(const Profile &user, const Lift &lift) {
 }
 
 // ---------------------------------------------------------------------------
+// Setpoint sync: Odin's comfort setpoint = Touch's house target
+// ---------------------------------------------------------------------------
+// Odin regulates the house temperature Touch sends it, but against its own
+// schedule setpoint. Rooms set their targets in one place (V6/Touch); the house
+// target is their weighted mean. With sync on, every block gets that setpoint
+// and a symmetric band, so Odin aims where the rooms ask and may only move
+// within ±band for price. A lift (wind, a lagging room) still goes on top.
+
+struct Sync {
+  bool on = false;
+  float sp = 21.0f;      ///< House target (°C), rounded to 0.1 when applied
+  float band_c = 0.5f;   ///< Band: [sp - band, sp + band]
+};
+
+inline bool sync_changed(const Sync &a, const Sync &b) {
+  if (a.on != b.on)
+    return true;
+  if (!a.on)
+    return false;
+  return std::fabs(a.sp - b.sp) >= 0.1f - 1e-4f || std::fabs(a.band_c - b.band_c) >= 0.05f;
+}
+
+inline Profile apply_sync(const Profile &user, const Sync &s) {
+  if (!s.on)
+    return user;
+  Profile out{};
+  out.count = 1;
+  out.blocks[0].h = 0;
+  out.blocks[0].sp = std::round(s.sp * 10.0f) / 10.0f;
+  out.blocks[0].min = -std::fabs(s.band_c);
+  out.blocks[0].max = std::fabs(s.band_c);
+  (void) user;   // the user's hour blocks are replaced: one band all day
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // How much and when
 // ---------------------------------------------------------------------------
 
@@ -308,6 +344,7 @@ struct OwnerState {
   Profile written{};       ///< What Touch last wrote (valid while applied)
   bool applied = false;    ///< A lifted profile is believed to be on Odin
   Lift lift{};             ///< The lift that `written` encodes
+  Sync sync{};             ///< The setpoint sync that `written` encodes
   /// The user edited the schedule during a lift: leave Odin alone until the
   /// current need has passed (no lift wanted), then resume normally.
   bool yielded = false;
@@ -320,8 +357,10 @@ struct StepResult {
 
 /// One reconciliation step. `remote` is the schedule read from Odin now.
 /// The caller performs the write and then calls `commit()`.
-inline StepResult step(OwnerState &s, const Profile &remote, const Lift &want) {
+inline StepResult step(OwnerState &s, const Profile &remote, const Lift &want,
+                       const Sync &sync = Sync{}) {
   StepResult r{};
+  const bool wanting = want.active() || sync.on;
   if (!s.has_user) {
     // First contact: whatever is on Odin is the user's schedule, unless it is
     // the lift we wrote before a reboot (persisted `written`).
@@ -340,7 +379,7 @@ inline StepResult step(OwnerState &s, const Profile &remote, const Lift &want) {
   if (s.yielded) {
     if (!equivalent(remote, s.user))
       s.user = remote;  // keep following the user's edits
-    if (want.active())
+    if (want.active() && !sync.on)
       return r;
     s.yielded = false;
   }
@@ -349,6 +388,11 @@ inline StepResult step(OwnerState &s, const Profile &remote, const Lift &want) {
     if (!equivalent(remote, s.written)) {
       if (equivalent(remote, s.user)) {
         // Someone (Odin factory reset / restore) put the user's profile back.
+        s.applied = false;
+      } else if (sync.on) {
+        // Edited in Odin's UI while synced: Touch owns setpoint and band, so
+        // keep the edit as the new baseline and write the sync again.
+        s.user = remote;
         s.applied = false;
       } else {
         // Edited in Odin's UI while lifted: the user owns it now.
@@ -364,15 +408,15 @@ inline StepResult step(OwnerState &s, const Profile &remote, const Lift &want) {
     // Edited while we were idle: adopt as the new baseline.
     s.user = remote;
     r.action = Action::ADOPT_USER;
-    if (!want.active())
+    if (!wanting)
       return r;
   }
 
-  if (want.active()) {
-    if (s.applied && !lift_changed(s.lift, want))
+  if (wanting) {
+    if (s.applied && !lift_changed(s.lift, want) && !sync_changed(s.sync, sync))
       return r;
     r.action = Action::WRITE_LIFT;
-    r.profile = apply_lift(s.user, want);
+    r.profile = apply_lift(apply_sync(s.user, sync), want);
     return r;
   }
   if (s.applied) {
@@ -383,14 +427,16 @@ inline StepResult step(OwnerState &s, const Profile &remote, const Lift &want) {
 }
 
 /// Record a successful write performed for `r`.
-inline void commit(OwnerState &s, const StepResult &r, const Lift &want) {
+inline void commit(OwnerState &s, const StepResult &r, const Lift &want, const Sync &sync = Sync{}) {
   if (r.action == Action::WRITE_LIFT) {
     s.written = r.profile;
     s.applied = true;
     s.lift = want;
+    s.sync = sync;
   } else if (r.action == Action::RESTORE) {
     s.applied = false;
     s.lift = Lift{};
+    s.sync = Sync{};
   }
 }
 

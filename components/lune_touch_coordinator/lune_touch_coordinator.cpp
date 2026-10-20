@@ -2926,6 +2926,17 @@ void LuneTouchCoordinator::run_odin_control_() {
   asgard_port = heat_source_.port == 0 ? 80 : heat_source_.port;
   std::strncpy(forwarder_entity, odin_control_.forwarder_entity, sizeof(forwarder_entity) - 1);
   enabled = odin_control_.enabled;
+  // Setpoint sync: Odin aims at the house target Touch computes from the rooms.
+  lune_touch_odin::Sync sync{};
+  if (odin_control_.sync_enabled) {
+    const auto strategy = model_.strategy_snapshot();
+    if (strategy.has_house_target && std::isfinite(strategy.house_target_c)) {
+      sync.on = true;
+      sync.sp = strategy.house_target_c;
+      sync.band_c = odin_control_.sync_band_c;
+    }
+  }
+  odin_control_.sync_target_c = sync.on ? sync.sp : NAN;
   last_physics_ms = odin_control_.last_physics_ms;
   last_write_ms = odin_control_.last_write_ms;
   give_state_lock_();
@@ -3130,7 +3141,7 @@ void LuneTouchCoordinator::run_odin_control_() {
   give_state_lock_();
 
   const char *control_status = "idle";
-  if (!enabled && !owner.applied) {
+  if (!enabled && !sync.on && !owner.applied) {
     control_status = "disabled";
   } else if (!reachable) {
     control_status = "odin_unreachable";
@@ -3152,7 +3163,8 @@ void LuneTouchCoordinator::run_odin_control_() {
   }
 
   // Disabled while a lift is on Odin → want nothing, so the step restores.
-  const lune_touch_odin::StepResult r = lune_touch_odin::step(owner, remote, enabled ? want : lune_touch_odin::Lift{});
+  const lune_touch_odin::StepResult r =
+      lune_touch_odin::step(owner, remote, enabled ? want : lune_touch_odin::Lift{}, sync);
   bool wrote = false;
   bool write_ok = false;
   int write_status = 0;
@@ -3183,7 +3195,7 @@ void LuneTouchCoordinator::run_odin_control_() {
     }
   }
   if (write_ok)
-    lune_touch_odin::commit(owner, r, want);
+    lune_touch_odin::commit(owner, r, enabled ? want : lune_touch_odin::Lift{}, sync);
 
   const bool persist = write_ok || r.action == lune_touch_odin::Action::ADOPT_USER ||
                        r.action == lune_touch_odin::Action::YIELD;
@@ -3261,6 +3273,18 @@ void LuneTouchCoordinator::load_odin_control_() {
   }
   if (nvs_get_u8(handle, "odc_yield", &u8) == ESP_OK)
     odin_owner_.yielded = u8 != 0;
+  if (nvs_get_u8(handle, "odc_syn_en", &u8) == ESP_OK)
+    odin_control_.sync_enabled = u8 != 0;
+  blob_len = sizeof(f);
+  if (nvs_get_blob(handle, "odc_syn_band", &f, &blob_len) == ESP_OK && std::isfinite(f))
+    odin_control_.sync_band_c = std::clamp(f, 0.2f, 2.0f);
+  float syn[3]{};
+  blob_len = sizeof(syn);
+  if (nvs_get_blob(handle, "odc_syn_ap", syn, &blob_len) == ESP_OK && blob_len == sizeof(syn)) {
+    odin_owner_.sync.on = syn[0] > 0.5f;
+    odin_owner_.sync.sp = syn[1];
+    odin_owner_.sync.band_c = syn[2];
+  }
   odin_control_.applied = odin_owner_.applied ? odin_owner_.lift : lune_touch_odin::Lift{};
   // Generic levers.
   len = sizeof(generic_levers_.target_url_template);
@@ -3315,6 +3339,10 @@ void LuneTouchCoordinator::save_odin_control_() {
   if (err == ESP_OK) err = nvs_set_u8(handle, "odc_applied", owner.applied ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_lift", lift, sizeof(lift));
   if (err == ESP_OK) err = nvs_set_u8(handle, "odc_yield", owner.yielded ? 1 : 0);
+  if (err == ESP_OK) err = nvs_set_u8(handle, "odc_syn_en", control.sync_enabled ? 1 : 0);
+  if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_band", &control.sync_band_c, sizeof(float));
+  const float syn[3]{owner.sync.on ? 1.0f : 0.0f, owner.sync.sp, owner.sync.band_c};
+  if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_ap", syn, sizeof(syn));
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_turl", levers.target_url_template);
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_rurl", levers.heat_request_url_template);
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_curl", levers.curve_offset_url_template);
@@ -14051,10 +14079,14 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
     std::strcpy(mqtt_age, "null");
   const uint32_t write_age_s = c.last_write_ms == 0 ? 0 : (now - c.last_write_ms) / 1000UL;
   const uint32_t bad_s = c.link_bad_since_ms == 0 ? 0 : (now - c.link_bad_since_ms) / 1000UL;
+  char sync_target[16];
+  json_float_token_(sync_target, sizeof(sync_target), c.sync_target_c, 2);
   std::snprintf(
       buffer, capacity,
       "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
-      "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,\"forwarder_entity\":\"%s\",\"status\":\"%s\","
+      "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
+      "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"target_c\":%s},"
+      "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
       "\"reason\":\"%s\",\"last_action\":\"%s\",\"user_schedule_known\":%s,\"yielded\":%s,"
       "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"energy_kwh\":%.2f},"
       "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f},"
@@ -14067,7 +14099,9 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
       route, static_cast<double>(held), static_cast<double>(uplift),
-      c.enabled ? "true" : "false", static_cast<double>(c.max_lift_c), fwd, c.status, c.reason,
+      c.enabled ? "true" : "false", static_cast<double>(c.max_lift_c),
+      c.sync_enabled ? "true" : "false", static_cast<double>(c.sync_band_c), sync_target,
+      fwd, c.status, c.reason,
       c.last_action, has_user ? "true" : "false", yielded ? "true" : "false",
       c.wanted.active() ? "true" : "false", static_cast<unsigned>(c.wanted.start_hour),
       static_cast<unsigned>(c.wanted.hours), static_cast<double>(c.wanted.lift_c),
@@ -14083,6 +14117,21 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       heat_source_type_is_asgard_(type) ? "false" : "true", turl, rurl, curl,
       static_cast<double>(g.curve_gain), static_cast<double>(g.curve_max_offset_c), lt,
       g.last_lever_request < 0 ? "null" : (g.last_lever_request ? "true" : "false"), lc, g.lever_status);
+}
+
+bool LuneTouchCoordinator::set_odin_sync(bool has_enabled, bool enabled, float band_c) {
+  if (std::isfinite(band_c) && (band_c < 0.2f || band_c > 2.0f))
+    return false;
+  if (!take_state_lock_(100))
+    return false;
+  if (has_enabled)
+    odin_control_.sync_enabled = enabled;
+  if (std::isfinite(band_c))
+    odin_control_.sync_band_c = band_c;
+  odin_control_.last_cycle_ms = 0;   // act on the next odin task kick
+  give_state_lock_();
+  save_odin_control_();
+  return true;
 }
 
 bool LuneTouchCoordinator::set_heat_source_control(bool has_odin_enabled, bool odin_enabled,
