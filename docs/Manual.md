@@ -59,13 +59,15 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   opens its sheet; an offline controller says so.
 - **The house now** — a greeting, one line about the situation (and whether the heat pump
   runs), and the thermostat ring: the arc is the house temperature now, with the outdoor
-  temperature under it. **Target** with − / + saves by itself. Two shortcuts open the heat
+  temperature under it. **Target** with − / + moves in steps of 0.5 °C and saves by itself. Two shortcuts open the heat
   source and the next heating.
 - **Heat, plan and weather** — four tiles that open their sheets:
   - **Heat** — flow → return and the last 24 hours (from the heat source's own history).
   - **Next heating** — Odin's next block, its energy and today's price with a price chip.
-  - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched.
-  - **Circulation** — flow (m³/h), power and the split per controller.
+  - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched; it says
+    how many rooms have solar hold-off when any do.
+  - **Circulation** — flow (m³/h), power and the split per controller. The tile turns
+    yellow with **Mixing risk** when the circulation pump moves more water than the heat pump.
 - **Heat map** — rooms per controller. Each room shows its temperature, a chip with the
   distance to target (blue below, neutral near, orange above), a five-step valve bar and the
   opening. Rooms are sized by floor area. A room opens its sheet; a controller heading opens
@@ -93,7 +95,22 @@ to Asgard.
 
 **Settings** — the behaviour Touch controls: **Comfort target** (send the house target to
 Asgard's climate entity), **Odin plan** (use Odin's heat windows for warm-up and preload) and
-**Odin control** (let Touch raise Odin's comfort band, up to a max lift, when a room lags).
+**Odin control** (let Touch raise Odin's comfort band, up to a max lift, when a room lags)
+and **Odin's setpoint** (see below).
+
+<a id="odin-sync"></a>
+
+#### Odin's setpoint
+
+**Follow the house target** (off by default) makes Odin aim at the same temperature as the
+rooms. The house target is the rooms' targets averaged by heat loss, shown in steps of
+0.5 °C. Touch writes it as the setpoint in Odin's comfort schedule with one block all day and
+a band of **±** (default 0.5 °C), so Odin may only move heat within that band to save money.
+If someone changes the schedule in Odin, Touch writes setpoint and band again. Lifts for wind
+and a lagging room are added on top and removed again when they end.
+
+Without it, Odin keeps its own schedule and only the comfort target sync (to Asgard) follows
+the rooms.
 **Connection to heat source and Odin ›** opens the connection in the same tab; one save bar
 saves both.
 
@@ -113,6 +130,8 @@ and optionally syncs the comfort target. A wrong host or a disabled push blocks 
 
 Odin's planned heat for the next 24 hours together with Touch's preheating and charging per
 room, today's price per hour, and under **History** plan vs. actual for the last 12 hours.
+*Actual* is the heat the heat pump delivered each hour (from its own heat meter via Asgard);
+the current hour is marked as running.
 See [Odin plan ingestion](odin_plan_ingestion.md). **Settings** holds the power price.
 
 <a id="electricity-price-to-odin"></a>
@@ -172,7 +191,7 @@ API: `GET /prices`, `GET /prices/zone-defaults/{zone}`, `POST /prices/settings`,
 
 **Overview** — the next 72 hours as five small charts: sky, temperature (preheating hatched),
 sun, wind and wind direction. **History** — outdoor temperature for the last 24 hours.
-**Settings** — **max preload boost** and the location.
+**Settings** — **max preload boost**, **solar hold-off** and the location.
 
 <a id="weather"></a>
 
@@ -185,7 +204,30 @@ location; check them and save.
 
 Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
 Walls, wind and solar factors on each room decide which spaces preload.
-See [forecast preload](forecast_preload.md) and
+Preload starts when the load from wind and cold on a room passes 1.0:
+
+    load = wind factor × facade alignment × (wind m/s ÷ 10) × (ΔT indoor–outdoor ÷ 10)
+           − solar factor × irradiance ÷ 800
+
+Each load unit adds 0.5 °C, at most the **max preload boost** (1.5 °C). A fully exposed room
+(factor 1.0, wind straight on the facade) at 0 °C outside therefore starts preloading at about
+5 m/s; a room with factor 0.5 needs about 10 m/s. Commands live for 75 minutes and are not
+repeated within 30 minutes.
+
+<a id="solar-holdoff"></a>
+
+#### Solar hold-off
+
+Rooms with large windows are heated by the sun. With **Solar hold-off** on (switch, saves
+immediately), Touch lowers a room's target by up to 1.5 °C during the 3 hours before
+forecast sun, so the floor is not full of heat when the sun arrives. It starts at 250 W/m²
+and is full at 600 W/m², scaled by the room's solar factor; the sun now counts fully, the sun
+3 hours ahead a third. It only acts on rooms with a solar factor above 0.35 and a facade
+towards the sun, never on a room already 0.3 °C below its target, and wind and cold preload
+come first.
+
+See [forecast preload](forecast_preload.md),
+[house balancing and weather](house_balancing_and_weather.md) and
 [falsify heat-gain preload](falsify_heat_gain_preload.md).
 
 ### Circulation
@@ -227,7 +269,12 @@ expected next 24 hours. **History** — recent readings.
 
 <a id="room-factors"></a>
 
-- **Weather** — wind and solar factors (0–1) that scale preload.
+- **Weather** — wind and solar factors (0–1) that scale preload and solar hold-off.
+  Touch also **learns** both from the room's own data: each hour it compares how fast the room
+  warms or cools with outdoor temperature, wind on its facades, sun and the heat from its
+  loops. The sheet shows the learned values and how many sunny and windy hours they rest on.
+  Touch uses them only after enough hours (20 sunny, 30 windy) and only while the field is at
+  its default (sun 0.30, wind 0.50); a value you set yourself always comes first.
 - **From V6** — area and exterior walls, read from the V6 (read-only). **Edit on V6 ›** opens
   the zone's settings on that V6. When the V6 is offline, the values are dimmed.
 
