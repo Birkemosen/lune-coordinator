@@ -1494,8 +1494,7 @@
      målet (varme, én farve, 3.2.2). Et stiplet skalamærke på sporet viser huset nu. Træk i ringen,
      tast i tallet eller brug − / + i ringens åbning; det autogemmes. --v = målet og --now = huset
      nu, begge 0–100 % af skalaen (data-min/data-max på ringen). Huset nu og ude står som to små
-     kort til højre for ringen (.thermo-facts), og en stiplet linje går fra mærket til «Huset nu».
-     På mobil står kortene på én række under ringen, uden linje. */
+     kort til højre for ringen (.thermo-facts), på mobil på én række under den. */
   .thermo {
     --ring: min(212px, 60vw); --facts-gap: var(--space-6); --fact-top: var(--space-5); --fact-h: 3.5rem;
     display: grid; grid-template-columns: var(--ring) auto; align-items: start; gap: var(--space-1) var(--facts-gap);
@@ -1514,25 +1513,10 @@
   .thermo-facts dt > .chip-icon { grid-row: 1 / 3; }
   .thermo-facts dt > span:not(.chip-icon) { grid-column: 2; align-self: end; font-size: var(--fs-xs); color: var(--muted); }
   .thermo-facts dd { grid-column: 2; align-self: start; margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  /* Stiplet linje fra mærkets yderende (radius 49,4 af 100, vinkel 135° + --now × 2,7°) til
-     venstre kant midt på «Huset nu». Kun når mærket står på ringens højre halvdel (--now ≥ 50),
-     så linjen aldrig krydser tallet. */
-  .thermo-ring::after {
-    --th: calc((135 + var(--now, 0) * 2.7) * 1deg);
-    --x0: calc(var(--ring) * (.5 + .494 * cos(var(--th))));
-    --y0: calc(var(--ring) * (.5 + .494 * sin(var(--th))));
-    --dx: calc(var(--ring) + var(--facts-gap) - var(--x0));
-    --dy: calc(var(--fact-top) + var(--fact-h) / 2 - var(--y0));
-    content: ""; position: absolute; left: var(--x0); top: var(--y0); width: hypot(var(--dx), var(--dy)); height: 0;
-    border-top: 2px dashed var(--accent); transform-origin: 0 0; transform: rotate(atan2(var(--dy), var(--dx)));
-    pointer-events: none; opacity: clamp(0, (var(--now, 0) - 49) * 1, 1);
-  }
-  .thermo-ring:not([style*="--now"])::after, .thermo:has(.thermo-facts > div:first-child > dd:empty) .thermo-ring::after { display: none; }
   @media (max-width: 767.98px) {
     .thermo { grid-template-columns: minmax(0, 1fr); justify-items: center; }
     .thermo > .thermo-ring, .thermo > .autosave { grid-column: 1; }
     .thermo-facts { grid-column: 1; grid-row: 2; grid-auto-flow: column; padding-top: 0; margin-top: var(--space-3); }
-    .thermo-ring::after { display: none; }
   }
   .thermo-ring { position: relative; width: var(--ring, min(212px, 60vw)); aspect-ratio: 1; touch-action: none; cursor: pointer; user-select: none; }
   .thermo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(135deg); }
@@ -1633,6 +1617,24 @@
   .home-tile > .ht-val { grid-area: val; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin-top: var(--space-4);
     font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
   .home-tile > .ht-val small { font-size: var(--fs-sm); font-weight: 400; color: var(--muted); letter-spacing: 0; }
+  /* Frem og retur i Varme-feltet: frem over retur, en halvbue fra frem til retur og ΔT ud for
+     buens midte. Buen er systemets eneste gradient mellem to kulører (undtagelse fra 3.2.2): den
+     viser vandet, der køler af fra frem (varme) til retur (blå). Mellemstop er blandet i OKLab,
+     så midten ikke bliver mudret. Én forekomst pr. side (id lds-fr). */
+  .home-tile > .ht-fr { grid-area: val; display: grid; grid-template-columns: auto auto 18px auto; grid-template-rows: auto auto;
+    align-items: baseline; gap: 0 var(--space-2); justify-content: start; margin-top: var(--space-4); }
+  .ht-fr > small { font-size: var(--fs-sm); color: var(--muted); }
+  .ht-fr > b { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; font-variant-numeric: tabular-nums; text-align: right; }
+  .ht-fr > .fr-arc { grid-column: 3; grid-row: 1 / 3; align-self: stretch; width: 18px; height: calc(100% - 1.2em); margin-block: .6em; overflow: visible; }
+  .fr-arc path { fill: none; stroke: url(#lds-fr); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .fr-arc stop:nth-child(1) { stop-color: var(--accent); }
+  .fr-arc stop:nth-child(2) { stop-color: color-mix(in oklab, var(--accent) 75%, var(--data-return)); }
+  .fr-arc stop:nth-child(3) { stop-color: color-mix(in oklab, var(--accent) 50%, var(--data-return)); }
+  .fr-arc stop:nth-child(4) { stop-color: color-mix(in oklab, var(--accent) 25%, var(--data-return)); }
+  .fr-arc stop:nth-child(5) { stop-color: var(--data-return); }
+  .ht-fr > .fr-dt { grid-column: 4; grid-row: 1 / 3; align-self: center; display: grid; gap: 0; padding-left: var(--space-1); }
+  .fr-dt small { font-size: var(--fs-xs); color: var(--muted); }
+  .fr-dt b { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
   .home-tile > .ht-viz { grid-area: viz; align-self: end; display: block; width: 100%; height: 64px; margin-top: var(--space-4); overflow: visible; }
   .home-tile[data-empty] > .ht-viz { display: none; }
   /* Én ekstra linje (fx aktuel elpris + skala-chip i Næste varme). */

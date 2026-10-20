@@ -1,5 +1,6 @@
 #pragma once
 
+#include "hp_phase.h"
 #include "coordinator_model.h"
 #include "energy_price.h"
 #include "exposure_learning.h"
@@ -128,6 +129,8 @@ struct HeatSourceState {
   bool target_sync_enabled{true};
   // Rough balance between V6 manifolds (house_balance.h). Opt-in.
   bool house_balance_enabled{false};
+  // Valves follow the heat pump (hp_phase.h): tell V6 running / prestart / idle. Opt-in.
+  bool valves_follow_hp_enabled{false};
   float last_target_written_c{NAN};
   float last_target_confirmed_c{NAN};
   uint32_t last_target_write_ms{0};
@@ -644,6 +647,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_odin_sync(bool has_enabled, bool enabled, float band_c);
   bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
+  bool set_valves_follow_hp_enabled(bool enabled);
   bool request_forecast_fetch(char *response, size_t capacity);
   bool estimate_forecast_location(char *response, size_t capacity);
   bool set_heat_source_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
@@ -780,6 +784,15 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_house_balance_(uint32_t now_ms);
   bool send_v6_house_balance_(const char *host, uint8_t zone_index, float factor, uint32_t ttl_s);
   void append_house_balance_json_(char *buffer, size_t capacity) const;
+  // Valves follow the heat pump: phase pushed to every approved V6.
+  ::lune_touch_hp_phase::State hp_phase_state_{};
+  ::lune_touch_hp_phase::Phase hp_phase_{::lune_touch_hp_phase::Phase::Unknown};
+  ::lune_touch_hp_phase::Phase hp_phase_sent_{::lune_touch_hp_phase::Phase::Unknown};
+  uint32_t hp_phase_push_ms_{0};
+  uint32_t hp_phase_nonce_{0};
+  bool hp_phase_release_pending_{false};
+  void run_hp_phase_(uint32_t now_ms);
+  bool send_v6_hp_phase_(const char *host, const char *phase, uint32_t ttl_s);
   bool ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
                                const char *body, uint32_t now_ms);
   bool fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,

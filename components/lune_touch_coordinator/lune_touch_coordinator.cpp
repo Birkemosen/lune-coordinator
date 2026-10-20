@@ -2081,6 +2081,7 @@ void LuneTouchCoordinator::poll_task_() {
       if (lease_due)
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
+      run_hp_phase_(esphome::millis());
       run_exposure_learning_();
 
       if (circulation_due)
@@ -7287,6 +7288,9 @@ void LuneTouchCoordinator::load_settings_() {
     uint8_t house_balance = 0;
     if (nvs_get_u8(handle, "hs_hbal_en", &house_balance) == ESP_OK)
       heat_source_.house_balance_enabled = house_balance != 0;
+    uint8_t follow_hp = 0;
+    if (nvs_get_u8(handle, "hs_vfhp_en", &follow_hp) == ESP_OK)
+      heat_source_.valves_follow_hp_enabled = follow_hp != 0;
     uint8_t target_sync = heat_source_.target_sync_enabled ? 1 : 0;
     if (nvs_get_u8(handle, "hs_target_en", &target_sync) == ESP_OK)
       heat_source_.target_sync_enabled = target_sync != 0;
@@ -7504,6 +7508,7 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK) err = nvs_set_str(handle, "hs_climate", heat_source_.climate_entity);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_target_en", heat_source_.target_sync_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_hbal_en", heat_source_.house_balance_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_u8(handle, "hs_vfhp_en", heat_source_.valves_follow_hp_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_en", odin_plan_.enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_absorb", odin_plan_.absorb_arm_enabled ? 1 : 0);
     if (err == ESP_OK)
@@ -15336,6 +15341,109 @@ void LuneTouchCoordinator::run_house_balance_(uint32_t now_ms) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Valves follow the heat pump (hp_phase.h): every approved V6 learns whether the
+// heat pump runs, is about to start, or is idle. Pushed on a change and every
+// 5 min with a 15 min TTL, so V6 falls back to its own curve by itself.
+// -----------------------------------------------------------------------------
+bool LuneTouchCoordinator::set_valves_follow_hp_enabled(bool enabled) {
+  if (!take_state_lock_(100))
+    return false;
+  const bool changed = heat_source_.valves_follow_hp_enabled != enabled;
+  heat_source_.valves_follow_hp_enabled = enabled;
+  if (changed) {
+    hp_phase_push_ms_ = 0;
+    hp_phase_release_pending_ = !enabled;
+  }
+  give_state_lock_();
+  if (changed) {
+    save_settings_();
+    log_event_("info", "settings", enabled ? "valves follow heat pump on" : "valves follow heat pump off");
+  }
+  return true;
+}
+
+void LuneTouchCoordinator::run_hp_phase_(uint32_t now_ms) {
+  namespace hpp = ::lune_touch_hp_phase;
+  constexpr uint32_t PERIOD_MS = 5UL * 60UL * 1000UL;
+  constexpr uint32_t TTL_S = 15UL * 60UL;
+  constexpr size_t N = ::lune_touch::MAX_NODES;
+  char hosts[N][64]{};
+  size_t count = 0;
+  hpp::Input in{};
+  uint8_t minute = 0;
+  if (time_ != nullptr) {
+    const auto now = time_->now();
+    if (now.is_valid())
+      minute = static_cast<uint8_t>(now.minute);
+  }
+  if (!take_state_lock_(100))
+    return;
+  const auto &h = heat_source_;
+  in.telemetry_fresh = h.hp_telemetry_ms != 0 && now_ms - h.hp_telemetry_ms < 5UL * 60UL * 1000UL;
+  in.compressor_on = h.hp_compressor_on;
+  in.water_pump_on = h.hp_water_pump_on;
+  in.operation_mode = h.hp_operation_mode;
+  in.plan_known = odin_plan_.available && odin_plan_.heat_production_count >= 2;
+  in.plan_heat_now_kw = odin_plan_.heat_production_horizon[0];
+  in.plan_mode_now = odin_plan_.operation_mode_horizon[0];
+  in.plan_heat_next_kw = odin_plan_.heat_production_horizon[1];
+  in.plan_mode_next = odin_plan_.operation_mode_horizon[1];
+  in.minute = minute;
+  hp_phase_ = hpp::step(hp_phase_state_, in, now_ms);
+  const bool enabled = h.valves_follow_hp_enabled;
+  const bool release = hp_phase_release_pending_;
+  const bool changed = hp_phase_ != hp_phase_sent_;
+  const bool due = release || changed || hp_phase_push_ms_ == 0 || now_ms - hp_phase_push_ms_ >= PERIOD_MS;
+  const hpp::Phase phase = hp_phase_;
+  if ((enabled || release) && due) {
+    for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+      const auto *node = model_.node(i);
+      if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+        continue;
+      const char *host = node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
+      if (host[0] == '\0')
+        continue;
+      std::strncpy(hosts[count], host, sizeof(hosts[count]) - 1);
+      count++;
+    }
+    hp_phase_push_ms_ = now_ms == 0 ? 1 : now_ms;
+    hp_phase_sent_ = release ? hpp::Phase::Unknown : phase;
+    hp_phase_release_pending_ = false;
+  }
+  give_state_lock_();
+  if (count == 0 || current_epoch_s_() <= 0)
+    return;
+  // Unknown (no data) and release both send "unknown": V6 is back on its own curve.
+  const char *name = release ? "unknown" : hpp::name(phase);
+  const uint32_t ttl_s = release || phase == hpp::Phase::Unknown ? 60 : TTL_S;
+  for (size_t i = 0; i < count; i++)
+    send_v6_hp_phase_(hosts[i], name, ttl_s);
+}
+
+bool LuneTouchCoordinator::send_v6_hp_phase_(const char *host, const char *phase, uint32_t ttl_s) {
+  if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
+    return false;
+  const int64_t ts = current_epoch_s_();
+  char nonce[48];
+  snprintf(nonce, sizeof(nonce), "hpp-%lld-%lu", static_cast<long long>(ts),
+           static_cast<unsigned long>(++hp_phase_nonce_));
+  char payload[192];
+  snprintf(payload, sizeof(payload),
+           "{\"phase\":\"%s\",\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+           phase, static_cast<unsigned long>(ttl_s), static_cast<long long>(ts), nonce);
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/v1/heat-pump-phase", host);
+  char body[256];
+  int status = 0;
+  if (!post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+    // 404 = V6 firmware without the route; it simply keeps its own curve.
+    ESP_LOGD(TAG, "V6 heat pump phase via %s failed (%d)", host, status);
+    return false;
+  }
+  return true;
+}
+
 bool LuneTouchCoordinator::send_v6_house_balance_(const char *host, uint8_t zone_index, float factor,
                                                   uint32_t ttl_s) {
   if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
@@ -15376,6 +15484,8 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
   };
   if (!take_state_lock_(50))
     return;
+  add(",\"valves_follow_hp\":{\"enabled\":%s,\"phase\":\"%s\"}",
+      heat_source_.valves_follow_hp_enabled ? "true" : "false", ::lune_touch_hp_phase::name(hp_phase_));
   add(",\"house_balance\":{\"enabled\":%s,\"boards\":[",
       heat_source_.house_balance_enabled ? "true" : "false");
   bool first = true;

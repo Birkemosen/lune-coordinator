@@ -136,6 +136,7 @@
     read_url_template: '',
     climate_entity: 'Virtual Thermostat z1',
     target_sync_enabled: true,
+    valves_follow_hp: { enabled: true, phase: 'idle' },
     house_balance: { enabled: false, boards: [
       { node_id: 'lune-v6-cbe680', name: 'Stue', worst_kpa: 17.6, scale: 0.74, applied: 1 },
       { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: 32.1, scale: 1, applied: 1 }] },
@@ -542,6 +543,7 @@
       if (body.target_sync_enabled != null) mockHeat.target_sync_enabled = bool(body.target_sync_enabled);
       if (body.odin_plan_enabled != null) mockHeat.odin_plan_enabled = bool(body.odin_plan_enabled);
       if (body.house_balance_enabled != null) mockHeat.house_balance.enabled = bool(body.house_balance_enabled);
+      if (body.valves_follow_hp_enabled != null) mockHeat.valves_follow_hp.enabled = bool(body.valves_follow_hp_enabled);
       if (body.climate_entity) mockHeat.climate_entity = body.climate_entity;
       if (body.write_url_template) mockHeat.write_url_template = body.write_url_template;
       if (body.read_url_template) mockHeat.read_url_template = body.read_url_template;
@@ -1319,8 +1321,9 @@
       if (fn) fl = fs / fn;
       if (rn) rt = rs / rn;
     }
-    var heatVal = fl == null && rt == null ? '—' : deg(fl) + ' → ' + deg(rt);
-    setText('tile.heatVal', heatVal);
+    setText('tile.heatFlow', deg(fl));
+    setText('tile.heatRet', deg(rt));
+    setText('tile.heatDt', fl != null && rt != null ? deg(fl - rt) : '—');
     pushHeatSample(fl, rt);
   }
 
@@ -1722,9 +1725,16 @@
       putVal(bf.querySelector('[name="odin_plan_enabled"]'), !!hs.odin_plan_enabled);
       if (bf.luneResnap) bf.luneResnap();
     }
+    // Valves follow the heat pump: what Touch tells the V6s now.
+    var vf = hs.valves_follow_hp || {};
+    if (hs.valves_follow_hp) {
+      var ph = ['running', 'prestart', 'idle'].indexOf(vf.phase) >= 0 ? vf.phase : 'unknown';
+      setText('heat.valvesNow', t('heat.phase.' + (vf.enabled ? ph : 'off')));
+    }
     var hbf = qs('form[data-save="circulation"]');
     if (hbf && !formBusy(hbf)) {
       putVal(hbf.querySelector('[name="house_balance_enabled"]'), !!(hs.house_balance || {}).enabled);
+      putVal(hbf.querySelector('[name="valves_follow_hp_enabled"]'), !!(hs.valves_follow_hp || {}).enabled);
       if (hbf.luneResnap) hbf.luneResnap();
     }
     drawHouseBalance(hs.house_balance);
@@ -3186,7 +3196,9 @@
       } else if (key === 'circulation') {
         if (has(ch, 'house_balance_enabled'))
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
-        var balanceOnly = Object.keys(ch).length === 1 && has(ch, 'house_balance_enabled');
+        if (has(ch, 'valves_follow_hp_enabled'))
+          await post('/heat-source/settings', { valves_follow_hp_enabled: bit(fval(form, 'valves_follow_hp_enabled')) });
+        var balanceOnly = Object.keys(ch).every(function (k) { return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled'; });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',
           host: data.host || '',
@@ -3338,8 +3350,11 @@
       if (key === 'heat_source') { await saveHeatConnection(form, ch); await saveHeatBehavior(form, ch); }
       else if (key === 'weather' && sw.name === 'solar_holdoff_enabled')
         await post('/weather/settings', { solar_holdoff_enabled: on ? 1 : 0 });
-      else if (key === 'circulation' && sw.name === 'house_balance_enabled')
-        await post('/heat-source/settings', { house_balance_enabled: on ? 1 : 0 });
+      else if (key === 'circulation' && (sw.name === 'house_balance_enabled' || sw.name === 'valves_follow_hp_enabled')) {
+        var one = {};
+        one[sw.name] = on ? 1 : 0;
+        await post('/heat-source/settings', one);
+      }
       else if (key === 'rooms') await saveRoom(form, ch);
       else if (key === 'prices' && sw.name === 'enabled') await post('/prices/settings', { enabled: on ? '1' : '0' });  // absent keys = unchanged
       else return;   // no single-field path: the switch waits for the save bar

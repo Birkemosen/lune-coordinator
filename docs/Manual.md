@@ -61,10 +61,11 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   runs), and the thermostat ring. The ring **sets the target**: drag the handle along the arc,
   type the number in the middle, or use − / + in the ring's opening. The target moves in steps
   of 0.5 °C and saves by itself. The dashed orange mark across the arc is the house temperature
-  now, with a dashed line to the **House now** card; **House now** and **Outside** stand as two
-  small cards to the right of the ring (below it on a phone, without the line).
+  now; **House now** and **Outside** stand as two small cards to the right of the ring (below it
+  on a phone).
 - **Heat, plan and weather** — four tiles that open their sheets:
-  - **Heat** — flow → return and the last 24 hours (from the heat source's own history).
+  - **Heat** — flow over return with ΔT between them, and the last 24 hours (from the heat
+    source's own history).
   - **Next heating** — Odin's next block, its energy and today's price with a price chip.
   - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched; it says
     how many rooms have solar hold-off when any do.
@@ -251,6 +252,24 @@ pressure need from area, pipe and spacing and throttles the easy manifold; the r
 each board's scale. V6 keeps its own split within a manifold and returns to it by itself
 15 min after Touch stops sending. See
 [house balancing](house_balancing_and_weather.md#4-balancing-between-manifolds).
+
+<a id="valves-follow-hp"></a>
+
+**Loops › Follow the heat pump** (switch, off by default): V6's heat-pump openings (base 60 %,
+demand 80 %) only pay while the compressor runs — lots of floor area and flow keep the flow
+temperature low. With this on, Touch tells every approved V6 what the heat pump does:
+
+- **Running** — space heating with the compressor or the primary pump on (held 5 minutes after
+  it stops, so defrost and short pauses do not count): the loops keep the heat-pump openings.
+- **Starts soon** — Odin plans space heat this hour, or next hour within 10 minutes: the loops
+  open first, so the heat pump starts with full flow.
+- **Idle** — everything else, hot water included: rooms at or above target close to the trim
+  floor, so the buffer's remaining heat goes to the rooms below target and the circulation pump
+  moves less water. Rooms below target open as always.
+
+The phase is sent on every change and every 5 minutes with a 15-minute lifetime; without fresh
+heat pump data (or with the switch off) V6 is back on its own curve. **Loops now** in the
+Overview shows what V6 is told.
 
 <a id="pump"></a>
 
