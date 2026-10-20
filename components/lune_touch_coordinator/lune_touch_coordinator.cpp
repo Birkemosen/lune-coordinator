@@ -2932,7 +2932,7 @@ void LuneTouchCoordinator::run_odin_control_() {
     const auto strategy = model_.strategy_snapshot();
     if (strategy.has_house_target && std::isfinite(strategy.house_target_c)) {
       sync.on = true;
-      sync.sp = strategy.house_target_c;
+      sync.sp = std::round(strategy.house_target_c * 2.0f) / 2.0f;   // half degrees, as shown
       sync.band_c = odin_control_.sync_band_c;
     }
   }
@@ -11669,7 +11669,21 @@ float LuneTouchCoordinator::display_house_target_c() const {
   const auto strategy = model_.strategy_snapshot();
   const float value = strategy.has_house_target ? strategy.house_target_c : NAN;
   give_state_lock_();
-  return value;
+  // The house target is shown and changed in half degrees (the weighted mean of
+  // the rooms is kept internally for demand and comfort).
+  return std::isfinite(value) ? std::round(value * 2.0f) / 2.0f : value;
+}
+
+bool LuneTouchCoordinator::set_house_target(float target_c) {
+  if (!std::isfinite(target_c) || target_c < 5.0f || target_c > 30.0f)
+    return false;
+  const float shown = display_house_target_c();
+  if (!std::isfinite(shown))
+    return false;
+  const float delta = std::round(target_c * 2.0f) / 2.0f - shown;
+  if (std::fabs(delta) < 0.01f)
+    return true;
+  return display_adjust_house_target(delta);
 }
 
 float LuneTouchCoordinator::display_house_temperature_c() const {

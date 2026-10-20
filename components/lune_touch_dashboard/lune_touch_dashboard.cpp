@@ -1194,6 +1194,16 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "source", source, sizeof(source));
     const bool accepted = coordinator_->set_forecast_location(latitude, longitude, source, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/strategy") == 0) {
+    // Home thermostat: the house target in half degrees; every room moves by the step.
+    float target = NAN;
+    if (!parse_float_param(api, api.json_body, "house_target_c", &target)) {
+      send_error_(api, 400, "missing_param", "house_target_c is required");
+      return;
+    }
+    const bool accepted = coordinator_->set_house_target(target);
+    snprintf(data_buf_, DATA_BUF_SIZE, accepted ? "{\"result\":\"stored\"}" : "{\"result\":\"rejected\",\"error\":\"house_target_rejected\"}");
+    send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/weather/settings") == 0) {
     // Either field alone is a valid save (the solar switch saves on its own).
     float max_boost_c = 1.5f;
