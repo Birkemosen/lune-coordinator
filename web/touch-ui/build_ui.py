@@ -591,7 +591,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {group(T("room.house"), sswitch(f"room:{rid}:include", T("room.include"), T("room.includeSub"), True) +
                  sstep(f"room:{rid}:weight", T("room.weight"), 1.0, 0, 5, 0.05, "×", dec=2, id_=f"{rid}-weight", hint=T("room.weightHint")))}
           {group(T("room.weather"), sstep(f"room:{rid}:wind", T("room.wind"), 0.5, 0, 1, 0.05, "", dec=2, id_=f"{rid}-wind") +
-                 sstep(f"room:{rid}:solar", T("room.solar"), 0.3, 0, 1, 0.05, "", dec=2, id_=f"{rid}-solar"))}
+                 sstep(f"room:{rid}:solar", T("room.solar"), 0.3, 0, 1, 0.05, "", dec=2, id_=f"{rid}-solar"),
+                 extra=f'<p class="note" data-f="learned" aria-live="polite"></p><p class="note">{T("room.learnedUse")}</p>')}
           {v6}
           {savebar(f"room-{rid}", T("rconf.save"))}
         </form>'''
@@ -932,7 +933,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "room.loops", "room.valveShort", "room.fromV6", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
