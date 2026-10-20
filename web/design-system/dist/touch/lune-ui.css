@@ -1406,7 +1406,10 @@
   .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 6; stroke-dasharray: 75 100; }
   .thermo-ring .arc { stroke: var(--accent); stroke-width: 6; stroke-dasharray: calc(var(--v, 0) * .75) 100; }
   .thermo-ring .knob { stroke: var(--fg); stroke-width: 11; stroke-dasharray: .01 100; stroke-dashoffset: calc(var(--v, 0) * -.75 + .01); }
-  .thermo-ring .now { stroke: var(--fg); stroke-width: 2.5; stroke-dasharray: .9 100; stroke-dashoffset: calc(var(--now, 0) * -.75 + .45); }
+  /* Huset nu: et stiplet skalamærke på tværs af sporet, der stikker ud på begge sider, så det
+     også ses inde på buen. Drejes til --now (270° skala) om ringens midte. */
+  .thermo-ring .now { stroke: var(--accent); stroke-width: 2; stroke-linecap: butt; stroke-dasharray: 2.2 1.4;
+    transform-box: view-box; transform-origin: 50px 50px; transform: rotate(calc(var(--now, 0) * 2.7deg)); }
   .thermo-ring:not([style*="--now"]) .now { display: none; }
   .thermo-ring:focus-within .knob { stroke: var(--accent-ink); }
   .thermo-val { position: absolute; inset: 14%; display: grid; place-content: center; justify-items: center; gap: 0; text-align: center; pointer-events: none; }
