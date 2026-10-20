@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.21
+
+- Home Assistant-temaet sætter Bubble Cards variabler (`--bubble-*`: flader, radier, ingen skygger) og LDS' fyldtoner som `--lune-*`. Eksempel: `examples/home-assistant/varme-dashboard-bubble.yaml` (overblik med ikonbrikker, ark som Bubble pop-ups). DESIGN 14.3 beskriver mønstret.
+
 ## 2.3.20
 
 - `.setting`: labelen har en minimumsbredde (8rem), og rækken brydes ved alle bredder, så en bred kontrol (fx et segment med fire valg) lægger sig under labelen i stedet for at klemme den.
