@@ -1491,18 +1491,22 @@
   }
 
   /* Termostat-ring: 270°-bue, der indstiller målet. Sporet er neutralt, buen og håndtaget er
-     målet (varme, én farve, 3.2.2). Et lille mærke uden for sporet viser huset nu. Træk i ringen,
+     målet (varme, én farve, 3.2.2). Et stiplet skalamærke på sporet viser huset nu. Træk i ringen,
      tast i tallet eller brug − / + i ringens åbning; det autogemmes. --v = målet og --now = huset
      nu, begge 0–100 % af skalaen (data-min/data-max på ringen). Huset nu og ude står som to små
-     kort til venstre for ringen (.thermo-facts), på mobil på én række under den. */
-  .thermo { display: grid; grid-template-columns: auto auto; align-items: center; gap: var(--space-1) var(--space-5); }
-  .thermo > .thermo-ring { grid-column: 2; grid-row: 1; }
-  .thermo > .autosave { grid-column: 2; justify-self: center; }
-  .thermo-facts { grid-column: 1; grid-row: 1; display: grid; gap: var(--space-2); margin: 0; }
+     kort til højre for ringen (.thermo-facts), og en stiplet linje går fra mærket til «Huset nu».
+     På mobil står kortene på én række under ringen, uden linje. */
+  .thermo {
+    --ring: min(212px, 60vw); --facts-gap: var(--space-6); --fact-top: var(--space-5); --fact-h: 3.5rem;
+    display: grid; grid-template-columns: var(--ring) auto; align-items: start; gap: var(--space-1) var(--facts-gap);
+  }
+  .thermo > .thermo-ring { grid-column: 1; grid-row: 1; }
+  .thermo > .autosave { grid-column: 1; justify-self: center; }
+  .thermo-facts { grid-column: 2; grid-row: 1; display: grid; gap: var(--space-2); margin: 0; padding-top: var(--fact-top); }
   /* Hvert kort: ikonbrik i domænets farve (huset = varme, ude = vejr) + label og tal. */
   .thermo-facts > div {
     display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--space-3);
-    min-width: 8.5rem; padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
+    height: var(--fact-h); min-width: 8.5rem; padding: 0 var(--space-4) 0 var(--space-2);
     border-radius: var(--r-tile); background: var(--lift-bg); box-shadow: var(--lift);
   }
   .thermo-facts > div:has(> dd:empty) { display: none; }
@@ -1510,12 +1514,27 @@
   .thermo-facts dt > .chip-icon { grid-row: 1 / 3; }
   .thermo-facts dt > span:not(.chip-icon) { grid-column: 2; align-self: end; font-size: var(--fs-xs); color: var(--muted); }
   .thermo-facts dd { grid-column: 2; align-self: start; margin: 0; font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  /* Stiplet linje fra mærkets yderende (radius 49,4 af 100, vinkel 135° + --now × 2,7°) til
+     venstre kant midt på «Huset nu». Kun når mærket står på ringens højre halvdel (--now ≥ 50),
+     så linjen aldrig krydser tallet. */
+  .thermo-ring::after {
+    --th: calc((135 + var(--now, 0) * 2.7) * 1deg);
+    --x0: calc(var(--ring) * (.5 + .494 * cos(var(--th))));
+    --y0: calc(var(--ring) * (.5 + .494 * sin(var(--th))));
+    --dx: calc(var(--ring) + var(--facts-gap) - var(--x0));
+    --dy: calc(var(--fact-top) + var(--fact-h) / 2 - var(--y0));
+    content: ""; position: absolute; left: var(--x0); top: var(--y0); width: hypot(var(--dx), var(--dy)); height: 0;
+    border-top: 2px dashed var(--accent); transform-origin: 0 0; transform: rotate(atan2(var(--dy), var(--dx)));
+    pointer-events: none; opacity: clamp(0, (var(--now, 0) - 49) * 1, 1);
+  }
+  .thermo-ring:not([style*="--now"])::after, .thermo:has(.thermo-facts > div:first-child > dd:empty) .thermo-ring::after { display: none; }
   @media (max-width: 767.98px) {
     .thermo { grid-template-columns: minmax(0, 1fr); justify-items: center; }
     .thermo > .thermo-ring, .thermo > .autosave { grid-column: 1; }
-    .thermo-facts { grid-column: 1; grid-row: 2; grid-auto-flow: column; margin-top: var(--space-3); }
+    .thermo-facts { grid-column: 1; grid-row: 2; grid-auto-flow: column; padding-top: 0; margin-top: var(--space-3); }
+    .thermo-ring::after { display: none; }
   }
-  .thermo-ring { position: relative; width: min(212px, 60vw); aspect-ratio: 1; touch-action: none; cursor: pointer; user-select: none; }
+  .thermo-ring { position: relative; width: var(--ring, min(212px, 60vw)); aspect-ratio: 1; touch-action: none; cursor: pointer; user-select: none; }
   .thermo-ring svg { display: block; width: 100%; height: 100%; transform: rotate(135deg); }
   .thermo-ring circle { fill: none; stroke-linecap: round; }
   .thermo-ring .trk { stroke: var(--seg-off); stroke-width: 6; stroke-dasharray: 75 100; }
