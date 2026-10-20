@@ -547,6 +547,8 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Home: what Touch does because of the weather (preload, slab charge, solar hold-off);
   /// empty = nothing (the box hides; the status bar already shows the weather itself).
   std::string display_weather_message() const;
+  /// The address Touch reaches the controller on (last good host, else its IP).
+  std::string display_manifold_ip(uint8_t node_index) const;
   uint8_t display_forecast_visible_hours() const;
   std::string display_forecast_hour_label(uint8_t index) const;
   std::string display_forecast_hour_temp(uint8_t index) const;

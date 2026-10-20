@@ -571,8 +571,13 @@ text_sensor:
                 lv_obj_set_style_text_font(mrow_names[node],
                     large ? id(lds_font_md) : id(lds_font_sm), LV_PART_MAIN);
                 lv_obj_set_style_text_color(mrow_names[node], lv_color_hex(c_fg), LV_PART_MAIN);
-                char mid_buf[8];
-                std::snprintf(mid_buf, sizeof(mid_buf), "M%u", static_cast<unsigned>(node + 1));
+                // «M1 · 192.168.20.13»: the controller's address as small text.
+                const std::string mip = id(lune_touch_app).display_manifold_ip(node);
+                char mid_buf[48];
+                if (mip.empty())
+                  std::snprintf(mid_buf, sizeof(mid_buf), "M%u", static_cast<unsigned>(node + 1));
+                else
+                  std::snprintf(mid_buf, sizeof(mid_buf), "M%u · %s", static_cast<unsigned>(node + 1), mip.c_str());
                 set_label(mrow_mids[node], mid_buf);
                 lv_obj_set_style_text_color(mrow_mids[node], lv_color_hex(c_muted), LV_PART_MAIN);
                 const std::string flow = strip_c(id(lune_touch_app).display_controller_flow_text(node));
@@ -627,6 +632,7 @@ text_sensor:
                 lv_obj_set_pos(mrow_names[node], row_pad_x, head_y0);
                 lv_obj_set_size(mrow_names[node], head_w - 8, large ? 32 : 28);
                 lv_obj_set_pos(mrow_mids[node], row_pad_x, head_y0 + (large ? 28 : 24));
+                lv_obj_set_width(mrow_mids[node], head_w - 8);
                 lv_obj_set_pos(mrow_flows[node], row_pad_x, head_y0 + (large ? 50 : 44));
                 if (large) {
                   lv_obj_set_pos(mrow_dts[node], row_pad_x, head_y0 + 70);

@@ -10652,7 +10652,10 @@ std::string LuneTouchCoordinator::display_manifold_text(uint8_t node_index) cons
   const bool stale = model_.is_node_stale(node_index, esphome::millis());
   const char *state = !node->reachable || stale ? "Offline" : heating > 0 ? "Heating" : "Ready";
   const char *state_icon = !node->reachable || stale ? DISPLAY_ICON_WARNING : DISPLAY_ICON_OK;
-  const char *name = node->name[0] != '\0' ? node->name : node->node_id;
+  // The name the controller was given (its device name), not the old IP-derived node name.
+  const char *name = node_index < ::lune_touch::MAX_NODES && node_device_name_[node_index][0] != '\0'
+                         ? node_device_name_[node_index]
+                         : (node->name[0] != '\0' ? node->name : node->node_id);
   char buffer[144];
   snprintf(buffer, sizeof(buffer), "%.17s\n%s %s\n%s %s  %s %s", name, state_icon, state,
            DISPLAY_ICON_UP, flow, DISPLAY_ICON_DOWN, ret);
@@ -11062,6 +11065,19 @@ std::string LuneTouchCoordinator::display_forecast_text() const {
            forecast_min_temp_c_, DISPLAY_ICON_WIND, forecast_max_wind_ms_, decision);
   give_state_lock_();
   return buffer;
+}
+
+std::string LuneTouchCoordinator::display_manifold_ip(uint8_t node_index) const {
+  if (node_index >= ::lune_touch::MAX_NODES || !take_state_lock_(50))
+    return "";
+  std::string ip;
+  const auto *node = model_.node(node_index);
+  if (node_last_success_host_[node_index][0] != '\0')
+    ip = node_last_success_host_[node_index];
+  else if (node != nullptr)
+    ip = node->fallback_ip[0] != '\0' ? node->fallback_ip : node->hostname;
+  give_state_lock_();
+  return ip;
 }
 
 std::string LuneTouchCoordinator::display_weather_message() const {
