@@ -2,7 +2,7 @@
 
 ## 2.3.13
 
-- `.thermo-facts`: «Huset nu» og «Ude» som to små kort (`--lift-bg` + `--lift`) til venstre for termostat-ringen, på mobil på én række under den. Ringen viser kun «Mål» og målet.
+- `.thermo-facts`: «Huset nu» og «Ude» som to små kort (`--lift-bg` + `--lift`) til venstre for termostat-ringen, på mobil på én række under den. Ringen viser kun «Mål» og målet. Hvert kort har en ikonbrik i domænets farve: huset i varme (husikon, som buen), ude i vejr (sol bag sky, blå som Vejr-feltet).
 
 ## 2.3.12
 
