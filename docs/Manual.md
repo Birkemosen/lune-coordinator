@@ -80,8 +80,18 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
 
 ### House temperature
 
-Weighted average of rooms marked "include in house temperature". Coverage shows
-how many approved manifolds contribute. Authority is Touch when it holds the lease.
+Weighted average of rooms marked "include in house temperature". A V6 sync group (one
+room with several loops, e.g. Stue + Stue Repo) counts as one room with the mean of its
+sensors — the same value V6 controls on — and the members' floor area. Coverage shows
+how many approved manifolds contribute.
+
+**What is sent to the heat pump** is not the plain average but a *comfort signal*: the
+house target plus each room's deviation from its own target, where a deficit counts in
+full and a surplus only at 30 % (a warm room cannot give heat to a cold one, and V6 closes
+it anyway). A room more than 0.5 °C below its target pulls the signal at least
+(deficit − 0.5) below the house target; only rooms with at least 5 % of the weight can do
+that alone. So a warm ground floor can no longer hide a cold upper floor and keep the heat
+pump off. The dashboard still shows the real average. Authority is Touch when it holds the lease.
 **How is it calculated?** in the Heat sheet shows each room's weight.
 
 ---

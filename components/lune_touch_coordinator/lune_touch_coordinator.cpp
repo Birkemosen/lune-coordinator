@@ -2260,7 +2260,10 @@ bool LuneTouchCoordinator::push_weighted_temperature_() {
   } else if (source.host[0] == '\0') {
     std::strncpy(error, "address missing", sizeof(error) - 1);
   } else if (strategy.has_physical_temperature && std::isfinite(strategy.physical_temperature_c)) {
-    value_to_write = strategy.physical_temperature_c;
+    // Comfort signal: each room against its own target, deficits in full (comfort_signal.h).
+    value_to_write = strategy.has_comfort_signal && std::isfinite(strategy.comfort_signal_c)
+                         ? strategy.comfort_signal_c
+                         : strategy.physical_temperature_c;
     if (authority_smooth_first_write_ && std::isfinite(authority_last_fallback_value_c_)) {
       value_to_write = std::clamp(value_to_write, authority_last_fallback_value_c_ - 0.5f,
                                   authority_last_fallback_value_c_ + 0.5f);
@@ -12760,6 +12763,8 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
   char asgard_mode[32];
   char physical_temperature[16];
   char comfort_average[16];
+  char comfort_signal[16];
+  char comfort_deviation[16];
   char comfort_demand[16];
   char driver_deficit[16];
   char schedule_setpoint[16];
@@ -12776,6 +12781,8 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
   json_escape_(strategy.index_room_name, index_room_name, sizeof(index_room_name));
   json_float_token_(physical_temperature, sizeof(physical_temperature), strategy.physical_temperature_c, 2);
   json_float_token_(comfort_average, sizeof(comfort_average), strategy.comfort_average_c, 2);
+  json_float_token_(comfort_signal, sizeof(comfort_signal), strategy.has_comfort_signal ? strategy.comfort_signal_c : NAN, 2);
+  json_float_token_(comfort_deviation, sizeof(comfort_deviation), strategy.has_comfort_signal ? strategy.comfort_deviation_c : NAN, 2);
   json_float_token_(comfort_demand, sizeof(comfort_demand), strategy.comfort_demand_c, 2);
   json_float_token_(driver_deficit, sizeof(driver_deficit), strategy.driver_deficit_c, 2);
   json_float_token_(schedule_setpoint, sizeof(schedule_setpoint), schedule_driver_setpoint, 1);
@@ -12791,7 +12798,7 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
            "\"weighting\":{\"basis\":\"%s\",\"ua_total_w_per_k\":%.1f,\"thermal_mass_total_kwh_per_k\":%.2f,"
            "\"hl_tm_product_h\":%.2f,\"house_tau_h\":%.2f,\"passive_solar_gain_factor\":%.3f,"
            "\"weights_revision\":%lu,\"weights_updated_at_ms\":%lu},"
-           "\"comfort\":{\"average_c\":%s,"
+           "\"comfort\":{\"average_c\":%s,\"signal_c\":%s,\"deviation_c\":%s,"
            "\"demand_c\":%s,\"demand_zones\":%u},\"driver\":{\"room_id\":\"%s\","
            "\"name\":\"%s\",\"deficit_c\":%s,\"priority\":%u},"
            "\"schedule\":{\"time_valid\":%s,\"active_zones\":%u,"
@@ -12832,6 +12839,8 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
            static_cast<unsigned long>(strategy.weights_revision),
            static_cast<unsigned long>(strategy.weights_updated_at_ms),
            comfort_average,
+           comfort_signal,
+           comfort_deviation,
            comfort_demand,
            static_cast<unsigned>(strategy.demand_zones),
            driver_room_id,

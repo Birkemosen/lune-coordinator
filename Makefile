@@ -77,7 +77,7 @@ ENERGY_PRICE_OUT ?= /tmp/test_lune_touch_energy_price
 .PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy upload ota-size-check ota deploy install-registry-partition monitor \
         config-mini build-mini deploy-mini ota-mini release-mini release-deploy-mini dashboard touch-ui dashboard-build \
         design-tokens design-verify \
-        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-energy-price clean
+        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-energy-price clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
@@ -304,6 +304,10 @@ test-energy-price:
 test-circulation-pump:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/circulation_pump/test_circulation_pump.cpp -o $(CIRCULATION_PUMP_OUT)
 	$(CIRCULATION_PUMP_OUT)
+
+test-comfort-signal:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/comfort_signal/test_comfort_signal.cpp -o /tmp/test_lune_touch_comfort_signal
+	/tmp/test_lune_touch_comfort_signal
 
 test-hp-phase:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/hp_phase/test_hp_phase.cpp -o /tmp/test_lune_touch_hp_phase
