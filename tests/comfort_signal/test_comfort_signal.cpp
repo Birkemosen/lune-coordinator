@@ -32,13 +32,21 @@ int main() {
   const float wc[] = {1, 1};
   assert(near(deviation(cold, wc, 2), -1.0f, 0.001f));
 
-  // All rooms within ±0.5: the asymmetric mean alone (surplus at 30 %).
+  // All rooms within ±0.5: the plain weighted mean of the deviations.
   const float dev2[] = {0.4f, -0.3f};
   const float w2[] = {1, 1};
-  assert(near(deviation(dev2, w2, 2), (-0.3f + 0.12f) / 2, 0.001f));
-  // Warm house: still reports above target, just less (it can stop heating).
+  assert(near(deviation(dev2, w2, 2), (0.4f - 0.3f) / 2, 0.001f));
+  // Warm house: reports its full surplus (21 Oct 19:00: rooms +0.4..+2.4 -> about +1.6, not +0.6).
   const float dev3[] = {1.0f, 0.5f};
-  assert(deviation(dev3, w2, 2) > 0.0f);
+  assert(near(deviation(dev3, w2, 2), 0.75f, 0.001f));
+  //            Kontor Hobby Brygg Køkk Pejs Bad  Joseph Laura Toil StueR Stue Sove
+  const float warm[] = {1.7f, 0.4f, 2.2f, 1.6f, 1.6f, 2.0f, 2.0f, 1.5f, 2.2f, 2.4f, 1.3f, 0.5f};
+  const float ww[]   = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+  assert(deviation(warm, ww, 12) > 1.5f);
+  // A cold room still pulls a warm house below target (V6 closes the warm rooms).
+  const float mixed[] = {2.0f, 2.0f, -1.5f};
+  const float wm[] = {1, 1, 1};
+  assert(near(deviation(mixed, wm, 3), -0.5f, 0.001f));
   // A tiny room (< 5 % of the weight) cannot pull the house alone.
   const float dev4[] = {0.0f, -3.0f};
   const float w4[] = {100, 2};

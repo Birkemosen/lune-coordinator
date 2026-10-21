@@ -4,11 +4,10 @@
 // =============================================================================
 // The weighted average of the rooms hides cold rooms behind warm ones: a warm
 // ground floor (+1 °C) and a cold upper floor (−1 °C) average to "at target",
-// and the heat pump never starts. A warm room cannot give heat to a cold one,
-// and V6 already closes it, so its surplus says little about what the house
-// needs. The signal therefore counts each room against its own target:
+// and the heat pump never starts. The signal therefore counts each room against
+// its own target:
 //
-//   deficit counts fully, surplus at SURPLUS_WEIGHT (0.3)
+//   the weighted mean of the rooms' deviations (surplus and deficit in full)
 //   a room more than TOLERANCE_C (0.5 °C) below its target pulls the house at
 //   least (deficit − tolerance) below the house target, at most MAX_PULL_C (0.5)
 //
@@ -16,6 +15,11 @@
 // 1.6 °C step on 21 Oct sent its flow target to the 42 °C maximum. So one cold
 // room pulls at most MAX_PULL_C, and the written value moves at most
 // SLEW_C_PER_5MIN (slew()).
+//
+// Surplus used to count at 30 %: with every room 1–2 °C warm on 21 Oct the signal
+// said +0.6 while the house was +2.0, and Odin, which learns the house from this
+// value, saw a house barely above target. A warm house must look warm; only a
+// cold room may pull it down (and V6 closes the warm rooms).
 //
 // Only rooms with at least MIN_SHARE of the weight can pull alone, so one small
 // room with a wrong target cannot run the heat pump.
@@ -33,7 +37,7 @@
 namespace lune_touch_comfort {
 
 struct Params {
-  float surplus_weight = 0.3f;
+  float surplus_weight = 1.0f;  ///< surplus counts in full (was 0.3)
   float tolerance_c = 0.5f;
   float min_share = 0.05f;
   float max_pull_c = 0.5f;
