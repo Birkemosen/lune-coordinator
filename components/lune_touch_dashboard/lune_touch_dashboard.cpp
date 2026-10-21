@@ -1476,11 +1476,15 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       parse_text_param(api, api.json_body, "curve_offset_url_template", curve_tmpl, sizeof(curve_tmpl));
     uint32_t odin_sync = 0;
     const bool has_odin_sync = parse_uint_param(api, api.json_body, "odin_sync_enabled", &odin_sync);
-    float odin_sync_band = NAN;
+    float odin_sync_band = NAN, odin_sync_below = NAN, odin_sync_above = NAN;
     parse_float_param(api, api.json_body, "odin_sync_band_c", &odin_sync_band);
-    if ((has_odin_sync || std::isfinite(odin_sync_band)) &&
-        !coordinator_->set_odin_sync(has_odin_sync, odin_sync != 0, odin_sync_band)) {
-      send_error_(api, 400, "invalid_param", "odin_sync_band_c must be 0.2-2.0");
+    parse_float_param(api, api.json_body, "odin_sync_below_c", &odin_sync_below);
+    parse_float_param(api, api.json_body, "odin_sync_above_c", &odin_sync_above);
+    if ((has_odin_sync || std::isfinite(odin_sync_band) || std::isfinite(odin_sync_below) ||
+         std::isfinite(odin_sync_above)) &&
+        !coordinator_->set_odin_sync(has_odin_sync, odin_sync != 0, odin_sync_band, odin_sync_below,
+                                     odin_sync_above)) {
+      send_error_(api, 400, "invalid_param", "odin_sync_band_c / _below_c / _above_c must be 0.2-2.0");
       return;
     }
     const bool accepted = coordinator_->set_heat_source_control(

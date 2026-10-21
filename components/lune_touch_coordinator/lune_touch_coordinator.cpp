@@ -2974,7 +2974,8 @@ void LuneTouchCoordinator::run_odin_control_() {
     if (strategy.has_house_target && std::isfinite(strategy.house_target_c)) {
       sync.on = true;
       sync.sp = std::round(strategy.house_target_c * 2.0f) / 2.0f;   // half degrees, as shown
-      sync.band_c = odin_control_.sync_band_c;
+      sync.below_c = odin_control_.sync_below_c;
+      sync.above_c = odin_control_.sync_above_c;
     }
   }
   odin_control_.sync_target_c = sync.on ? sync.sp : NAN;
@@ -3319,14 +3320,23 @@ void LuneTouchCoordinator::load_odin_control_() {
   if (nvs_get_u8(handle, "odc_syn_en", &u8) == ESP_OK)
     odin_control_.sync_enabled = u8 != 0;
   blob_len = sizeof(f);
-  if (nvs_get_blob(handle, "odc_syn_band", &f, &blob_len) == ESP_OK && std::isfinite(f))
-    odin_control_.sync_band_c = std::clamp(f, 0.2f, 2.0f);
-  float syn[3]{};
+  // "odc_syn_band" was the symmetric band; it is now the side below. Without
+  // "odc_syn_up" (older firmware) the side above equals it.
+  if (nvs_get_blob(handle, "odc_syn_band", &f, &blob_len) == ESP_OK && std::isfinite(f)) {
+    odin_control_.sync_below_c = std::clamp(f, 0.2f, 2.0f);
+    odin_control_.sync_above_c = odin_control_.sync_below_c;
+  }
+  blob_len = sizeof(f);
+  if (nvs_get_blob(handle, "odc_syn_up", &f, &blob_len) == ESP_OK && std::isfinite(f))
+    odin_control_.sync_above_c = std::clamp(f, 0.2f, 2.0f);
+  float syn[4]{};
   blob_len = sizeof(syn);
-  if (nvs_get_blob(handle, "odc_syn_ap", syn, &blob_len) == ESP_OK && blob_len == sizeof(syn)) {
+  if (nvs_get_blob(handle, "odc_syn_ap", syn, &blob_len) == ESP_OK &&
+      (blob_len == sizeof(syn) || blob_len == 3 * sizeof(float))) {
     odin_owner_.sync.on = syn[0] > 0.5f;
     odin_owner_.sync.sp = syn[1];
-    odin_owner_.sync.band_c = syn[2];
+    odin_owner_.sync.below_c = syn[2];
+    odin_owner_.sync.above_c = blob_len == sizeof(syn) ? syn[3] : syn[2];
   }
   odin_control_.applied = odin_owner_.applied ? odin_owner_.lift : lune_touch_odin::Lift{};
   // Generic levers.
@@ -3383,8 +3393,9 @@ void LuneTouchCoordinator::save_odin_control_() {
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_lift", lift, sizeof(lift));
   if (err == ESP_OK) err = nvs_set_u8(handle, "odc_yield", owner.yielded ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_u8(handle, "odc_syn_en", control.sync_enabled ? 1 : 0);
-  if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_band", &control.sync_band_c, sizeof(float));
-  const float syn[3]{owner.sync.on ? 1.0f : 0.0f, owner.sync.sp, owner.sync.band_c};
+  if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_band", &control.sync_below_c, sizeof(float));
+  if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_up", &control.sync_above_c, sizeof(float));
+  const float syn[4]{owner.sync.on ? 1.0f : 0.0f, owner.sync.sp, owner.sync.below_c, owner.sync.above_c};
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_ap", syn, sizeof(syn));
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_turl", levers.target_url_template);
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_rurl", levers.heat_request_url_template);
@@ -14226,7 +14237,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       buffer, capacity,
       "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
       "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
-      "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"target_c\":%s},"
+      "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
       "\"reason\":\"%s\",\"last_action\":\"%s\",\"user_schedule_known\":%s,\"yielded\":%s,"
       "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"energy_kwh\":%.2f},"
@@ -14241,7 +14252,9 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
       route, static_cast<double>(held), static_cast<double>(uplift),
       c.enabled ? "true" : "false", static_cast<double>(c.max_lift_c),
-      c.sync_enabled ? "true" : "false", static_cast<double>(c.sync_band_c), sync_target,
+      c.sync_enabled ? "true" : "false",
+      static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),
+      static_cast<double>(c.sync_above_c), sync_target,
       fwd, c.status, c.reason,
       c.last_action, has_user ? "true" : "false", yielded ? "true" : "false",
       c.wanted.active() ? "true" : "false", static_cast<unsigned>(c.wanted.start_hour),
@@ -14260,15 +14273,23 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       g.last_lever_request < 0 ? "null" : (g.last_lever_request ? "true" : "false"), lc, g.lever_status);
 }
 
-bool LuneTouchCoordinator::set_odin_sync(bool has_enabled, bool enabled, float band_c) {
-  if (std::isfinite(band_c) && (band_c < 0.2f || band_c > 2.0f))
+bool LuneTouchCoordinator::set_odin_sync(bool has_enabled, bool enabled, float band_c, float below_c,
+                                         float above_c) {
+  const auto bad = [](float v) { return std::isfinite(v) && (v < 0.2f || v > 2.0f); };
+  if (bad(band_c) || bad(below_c) || bad(above_c))
     return false;
   if (!take_state_lock_(100))
     return false;
   if (has_enabled)
     odin_control_.sync_enabled = enabled;
-  if (std::isfinite(band_c))
-    odin_control_.sync_band_c = band_c;
+  if (std::isfinite(band_c)) {
+    odin_control_.sync_below_c = band_c;
+    odin_control_.sync_above_c = band_c;
+  }
+  if (std::isfinite(below_c))
+    odin_control_.sync_below_c = below_c;
+  if (std::isfinite(above_c))
+    odin_control_.sync_above_c = above_c;
   odin_control_.last_cycle_ms = 0;   // act on the next odin task kick
   give_state_lock_();
   save_odin_control_();

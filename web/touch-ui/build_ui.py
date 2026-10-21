@@ -842,7 +842,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                   sinput("climate_entity", T("hs.asgardClimate"), "Virtual Thermostat z1"), extra=note(T("hs.targetSyncHint")), cls="hs-type-asgard")}
           {group(T("heat.odinPlan"), sswitch("odin_plan_enabled", T("heat.odinPlanSw"), T("hs.odinPlanHint"), True), cls="hs-type-asgard")}
           {ggroup(T("heat.odinSync"), sswitch("odin_sync_enabled", T("heat.odinSyncSw"), T("heat.odinSyncSub"), False),
-                  sstep("odin_sync_band_c", T("heat.odinSyncBand"), 0.5, 0.2, 2.0, 0.1, "°C"), extra=note(T("hs.odinSyncHint")), cls="hs-type-asgard")}
+                  sstep("odin_sync_below_c", T("heat.odinSyncBelow"), 0.5, 0.2, 2.0, 0.1, "°C")
+                  + sstep("odin_sync_above_c", T("heat.odinSyncAbove"), 0.5, 0.2, 2.0, 0.1, "°C"), extra=note(T("hs.odinSyncHint")), cls="hs-type-asgard")}
           {ggroup(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
                   sstep("odin_max_lift_c", T("heat.odinMaxLift"), 1.5, 0.3, 3.0, 0.1, "°C"), extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
           <p class="note hs-type-http">{T("heat.httpBehavior")}</p>

@@ -246,7 +246,8 @@ inline Profile apply_lift(const Profile &user, const Lift &lift) {
 struct Sync {
   bool on = false;
   float sp = 21.0f;      ///< House target (°C), rounded to 0.1 when applied
-  float band_c = 0.5f;   ///< Band: [sp - band, sp + band]
+  float below_c = 0.5f;  ///< Band below the setpoint: [sp - below, sp + above]
+  float above_c = 0.5f;  ///< Band above the setpoint (may differ: e.g. -0.5 / +1.0)
 };
 
 inline bool sync_changed(const Sync &a, const Sync &b) {
@@ -254,7 +255,8 @@ inline bool sync_changed(const Sync &a, const Sync &b) {
     return true;
   if (!a.on)
     return false;
-  return std::fabs(a.sp - b.sp) >= 0.1f - 1e-4f || std::fabs(a.band_c - b.band_c) >= 0.05f;
+  return std::fabs(a.sp - b.sp) >= 0.1f - 1e-4f || std::fabs(a.below_c - b.below_c) >= 0.05f ||
+         std::fabs(a.above_c - b.above_c) >= 0.05f;
 }
 
 inline Profile apply_sync(const Profile &user, const Sync &s) {
@@ -264,8 +266,8 @@ inline Profile apply_sync(const Profile &user, const Sync &s) {
   out.count = 1;
   out.blocks[0].h = 0;
   out.blocks[0].sp = std::round(s.sp * 10.0f) / 10.0f;
-  out.blocks[0].min = -std::fabs(s.band_c);
-  out.blocks[0].max = std::fabs(s.band_c);
+  out.blocks[0].min = -std::fabs(s.below_c);
+  out.blocks[0].max = std::fabs(s.above_c);
   (void) user;   // the user's hour blocks are replaced: one band all day
   return out;
 }

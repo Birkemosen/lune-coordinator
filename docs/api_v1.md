@@ -1230,7 +1230,9 @@ heat-source levers. See [`house_balancing_and_weather.md`](house_balancing_and_w
 {
   "demand": {"route": "odin_schedule", "held_c": 0.6, "target_uplift_c": 0.0},
   "odin": {
-    "enabled": true, "max_lift_c": 1.5, "forwarder_entity": "ODIN Forwarder Active",
+    "enabled": true, "max_lift_c": 1.5,
+    "sync": {"enabled": true, "band_c": 1.0, "below_c": 0.5, "above_c": 1.0, "target_c": 21.5},
+    "forwarder_entity": "ODIN Forwarder Active",
     "status": "lifted", "reason": "slab_charge", "last_action": "write_lift",
     "user_schedule_known": true, "yielded": false,
     "wanted":  {"active": true, "start_hour": 15, "hours": 3, "lift_c": 0.5, "energy_kwh": 6.0},
@@ -1302,6 +1304,9 @@ All fields optional; absent = unchanged; an empty template string clears that le
 |---|---|
 | `odin_enabled` | `1`/`0` — lift Odin's comfort schedule. Turning it off restores the user's schedule. |
 | `odin_max_lift_c` | 0.3–3.0 °C (default 1.5) |
+| `odin_sync_enabled` | `1`/`0` — Odin's comfort setpoint follows the house target (one block all day) |
+| `odin_sync_below_c` / `odin_sync_above_c` | 0.2–2.0 °C (default 0.5 each) — Odin's band below / above the house target; may differ (e.g. 0.5 / 1.0) |
+| `odin_sync_band_c` | 0.2–2.0 °C — legacy: sets both sides. GET `sync.band_c` reports the larger side |
 | `forwarder_entity` | Asgard binary sensor for the Odin link (default `ODIN Forwarder Active`) |
 | `target_url_template` | Generic: `{value}` = demand-led room target (°C) |
 | `heat_request_url_template` | Generic: `{value}` = `1`/`0` |

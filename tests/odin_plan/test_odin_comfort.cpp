@@ -166,7 +166,8 @@ int main() {
     Sync sync{};
     sync.on = true;
     sync.sp = 21.63f;
-    sync.band_c = 0.5f;
+    sync.below_c = 0.5f;
+    sync.above_c = 0.5f;
     StepResult r = step(s, user, Lift{}, sync);
     assert(r.action == Action::WRITE_LIFT);
     assert(r.profile.count == 1 && std::fabs(r.profile.blocks[0].sp - 21.6f) < 0.01f);
@@ -200,6 +201,28 @@ int main() {
     // Sync and lift off: the baseline (the last user edit) is restored.
     StepResult r5 = step(s, r4.profile, Lift{}, Sync{});
     assert(r5.action == Action::RESTORE);
+  }
+
+  // ---- Lopsided band: 0.5 below, 1.0 above ----
+  {
+    Profile user{};
+    assert(parse_profile("[{\"h\":0,\"sp\":22,\"min\":-1,\"max\":1}]", &user));
+    OwnerState s{};
+    Sync sync{};
+    sync.on = true;
+    sync.sp = 21.5f;
+    sync.below_c = 0.5f;
+    sync.above_c = 1.0f;
+    StepResult r = step(s, user, Lift{}, sync);
+    assert(r.action == Action::WRITE_LIFT && r.profile.count == 1);
+    assert(std::fabs(r.profile.blocks[0].min + 0.5f) < 0.01f && std::fabs(r.profile.blocks[0].max - 1.0f) < 0.01f);
+    commit(s, r, Lift{}, sync);
+    // Only the upper side changes: rewrite.
+    Sync wider = sync;
+    wider.above_c = 1.5f;
+    StepResult r2 = step(s, r.profile, Lift{}, wider);
+    assert(r2.action == Action::WRITE_LIFT && std::fabs(r2.profile.blocks[0].max - 1.5f) < 0.01f &&
+           std::fabs(r2.profile.blocks[0].min + 0.5f) < 0.01f);
   }
 
   std::puts("odin_comfort: all assertions passed");

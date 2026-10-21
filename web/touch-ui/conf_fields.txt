@@ -59,7 +59,8 @@ heat-source/odin_control_enabled
 heat-source/odin_host
 heat-source/odin_max_lift_c
 heat-source/odin_sync_enabled
-heat-source/odin_sync_band_c
+heat-source/odin_sync_below_c
+heat-source/odin_sync_above_c
 heat-source/odin_plan_enabled
 heat-source/read_url_template
 heat-source/target_sync_enabled
