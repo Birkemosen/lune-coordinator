@@ -89,9 +89,11 @@ how many approved manifolds contribute.
 house target plus each room's deviation from its own target, where a deficit counts in
 full and a surplus only at 30 % (a warm room cannot give heat to a cold one, and V6 closes
 it anyway). A room more than 0.5 °C below its target pulls the signal at least
-(deficit − 0.5) below the house target; only rooms with at least 5 % of the weight can do
-that alone. So a warm ground floor can no longer hide a cold upper floor and keep the heat
-pump off. The dashboard still shows the real average. Authority is Touch when it holds the lease.
+(deficit − 0.5) below the house target, by at most 0.5 °C; only rooms with at least 5 % of
+the weight can do that alone. So a warm ground floor can no longer hide a cold upper floor and
+keep the heat pump off. The value sent moves at most 0.1 °C per 5 minutes: the heat pump's
+optimiser reads it as the house temperature, and a sudden drop sends its flow target to the
+maximum. The dashboard still shows the real average. Authority is Touch when it holds the lease.
 **How is it calculated?** in the Heat sheet shows each room's weight.
 
 ---
@@ -105,6 +107,25 @@ pump off. The dashboard still shows the real average. Authority is Touch when it
 the heat pump made **hot water** or ran **legionella**. Below: status, last push, the comfort
 target's role, Odin (link, who drives the pump, this hour, comfort schedule) and what is sent
 to Asgard.
+
+<a id="hp-diagnostics"></a>
+
+**Heat pump check** — a yellow line appears at the top of the overview when Touch sees
+something worth acting on soon (it only reports; it changes nothing):
+
+- *The heat pump delivers 9.1 kW against a planned 6.3 kW* — for 30 minutes of space
+  heating the heat pump's own output (Asgard) averaged more than 1.3 × Odin's plan for the
+  hour (and more than 1 kW above it), or less than 0.7 × a plan above 1 kW. Odin sets only a
+  flow temperature from the plan and does not check the result, so the house may be heated
+  too fast (and expensively) or too little. Hot water, legionella, defrost and compressor
+  pauses are not counted. Without a fresh plan or heat pump data nothing is shown.
+- *Secondary flow 15 l/min above primary flow 13 l/min — return water mixes into the
+  supply* — for 10 minutes the circulation pump (Alpha2) moved more water than the heat
+  pump's pump. The buffer tank then sends return water back into the floors and the heat
+  pump runs hotter. Lower the circulation pump (see [Circulation](#pump)); the line
+  goes away after 10 minutes with the secondary below the primary.
+
+Each start and end is also written to the event log.
 
 **Settings** — the behaviour Touch controls: **Comfort target** (send the house target to
 Asgard's climate entity), **Odin plan** (use Odin's heat windows for warm-up and preload) and

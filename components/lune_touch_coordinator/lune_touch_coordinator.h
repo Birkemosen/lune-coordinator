@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hp_phase.h"
+#include "hp_diagnostics.h"
 #include "coordinator_model.h"
 #include "energy_price.h"
 #include "exposure_learning.h"
@@ -179,6 +180,8 @@ struct HeatSourceState {
   bool hp_water_pump_on{false};  // primary pump (status_water_pump)
   bool hp_compressor_on{false};
   int8_t hp_operation_mode{-1};
+  float hp_output_kw{NAN};       // computed_output_power (kW, live)
+  bool hp_status_defrost{false}; // status_defrost
   uint32_t hp_telemetry_ms{0};
 };
 
@@ -797,6 +800,10 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t hp_phase_nonce_{0};
   bool hp_phase_release_pending_{false};
   void run_hp_phase_(uint32_t now_ms);
+  // Heat pump diagnostics (hp_diagnostics.h): delivered heat vs. Odin's plan, tank mixing.
+  ::lune_touch_hp_diag::State hp_diag_{};
+  void run_hp_diagnostics_(uint32_t now_ms);
+  void append_hp_diagnostics_json_(char *buffer, size_t capacity) const;
   bool send_v6_hp_phase_(const char *host, const char *phase, uint32_t ttl_s);
   bool ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
                                const char *body, uint32_t now_ms);
@@ -1061,6 +1068,9 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t authority_expires_at_ms_{0};
   uint32_t authority_generation_{0};
   float authority_last_fallback_value_c_{NAN};
+  // Last house temperature written to Asgard, for the 0.1 °C / 5 min slew (comfort_signal.h).
+  float signal_slew_c_{NAN};
+  uint32_t signal_slew_ms_{0};
   float authority_last_asgard_value_c_{NAN};
   uint8_t authority_v6_local_zones_{0};
   uint8_t authority_v6_peer_zones_{0};

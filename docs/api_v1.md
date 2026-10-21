@@ -292,6 +292,33 @@ within ±1.0 °C and freezes on DHW, Legionella, defrost, Odin heat-off, degrade
 house quality, forecast offset on the critical zone, or unconfigured freeze inputs.
 Bias writes are lease-gated and reseed from Asgard read-back after lease recovery.
 
+`heat_pump` is the live Asgard `/dashboard/state` snapshot; `heat_pump.output_kw` is
+Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
+
+`hp_diagnostics` (Asgard only; display and events, Touch never acts on it):
+
+```json
+"hp_diagnostics": {
+  "plan_deviation": { "state": "over", "mean_kw": 9.1, "planned_kw": 6.3, "window_min": 30 },
+  "mixing": { "state": "mixing", "primary_l_min": 13.0, "secondary_l_min": 15.0 }
+}
+```
+
+- `plan_deviation.state`: `unknown` (telemetry older than 5 min, or no fresh Odin plan:
+  no flag), `idle` (not space heating — hot water, legionella, defrost — or compressor
+  off), `ok`, `over`, `under`. `mean_kw` is the running mean of `output_kw` over the last
+  `window_min` minutes of space heating; `planned_kw` is Odin's heat for the current
+  hour. `over`: mean > 1.3 × plan and > plan + 1 kW for 30 min; clears below 1.15 × plan
+  (or below plan + 0.5 kW). `under`: plan > 1 kW and mean < 0.7 × plan for 30 min with
+  the compressor running; clears above 0.85 × plan. A raised flag survives pauses
+  (`idle`) for up to 30 min.
+- `mixing.state`: `unknown` (no Asgard or Alpha2 flow), `idle` (a pump stopped, or not
+  space heating), `ok`, `mixing` (secondary > primary × 1.05 for 10 min; clears when
+  secondary < primary for 10 min). Flows in l/min (secondary = Alpha2 m³/h × 1000/60);
+  last judged values, `null` when unknown.
+- Each raise and clear is logged once in `GET /events` (source `heat_source` for the plan,
+  `circulation` for mixing).
+
 `v6_control_mode` / `v6_control_mode_effective` mirror the optional lease
 `control_mode` (`local` omits the field; `heat_pump` / `normal` are sent).
 

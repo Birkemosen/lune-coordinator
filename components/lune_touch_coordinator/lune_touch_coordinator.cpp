@@ -1,4 +1,5 @@
 #include "lune_touch_coordinator.h"
+#include "comfort_signal.h"
 #include "lune_design_tokens.h"
 #include "asgard_adapter.h"
 #include "asgard_confirmation.h"
@@ -2082,6 +2083,7 @@ void LuneTouchCoordinator::poll_task_() {
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
       run_hp_phase_(esphome::millis());
+      run_hp_diagnostics_(esphome::millis());
       run_exposure_learning_();
 
       if (circulation_due)
@@ -2268,6 +2270,11 @@ bool LuneTouchCoordinator::push_weighted_temperature_() {
       value_to_write = std::clamp(value_to_write, authority_last_fallback_value_c_ - 0.5f,
                                   authority_last_fallback_value_c_ + 0.5f);
     }
+    // Odin reads this as the house temperature: move it at most 0.1 °C per 5 min.
+    const uint32_t now_ms = esphome::millis();
+    value_to_write = ::lune_touch_comfort::slew(signal_slew_c_, value_to_write, now_ms - signal_slew_ms_);
+    signal_slew_c_ = value_to_write;
+    signal_slew_ms_ = now_ms;
   } else if (std::isfinite(source.last_confirmed_value_c) && source.last_healthy_physical_ms != 0 &&
              esphome::millis() - source.last_healthy_physical_ms <= COVERAGE_GRACE_MS) {
     value_to_write = source.last_confirmed_value_c;
@@ -2402,12 +2409,14 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
   bool comp = false;
   bool water_pump = false;
   float flow_lmin = NAN;
+  float output_kw = NAN;
+  bool defrost = false;
   int mode = -1;
   if (ok) {
     JsonDocument filter;
     for (const char *k : {"hp_feed_temp", "hp_return_temp", "outside_temp", "z1_flow_temp_target",
                           "compressor_frequency", "status_compressor", "operation_mode",
-                          "flow_rate", "status_water_pump"})
+                          "flow_rate", "status_water_pump", "computed_output_power", "status_defrost"})
       filter[k] = true;
     JsonDocument doc;
     ok = !deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -2422,6 +2431,8 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       mode = doc["operation_mode"] | -1;
       flow_lmin = f("flow_rate");
       water_pump = doc["status_water_pump"] | false;
+      output_kw = f("computed_output_power");
+      defrost = doc["status_defrost"] | false;
       ok = std::isfinite(feed) || std::isfinite(ret);
     }
   }
@@ -2436,6 +2447,8 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     heat_source_.hp_operation_mode = static_cast<int8_t>(mode);
     heat_source_.hp_flow_lmin = flow_lmin;
     heat_source_.hp_water_pump_on = water_pump;
+    heat_source_.hp_output_kw = output_kw;
+    heat_source_.hp_status_defrost = defrost;
     heat_source_.hp_telemetry_ms = esphome::millis();
     // Mixing sample: Alpha2 secondary flow against the heat pump's primary flow.
     const uint32_t now_ms = esphome::millis();
@@ -13085,6 +13098,8 @@ void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity)
   json_float_token_(hp_out, sizeof(hp_out), source.hp_outside_c, 1);
   json_float_token_(hp_target, sizeof(hp_target), source.hp_flow_target_c, 1);
   json_float_token_(hp_hz, sizeof(hp_hz), source.hp_compressor_hz, 0);
+  char hp_output[16];
+  json_float_token_(hp_output, sizeof(hp_output), source.hp_output_kw, 2);
   // Keep off the httpd stack — this writer runs under the dashboard request task.
   static char circulation_json[1024];
   format_circulation_json_(circulation, now, CIRCULATION_STALE_MS, circulation_json,
@@ -13114,7 +13129,7 @@ void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity)
            "\"dhw_active\":%s,\"legionella_active\":%s,\"defrost_active\":%s},"
            "\"target_sync\":{\"last_written_c\":%s,\"last_confirmed_c\":%s,\"failure_streak\":%u,\"write_age_s\":%u,\"demand_uplift_c\":%.2f},"
            "\"heat_pump\":{\"available\":%s,\"feed_c\":%s,\"return_c\":%s,\"outside_c\":%s,"
-           "\"flow_target_c\":%s,\"compressor_on\":%s,\"compressor_hz\":%s,\"operation_mode\":%d,\"age_s\":%lu},"
+           "\"flow_target_c\":%s,\"compressor_on\":%s,\"compressor_hz\":%s,\"operation_mode\":%d,\"output_kw\":%s,\"age_s\":%lu},"
            "\"circulation\":%s}",
            type, source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port), variable,
            static_cast<unsigned>(source.push_interval_s), write_url, read_url,
@@ -13154,9 +13169,10 @@ void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity)
            static_cast<unsigned>(target_write_age_s), demand_target_uplift_c_,
            hp_ok ? "true" : "false", hp_feed, hp_ret, hp_out, hp_target,
            source.hp_compressor_on ? "true" : "false", hp_hz, static_cast<int>(source.hp_operation_mode),
-           static_cast<unsigned long>(hp_age_s),
+           hp_output, static_cast<unsigned long>(hp_age_s),
            circulation_json);
   append_house_balance_json_(buffer, capacity);
+  append_hp_diagnostics_json_(buffer, capacity);
 }
 
 void LuneTouchCoordinator::write_circulation_json(char *buffer, size_t capacity) const {
@@ -15735,6 +15751,88 @@ void LuneTouchCoordinator::load_exposure_learning_() {
     std::memcpy(exposure_learn_[i].room_id, recs[i].room_id, sizeof(exposure_learn_[i].room_id));
     exposure_learn_[i].state = recs[i].state;
   }
+}
+
+
+// Heat pump diagnostics: delivered heat against Odin's plan, and mixing in the buffer
+// tank. Display and events only — Touch never acts on it (hp_diagnostics.h).
+void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
+  namespace hd = ::lune_touch_hp_diag;
+  hd::Input in{};
+  if (!take_state_lock_(100))
+    return;
+  const auto &h = heat_source_;
+  const bool asgard = h.enabled && heat_source_type_is_asgard_(h.type) && h.host[0] != '\0';
+  in.telemetry_fresh = asgard && h.hp_telemetry_ms != 0 && now_ms - h.hp_telemetry_ms < 5UL * 60UL * 1000UL;
+  in.telemetry_ms = h.hp_telemetry_ms;
+  in.operation_mode = h.hp_operation_mode;
+  in.compressor_on = h.hp_compressor_on;
+  in.primary_pump_on = h.hp_water_pump_on;
+  in.dhw_active = h.dhw_active;
+  in.legionella_active = h.legionella_active;
+  in.defrost_active = h.defrost_active || h.hp_status_defrost;
+  in.output_kw = h.hp_output_kw;
+  in.primary_lmin = h.hp_flow_lmin;
+  in.plan_known = odin_plan_active_() && odin_plan_.available && odin_plan_.heat_production_count >= 1 &&
+                  odin_plan_.last_fetch_ms != 0 && now_ms - odin_plan_.last_fetch_ms <= ODIN_PLAN_STALE_MS;
+  in.plan_kw = in.plan_known ? odin_plan_.heat_production_horizon[0] : NAN;
+  const bool circ_fresh = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
+                          now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
+  in.secondary_lmin = circ_fresh ? circulation_.flow_m3h * (1000.0f / 60.0f) : NAN;
+  const hd::Edges e = hd::step(hp_diag_, in, now_ms);
+  const float mean = hp_diag_.mean_kw, plan = hp_diag_.plan_kw;
+  const float pri = hp_diag_.primary_lmin, sec = hp_diag_.secondary_lmin;
+  give_state_lock_();
+  char msg[96];
+  if (e.over_raised || e.under_raised) {
+    std::snprintf(msg, sizeof(msg), "heat pump delivers %.1f kW vs planned %.1f kW (30 min mean, %s plan)",
+                  static_cast<double>(mean), static_cast<double>(plan), e.over_raised ? "over" : "under");
+    log_event_("warn", "heat_source", msg);
+  }
+  if (e.over_cleared || e.under_cleared) {
+    if (std::isfinite(mean) && std::isfinite(plan))
+      std::snprintf(msg, sizeof(msg), "heat pump back on plan: %.1f kW vs planned %.1f kW",
+                    static_cast<double>(mean), static_cast<double>(plan));
+    else
+      std::snprintf(msg, sizeof(msg), "plan deviation cleared (no plan or telemetry)");
+    log_event_("info", "heat_source", msg);
+  }
+  if (e.mix_raised) {
+    std::snprintf(msg, sizeof(msg), "tank mixing: secondary %.1f l/min > primary %.1f l/min",
+                  static_cast<double>(sec), static_cast<double>(pri));
+    log_event_("warn", "circulation", msg);
+  }
+  if (e.mix_cleared) {
+    if (std::isfinite(sec) && std::isfinite(pri))
+      std::snprintf(msg, sizeof(msg), "tank mixing ended: secondary %.1f l/min < primary %.1f l/min",
+                    static_cast<double>(sec), static_cast<double>(pri));
+    else
+      std::snprintf(msg, sizeof(msg), "tank mixing cleared (no flow data)");
+    log_event_("info", "circulation", msg);
+  }
+}
+
+void LuneTouchCoordinator::append_hp_diagnostics_json_(char *buffer, size_t capacity) const {
+  // Turns {...} into {..., "hp_diagnostics":{...}}.
+  const size_t len = std::strlen(buffer);
+  if (len < 2 || buffer[len - 1] != '}' || capacity <= len)
+    return;
+  ::lune_touch_hp_diag::State d;
+  if (!take_state_lock_(50))
+    return;
+  d = hp_diag_;
+  give_state_lock_();
+  char mean[16], plan[16], pri[16], sec[16];
+  json_float_token_(mean, sizeof(mean), d.mean_kw, 2);
+  json_float_token_(plan, sizeof(plan), d.plan_kw, 2);
+  json_float_token_(pri, sizeof(pri), d.primary_lmin, 1);
+  json_float_token_(sec, sizeof(sec), d.secondary_lmin, 1);
+  std::snprintf(buffer + len - 1, capacity - (len - 1),
+                ",\"hp_diagnostics\":{\"plan_deviation\":{\"state\":\"%s\",\"mean_kw\":%s,\"planned_kw\":%s,"
+                "\"window_min\":%u},\"mixing\":{\"state\":\"%s\",\"primary_l_min\":%s,\"secondary_l_min\":%s}}}",
+                ::lune_touch_hp_diag::dev_name(d.dev), mean, plan,
+                static_cast<unsigned>(::lune_touch_hp_diag::MEAN_MINUTES), ::lune_touch_hp_diag::mix_name(d.mix), pri,
+                sec);
 }
 
 }  // namespace lune_touch_coordinator
