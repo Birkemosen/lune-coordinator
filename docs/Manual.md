@@ -88,9 +88,9 @@ sensors — the same value V6 controls on — and the members' floor area. Cover
 how many approved manifolds contribute.
 
 **What is sent to the heat pump** is not the plain average but a *comfort signal*: the
-house target plus each room's deviation from its own target, where a deficit counts in
-full and a surplus only at 30 % (a warm room cannot give heat to a cold one, and V6 closes
-it anyway). A room more than 0.5 °C below its target pulls the signal at least
+house target plus the weighted mean of each room's deviation from its own target, so a warm
+house is reported as warm (the heat pump's optimiser learns the house from this value). A
+room more than 0.5 °C below its target pulls the signal at least
 (deficit − 0.5) below the house target, by at most 0.5 °C; only rooms with at least 5 % of
 the weight can do that alone. So a warm ground floor can no longer hide a cold upper floor and
 keep the heat pump off. The value sent moves at most 0.1 °C per 5 minutes: the heat pump's
