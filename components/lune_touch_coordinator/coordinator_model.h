@@ -301,6 +301,12 @@ struct ResolvedRoomLoop {
 struct StrategySnapshot {
   bool has_physical_temperature{false};
   float physical_temperature_c{0.0f};
+  // Comfort signal (comfort_signal.h): house target + asymmetric deviation of each
+  // room from its own target. This — not the plain average — goes to the heat pump,
+  // so warm rooms cannot hide cold ones. Display keeps physical_temperature_c.
+  bool has_comfort_signal{false};
+  float comfort_signal_c{0.0f};
+  float comfort_deviation_c{0.0f};
   // Last-known weighted house temperature from included rooms, including stale
   // sensors. Used for dashboard display when the safety-gated physical aggregate
   // is unavailable (boards briefly unreachable). Never used for heat push.

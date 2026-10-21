@@ -1,3 +1,4 @@
+#include "comfort_signal.h"
 #include "coordinator_model.h"
 #include "room_physics.h"
 
@@ -1797,6 +1798,9 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
   // real houses easily spread > 4 °C between floors, so spread alone must never
   // block the house signal — only implausible readings are left out.
   float median_c = NAN;
+  float comfort_dev[MAX_HOUSE_ROOMS];
+  float comfort_w[MAX_HOUSE_ROOMS];
+  size_t comfort_n = 0;
   {
     float temps[MAX_HOUSE_ROOMS];
     size_t n = 0;
@@ -1859,6 +1863,37 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
         live = &live_[loop_index];
         break;
       }
+    }
+    // A V6 sync group is one room with several loops and sensors (fx Stue + Stue Repo).
+    // V6 controls it on the mean of the members' sensors; use the same mean here, not
+    // the primary's sensor alone, and count the members' floor area in the weight.
+    float room_temp_c = (live != nullptr && live->has_temperature) ? live->temperature_c : NAN;
+    float room_weight = weight;
+    if (primary != nullptr && live != nullptr && live->group_members_mask != 0 &&
+        (live->group_members_mask & (live->group_members_mask - 1)) != 0) {
+      float tsum = 0.0f;
+      unsigned tcount = 0;
+      float extra_area = 0.0f;
+      for (size_t z = 0; z < ZONES_PER_NODE; z++) {
+        if (((live->group_members_mask >> z) & 1U) == 0)
+          continue;
+        const size_t bi = find_binding_index_(primary->node_index, z);
+        if (bi >= zone_count_ || !zones_[bi].enabled)
+          continue;
+        const ZoneLiveState &m = live_[bi];
+        if (m.fresh && m.has_temperature && std::isfinite(m.temperature_c) &&
+            m.temperature_c >= PLAUSIBLE_MIN_C && m.temperature_c <= PLAUSIBLE_MAX_C) {
+          tsum += m.temperature_c;
+          tcount++;
+        }
+        if (&zones_[bi] != primary && std::isfinite(zones_[bi].v6_area_m2) && zones_[bi].v6_area_m2 > 0.0f)
+          extra_area += zones_[bi].v6_area_m2;
+      }
+      if (tcount > 0)
+        room_temp_c = tsum / static_cast<float>(tcount);
+      if (!used_ua && extra_area > 0.0f)
+        room_weight += geometry_ua_w_per_k(extra_area) *
+                       ((std::isfinite(room.physical_weight) && room.physical_weight > 0.0f) ? room.physical_weight : 1.0f);
     }
 
     if (primary != nullptr) {
@@ -1926,8 +1961,14 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
                                                          day_index, minute_of_day);
     const float target_c =
         resolve_room_target_c_(primary->comfort_setpoint_c, effective, live);
-    weighted_temp_sum += live->temperature_c * weight;
-    weight_sum += weight;
+    const float use_temp_c = std::isfinite(room_temp_c) ? room_temp_c : live->temperature_c;
+    weighted_temp_sum += use_temp_c * room_weight;
+    weight_sum += room_weight;
+    if (comfort_n < MAX_HOUSE_ROOMS && std::isfinite(target_c)) {
+      comfort_dev[comfort_n] = use_temp_c - target_c;
+      comfort_w[comfort_n] = room_weight;
+      comfort_n++;
+    }
     snapshot.contributing_zones++;
     snapshot.contributing_rooms++;
     snapshot.contributing_area_m2 += weight;
@@ -1935,17 +1976,17 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
       contributing_nodes[primary->node_index] = true;
 
     if (!have_temp_range) {
-      temp_min = live->temperature_c;
-      temp_max = live->temperature_c;
+      temp_min = use_temp_c;
+      temp_max = use_temp_c;
       have_temp_range = true;
     } else {
-      if (live->temperature_c < temp_min)
-        temp_min = live->temperature_c;
-      if (live->temperature_c > temp_max)
-        temp_max = live->temperature_c;
+      if (use_temp_c < temp_min)
+        temp_min = use_temp_c;
+      if (use_temp_c > temp_max)
+        temp_max = use_temp_c;
     }
 
-    const float deficit = target_c - live->temperature_c;
+    const float deficit = target_c - use_temp_c;
     if (deficit > 0.0f) {
       weighted_demand_sum += deficit * weight;
       snapshot.demand_zones++;
@@ -1996,6 +2037,14 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
   if (weight_sum > 0.0f) {
     snapshot.physical_temperature_c = weighted_temp_sum / weight_sum;
     snapshot.comfort_demand_c = weighted_demand_sum / weight_sum;
+  }
+  if (snapshot.has_house_target && comfort_n > 0) {
+    const float dev = ::lune_touch_comfort::deviation(comfort_dev, comfort_w, comfort_n);
+    if (std::isfinite(dev)) {
+      snapshot.has_comfort_signal = true;
+      snapshot.comfort_deviation_c = dev;
+      snapshot.comfort_signal_c = snapshot.house_target_c + dev;
+    }
   }
   if (stale_weight_sum > 0.0f) {
     snapshot.has_last_known_temperature = true;
