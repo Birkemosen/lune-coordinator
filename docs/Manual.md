@@ -144,7 +144,10 @@ and **Odin's setpoint** (see below).
 **Follow the house target** (off by default) makes Odin aim at the same temperature as the
 rooms. The house target is the rooms' targets averaged by heat loss, shown in steps of
 0.5 °C. Touch writes it as the setpoint in Odin's comfort schedule with one block all day and
-a band of **±** (default 0.5 °C), so Odin may only move heat within that band to save money.
+a band of **Band below target** / **Band above target** (default 0.5 °C each), so Odin may only
+move heat within that band to save money. The band may be lopsided, e.g. 0.5 below and 1.0
+above: Odin may then buffer more heat in cheap hours but never let the house fall far below
+target.
 If someone changes the schedule in Odin, Touch writes setpoint and band again. Lifts for wind
 and a lagging room are added on top and removed again when they end.
 
