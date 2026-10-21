@@ -1041,5 +1041,20 @@
   "heat.httpBehavior": "Med Generisk HTTP indstilles Touch' styring under System › Varmekilde › Styring via HTTP.",
   "ctrl.scanNone": "Ingen nye styringer fundet",
   "svc.nodesVal": "{on} af {n} online",
-  "v6.offlineNoTime": "V6 er ikke tilgængelig"
+  "v6.offlineNoTime": "V6 er ikke tilgængelig",
+
+  "problem.hpOver.title": "Varmepumpen leverer mere end planlagt",
+  "problem.hpOver.msg": "Varmepumpen har i en halv time leveret {mean} kW mod Odins plan på {plan} kW.",
+  "problem.hpUnder.title": "Varmepumpen leverer mindre end planlagt",
+  "problem.hpUnder.msg": "Varmepumpen har i en halv time leveret {mean} kW mod Odins plan på {plan} kW.",
+  "problem.mixing.title": "Blanding i buffertanken",
+  "problem.mixing.msg": "Sekundært flow ({sec} l/min) er højere end primært ({pri} l/min), så returvand blandes i fremløbet. Sænk cirkulationspumpens flow.",
+  "problem.v6.title": "{name} svarer ikke",
+  "problem.v6.msg": "Touch har ikke haft forbindelse til {name} i over 10 minutter. Rummene på styringen kører videre lokalt.",
+  "problem.asgard.title": "Asgard svarer ikke",
+  "problem.asgard.msg": "Touch har ikke haft forbindelse til Asgard i over 10 minutter. Hustemperaturen når ikke frem til varmepumpen.",
+  "problem.odin.title": "Odin svarer ikke",
+  "problem.odin.msg": "Touch har ikke haft forbindelse til Odin i over 30 minutter. Varmeplanen bliver ikke opdateret.",
+  "problem.room.title": "{room} når ikke sin temperatur",
+  "problem.room.msg": "{room} har ikke nået {target} °C i 24 timer (højst {max} °C)."
 }

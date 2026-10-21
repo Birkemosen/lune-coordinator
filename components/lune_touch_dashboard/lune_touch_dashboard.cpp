@@ -1574,12 +1574,14 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     uint32_t display_idle_timeout_s = 0;
     const bool has_display_idle_timeout =
         parse_uint_param(api, api.json_body, "display_idle_timeout_s", &display_idle_timeout_s);
+    char language[8]{};
+    parse_text_param(api, api.json_body, "language", language, sizeof(language));
     const bool accepted = coordinator_->set_settings(coordinator_name, install_id, site_label,
                                                      install_mode, has_asgard_enabled,
                                                      asgard_enabled != 0, asgard_mode, authority_leader_node_id,
                                                      authority_coordinator_id, authority_shared_key,
                                                      has_display_idle_timeout, display_idle_timeout_s,
-                                                     data_buf_, DATA_BUF_SIZE);
+                                                     data_buf_, DATA_BUF_SIZE, language);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/wifi") == 0) {
 #ifdef USE_LUNE_WIFI

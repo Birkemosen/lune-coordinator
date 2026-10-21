@@ -1745,6 +1745,62 @@ StrategySnapshot HouseModel::strategy_snapshot() const {
   return strategy_snapshot(false, 0, 0);
 }
 
+// The same room temperature and target as the comfort signal (strategy_snapshot):
+// the primary loop's sensor, or the mean of a V6 sync group's fresh sensors.
+RoomComfortReading HouseModel::room_comfort_reading(size_t room_index, bool time_valid, uint8_t day_index,
+                                                    uint16_t minute_of_day) const {
+  RoomComfortReading out;
+  if (room_index >= room_count_)
+    return out;
+  const LogicalRoom &room = rooms_[room_index];
+  if (!room.enabled)
+    return out;
+  const ZoneBinding *primary = nullptr;
+  const ZoneLiveState *live = nullptr;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (zones_[i].enabled && zones_[i].commissioned && !zones_[i].is_group_secondary && !zones_[i].unassigned &&
+        same_text_(zones_[i].room_id, room.room_id) && same_text_(zones_[i].loop_id, room.primary_loop_id)) {
+      primary = &zones_[i];
+      live = &live_[i];
+      break;
+    }
+  }
+  if (primary == nullptr)
+    return out;
+  const EffectiveComfort effective = effective_comfort(*primary, time_valid, day_index, minute_of_day);
+  const float target_c = resolve_room_target_c_(primary->comfort_setpoint_c, effective, live);
+  if (std::isfinite(target_c) && target_c >= PLAUSIBLE_MIN_C && target_c <= PLAUSIBLE_MAX_C) {
+    out.has_target = true;
+    out.target_c = target_c;
+    out.comfort_c = comfort_looks_unset_(primary->comfort_setpoint_c) ? target_c : primary->comfort_setpoint_c;
+  }
+  auto plausible = [](const ZoneLiveState &m) {
+    return m.fresh && m.has_temperature && std::isfinite(m.temperature_c) && m.temperature_c >= PLAUSIBLE_MIN_C &&
+           m.temperature_c <= PLAUSIBLE_MAX_C;
+  };
+  if (live->group_members_mask != 0 && (live->group_members_mask & (live->group_members_mask - 1)) != 0) {
+    float sum = 0.0f;
+    unsigned n = 0;
+    for (size_t z = 0; z < ZONES_PER_NODE; z++) {
+      if (((live->group_members_mask >> z) & 1U) == 0)
+        continue;
+      const size_t bi = find_binding_index_(primary->node_index, z);
+      if (bi >= zone_count_ || !zones_[bi].enabled || !plausible(live_[bi]))
+        continue;
+      sum += live_[bi].temperature_c;
+      n++;
+    }
+    if (n > 0) {
+      out.has_temp = true;
+      out.temp_c = sum / static_cast<float>(n);
+    }
+  } else if (plausible(*live)) {
+    out.has_temp = true;
+    out.temp_c = live->temperature_c;
+  }
+  return out;
+}
+
 StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_index,
                                                uint16_t minute_of_day) const {
   StrategySnapshot snapshot{};

@@ -344,6 +344,32 @@ coefficients are persisted separately in the zone registry. It also includes `ot
 label/subtype, slot size, rollback state, and `pending_verify` flag so installers
 can confirm OTA recovery assumptions.
 
+`GET /diagnostics` also lists the active problems Touch reports to Home Assistant
+(`esphome.lune_problem`, see `lune/shared/contracts/lune_notifications_contract_v1.md`
+and [Manual › Notifications](Manual.md#notifications)). Title and message are in the
+device `language`; `sent` tells whether the raise reached Home Assistant (a clear is
+sent only when it did):
+
+```json
+"problems": [
+  {
+    "id": "room.not_reached:stue",
+    "category": "room_comfort",
+    "severity": "warning",
+    "title": "Stue når ikke sin temperatur",
+    "message": "Stue har ikke nået 21,5 °C i 24 timer (højst 20,8 °C).",
+    "room": "Stue",
+    "age_s": 5400,
+    "sent": true
+  }
+]
+```
+
+Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.mixing`,
+`connectivity.v6:<node_id>`, `connectivity.asgard`, `connectivity.odin` and
+`room.not_reached:<room_id>`. Room sensors are V6's, so humidity, battery and sensor
+problems come from V6.
+
 Its `ownership` block is the operational boundary: ODIN owns heat-pump timing,
 prices, whole-house weather/solar optimization, compressor behavior, and DHW; Touch
 owns logical rooms, room distribution, schedules, house signals, and normal
@@ -980,6 +1006,7 @@ for service migration and recovery:
   "install_id": "house-main",
   "site_label": "Birkemosen",
   "install_mode": "commissioning",
+  "language": "da",
   "display_idle_timeout_s": 60
 }
 ```
@@ -987,8 +1014,9 @@ for service migration and recovery:
 All fields are optional, but at least one must be present. `install_mode` is one
 of `commissioning`, `active`, or `service`. `display_idle_timeout_s` is one of
 `60`, `120`, `300`, or `0` (always on) and controls how long the local Touch
-panel stays lit without a touch. `GET /settings` returns the same coordinator
-block, the Touch-owned `weather.max_boost_c` cap, and
+panel stays lit without a touch. `language` is `da` (default) or `en`: the language of text the
+firmware writes itself, today the problem notifications sent to Home Assistant. `GET /settings` returns the same coordinator
+block (with `language`), the Touch-owned `weather.max_boost_c` cap, and
 `display.idle_timeout_s`.
 
 ### `POST /display/wake`

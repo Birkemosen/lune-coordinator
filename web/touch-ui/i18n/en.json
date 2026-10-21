@@ -1041,5 +1041,20 @@
   "heat.httpBehavior": "With Generic HTTP, Touch's control is set under System › Heat source › Control via HTTP.",
   "ctrl.scanNone": "No new controllers found",
   "svc.nodesVal": "{on} of {n} online",
-  "v6.offlineNoTime": "V6 is unavailable"
+  "v6.offlineNoTime": "V6 is unavailable",
+
+  "problem.hpOver.title": "Heat pump delivers more than planned",
+  "problem.hpOver.msg": "For half an hour the heat pump has delivered {mean} kW against Odin's plan of {plan} kW.",
+  "problem.hpUnder.title": "Heat pump delivers less than planned",
+  "problem.hpUnder.msg": "For half an hour the heat pump has delivered {mean} kW against Odin's plan of {plan} kW.",
+  "problem.mixing.title": "Mixing in the buffer tank",
+  "problem.mixing.msg": "Secondary flow ({sec} l/min) is above primary flow ({pri} l/min), so return water mixes into the supply. Lower the circulation pump's flow.",
+  "problem.v6.title": "{name} is not answering",
+  "problem.v6.msg": "Touch has had no contact with {name} for more than 10 minutes. Its rooms keep running locally.",
+  "problem.asgard.title": "Asgard is not answering",
+  "problem.asgard.msg": "Touch has had no contact with Asgard for more than 10 minutes. The house temperature does not reach the heat pump.",
+  "problem.odin.title": "Odin is not answering",
+  "problem.odin.msg": "Touch has had no contact with Odin for more than 30 minutes. The heating plan is not updated.",
+  "problem.room.title": "{room} is not reaching its temperature",
+  "problem.room.msg": "{room} has not reached {target} °C in 24 hours (highest {max} °C)."
 }

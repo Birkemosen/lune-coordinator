@@ -3,5 +3,9 @@
 
 api:
   reboot_timeout: 0s
+  # Lets Touch fire esphome.lune_problem events (problem notifications). Home
+  # Assistant still drops them unless "Allow the device to perform Home
+  # Assistant actions" is on for the device.
+  homeassistant_services: true
   encryption:
     key: !secret api_key

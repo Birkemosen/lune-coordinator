@@ -1,0 +1,211 @@
+blueprint:
+  name: Lune notifications
+  description: >-
+    Sends Lune problems to phones. Lune V6 and Lune Touch fire the event
+    `esphome.lune_problem` when a problem is raised and when it is cleared
+    (contract: lune_notifications_contract_v1). This automation is the one place
+    to choose who is notified and about what.
+
+
+    Each problem is one notification, tagged with the problem's id and grouped
+    per device. When the problem clears, the notification is replaced silently
+    with "<resolved prefix> <title>".
+
+
+    Requires "Allow the device to perform Home Assistant actions" on every Lune
+    device (Settings › Devices & services › ESPHome › device › Configure).
+  domain: automation
+  homeassistant:
+    min_version: 2024.10.0
+  source_url: https://github.com/Birkemosen/lune-coordinator/blob/main/homeassistant/blueprints/automation/lune/lune_notifications.yaml
+  input:
+    notify_devices:
+      name: Phones
+      description: >-
+        Phones with the Home Assistant Companion app. Notifications go to
+        notify.mobile_app_<device name>.
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+    categories:
+      name: Categories
+      description: The kinds of problems to notify about.
+      default:
+        - heat_pump
+        - hydraulics
+        - connectivity
+        - room_comfort
+        - humidity
+        - sensor_battery
+        - sensor
+        - valve
+      selector:
+        select:
+          multiple: true
+          mode: list
+          options:
+            - label: Heat pump against the plan (Touch)
+              value: heat_pump
+            - label: Hydraulics, mixing in the buffer tank (Touch)
+              value: hydraulics
+            - label: Connectivity, a device not answering (Touch)
+              value: connectivity
+            - label: Room comfort, a room not reaching its target (Touch)
+              value: room_comfort
+            - label: Humidity
+              value: humidity
+            - label: Sensor battery
+              value: sensor_battery
+            - label: Sensor missing or faulty
+              value: sensor
+            - label: Valve motor (V6)
+              value: valve
+    min_severity:
+      name: Minimum severity
+      description: >-
+        Warning = needs attention soon. Error = something is wrong now.
+      default: warning
+      selector:
+        select:
+          options:
+            - label: Warnings and errors
+              value: warning
+            - label: Errors only
+              value: error
+    critical_errors:
+      name: Errors as critical
+      description: >-
+        Errors break through Do Not Disturb and silent mode (iOS critical alert,
+        Android alarm stream). Warnings never do.
+      default: false
+      selector:
+        boolean: {}
+    quiet_hours:
+      name: Quiet hours for warnings
+      description: >-
+        No warnings between the start and end time below. Errors still come.
+      default: false
+      selector:
+        boolean: {}
+    quiet_start:
+      name: Quiet hours start
+      default: "22:00:00"
+      selector:
+        time: {}
+    quiet_end:
+      name: Quiet hours end
+      default: "07:00:00"
+      selector:
+        time: {}
+    resolved_prefix:
+      name: Resolved prefix
+      description: Put before the title when a problem has cleared.
+      default: "Løst:"
+      selector:
+        text: {}
+
+mode: queued
+max: 25
+max_exceeded: silent
+
+triggers:
+  - trigger: event
+    event_type: esphome.lune_problem
+
+variables:
+  notify_devices: !input notify_devices
+  categories: !input categories
+  min_severity: !input min_severity
+  critical_errors: !input critical_errors
+  quiet_hours: !input quiet_hours
+  quiet_start: !input quiet_start
+  quiet_end: !input quiet_end
+  resolved_prefix: !input resolved_prefix
+  ev: "{{ trigger.event.data }}"
+  state: "{{ ev.state | default('raised') }}"
+  category: "{{ ev.category | default('') }}"
+  severity: "{{ ev.severity | default('warning') }}"
+  problem_title: "{{ ev.title | default(ev.id) }}"
+  problem_message: "{{ ev.message | default('') }}"
+  device_label: "{{ ev.device_name | default(ev.device) }}"
+  tag: "{{ ev.id }}"
+  group: "lune-{{ ev.device | default('lune') }}"
+  targets: >-
+    {{ [notify_devices] if notify_devices is string else (notify_devices or []) }}
+  in_quiet_hours: >-
+    {% set t = now().strftime('%H:%M:%S') %}
+    {% if not quiet_hours %}false
+    {% elif quiet_start <= quiet_end %}{{ quiet_start <= t < quiet_end }}
+    {% else %}{{ t >= quiet_start or t < quiet_end }}{% endif %}
+  critical: "{{ critical_errors and severity == 'error' }}"
+
+conditions:
+  - condition: template
+    value_template: "{{ ev.id is defined and targets | count > 0 }}"
+  - condition: template
+    value_template: "{{ category in categories }}"
+  - condition: template
+    value_template: "{{ min_severity == 'warning' or severity == 'error' }}"
+  - condition: template
+    value_template: "{{ state == 'cleared' or severity == 'error' or not in_quiet_hours }}"
+
+actions:
+  - repeat:
+      for_each: "{{ targets }}"
+      sequence:
+        - variables:
+            notify_action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+        - choose:
+            # Cleared: replace the notification under the same tag, silently.
+            - conditions:
+                - condition: template
+                  value_template: "{{ state == 'cleared' }}"
+              sequence:
+                - action: "{{ notify_action }}"
+                  continue_on_error: true
+                  data:
+                    title: "{{ device_label }}"
+                    message: "{{ resolved_prefix }} {{ problem_title }}"
+                    data:
+                      tag: "{{ tag }}"
+                      group: "{{ group }}"
+                      priority: low
+                      push:
+                        interruption-level: passive
+            # Error as critical: through Do Not Disturb.
+            - conditions:
+                - condition: template
+                  value_template: "{{ critical }}"
+              sequence:
+                - action: "{{ notify_action }}"
+                  continue_on_error: true
+                  data:
+                    title: "{{ problem_title }}"
+                    message: "{{ problem_message }}"
+                    data:
+                      tag: "{{ tag }}"
+                      group: "{{ group }}"
+                      ttl: 0
+                      priority: high
+                      channel: alarm_stream
+                      push:
+                        interruption-level: critical
+                        sound:
+                          name: default
+                          critical: 1
+                          volume: 1.0
+          default:
+            - action: "{{ notify_action }}"
+              continue_on_error: true
+              data:
+                title: "{{ problem_title }}"
+                message: "{{ problem_message }}"
+                data:
+                  tag: "{{ tag }}"
+                  group: "{{ group }}"
+                  ttl: 0
+                  priority: high
+                  push:
+                    interruption-level: "{{ 'time-sensitive' if severity == 'error' else 'active' }}"

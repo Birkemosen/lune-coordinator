@@ -2,6 +2,8 @@
 
 #include "hp_phase.h"
 #include "hp_diagnostics.h"
+#include "problems.h"
+#include "room_reached.h"
 #include "coordinator_model.h"
 #include "energy_price.h"
 #include "exposure_learning.h"
@@ -415,6 +417,33 @@ struct PriceState {
 };
 
 /// Large price buffers live in PSRAM (allocated once in setup()).
+/// Problems reported to Home Assistant (problems.h, room_reached.h). PSRAM.
+struct ProblemEvent {
+  int8_t slot{-1};
+  uint32_t seq{0};
+  bool raised{false};
+  char id[64]{};
+  char category[16]{};
+  char severity[8]{};
+  char title[80]{};
+  char message[176]{};
+  char room[48]{};
+};
+
+struct ProblemRuntime {
+  static constexpr size_t OUTBOX = 8;
+  ::lune_touch_problems::Tracker tracker{};
+  struct RoomSlot {
+    char room_id[32]{};
+    ::lune_touch_room_reached::State state{};
+  } rooms[::lune_touch::MAX_HOUSE_ROOMS]{};
+  ProblemEvent outbox[OUTBOX]{};
+  size_t outbox_count{0};
+  ProblemEvent sending[OUTBOX]{};   ///< main loop only: the batch being sent
+  size_t active{0};
+  char titles[256]{};
+};
+
 struct PriceRuntime {
   lune_touch_price::TariffSeries grid{};
   lune_touch_price::TariffSeries energinet_transmission{};
@@ -505,6 +534,9 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Heat sheet chart: Asgard flow/return averaged into buckets. range 0 = 24 h, 1 = 7 d.
   void write_heat_history_json(char *buffer, size_t capacity, uint8_t range) const;
   void write_events_json(char *buffer, size_t capacity) const;
+  /// Problems for the "Active problems" / "Problems" entities (main loop).
+  /// False when the state is busy; the caller then skips this publish.
+  bool problems_summary(float *count, std::string *titles) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
   std::string zone_line_meta_text(uint8_t row) const;
@@ -713,7 +745,7 @@ class LuneTouchCoordinator : public esphome::Component {
                     const char *asgard_mode, const char *authority_leader_node_id,
                     const char *authority_coordinator_id, const char *authority_shared_key,
                     bool has_display_idle_timeout, uint32_t display_idle_timeout_s,
-                    char *response, size_t capacity);
+                    char *response, size_t capacity, const char *language = nullptr);
   bool request_display_wake(char *response, size_t capacity);
   bool consume_display_wake_request();
   /// Display idle diagnostics: called from the LVGL 50 ms interval.
@@ -804,6 +836,14 @@ class LuneTouchCoordinator : public esphome::Component {
   ::lune_touch_hp_diag::State hp_diag_{};
   void run_hp_diagnostics_(uint32_t now_ms);
   void append_hp_diagnostics_json_(char *buffer, size_t capacity) const;
+  // Problems → Home Assistant (esphome.lune_problem), see problems.h.
+  ProblemRuntime *problems_rt_{nullptr};
+  /// Last time Odin answered (odin_task); 0 = not since boot.
+  uint32_t odin_last_ok_ms_{0};
+  void run_problems_(uint32_t now_ms);
+  void queue_problem_event_(const ::lune_touch_problems::Edge &edge);
+  void flush_problem_events_();
+  void append_problems_json_(char *buffer, size_t capacity) const;
   bool send_v6_hp_phase_(const char *host, const char *phase, uint32_t ttl_s);
   bool ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
                                const char *body, uint32_t now_ms);
@@ -1033,6 +1073,8 @@ class LuneTouchCoordinator : public esphome::Component {
   float forecast_longitude_{0.0f};
   char forecast_location_mode_[16]{"manual"};
   char coordinator_name_[32]{"Lune Touch"};
+  /// Language of firmware-made text (problem notifications): "da" | "en".
+  char language_[4]{"da"};
   uint16_t display_idle_timeout_s_{60};
   bool display_wake_requested_{false};
   struct DisplayDiag {
