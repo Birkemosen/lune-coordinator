@@ -87,15 +87,18 @@ room with several loops, e.g. Stue + Stue Repo) counts as one room with the mean
 sensors — the same value V6 controls on — and the members' floor area. Coverage shows
 how many approved manifolds contribute.
 
-**What is sent to the heat pump** is not the plain average but a *comfort signal*: the
-house target plus the weighted mean of each room's deviation from its own target, so a warm
-house is reported as warm (the heat pump's optimiser learns the house from this value). A
-room more than 0.5 °C below its target pulls the signal at least
-(deficit − 0.5) below the house target, by at most 0.5 °C; only rooms with at least 5 % of
-the weight can do that alone. So a warm ground floor can no longer hide a cold upper floor and
-keep the heat pump off. The value sent moves at most 0.1 °C per 5 minutes: the heat pump's
-optimiser reads it as the house temperature, and a sudden drop sends its flow target to the
-maximum. The dashboard still shows the real average. Authority is Touch when it holds the lease.
+**What is sent to the heat pump** is the honest house temperature: the house target plus the
+UA-weighted mean of each room's deviation from its own target. Odin learns the house (heat
+loss, thermal mass) from it and stops heating when the house is already where it should be at
+the end of the hour, so it is never pulled down or damped. The value sent moves at most
+0.1 °C per 5 minutes, so a sensor coming back or a change of source cannot step Odin.
+
+**A room that is too cold** is handled in two steps. First V6 moves the flow to it (a room below
+target opens wide, rooms above target trim or close). Only when that is not enough — its
+manifold reports the room's loop near fully open for 20 minutes (*RAISE*) and the room is still
+more than 0.3 °C below target — does Touch raise Odin's comfort schedule (at most +1.5 °C, held
+at least 30 minutes), so Odin plans more heat. Raising the whole house for a room whose valve
+still has room to open would only overheat the others. The dashboard still shows the real average. Authority is Touch when it holds the lease.
 **How is it calculated?** in the Heat sheet shows each room's weight.
 
 ---

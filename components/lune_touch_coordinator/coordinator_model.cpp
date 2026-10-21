@@ -2047,7 +2047,25 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
       weighted_demand_sum += deficit * weight;
       snapshot.demand_zones++;
       const float weighted_deficit = deficit * weight;
-      if (weighted_deficit > best_weighted_deficit) {
+      // Only a room that cannot get more heat on its own may lift the house target:
+      // its manifold says RAISE (the critical loop near fully open for 20 min) and
+      // that loop is this room's. Otherwise V6 moves the flow to the room, and
+      // lifting the whole house would overheat the others. V6 reports RAISE per
+      // manifold (critical_zone), not per loop. Without fresh manifold data the old
+      // rule (any deficit) applies.
+      bool may_drive = true;
+      if (primary != nullptr && primary->node_index < MAX_NODES) {
+        const NodeHeatDemand &nd = node_heat_demand_[primary->node_index];
+        if (nd.fresh) {
+          const uint8_t members = (live != nullptr && live->group_members_mask != 0)
+                                      ? live->group_members_mask
+                                      : static_cast<uint8_t>(1u << primary->zone_index);
+          const bool critical_is_ours =
+              nd.critical_zone >= 1 && ((members >> (nd.critical_zone - 1)) & 1U) != 0;
+          may_drive = nd.recommendation == HeatRecommendation::RAISE && critical_is_ours;
+        }
+      }
+      if (may_drive && weighted_deficit > best_weighted_deficit) {
         best_weighted_deficit = weighted_deficit;
         snapshot.driver_deficit_c = deficit;
         snapshot.driver_priority = room.priority;
