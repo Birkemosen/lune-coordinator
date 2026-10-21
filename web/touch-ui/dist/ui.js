@@ -380,7 +380,11 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       write_age_s: 42, confirmation_age_s: 42, failure_streak: 0, last_error: ''
     },
     target_sync: { last_written_c: 21.5, last_confirmed_c: 21.5, failure_streak: 0, write_age_s: 42 },
-    heat_pump: { available: true, feed_c: 36.0, return_c: 29.0, compressor_on: true, compressor_hz: 38 },
+    heat_pump: { available: true, feed_c: 36.0, return_c: 29.0, compressor_on: true, compressor_hz: 38, output_kw: 9.1 },
+    hp_diagnostics: {
+      plan_deviation: { state: 'over', mean_kw: 9.1, planned_kw: 6.3, window_min: 30 },
+      mixing: { state: 'mixing', primary_l_min: 13.0, secondary_l_min: 15.0 }
+    },
     circulation: {
       host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38,
       flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
@@ -1925,6 +1929,19 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       b.textContent = t(hp.compressor_on ? 'hp.pillOn' : 'hp.pillOff');
       b.className = 'badge' + (hp.compressor_on ? ' ok' : '');
     });
+    // Heat pump check (hp_diagnostics): delivered heat against Odin's plan, tank mixing.
+    // Only raised states are shown; unknown / idle / ok say nothing.
+    var hd = hs.hp_diagnostics || {};
+    var dv = hd.plan_deviation || {};
+    var mz = hd.mixing || {};
+    var devOn = (dv.state === 'over' || dv.state === 'under') && finite(dv.mean_kw) && finite(dv.planned_kw);
+    var mixOn = mz.state === 'mixing' && finite(mz.primary_l_min) && finite(mz.secondary_l_min);
+    var hdParts = [];
+    if (devOn) hdParts.push(t('hpd.dev', { act: num(dv.mean_kw, 1), plan: num(dv.planned_kw, 1), min: dv.window_min || 30 }));
+    if (mixOn) hdParts.push(t('hpd.mix', { sec: num(mz.secondary_l_min, 0), pri: num(mz.primary_l_min, 0) }));
+    setShow('hpd.show', hdParts.length > 0);
+    setText('hpd.strong', devOn ? t(dv.state === 'over' ? 'hpd.overStrong' : 'hpd.underStrong') : mixOn ? t('hpd.mixStrong') : '');
+    setText('hpd.body', hdParts.join(' '));
     setText('dash.hpTemps', hp.available && hp.feed_c != null && hp.return_c != null
       ? num(hp.feed_c) + ' → ' + num(hp.return_c) + ' °C · ' +
         (hp.compressor_on ? t('hp.compOn', { hz: num(hp.compressor_hz, 0) }) : t('hp.compOff'))

@@ -19,10 +19,18 @@ int main() {
   for (size_t i = 0; i < n; i++) { avg += w[i] * dev[i]; ws += w[i]; }
   avg /= ws;
   assert(avg > 0.0f);
-  // Signal: Stue is 0.8 beyond the tolerance, so the house is at least 0.8 below.
+  // Signal: Stue is 0.8 beyond the tolerance; one room pulls at most 0.5.
   const float d = deviation(dev, w, n);
   std::printf("avg %+.2f  signal %+.2f\n", avg, d);
-  assert(near(d, -0.8f, 0.01f));
+  assert(near(d, -0.5f, 0.01f));
+  // Without the cap Stue would pull the full 0.8.
+  Params uncapped;
+  uncapped.max_pull_c = 10.0f;
+  assert(near(deviation(dev, w, n, uncapped), -0.8f, 0.01f));
+  // A whole house below target is not capped (the mean itself).
+  const float cold[] = {-1.0f, -1.0f};
+  const float wc[] = {1, 1};
+  assert(near(deviation(cold, wc, 2), -1.0f, 0.001f));
 
   // All rooms within ±0.5: the asymmetric mean alone (surplus at 30 %).
   const float dev2[] = {0.4f, -0.3f};
@@ -37,6 +45,12 @@ int main() {
   assert(deviation(dev4, w4, 2) > -0.1f);
   // No rooms: NAN.
   assert(std::isnan(deviation(dev, w, 0)));
+  // Slew: 0.1 °C per 5 min, both ways; no previous value passes through.
+  assert(near(slew(22.3f, 20.7f, 300000), 22.2f, 0.001f));
+  assert(near(slew(22.3f, 20.7f, 60000), 22.28f, 0.001f));
+  assert(near(slew(22.0f, 22.05f, 300000), 22.05f, 0.001f));
+  assert(near(slew(21.0f, 22.0f, 600000), 21.2f, 0.001f));
+  assert(near(slew(NAN, 21.3f, 0), 21.3f, 0.001f));
   std::puts("comfort_signal: ok");
   return 0;
 }
