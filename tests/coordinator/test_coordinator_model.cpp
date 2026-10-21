@@ -639,6 +639,45 @@ static void test_room_spread_is_not_a_fault() {
          "spread: implausible reading excluded from the house average");
 }
 
+static void test_driver_needs_saturated_loop() {
+  // A lagging room lifts the house target (Odin's schedule) only when its manifold
+  // says RAISE for its loop; otherwise V6 moves the flow there itself.
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  model.bind_zone("bath", "Bath", 0, 1);
+  model.set_room_geometry("living", 20.0f, 0.0f, true);
+  model.set_room_geometry("bath", 20.0f, 0.0f, true);
+  model.update_zone_live("living", 20.0f, true, 21.0f, true, "heat", true, 1000);
+  model.update_zone_live("bath", 22.0f, true, 21.0f, true, "idle", true, 1000);
+
+  StrategySnapshot st = model.strategy_snapshot();
+  expect(st.driver_deficit_c > 0.9f && std::strcmp(st.driver_room_id, "living") == 0,
+         "driver: without manifold heat-demand data any deficit drives (old rule)");
+
+  NodeHeatDemand nd{};
+  nd.fresh = true;
+  nd.critical_zone = 1;
+  nd.recommendation = HeatRecommendation::HOLD;
+  model.update_node_heat_demand(0, nd);
+  st = model.strategy_snapshot();
+  expect(st.driver_deficit_c == 0.0f && st.driver_room_id[0] == '\0',
+         "driver: manifold HOLD -> V6 routes the flow, no house lift");
+  expect(st.demand_zones == 1, "driver: the room still counts as demanding");
+
+  nd.recommendation = HeatRecommendation::RAISE;
+  nd.critical_zone = 2;  // saturated loop is the bath's, not the cold living room's
+  model.update_node_heat_demand(0, nd);
+  st = model.strategy_snapshot();
+  expect(st.driver_deficit_c == 0.0f, "driver: RAISE for another room's loop does not lift");
+
+  nd.critical_zone = 1;
+  model.update_node_heat_demand(0, nd);
+  st = model.strategy_snapshot();
+  expect(st.driver_deficit_c > 0.9f && std::strcmp(st.driver_room_id, "living") == 0,
+         "driver: RAISE for the room's own loop lifts the house target");
+}
+
 static void test_strategy_snapshot() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
@@ -1378,6 +1417,7 @@ int main() {
   test_effective_comfort_resolver();
   test_room_spread_is_not_a_fault();
   test_strategy_snapshot();
+  test_driver_needs_saturated_loop();
   test_zone_forecast_profile();
   test_command_ledger();
   test_ledger_ring_capacity();
