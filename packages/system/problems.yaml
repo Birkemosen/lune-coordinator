@@ -1,0 +1,32 @@
+# Problems Touch reports to Home Assistant (contract:
+# lune/shared/contracts/lune_notifications_contract_v1.md). The events
+# (esphome.lune_problem) are fired by the coordinator; these two entities show
+# the problems that are active now.
+
+sensor:
+  - platform: template
+    id: lune_active_problems
+    name: "Active problems"
+    icon: mdi:alert-circle-outline
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      float count = 0.0f;
+      std::string titles;
+      if (!id(lune_touch_app).problems_summary(&count, &titles))
+        return {};
+      return count;
+
+text_sensor:
+  - platform: template
+    id: lune_problems_text
+    name: "Problems"
+    icon: mdi:alert-outline
+    update_interval: 30s
+    lambda: |-
+      float count = 0.0f;
+      std::string titles;
+      if (!id(lune_touch_app).problems_summary(&count, &titles))
+        return {};
+      return titles;

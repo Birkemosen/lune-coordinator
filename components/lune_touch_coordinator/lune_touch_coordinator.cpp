@@ -13,6 +13,11 @@
 #include "solar_holdoff.h"
 #include "room_physics.h"
 #include "v6_zones_parse.h"
+#include "problem_texts.h"
+#include "esphome/core/application.h"
+#ifdef USE_API
+#include "esphome/components/api/api_server.h"
+#endif
 #include "esphome/components/network/util.h"
 #include "esphome/components/wifi/wifi_component.h"
 #include "esphome/core/hal.h"
@@ -1604,6 +1609,13 @@ void LuneTouchCoordinator::setup() {
     if (mem == nullptr)
       mem = heap_caps_calloc(1, sizeof(PriceRuntime), MALLOC_CAP_8BIT);
     price_rt_ = mem != nullptr ? new (mem) PriceRuntime() : nullptr;
+  }
+  {
+    // PSRAM: problem tracker, 24 h room windows and the event outbox (~20 KiB).
+    void *mem = heap_caps_calloc(1, sizeof(ProblemRuntime), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (mem == nullptr)
+      mem = heap_caps_calloc(1, sizeof(ProblemRuntime), MALLOC_CAP_8BIT);
+    problems_rt_ = mem != nullptr ? new (mem) ProblemRuntime() : nullptr;
     // Re-assert Odin's manual price mode once per boot while enabled.
     if (price_.cfg.enabled && price_.cfg.model == lune_touch_price::Model::TOUCH)
       price_.odin_write_pending = 1;
@@ -1700,6 +1712,7 @@ void LuneTouchCoordinator::loop() {
   }
   maybe_run_poll_from_loop_(now);
   maybe_run_integrations_from_loop_(now);
+  flush_problem_events_();
 
   if ((int32_t) (now - last_ledger_expire_ms_) < 5000)
     return;
@@ -2084,6 +2097,7 @@ void LuneTouchCoordinator::poll_task_() {
       run_house_balance_(esphome::millis());
       run_hp_phase_(esphome::millis());
       run_hp_diagnostics_(esphome::millis());
+      run_problems_(esphome::millis());
       run_exposure_learning_();
 
       if (circulation_due)
@@ -3106,6 +3120,8 @@ void LuneTouchCoordinator::run_odin_control_() {
   char alarm_text[96]{};
   if (take_state_lock_(100)) {
     odin_control_.odin_reachable = reachable;
+    if (reachable)
+      odin_last_ok_ms_ = now_ms;
     odin_control_.forwarder_known = forwarder_known;
     odin_control_.forwarder_active = forwarder_active;
     odin_control_.takeover_known = takeover_known;
@@ -7406,6 +7422,11 @@ void LuneTouchCoordinator::load_settings_() {
     if (nvs_get_u16(handle, "disp_idle", &display_idle_timeout_s) == ESP_OK &&
         display_idle_timeout_allowed_(display_idle_timeout_s))
       display_idle_timeout_s_ = display_idle_timeout_s;
+    char language[4]{};
+    size_t language_len = sizeof(language);
+    if (nvs_get_str(handle, "lang", language, &language_len) == ESP_OK &&
+        (std::strcmp(language, "da") == 0 || std::strcmp(language, "en") == 0))
+      std::snprintf(language_, sizeof(language_), "%s", language);
     nvs_close(handle);
   }
   heat_source_.port = std::max<uint16_t>(1, heat_source_.port);
@@ -7562,6 +7583,8 @@ void LuneTouchCoordinator::save_settings_() {
       err = nvs_set_u8(handle, "wx_solar", solar_holdoff_enabled_ ? 1 : 0);
     if (err == ESP_OK)
       err = nvs_set_u16(handle, "disp_idle", display_idle_timeout_s_);
+    if (err == ESP_OK)
+      err = nvs_set_str(handle, "lang", language_);
     if (err == ESP_OK)
       err = nvs_commit(handle);
     nvs_close(handle);
@@ -9261,7 +9284,8 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
                                         const char *asgard_mode, const char *authority_leader_node_id,
                                         const char *authority_coordinator_id, const char *authority_shared_key,
                                         bool has_display_idle_timeout, uint32_t display_idle_timeout_s,
-                                        char *response, size_t capacity) {
+                                        char *response, size_t capacity, const char *language) {
+  const bool has_language = language != nullptr && language[0] != '\0';
   if ((coordinator_name == nullptr || coordinator_name[0] == '\0') &&
       (install_id == nullptr || install_id[0] == '\0') &&
       (site_label == nullptr || site_label[0] == '\0') &&
@@ -9271,12 +9295,16 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
       (authority_leader_node_id == nullptr || authority_leader_node_id[0] == '\0') &&
       (authority_coordinator_id == nullptr || authority_coordinator_id[0] == '\0') &&
       (authority_shared_key == nullptr || authority_shared_key[0] == '\0') &&
-      !has_display_idle_timeout) {
+      !has_display_idle_timeout && !has_language) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"settings_required\"}");
     return false;
   }
   if (has_display_idle_timeout && !display_idle_timeout_allowed_(display_idle_timeout_s)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_display_idle_timeout\"}");
+    return false;
+  }
+  if (has_language && std::strcmp(language, "da") != 0 && std::strcmp(language, "en") != 0) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_language\"}");
     return false;
   }
   if (install_mode != nullptr && install_mode[0] != '\0' &&
@@ -9335,14 +9363,16 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
   }
   if (has_display_idle_timeout)
     display_idle_timeout_s_ = static_cast<uint16_t>(display_idle_timeout_s);
+  if (has_language)
+    std::snprintf(language_, sizeof(language_), "%s", language);
   save_settings_();
   give_state_lock_();
   snprintf(response, capacity, "{\"result\":\"saved\",\"install_mode\":\"%s\","
            "\"asgard_enabled\":%s,\"asgard_mode\":\"%s\",\"authority_configured\":%s,"
-           "\"display\":{\"idle_timeout_s\":%u}}",
+           "\"language\":\"%s\",\"display\":{\"idle_timeout_s\":%u}}",
            install_mode_, asgard_enabled_ ? "true" : "false", asgard_mode_,
            authority_leader_node_id_[0] && authority_coordinator_id_[0] && authority_shared_key_[0] ? "true" : "false",
-           static_cast<unsigned>(display_idle_timeout_s_));
+           language_, static_cast<unsigned>(display_idle_timeout_s_));
   log_event_("info", "settings", "coordinator settings updated");
   return true;
 }
@@ -12936,7 +12966,7 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
   json_float_token_(weather_max_boost, sizeof(weather_max_boost), weather_max_boost_c_, 1);
   snprintf(buffer, capacity,
            "{\"coordinator\":{\"name\":\"%s\",\"install_id\":\"%s\","
-           "\"site_label\":\"%s\",\"install_mode\":\"%s\"},"
+           "\"site_label\":\"%s\",\"install_mode\":\"%s\",\"language\":\"%s\"},"
            "\"authority\":{\"leader_node_id\":\"%s\",\"coordinator_id\":\"%s\","
            "\"authentication_configured\":%s,\"state\":\"%s\",\"reason\":\"%s\","
            "\"generation\":%lu,\"lease_remaining_s\":%lu,"
@@ -12944,7 +12974,7 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
            "\"last_fallback_value_c\":%s,\"last_asgard_value_c\":%s,"
            "\"local_zones\":%u,\"peer_zones\":%u,\"peer_status\":\"%s\"}},"
            "\"weather\":{\"max_boost_c\":%s,\"solar_holdoff_enabled\":%s},\"display\":{\"idle_timeout_s\":%u}}",
-           name, install_id, site, mode, authority_leader, authority_coordinator,
+           name, install_id, site, mode, language_, authority_leader, authority_coordinator,
            authority_shared_key_[0] != '\0' ? "true" : "false", authority_state, authority_reason,
            static_cast<unsigned long>(authority_generation_),
            authority_expires_at_ms_ == 0 ? 0UL : static_cast<unsigned long>((authority_expires_at_ms_ - esphome::millis()) / 1000UL),
@@ -13802,6 +13832,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
                   static_cast<unsigned long>(display_diag_.wakes),
                   static_cast<unsigned long>(display_diag_.wake_requests));
   }
+  append_problems_json_(buffer, capacity);
 }
 
 void LuneTouchCoordinator::note_display_state(bool awake, bool paused, uint32_t inactive_ms) {
@@ -15833,6 +15864,320 @@ void LuneTouchCoordinator::append_hp_diagnostics_json_(char *buffer, size_t capa
                 ::lune_touch_hp_diag::dev_name(d.dev), mean, plan,
                 static_cast<unsigned>(::lune_touch_hp_diag::MEAN_MINUTES), ::lune_touch_hp_diag::mix_name(d.mix), pri,
                 sec);
+}
+
+
+// =============================================================================
+// Problems → Home Assistant (contract: lune_notifications_contract_v1.md)
+// =============================================================================
+// Runs on the poll task after the hp diagnostics; the events are fired from the
+// main loop (flush_problem_events_), where the native API may be used.
+//   heat_pump     hp_diagnostics over / under Odin's plan (30 min hold inside)
+//   hydraulics    hp_diagnostics mixing (10 min hold inside)
+//   connectivity  V6 board 10 min, Asgard 10 min, Odin 30 min without an answer
+//   room_comfort  room_reached.h: target − 0.3 °C not reached in 24 h while heating
+// Touch reads no room sensors itself (rooms use V6 zone sensors), so humidity,
+// sensor_battery and sensor problems are V6's to report.
+void LuneTouchCoordinator::run_problems_(uint32_t now_ms) {
+  namespace pr = ::lune_touch_problems;
+  namespace rr = ::lune_touch_room_reached;
+  namespace tx = ::lune_touch_problem_texts;
+  if (problems_rt_ == nullptr)
+    return;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  static constexpr uint32_t V6_SILENT_MS = 10UL * 60UL * 1000UL;
+  static constexpr uint32_t ASGARD_SILENT_MS = 10UL * 60UL * 1000UL;
+  static constexpr uint32_t ODIN_SILENT_MS = 30UL * 60UL * 1000UL;
+  // Event-log lines, written after the state lock is released (log_event_ locks).
+  char log_lines[6][96];
+  const char *log_levels[6];
+  size_t log_n = 0;
+  if (!take_state_lock_(100))
+    return;
+  ProblemRuntime &rt = *problems_rt_;
+  pr::Tracker &tr = rt.tracker;
+  const char *const *cat = tx::catalogue(language_);
+  const char dec = tx::decimal_sign(language_);
+  char title[80];
+  char msg[176];
+  auto num = [dec](char *out, size_t cap, float v, int decimals) {
+    if (std::isfinite(v))
+      pr::format_number(out, cap, v, decimals, dec);
+    else
+      std::snprintf(out, cap, "—");
+  };
+  auto texts = [&](tx::Key t, tx::Key m, const char *const *k, const char *const *v, size_t n) {
+    pr::fill(title, sizeof(title), cat[t], k, v, n);
+    pr::fill(msg, sizeof(msg), cat[m], k, v, n);
+  };
+  auto handle = [&](const pr::Edge &e, const char *room) {
+    if (e.kind == pr::EdgeKind::Raise) {
+      tr.set_text(e.slot, title, msg, room);
+      queue_problem_event_(e);
+    } else if (e.kind == pr::EdgeKind::Clear && e.notify) {
+      queue_problem_event_(e);
+    }
+    if (e.kind != pr::EdgeKind::None && log_n < 6) {
+      const pr::Slot &sl = tr.slot(e.slot);
+      log_levels[log_n] = e.kind == pr::EdgeKind::Raise ? "warn" : "info";
+      std::snprintf(log_lines[log_n], sizeof(log_lines[log_n]), "problem %s: %s",
+                    e.kind == pr::EdgeKind::Raise ? "raised" : "cleared", sl.id);
+      log_n++;
+    }
+  };
+  tr.begin_cycle();
+
+  // Heat pump against Odin's plan, and mixing (flags already held in hp_diagnostics.h).
+  {
+    char mean[16], plan[16], pri[16], sec[16];
+    num(mean, sizeof(mean), hp_diag_.mean_kw, 1);
+    num(plan, sizeof(plan), hp_diag_.plan_kw, 1);
+    num(pri, sizeof(pri), hp_diag_.primary_lmin, 1);
+    num(sec, sizeof(sec), hp_diag_.secondary_lmin, 1);
+    const char *k[] = {"mean", "plan", "pri", "sec"};
+    const char *v[] = {mean, plan, pri, sec};
+    pr::Edge e = tr.update("heat_pump.over_plan", "heat_pump", pr::Severity::Warning, hp_diag_.over,
+                           !hp_diag_.over, now_ms, 0);
+    texts(tx::HP_OVER_TITLE, tx::HP_OVER_MSG, k, v, 4);
+    handle(e, "");
+    e = tr.update("heat_pump.under_plan", "heat_pump", pr::Severity::Warning, hp_diag_.under, !hp_diag_.under,
+                  now_ms, 0);
+    texts(tx::HP_UNDER_TITLE, tx::HP_UNDER_MSG, k, v, 4);
+    handle(e, "");
+    e = tr.update("hydraulics.mixing", "hydraulics", pr::Severity::Warning, hp_diag_.mixing, !hp_diag_.mixing,
+                  now_ms, 0);
+    texts(tx::MIXING_TITLE, tx::MIXING_MSG, k, v, 4);
+    handle(e, "");
+  }
+
+  // Connectivity: time since the last answer (since boot when none yet).
+  auto silent_for = [now_ms](uint32_t last_ok_ms) { return last_ok_ms == 0 ? now_ms : now_ms - last_ok_ms; };
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr || node->trust == ::lune_touch::NodeTrust::UNPAIRED || node->node_id[0] == '\0')
+      continue;
+    const bool down = silent_for(node->last_seen_ms) >= V6_SILENT_MS;
+    char id[64];
+    std::snprintf(id, sizeof(id), "connectivity.v6:%s", node->node_id);
+    const pr::Edge e = tr.update(id, "connectivity", pr::Severity::Error, down, !down, now_ms, 0);
+    if (e.kind == pr::EdgeKind::Raise) {
+      const char *name = node->name[0] != '\0' ? node->name
+                         : (i < ::lune_touch::MAX_NODES && node_device_name_[i][0] != '\0') ? node_device_name_[i]
+                                                                                             : node->node_id;
+      const char *k[] = {"name"};
+      const char *v[] = {name};
+      texts(tx::V6_TITLE, tx::V6_MSG, k, v, 1);
+    }
+    handle(e, "");
+  }
+  {
+    const auto &h = heat_source_;
+    const bool watched = h.enabled && heat_source_type_is_asgard_(h.type) && h.host[0] != '\0';
+    const bool down = watched && silent_for(h.hp_telemetry_ms) >= ASGARD_SILENT_MS;
+    const pr::Edge e = tr.update("connectivity.asgard", "connectivity", pr::Severity::Error, down, !down, now_ms, 0);
+    texts(tx::ASGARD_TITLE, tx::ASGARD_MSG, nullptr, nullptr, 0);
+    handle(e, "");
+  }
+  {
+    const bool watched = odin_plan_.odin_host[0] != '\0';
+    const bool down = watched && silent_for(odin_last_ok_ms_) >= ODIN_SILENT_MS;
+    const pr::Edge e = tr.update("connectivity.odin", "connectivity", pr::Severity::Warning, down, !down, now_ms, 0);
+    texts(tx::ODIN_TITLE, tx::ODIN_MSG, nullptr, nullptr, 0);
+    handle(e, "");
+  }
+
+  // Rooms: "heating active" = Touch drives an enabled heat source (there is no
+  // summer/off mode beside it). room_reached.h holds the 24 h rule.
+  const bool heating_active = heat_source_.enabled;
+  for (auto &slot : rt.rooms)
+    if (slot.room_id[0] != '\0' && model_.room_by_id(slot.room_id) == nullptr)
+      slot = ProblemRuntime::RoomSlot{};   // room removed
+  for (size_t ri = 0; ri < model_.room_count(); ri++) {
+    const auto *room = model_.room(ri);
+    if (room == nullptr || !room->enabled || room->room_id[0] == '\0')
+      continue;
+    ProblemRuntime::RoomSlot *slot = nullptr;
+    ProblemRuntime::RoomSlot *free_slot = nullptr;
+    for (auto &s : rt.rooms) {
+      if (std::strcmp(s.room_id, room->room_id) == 0) {
+        slot = &s;
+        break;
+      }
+      if (free_slot == nullptr && s.room_id[0] == '\0')
+        free_slot = &s;
+    }
+    if (slot == nullptr) {
+      if (free_slot == nullptr)
+        continue;
+      slot = free_slot;
+      std::snprintf(slot->room_id, sizeof(slot->room_id), "%s", room->room_id);
+    }
+    const auto reading = model_.room_comfort_reading(ri, time_valid, day_index, minute_of_day);
+    rr::Input in;
+    in.heating_active = heating_active;
+    in.has_target = reading.has_target;
+    in.target_c = reading.has_target ? reading.target_c : NAN;
+    in.comfort_c = reading.has_target ? reading.comfort_c : NAN;
+    in.has_temp = reading.has_temp;
+    in.temp_c = reading.has_temp ? reading.temp_c : NAN;
+    const rr::Result r = rr::step(slot->state, in, now_ms);
+    char id[64];
+    std::snprintf(id, sizeof(id), "room.not_reached:%s", room->room_id);
+    const pr::Edge e =
+        tr.update(id, "room_comfort", pr::Severity::Warning, r.not_reached, !r.not_reached, now_ms, 0);
+    if (e.kind == pr::EdgeKind::Raise) {
+      char target[16], max[16];
+      num(target, sizeof(target), slot->state.last_target_c, 1);
+      num(max, sizeof(max), r.max_c, 1);
+      const char *k[] = {"room", "target", "max"};
+      const char *v[] = {room->room_name, target, max};
+      texts(tx::ROOM_TITLE, tx::ROOM_MSG, k, v, 3);
+    }
+    handle(e, room->room_name);
+  }
+
+  pr::Edge gone[8];
+  const size_t n_gone = tr.end_cycle(now_ms, gone, 8);
+  for (size_t i = 0; i < n_gone; i++)
+    handle(gone[i], "");
+  rt.active = tr.active_count();
+  tr.titles(rt.titles, sizeof(rt.titles));
+  give_state_lock_();
+  for (size_t i = 0; i < log_n; i++)
+    log_event_(log_levels[i], "problems", log_lines[i]);
+}
+
+// Under the state lock. The text is copied now: the slot may be reused before
+// the main loop sends it.
+void LuneTouchCoordinator::queue_problem_event_(const ::lune_touch_problems::Edge &edge) {
+  if (problems_rt_ == nullptr || edge.slot < 0)
+    return;
+  ProblemRuntime &rt = *problems_rt_;
+  if (rt.outbox_count >= ProblemRuntime::OUTBOX) {
+    // Full (no Home Assistant for a while): the oldest goes.
+    for (size_t i = 1; i < ProblemRuntime::OUTBOX; i++)
+      rt.outbox[i - 1] = rt.outbox[i];
+    rt.outbox_count = ProblemRuntime::OUTBOX - 1;
+  }
+  const ::lune_touch_problems::Slot &sl = rt.tracker.slot(edge.slot);
+  ProblemEvent &ev = rt.outbox[rt.outbox_count++];
+  ev = ProblemEvent{};
+  ev.slot = static_cast<int8_t>(edge.slot);
+  ev.seq = sl.seq;
+  ev.raised = edge.kind == ::lune_touch_problems::EdgeKind::Raise;
+  std::snprintf(ev.id, sizeof(ev.id), "%s", sl.id);
+  std::snprintf(ev.category, sizeof(ev.category), "%s", sl.category);
+  std::snprintf(ev.severity, sizeof(ev.severity), "%s", ::lune_touch_problems::severity_name(sl.severity));
+  std::snprintf(ev.title, sizeof(ev.title), "%s", sl.title);
+  std::snprintf(ev.message, sizeof(ev.message), "%s", sl.message);
+  std::snprintf(ev.room, sizeof(ev.room), "%s", sl.room);
+}
+
+// Main loop: fire esphome.lune_problem. Without a connected Home Assistant the
+// event is dropped (the problem stays active locally, and its clear is not sent).
+void LuneTouchCoordinator::flush_problem_events_() {
+  if (problems_rt_ == nullptr || problems_rt_->outbox_count == 0)
+    return;
+  bool connected = false;
+#if defined(USE_API) && defined(USE_API_HOMEASSISTANT_SERVICES)
+  connected = api::global_api_server != nullptr && api::global_api_server->is_connected();
+#endif
+  ProblemEvent *batch = problems_rt_->sending;
+  size_t n = 0;
+  char device_name[sizeof(coordinator_name_)];
+  if (!take_state_lock_(5))
+    return;
+  ProblemRuntime &rt = *problems_rt_;
+  for (size_t i = 0; i < rt.outbox_count; i++) {
+    const ProblemEvent &ev = rt.outbox[i];
+    if (!connected)
+      continue;
+    if (ev.raised) {
+      const auto &sl = rt.tracker.slot(ev.slot);
+      if (!sl.used || !sl.active || sl.seq != ev.seq || std::strcmp(sl.id, ev.id) != 0)
+        continue;   // cleared before it could be sent: send neither
+      rt.tracker.mark_sent(ev.slot);
+    }
+    batch[n++] = ev;
+  }
+  rt.outbox_count = 0;
+  std::snprintf(device_name, sizeof(device_name), "%s", coordinator_name_);
+  give_state_lock_();
+#if defined(USE_API) && defined(USE_API_HOMEASSISTANT_SERVICES)
+  for (size_t i = 0; i < n; i++) {
+    const ProblemEvent &ev = batch[i];
+    api::HomeassistantActionRequest req;
+    req.service = StringRef("esphome.lune_problem");
+    req.is_event = true;
+    req.data.init(9);
+    auto add = [&req](const char *key, const char *value) {
+      auto &kv = req.data.emplace_back();
+      kv.key = StringRef(key);
+      kv.value = StringRef(value);
+    };
+    add("device", App.get_name().c_str());
+    add("device_name", device_name);
+    add("id", ev.id);
+    add("category", ev.category);
+    add("severity", ev.severity);
+    add("state", ev.raised ? "raised" : "cleared");
+    add("title", ev.title);
+    add("message", ev.message);
+    add("room", ev.room);
+    api::global_api_server->send_homeassistant_action(req);
+  }
+#else
+  (void) n;
+#endif
+}
+
+bool LuneTouchCoordinator::problems_summary(float *count, std::string *titles) const {
+  if (problems_rt_ == nullptr) {
+    *count = 0.0f;
+    titles->clear();
+    return true;
+  }
+  if (!take_state_lock_(20))
+    return false;
+  *count = static_cast<float>(problems_rt_->active);
+  titles->assign(problems_rt_->titles);
+  give_state_lock_();
+  return true;
+}
+
+void LuneTouchCoordinator::append_problems_json_(char *buffer, size_t capacity) const {
+  // Turns {...} into {..., "problems":[{id, category, severity, title, message, room, age_s}]}.
+  size_t len = std::strlen(buffer);
+  if (problems_rt_ == nullptr || len < 2 || buffer[len - 1] != '}' || capacity <= len + 32)
+    return;
+  if (!take_state_lock_(50))
+    return;
+  const uint32_t now_ms = esphome::millis();
+  size_t off = len - 1;
+  bool ok = appendf_(buffer, capacity, off, ",\"problems\":[");
+  bool first = true;
+  for (size_t i = 0; ok && i < ::lune_touch_problems::MAX_PROBLEMS; i++) {
+    const auto &sl = problems_rt_->tracker.slot(static_cast<int>(i));
+    if (!sl.used || !sl.active)
+      continue;
+    char id[96], title[128], message[256], room[80];
+    json_escape_(sl.id, id, sizeof(id));
+    json_escape_(sl.title, title, sizeof(title));
+    json_escape_(sl.message, message, sizeof(message));
+    json_escape_(sl.room, room, sizeof(room));
+    ok = appendf_(buffer, capacity, off,
+                  "%s{\"id\":\"%s\",\"category\":\"%s\",\"severity\":\"%s\",\"title\":\"%s\","
+                  "\"message\":\"%s\",\"room\":\"%s\",\"age_s\":%lu,\"sent\":%s}",
+                  first ? "" : ",", id, sl.category, ::lune_touch_problems::severity_name(sl.severity), title,
+                  message, room, static_cast<unsigned long>((now_ms - sl.last_raise_ms) / 1000UL),
+                  sl.sent ? "true" : "false");
+    first = false;
+  }
+  give_state_lock_();
+  if (!ok || !appendf_(buffer, capacity, off, "]}"))
+    std::snprintf(buffer + len - 1, capacity - (len - 1), "}");   // did not fit: leave it out
 }
 
 }  // namespace lune_touch_coordinator

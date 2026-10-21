@@ -28,6 +28,8 @@ in the linked docs.
 - [Service](#service)
 
 **[Device menu](#device-menu)**
+
+**[Notifications](#notifications)**
 <!-- /toc -->
 
 ---
@@ -391,3 +393,48 @@ System — not in the device menu. API detail: [api_v1](api_v1.md).
 **About device** shows name, location, IP, MAC, firmware, ESPHome and uptime, plus
 **Copy diagnostics**. Other Lune devices are links only. No restart, OTA or reset in
 the menu — those live under System.
+
+---
+
+<a id="notifications"></a>
+
+## Notifications
+
+Touch tells Home Assistant when something needs attention, and Home Assistant sends it
+to your phone. Touch only reports; who is notified, about what, and when, is set in the
+**Lune notifications** blueprint in Home Assistant — see
+[`homeassistant/README.md`](../homeassistant/README.md) for import and setup.
+
+**Turn it on**: in Home Assistant, Settings › Devices & services › ESPHome › Lune Touch ›
+Configure › **Allow the device to perform Home Assistant actions**. Do the same on each
+Lune V6. Without it the messages are dropped; Touch still shows them in the entities
+**Active problems** (count) and **Problems** (titles), and in `GET /diagnostics` › `problems`
+([api_v1](api_v1.md)).
+
+What Touch reports (V6 reports its own valves and sensors):
+
+| Category | Problem | When | Severity |
+|---|---|---|---|
+| Heat pump | Delivers more / less than Odin's plan | 30 min mean off plan for 30 min (see [Heat](#heat)) | warning |
+| Hydraulics | Mixing in the buffer tank | Secondary flow above primary for 10 min | warning |
+| Connectivity | A Lune V6 is not answering | No answer for 10 min | error |
+| Connectivity | Asgard is not answering | No answer for 10 min (heat source on) | error |
+| Connectivity | Odin is not answering | No answer for 30 min (Odin address set) | warning |
+| Room comfort | A room is not reaching its temperature | Never within 0.3 °C of its target in the last 24 h | warning |
+
+**Room comfort** counts only while heating is active — Touch drives an enabled heat
+source — and only after Touch has watched the room for 24 hours (since start-up, since
+the heat source was turned on, or since the room's target was changed). A night setback
+counts as reached when the room is at the setback. Rooms without readings for most of the
+day are not reported. The message gives the target and the highest temperature in the 24 h.
+
+A problem is reported once it has lasted the time above, at most once an hour, and it is
+reported again as solved when it clears. After a restart, a problem that is still there
+is reported again.
+
+Touch reads no room sensors itself — room temperatures come from the V6 boards — so
+humidity, sensor battery and missing-sensor problems come from the V6 that owns the
+sensor, never twice.
+
+**Language**: titles and messages use the device language, Danish by default. Change it
+with `POST /settings` `{"language": "en"}` ([api_v1](api_v1.md#post-settings)).

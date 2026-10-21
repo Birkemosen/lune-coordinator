@@ -77,7 +77,7 @@ ENERGY_PRICE_OUT ?= /tmp/test_lune_touch_energy_price
 .PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy upload ota-size-check ota deploy install-registry-partition monitor \
         config-mini build-mini deploy-mini ota-mini release-mini release-deploy-mini dashboard touch-ui dashboard-build \
         design-tokens design-verify \
-        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-energy-price clean
+        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-problems test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-energy-price clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
@@ -313,6 +313,11 @@ test-hp-diagnostics:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/hp_diagnostics/test_hp_diagnostics.cpp -o /tmp/test_lune_touch_hp_diagnostics
 	/tmp/test_lune_touch_hp_diagnostics
 
+test-problems:
+	$(PYTHON) web/touch-ui/gen_problem_texts.py --check
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/problems/test_problems.cpp -o /tmp/test_lune_touch_problems
+	/tmp/test_lune_touch_problems
+
 test-hp-phase:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/hp_phase/test_hp_phase.cpp -o /tmp/test_lune_touch_hp_phase
 	/tmp/test_lune_touch_hp_phase
@@ -321,7 +326,7 @@ test-simulation:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator -I components/forecast -I ../lune/lune-v6/components/lv6_dashboard components/lune_touch_coordinator/coordinator_model.cpp components/forecast/forecast_model.cpp tests/simulation/test_end_to_end_simulation.cpp -o $(SIMULATION_OUT) -lm
 	$(SIMULATION_OUT)
 
-test: design-verify test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-energy-price test-circulation-pump test-hp-diagnostics test-simulation test-dashboard test-display
+test: design-verify test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-energy-price test-circulation-pump test-hp-diagnostics test-problems test-simulation test-dashboard test-display
 
 test-dashboard:
 	sh tests/dashboard/test_phase8_overview.sh
@@ -338,6 +343,7 @@ touch-ui:
 	fi
 	cd $(ROOT_ABS) && $(PYTHON) web/design-system/tools/lds_build.py web/design-system/config/touch.json
 	cd $(ROOT_ABS) && $(PYTHON) web/touch-ui/build_ui.py --preview
+	cd $(ROOT_ABS) && $(PYTHON) web/touch-ui/gen_problem_texts.py
 	@echo "touch-ui: $$(gzip -9 -c $(ROOT_ABS)/web/touch-ui/dist/lune-ui.css | wc -c | tr -d ' ') B css.gz + $$(gzip -9 -c $(ROOT_ABS)/web/touch-ui/dist/ui.js | wc -c | tr -d ' ') B js.gz + $$(wc -c < $(ROOT_ABS)/web/touch-ui/dist/en/index.html.gz | tr -d ' ') B en.gz + $$(wc -c < $(ROOT_ABS)/web/touch-ui/dist/da/index.html.gz | tr -d ' ') B da.gz"
 
 # Legacy alias

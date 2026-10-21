@@ -286,6 +286,15 @@ struct EffectiveComfort {
   bool schedule_active{false};
 };
 
+// One room against its target, for the room_comfort problem (room_reached.h).
+struct RoomComfortReading {
+  bool has_target{false};
+  float target_c{0.0f};    // target that applies now (schedule included)
+  float comfort_c{0.0f};   // the room's own comfort target
+  bool has_temp{false};    // fresh, plausible (sync group: mean of the members)
+  float temp_c{0.0f};
+};
+
 struct ResolvedZone {
   const PairedNode *node{nullptr};
   const ZoneBinding *binding{nullptr};
@@ -659,6 +668,8 @@ class HouseModel {
   static bool scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t day_index,
                                            uint16_t minute_of_day, float *out);
   StrategySnapshot strategy_snapshot() const;
+  RoomComfortReading room_comfort_reading(size_t room_index, bool time_valid, uint8_t day_index,
+                                          uint16_t minute_of_day) const;
   LearningSnapshot learning_snapshot() const;
 
   const PairedNode *node(size_t index) const;
