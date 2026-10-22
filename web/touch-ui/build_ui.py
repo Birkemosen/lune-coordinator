@@ -426,6 +426,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     heat_over = f'''
         <div data-hs-type="{hs_type}" style="display:grid;gap:var(--space-5)">
           <p class="msg warn" data-bind-show="hpd.show" aria-live="polite" hidden><span><b data-bind="hpd.strong"></b> <span data-bind="hpd.body"></span></span></p>
+          <p class="note" data-hp-dhw aria-live="polite" hidden><span class="badge hot" data-bind="heat.dhwBadge">{T("heat.dhwBadge")}</span> {T("heat.dhwNote")}</p>
           {heat_chart}
           <dl class="metrics hs-type-http">
             {metric(T("heat.weighted"), "°C", "heat.weighted")}
@@ -943,7 +944,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
-        "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
+        "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )

@@ -1802,7 +1802,21 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       n.textContent = label;
       n.className = 'badge' + (cls ? ' ' + cls : '');
     });
+    // Hot water / legionella: Asgard's mode 1 / 6. The flow and return shown are the
+    // tank circuit then (e.g. 53 °C), so say so on the tile and in the sheet.
+    var opm = hs.heat_pump && hs.heat_pump.available ? Number(hs.heat_pump.operation_mode) : 0;
+    var tank = opm === 1 || opm === 6;
     setText('heat.badgeText', label);
+    // Only the tile says it (in heat colour); the sheet keeps the connection status
+    // and shows the hot-water badge and note instead.
+    var tile = qs('[data-tile="heat"]');
+    if (tile) {
+      tile.toggleAttribute('data-dhw', tank);
+      var tst = qs('.ht-status', tile);
+      if (tst && tank) tst.textContent = t(opm === 6 ? 'heat.legionellaNow' : 'heat.dhwNow');
+    }
+    qsa('[data-hp-dhw]').forEach(function (n) { n.hidden = !tank; });
+    setText('heat.dhwBadge', t(opm === 6 ? 'heat.legionellaBadge' : 'heat.dhwBadge'));
     var alert = qs('[data-bind-alert="heat"]');
     if (alert) alert.hidden = !(hs.enabled !== false && st === 'unreachable');
   }

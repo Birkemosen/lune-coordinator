@@ -779,6 +779,12 @@
   .panel.alert > .panel-foot { grid-area: foot; margin: 0; justify-content: flex-end !important; }
   .panel.alert h3 { color: var(--fg); display: flex; align-items: center; gap: var(--space-3); font-size: var(--fs-md); }
   @media (max-width: 599.98px) { .panel.alert { grid-template-columns: 1fr; grid-template-areas: "head" "note" "foot"; gap: var(--space-2); } .panel.alert > .panel-foot { justify-content: flex-start !important; padding-left: 40px; } }
+  /* Fejlpanel med mere end titel, tekst og én knap (fx en genopretningsformular med grupper):
+     én kolonne, alt i dokumentrækkefølge. Uden dette blev grupperne auto-placeret i de to
+     kolonner og teksten klemt ned til ét ord pr. linje. */
+  .panel.alert:has(> :not(.panel-head, .note, .panel-foot)) { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; gap: var(--space-3); align-items: stretch; }
+  .panel.alert:has(> :not(.panel-head, .note, .panel-foot)) > * { grid-area: auto; }
+  .panel.alert:has(> :not(.panel-head, .note, .panel-foot)) > .panel-foot { justify-content: flex-start !important; padding-left: 0; }
   .panel.alert h3::before { content: "!"; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
     background: var(--danger-fill); color: var(--on-fill); font-size: var(--fs-md); font-weight: 700; }
   .panel.tone-info { background: var(--info-bg); box-shadow: inset 3px 0 0 var(--info); }
@@ -1662,6 +1668,8 @@
   /* Advarsel i et felt (fx opblanding ved cirkulationspumpen): statuslinjen siger hvad i warn-tone,
      og ikonbrikken får data-tone="warn". Teksten er signalet; farven støtter (3.2). */
   .home-tile[data-state="warn"] > .ht-status { color: var(--warn); font-weight: 600; }
+  /* Varme-feltet mens varmepumpen lader varmt vand: frem/retur er beholderens kreds. Varme som tekst. */
+  .home-tile[data-dhw] > .ht-status { color: var(--accent-ink); font-weight: 600; }
   /* Fordeling i et felt (Cirkulation): donut + forklaring. Én kulør (dom-water) i nuancer pr. del,
      som .dist i arket — ikke flere kulører (3.2.2). Segmenterne: circle med pathLength 100. */
   .home-tile > .ht-dist { grid-area: viz; align-self: end; display: flex; align-items: center; gap: var(--space-5); margin-top: var(--space-4); }
