@@ -718,6 +718,8 @@ class HouseModel {
   ZoneLiveState live_[MAX_HOUSE_ZONES]{};
   ZoneHistory history_[MAX_HOUSE_ZONES]{};
   NodeHeatDemand node_heat_demand_[MAX_NODES]{};
+  /// Room of the sync-group primary that owns loop (node, zone); nullptr if none.
+  const char *group_room_id_(size_t node_index, size_t zone_index) const;
   uint32_t room_revisions_[MAX_HOUSE_ROOMS]{};  // runtime optimistic-concurrency revisions
   size_t node_count_{0};
   size_t zone_count_{0};

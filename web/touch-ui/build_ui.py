@@ -570,6 +570,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <p class="note">{T("alert.roomFaultBody")}</p>
           <div class="panel-foot"><a class="btn" data-f="resetLink" href="#" target="_blank" rel="noopener">{T("v6.resetOnV6")}</a></div></div>
         <p class="msg warn" data-f="nodata" hidden><span><b>{T("room.noDataStrong")}</b> {T("room.noData")}</span></p>
+        <p class="msg violet" data-f="merged" hidden><span data-f="mergedText"></span></p>
         <dl class="metrics">
           {metric(T("room.temp"), "°C", f="temp")}
           {metric(T("room.target"), "°C", f="target")}
@@ -584,7 +585,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {kv([(T("room.histAvg"), None, DASH, "hAvg"), (T("room.histMin"), None, DASH, "hMin"), (T("room.histMax"), None, DASH, "hMax"),
                (T("room.histCalling"), None, DASH, "hCall"), (T("room.histSamples"), None, DASH, "hN")])}
         </div>'''
-        v6 = group(f'<span data-f="fromV6">{T("room.fromV6", m="V6", z="—")}</span>',
+        v6 = group(f'<span data-f="fromV6">{T("room.fromV6", m="V6", zones="—")}</span>',
                    srow(f"<span>{T('room.area')}</span>", f'<span class="setting-value" data-f="area">{DASH}</span>') +
                    srow(f"<span>{T('room.walls')}</span>", f'<span class="setting-value" data-f="walls">{DASH}</span>') +
                    srow(f"<span>{T('room.editOnV6Label')}</span>",
@@ -942,7 +943,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
-        "room.loops", "room.valveShort", "room.fromV6", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
+        "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )

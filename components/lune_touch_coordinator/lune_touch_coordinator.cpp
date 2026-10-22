@@ -12515,9 +12515,12 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     char learn_solar[12], learn_wind[12];
     json_float_token_(learn_solar, sizeof(learn_solar), learn.solar_valid ? learn.solar : NAN, 2);
     json_float_token_(learn_wind, sizeof(learn_wind), learn.wind_valid ? learn.wind : NAN, 2);
+    // This loop's own area from V6; a sync group's room area (room.total_area_m2) is the sum.
+    char loop_area[12];
+    json_float_token_(loop_area, sizeof(loop_area), zone->v6_area_m2 > 0.0f ? zone->v6_area_m2 : NAN, 1);
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"name_source\":\"%s\","
-                  "\"node_index\":%u,\"zone_index\":%u,"
+                  "\"node_index\":%u,\"zone_index\":%u,\"loop_area_m2\":%s,"
                   "\"room\":{\"revision\":%lu,\"total_area_m2\":%.2f,\"physical_weight\":%.2f,"
                   "\"ua_w_per_k\":%.1f,\"ua_prior_w_per_k\":%.1f,\"ua_learned_w_per_k\":%.1f,"
                   "\"ua_effective_w_per_k\":%.1f,\"ua_confidence\":%.2f,\"ua_observed_days\":%u,"
@@ -12552,7 +12555,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"ownership\":{\"walls\":\"v6\",\"weather\":\"touch\"}}",
                   first ? "" : ",", room_id_esc, room_name_esc,
                   zone_name_source_name_(zone->name_source),
-                  static_cast<unsigned>(zone->node_index), static_cast<unsigned>(zone->zone_index),
+                  static_cast<unsigned>(zone->node_index), static_cast<unsigned>(zone->zone_index), loop_area,
                   static_cast<unsigned long>(model_.room_revision(zone->room_id)),
                   room != nullptr ? room->total_area_m2 : 0.0f,
                   room != nullptr ? room->physical_weight : 1.0f,

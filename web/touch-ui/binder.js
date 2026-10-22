@@ -185,7 +185,7 @@
     ['room-03', 'Bryggers', 0, 2, 21.6, 21.0, 'idle', 4, 8, 1, false, 0.5, 0.5, 0],
     ['room-04', 'Køkken', 0, 3, 21.7, 21.0, 'idle', 0, 14, 2, true, 1, 0.4, 0.3],
     ['room-05', 'Stue', 0, 4, 21.4, 21.5, 'calling', 54, 48, 12, true, 1.5, 0.6, 0.7],
-    ['room-05', 'Stue', 0, 5, 21.4, 21.5, 'calling', 50, 0, 0, true, 1.5, 0.6, 0.7],
+    ['room-05', 'Stue Repo', 0, 5, 21.9, 21.5, 'calling', 50, 0, 0, true, 1.5, 0.6, 0.7],
     ['room-06', 'Josephine', 1, 0, 21.4, 22.0, 'calling', 62, 12, 12, true, 1, 0.7, 0.4],
     ['room-07', 'Laura', 1, 1, 22.2, 22.0, 'idle', 35, 11, 3, true, 1, 0.5, 0.3],
     ['room-08', 'Toilet', 1, 2, 22.7, 22.0, 'idle', 14, 4.5, 0, false, 0.25, 0, 0],
@@ -204,10 +204,12 @@
       seen[rid] = true;
       var members = rid === 'room-05' ? [5, 6] : [];
       var hasT = r[4] != null;
+      // As the firmware: a sync group's secondary loop is not bound to the room.
       return {
-        room_id: rid, name: r[1], node_index: r[2], zone_index: r[3],
+        room_id: secondary ? '' : rid, name: r[1], node_index: r[2], zone_index: r[3],
+        loop_area_m2: members.length ? 24.5 : (r[8] || null),
         temperature_c: r[4], setpoint_c: r[5], status: r[6], valve_pct: r[7], fresh: hasT && r[2] !== 2,
-        is_group_secondary: secondary, unassigned: false, group_members: members,
+        is_group_secondary: secondary, unassigned: secondary, group_members: members,
         room: { revision: st.revision, total_area_m2: r[8] || 48, physical_weight: st.weight, ua_w_per_k: 0,
           include_in_house_temperature: st.include, wind_exposure: st.wind, solar_gain: st.solar, floor_unset: false },
         comfort: { setpoint_c: r[5], bias_c: 0, effective_setpoint_c: r[5], priority: 1 },
@@ -813,11 +815,28 @@
       r.loops.push(z);
       if (!z.is_group_secondary && !r.primary) r.primary = z;
     });
+    // A V6 sync group (fx Stue Repo + Stue) is one room: its secondary loops are not
+    // bound to the room, so attach them through the primary's member list.
+    (state.zones || []).forEach(function (z) {
+      if (!z || !z.is_group_secondary) return;
+      order.forEach(function (rid) {
+        var p = byRoom[rid].loops.filter(function (c) { return !c.is_group_secondary; })[0];
+        var mem = p && Array.isArray(p.group_members) ? p.group_members.map(Number) : [];
+        if (p && Number(p.node_index) === Number(z.node_index) && mem.length > 1 &&
+            mem.indexOf(Number(z.zone_index) + 1) >= 0 && byRoom[rid].loops.indexOf(z) < 0)
+          byRoom[rid].loops.push(z);
+      });
+    });
     state.roomSlots = [];
     state.slotOf = {};
     order.forEach(function (rid) {
       var r = byRoom[rid];
       if (!r.primary) r.primary = r.loops[0];
+      r.loops.sort(function (a, b) { return mzOf(a).z - mzOf(b).z; });
+      r.merged = r.loops.some(function (c) { return c.is_group_secondary; });
+      // V6 controls a group on the mean of its members' sensors: show the same.
+      var ts = r.loops.filter(zoneHasData).map(function (c) { return Number(c.temperature_c); });
+      r.temp = ts.length ? ts.reduce(function (a, b) { return a + b; }, 0) / ts.length : null;
       var valve = null, st = r.primary.status;
       r.loops.forEach(function (z) {
         if (finite(z.valve_pct) && (valve == null || Number(z.valve_pct) > valve)) valve = Number(z.valve_pct);
@@ -940,7 +959,8 @@
         var open5 = lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(valve) / 20)));
         var area = Number((z.room && z.room.total_area_m2) || (room && room.area_m2)) || 12;   // tile width follows the room's area
         var idl = zoneIdLabel(z);
-        var val = roomValText(z);
+        var val = room && room.primary === z && room.merged && room.temp != null && zoneHasData(z)
+          ? deg(room.temp) : roomValText(z);
         var ch = chargeFor(m - 1, mz.z - 1);
         var chargeAttr = ch ? ' data-charge="' + (ch.insufficient ? 'insufficient' : 'now') + '" title="' +
           esc(t(ch.insufficient ? 'strip.charge.insufficient' : 'strip.charge.now', { c: num(ch.store_c) })) + '"' : '';
@@ -1020,6 +1040,8 @@
       var mName = nodeLabel(node) || ('M' + mz.m);
       var st = mapStatus(r.status);
       var has = zoneHasData(z);
+      var rt = r.merged && r.temp != null ? r.temp : z.temperature_c;
+      var zones = zoneIdLabel(z).id;
       var sp = roomSetpoint(z);
       var open = has && finite(r.valve) ? Math.round(Number(r.valve)) : null;
       var name = z.name || r.room_id;
@@ -1028,7 +1050,13 @@
       var n24svg = n24 && qs('svg', n24);
       if (n24svg) n24svg.setAttribute('aria-label', t('room.next24Aria', { name: name }));
       fText(qs('.sheet-head', sh), 'status', t('sheet.roomStatus', {
-        m: mName, z: mz.z, temp: has ? deg(z.temperature_c) : '—', open: open == null ? '—' : open, state: t('state.' + st)
+        m: mName, zones: zones, temp: has ? deg(rt) : '—', open: open == null ? '—' : open, state: t('state.' + st)
+      }));
+      var mg = fEl(sh, 'merged');
+      if (mg) mg.hidden = !r.merged;
+      if (r.merged) fText(sh, 'mergedText', t('room.merged', {
+        zones: r.loops.map(function (c) { return (c.name || ('Z' + mzOf(c).z)) + ' (Z' + mzOf(c).z + ')'; }).join(' + '),
+        temps: r.loops.map(function (c) { return zoneHasData(c) ? deg(c.temperature_c) : '—'; }).join(' / ')
       }));
       var fault = fEl(sh, 'fault');
       if (fault) fault.hidden = st !== 'fault';
@@ -1037,7 +1065,7 @@
       if (rl) rl.href = base ? base + '#z' + mz.z : '#';
       var nd = fEl(sh, 'nodata');
       if (nd) nd.hidden = has || st === 'fault';
-      fHtml(sh, 'temp', esc(has ? num(z.temperature_c) : '—') + ' <small>°C</small>');
+      fHtml(sh, 'temp', esc(has ? num(rt) : '—') + ' <small>°C</small>');
       fHtml(sh, 'target', esc(num(sp)) + ' <small>°C</small>');
       fHtml(sh, 'valve', esc(open == null ? '—' : String(open)) + ' <small>%</small>');
       var bar = fEl(sh, 'bar');
@@ -1045,8 +1073,9 @@
       fText(sh, 'loopsTitle', t('room.loops', { m: mName }));
       fHtml(sh, 'loops', r.loops.map(function (c) {
         var cz = mzOf(c);
-        var lbl = (cz.m !== mz.m ? 'M' + cz.m + ' ' : '') + 'Z' + cz.z;
+        var lbl = (cz.m !== mz.m ? 'M' + cz.m + ' ' : '') + 'Z' + cz.z + (r.merged && c.name ? ' · ' + c.name : '');
         var v = finite(c.valve_pct) && zoneHasData(c) ? t('room.valveShort', { v: num(c.valve_pct, 0) }) : '—';
+        if (r.merged && zoneHasData(c)) v = deg(c.temperature_c) + ' · ' + v;
         return '<div><dt>' + esc(lbl) + '</dt><dd>' + esc(v) + '</dd></div>';
       }).join(''));
       // History summary from /zones (no ring buffer of samples on the device).
@@ -1064,8 +1093,12 @@
       // Fra V6: read-only values, edited on the V6 itself.
       var room = z.room || {};
       var fc = z.forecast || {};
-      fText(sh, 'fromV6', t('room.fromV6', { m: mName, z: mz.z }));
-      fText(sh, 'area', Number(room.total_area_m2) > 0 ? num(room.total_area_m2, 1) + ' m²' : '—');
+      fText(sh, 'fromV6', t('room.fromV6', { m: mName, zones: zones }));
+      var parts = r.merged ? r.loops.map(function (c) { return c.loop_area_m2 != null ? num(c.loop_area_m2, 1) : null; }) : [];
+      fText(sh, 'area', !(Number(room.total_area_m2) > 0) ? '—'
+        : (r.merged && parts.every(function (v) { return v != null; })
+          ? t('room.areaParts', { total: num(room.total_area_m2, 1), parts: parts.join(' + ') })
+          : num(room.total_area_m2, 1) + ' m²'));
       fText(sh, 'walls', wallsText(fc.exterior_walls != null ? fc.exterior_walls : room.exterior_walls_union));
       var ed = fEl(sh, 'editLink');
       if (ed) { ed.href = base ? base + '#z' + mz.z + '/' + t('hash.settings') : '#'; ed.hidden = !base; }

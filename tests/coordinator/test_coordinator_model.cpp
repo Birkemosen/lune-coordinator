@@ -678,6 +678,37 @@ static void test_driver_needs_saturated_loop() {
          "driver: RAISE for the room's own loop lifts the house target");
 }
 
+static void test_sync_group_room_physics() {
+  // Stue Repo (Z4) + Stue (Z5), 24.5 m² each, one V6 sync group = one room of 49 m².
+  HouseModel model;
+  model.upsert_node("v6-b", "b.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("stue", "Stue Repo", 0, 3);
+  model.bind_zone("stue", "Stue Repo", 0, 4);
+  model.update_zone_live_by_binding(0, 3, 22.0f, true, 23.0f, true, "idle", true, 1000);
+  model.update_zone_live_by_binding(0, 4, 23.0f, true, 23.0f, true, "idle", true, 1000);
+  expect(model.update_zone_group_membership(0, 3, 4, 0x18, true), "group room: primary marked");
+  expect(model.update_zone_group_membership(0, 4, 4, 0x18, false), "group room: secondary marked");
+  FloorMirror floor{};
+  floor.unset = false;
+  std::strncpy(floor.slab_type, "timber_joists", sizeof(floor.slab_type) - 1);
+  std::strncpy(floor.covering, "parquet_laminate", sizeof(floor.covering) - 1);
+  expect(model.apply_v6_physics_mirror(0, 3, 0x0C, 24.5f, floor, 31.9f, 0.0f, 31.9f, 0.0f, 0, 1,
+                                       "", "", "g4", nullptr),
+         "group room: primary physics");
+  expect(model.apply_v6_physics_mirror(0, 4, 0x04, 24.5f, floor, 29.4f, 0.0f, 29.4f, 0.0f, 0, 1,
+                                       "", "", "g4", nullptr),
+         "group room: secondary physics");
+  const LogicalRoom *room = model.room_by_id("stue");
+  expect(room != nullptr && std::fabs(room->total_area_m2 - 49.0f) < 0.01f,
+         "group room: area is both loops (49 m²)");
+  expect(room != nullptr && std::fabs(room->ua_w_per_k - 61.3f) < 0.05f,
+         "group room: UA is both loops");
+  expect(room != nullptr && room->exterior_walls_union == 0x0C, "group room: walls union");
+  model.set_room_geometry("stue", 49.0f, 0.0f, true);
+  const StrategySnapshot st = model.strategy_snapshot();
+  expect(std::fabs(st.ua_total_w_per_k - 61.3f) < 0.05f, "group room: counts once with the full UA");
+}
+
 static void test_strategy_snapshot() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
@@ -1418,6 +1449,7 @@ int main() {
   test_room_spread_is_not_a_fault();
   test_strategy_snapshot();
   test_driver_needs_saturated_loop();
+  test_sync_group_room_physics();
   test_zone_forecast_profile();
   test_command_ledger();
   test_ledger_ring_capacity();
