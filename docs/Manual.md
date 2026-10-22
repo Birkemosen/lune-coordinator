@@ -84,7 +84,9 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
 
 Weighted average of rooms marked "include in house temperature". A V6 sync group (one
 room with several loops, e.g. Stue + Stue Repo) counts as one room with the mean of its
-sensors — the same value V6 controls on — and the members' floor area. Coverage shows
+sensors — the same value V6 controls on — and the area and heat loss of all its loops (two
+loops of 24.5 m² = one room of 49 m²). Its room sheet says it is merged and shows the mean
+temperature, each loop's temperature and opening, and the area per loop. Coverage shows
 how many approved manifolds contribute.
 
 **What is sent to the heat pump** is the honest house temperature: the house target plus the
