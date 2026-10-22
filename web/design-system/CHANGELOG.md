@@ -1,5 +1,13 @@
 # Changelog — Lune Design System
 
+## 2.3.23
+
+- `.home-tile[data-dhw] > .ht-status`: Varme-feltets statuslinje i varmefarve (accent-ink, varme som tekst), mens varmepumpen lader varmt vand eller kører legionella. Frem/retur er så beholderens kreds; arket viser en `.badge.hot` «Varmt vand» med forklaring (Touch).
+
+## 2.3.22
+
+- `.panel.alert`: et fejlpanel med mere end titel, tekst og én knap (fx V6' genopretningsformular for en motorfejl med grupper og segmentvalg) lægges i én kolonne i dokumentrækkefølge. Før blev grupperne auto-placeret i det tospaltede gitter, og teksten blev klemt til ét ord pr. linje. Kort fejlbesked + knap er uændret (`:has()`, ingen ny klasse).
+
 ## 2.3.21
 
 - Home Assistant-temaet sætter Bubble Cards variabler (`--bubble-*`: flader, radier, ingen skygger) og LDS' fyldtoner som `--lune-*`. Eksempel: `examples/home-assistant/varme-dashboard-bubble.yaml` (overblik med ikonbrikker, ark som Bubble pop-ups). DESIGN 14.3 beskriver mønstret.
