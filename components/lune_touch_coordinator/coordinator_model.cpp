@@ -825,7 +825,13 @@ bool HouseModel::apply_v6_physics_mirror(size_t node_index, size_t zone_index,
       copy_text_(z.sensor_id, sizeof(z.sensor_id), sensor_id);
     if (group_id != nullptr)
       copy_text_(z.group_id, sizeof(z.group_id), group_id);
-    refresh_room_physics_aggregates(z.room_id);
+    if (z.room_id[0] != '\0') {
+      refresh_room_physics_aggregates(z.room_id);
+    } else {
+      const char *room = group_room_id_(z.node_index, z.zone_index);
+      if (room != nullptr)
+        refresh_room_physics_aggregates(room);
+    }
     return true;
   }
   return false;
@@ -850,11 +856,37 @@ bool HouseModel::refresh_room_physics_aggregates(const char *room_id) {
   size_t node_bits = 0;
   size_t group_count = 0;
 
+  // A V6 sync group (fx Stue Repo + Stue) is one room: its secondary loops are not
+  // bound to the room, so add them here through the primary's member mask. Without
+  // this the room had the primary's area and UA only and counted half in the house.
+  auto add_loop = [&](const ZoneBinding &z) {
+    walls |= z.exterior_walls & 0x0F;
+    if (z.v6_area_m2 > 0.0f)
+      area += z.v6_area_m2;
+    ua_prior += z.ua_prior_w_per_k > 0.0f ? z.ua_prior_w_per_k : 0.0f;
+    ua_learned += z.ua_learned_w_per_k > 0.0f ? z.ua_learned_w_per_k : 0.0f;
+    ua_eff += z.ua_effective_w_per_k > 0.0f ? z.ua_effective_w_per_k
+                                            : (z.ua_prior_w_per_k > 0.0f ? z.ua_prior_w_per_k : 0.0f);
+    if (z.floor.unset || !physics::floor_provisioned(z.floor.slab_type, z.floor.covering))
+      floor_unset = true;
+    if (z.physics_conflict)
+      conflict = true;
+  };
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled || zones_[i].is_group_secondary || zones_[i].unassigned)
       continue;
     if (!same_text_(zones_[i].room_id, room_id))
       continue;
+    const uint8_t members = live_[i].group_members_mask;
+    if (members != 0 && (members & (members - 1)) != 0) {
+      for (size_t zi = 0; zi < ZONES_PER_NODE; zi++) {
+        if (((members >> zi) & 1U) == 0 || zi == zones_[i].zone_index)
+          continue;
+        const size_t bi = find_binding_index_(zones_[i].node_index, zi);
+        if (bi < zone_count_ && bi != i && zones_[bi].enabled && zones_[bi].is_group_secondary)
+          add_loop(zones_[bi]);
+      }
+    }
     any_primary = true;
     group_count++;
     walls |= zones_[i].exterior_walls & 0x0F;
@@ -1377,7 +1409,22 @@ bool HouseModel::update_zone_group_membership(size_t node_index, size_t zone_ind
   } else if (zones_[i].room_id[0] == '\0') {
     zones_[i].unassigned = true;
   }
+  // The group's area and UA belong to the primary's room.
+  const char *room = group_room_id_(node_index, zone_index);
+  if (room != nullptr)
+    refresh_room_physics_aggregates(room);
   return true;
+}
+
+const char *HouseModel::group_room_id_(size_t node_index, size_t zone_index) const {
+  for (size_t p = 0; p < zone_count_; p++) {
+    if (!zones_[p].enabled || zones_[p].is_group_secondary || zones_[p].room_id[0] == '\0' ||
+        zones_[p].node_index != node_index)
+      continue;
+    if (zones_[p].zone_index == zone_index || ((live_[p].group_members_mask >> zone_index) & 1U) != 0)
+      return zones_[p].room_id;
+  }
+  return nullptr;
 }
 
 bool HouseModel::update_zone_heat_demand(size_t node_index, size_t zone_index, const char *demand_state,
@@ -1922,14 +1969,14 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
     }
     // A V6 sync group is one room with several loops and sensors (fx Stue + Stue Repo).
     // V6 controls it on the mean of the members' sensors; use the same mean here, not
-    // the primary's sensor alone, and count the members' floor area in the weight.
+    // the primary's sensor alone. The members' area and UA are already in the room's
+    // own totals (refresh_room_physics_aggregates), so the weight needs no extra term.
     float room_temp_c = (live != nullptr && live->has_temperature) ? live->temperature_c : NAN;
     float room_weight = weight;
     if (primary != nullptr && live != nullptr && live->group_members_mask != 0 &&
         (live->group_members_mask & (live->group_members_mask - 1)) != 0) {
       float tsum = 0.0f;
       unsigned tcount = 0;
-      float extra_area = 0.0f;
       for (size_t z = 0; z < ZONES_PER_NODE; z++) {
         if (((live->group_members_mask >> z) & 1U) == 0)
           continue;
@@ -1942,14 +1989,9 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
           tsum += m.temperature_c;
           tcount++;
         }
-        if (&zones_[bi] != primary && std::isfinite(zones_[bi].v6_area_m2) && zones_[bi].v6_area_m2 > 0.0f)
-          extra_area += zones_[bi].v6_area_m2;
       }
       if (tcount > 0)
         room_temp_c = tsum / static_cast<float>(tcount);
-      if (!used_ua && extra_area > 0.0f)
-        room_weight += geometry_ua_w_per_k(extra_area) *
-                       ((std::isfinite(room.physical_weight) && room.physical_weight > 0.0f) ? room.physical_weight : 1.0f);
     }
 
     if (primary != nullptr) {
