@@ -99,7 +99,8 @@ the end of the hour, so it is never pulled down or damped. The value sent moves 
 target opens wide, rooms above target trim or close). Only when that is not enough — its
 manifold reports the room's loop near fully open for 20 minutes (*RAISE*) and the room is still
 more than 0.3 °C below target — does Touch raise Odin's comfort schedule (at most +1.5 °C, held
-at least 30 minutes), so Odin plans more heat. Raising the whole house for a room whose valve
+at least 30 minutes), from the next hour for the room's floor lag + 2 h (3–6 h), so Odin has at
+least an hour to plan heat that reaches the room. Raising the whole house for a room whose valve
 still has room to open would only overheat the others. The dashboard still shows the real average. Authority is Touch when it holds the lease.
 **How is it calculated?** in the Heat sheet shows each room's weight.
 

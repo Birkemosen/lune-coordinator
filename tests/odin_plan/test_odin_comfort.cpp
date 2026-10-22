@@ -80,6 +80,16 @@ int main() {
   assert(!make_lift(13, 2, 5, 0.1f, p).active());   // too small to bother Odin
   assert(make_lift(13, -3, 2, 0.5f, p).start_hour == 13);  // already started → from now
   assert(make_lift(13, 0, 40, 0.5f, p).hours == 23);       // never the whole day
+  // A lagging room: from the next hour, for the floor lag + 2 h (3–6 h).
+  {
+    const Lift l = lag_lift(10, 0.6f, 2, p);   // 10:40, concrete/parquet ≈ 2 h
+    assert(l.active() && l.start_hour == 11 && l.hours == 4);
+    assert(lag_lift(10, 0.6f, 1, p).hours == 3);    // light timber floor: 3 h minimum
+    assert(lag_lift(10, 0.6f, 9, p).hours == 6);    // lag capped at 4 h → 6 h
+    assert(lag_lift(10, 0.6f, 0, p).hours == 4);    // unknown lag: 2 h
+    assert(lag_lift(23, 0.6f, 2, p).start_hour == 0);  // wraps midnight
+    assert(!lag_lift(10, 0.2f, 2, p).active());      // below the minimum lift
+  }
   assert(!lift_changed(w, Lift{15, 3, 0.6f}));
   assert(lift_changed(w, Lift{16, 3, 0.5f}));
   assert(lift_changed(w, Lift{}));
