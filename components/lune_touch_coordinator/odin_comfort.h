@@ -308,6 +308,21 @@ inline Lift make_lift(uint8_t now_hour, int start_in_h, int end_in_h, float lift
   return l;
 }
 
+/// Lift window for a room that lags: from the next hour, for the room's floor lag
+/// (1–4 h) plus 2 h, so 3–6 h. Odin then always has at least an hour to plan and
+/// may heat in the cheapest hour that still reaches the room; a floor answers 1–3 h
+/// after heat goes in, so a band raised only for now and the next hour was too
+/// late to reach and left Odin no choice of hour.
+static constexpr int LAG_LEAD_IN_H = 1;
+static constexpr int LAG_EXTRA_H = 2;
+inline int lag_end_in_h(uint8_t floor_lag_h) {
+  const int lag = floor_lag_h == 0 ? 2 : std::min<int>(std::max<int>(floor_lag_h, 1), 4);
+  return LAG_LEAD_IN_H + lag + LAG_EXTRA_H;
+}
+inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const LiftParams &p) {
+  return make_lift(now_hour, LAG_LEAD_IN_H, lag_end_in_h(floor_lag_h), lift_c, p);
+}
+
 /// True when two lifts differ enough to justify rewriting Odin's schedule.
 inline bool lift_changed(const Lift &a, const Lift &b, float tol_c = 0.25f) {
   if (a.active() != b.active())

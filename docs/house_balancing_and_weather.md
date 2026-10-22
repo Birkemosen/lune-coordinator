@@ -226,7 +226,10 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
 - **Amount.** Slab charge: `lift = Σ room shortfall (kWh) / Odin's thermal mass (kWh/K)`
   — Odin's own `used_thermal_mass` from `/api/debug`, because Odin translates the band
   shift into energy with that number. Example: 6 kWh / 11.7 kWh/K ≈ +0.5 °C. Room lag:
-  the held lag, for the next 2 h (re-evaluated every cycle). Capped at `max_lift_c`
+  the held lag (only when the room's loop is saturated, see the Manual), from the next hour
+  for the room's floor lag (1–4 h, `thermal_lead_h`) + 2 h, so 3–6 h, re-evaluated every
+  cycle. Odin always has at least an hour to plan, and a floor that answers 1–3 h after heat
+  goes in can actually reach the raised band. Capped at `max_lift_c`
   (default 1.5 °C); below 0.3 °C nothing is written.
 - **When.** Slab charge: from the charge start to the end of the episode (local wall-clock
   hours). Odin is free to heat earlier if that is cheaper.

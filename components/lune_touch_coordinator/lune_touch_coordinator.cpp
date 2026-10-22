@@ -2861,14 +2861,20 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float energy = 0.0f;
   int start = INT16_MAX;
   int end = -1;
+  uint8_t lag_floor_h = 0;
   if (take_state_lock_(100)) {
     params.max_lift_c = odin_control_.max_lift_c;
     thermal_mass = odin_control_.thermal_mass_kwh_per_k;
-    if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f) {
-      const auto strategy = model_.strategy_snapshot();
+    const auto strategy = model_.strategy_snapshot();
+    if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
-    }
     held = demand_held_c_;
+    // The lagging room's floor lag sets how far ahead the lift reaches.
+    if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
+      const auto rz = model_.resolve_room(strategy.driver_room_id);
+      if (rz.binding != nullptr)
+        lag_floor_h = ::lune_touch::HouseModel::active_thermal_lead_h(*rz.binding);
+    }
     // Slab charge: sum the shortfall of each room once (a room may span zones).
     for (size_t i = 0; i < forecast_decision_count_; i++) {
       const auto &d = forecast_decisions_[i];
@@ -2890,20 +2896,24 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     charge = lune_touch_odin::make_lift(now_hour, start, end,
                                         lune_touch_odin::lift_for_energy(energy, thermal_mass, params),
                                         params);
-  // A room that lags (held demand): shift the band for the next two hours so
-  // Odin's next solve plans heat now. Re-evaluated every cycle.
+  // A room that lags (held demand): shift the band from the next hour for the
+  // room's floor lag + 2 h (odin_comfort.h lag_lift), so Odin has at least an hour
+  // to plan heat that reaches the room. Re-evaluated every cycle.
   lune_touch_odin::Lift lag{};
   if (held > 0.0f)
-    lag = lune_touch_odin::make_lift(now_hour, 0, 2, held, params);
+    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params);
   if (energy_kwh != nullptr)
     *energy_kwh = charge.active() ? energy : 0.0f;
   if (charge.active() && lag.active()) {
     if (reason != nullptr)
       *reason = "slab_charge+room_lag";
-    // Charge windows start now or later; the lag starts now. Merge from now.
-    const int charge_end_rel = static_cast<int>((charge.start_hour + 24 - now_hour) % 24) + charge.hours;
-    return lune_touch_odin::make_lift(now_hour, 0, std::max(2, charge_end_rel),
-                                      std::max(charge.lift_c, lag.lift_c), params);
+    // Merge both windows (relative to now) into one lift.
+    const int charge_start_rel = static_cast<int>((charge.start_hour + 24 - now_hour) % 24);
+    const int charge_end_rel = charge_start_rel + charge.hours;
+    return lune_touch_odin::make_lift(
+        now_hour, std::min(charge_start_rel, lune_touch_odin::LAG_LEAD_IN_H),
+        std::max(charge_end_rel, lune_touch_odin::lag_end_in_h(lag_floor_h)),
+        std::max(charge.lift_c, lag.lift_c), params);
   }
   if (charge.active()) {
     if (reason != nullptr)
