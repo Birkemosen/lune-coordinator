@@ -621,6 +621,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         house: { target_c: mockTarget, temp_c: 21.6 },
         odin: { available: true, control: true, heat_kw: hk, energy_kwh: hk.map(function (v, i) { return i === 14 ? 1.5 : (i >= 18 && i <= 20 ? 0.8 : v / 4); }),
           mode: hk.map(function (v, i) { return i === 14 ? 1 : (i >= 18 && i <= 20 ? 6 : (v > 0 ? 2 : 0)); }),
+          today_kwh: Array.from({ length: 24 }, function (_, h) { return (h >= 2 && h <= 5) || (h >= 13 && h <= 15) ? 1.1 : (h === 7 ? 1.6 : 0.05); }),
+          today_actual: Array.from({ length: 24 }, function (_, h) { return h < new Date().getHours() ? 1 : 0; }),
           lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 6) ? 0.5 : 0; }) },
         rooms: [
           { room_id: 'room-09', name: 'Gang', preload: null, charge: { from: 1, to: 8, store_c: 1.5, insufficient: true } },
@@ -2328,6 +2330,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       ['price.min', 'price.max', 'price.peak'].forEach(function (k2) { setText(k2, '—'); });
     }
     setShow('tile.price', showTile);
+    renderTodayCost();
     qsa('#price_token, #price_token_odin').forEach(function (tok) {
       tok.placeholder = p.entsoe_token_set ? t('price.tokenSaved') : '';
     });
@@ -2481,6 +2484,35 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
   }
 
   /* ---- Next heating: Odin's plan + Touch's preheating (GET /plan) ---------- */
+  // Today's expected cost of the heat pump: Odin's electricity per hour today
+  // (actual for the hours gone, plan for the rest) × Touch's own price per hour,
+  // so it matches the price line. Called when either the plan or the prices change.
+  function renderTodayCost() {
+    var odin = (state.plan && state.plan.odin) || {};
+    var kwh = odin.today_kwh || [];
+    var act = odin.today_actual || [];
+    var pr = state.prices || {};
+    var total = (pr.today && pr.today.total) || [];
+    var cur = pr.currency || 'DKK';
+    var cost = 0, spent = 0, e = 0, n = 0;
+    if (odin.available && kwh.length === 24 && total.length === 24) {
+      for (var h = 0; h < 24; h++) {
+        if (!finite(kwh[h]) || !finite(total[h])) continue;
+        var c = Number(kwh[h]) * Number(total[h]);
+        cost += c; e += Number(kwh[h]); n++;
+        if (Number(act[h]) === 1) spent += c;
+      }
+    }
+    if (!n) {
+      setBind('plan.todayCost', '—');
+      setText('plan.todaySplit', '');
+      return;
+    }
+    setBind('plan.todayCost', esc(num(cost, 2)) + ' <small>' + esc(cur) + '</small>');
+    setText('plan.todaySplit', t('plan.todaySplit', { spent: num(spent, 2), rest: num(cost - spent, 2), kwh: num(e, 1), cur: cur }));
+    setText('tile.planStatus', t('tile.planStatusOdinCost', { c: num(cost, cost >= 10 ? 0 : 1), cur: cur }));
+  }
+
   function applyHeatPlan(p) {
     var host = qs('[data-bind-plan]');
     if (!p) return;
@@ -2517,6 +2549,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     }
     var planVal = (qs('[data-bind="tile.planVal"]') || {}).textContent || '—';
     setText('tile.planStatus', odin.available ? t('tile.planStatusOdin') : (p.rooms && p.rooms.length ? t('planG.noOdin') : t('tile.planNone')));
+    renderTodayCost();
     setBind('plan.energyKwh', odin.available ? esc(num(totalKwh)) + ' <small>kWh</small>' : '—');
     var viz = qs('[data-bind-viz="plan"]');
     if (viz) {

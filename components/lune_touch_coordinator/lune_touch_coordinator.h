@@ -335,6 +335,11 @@ struct OdinPlanState {
   float plan_heat_past[24]{};
   float actual_prod_past[24]{};  // actual_heat (v1 actual_prod / v2 actual_heat_prod)
   uint8_t past_count{0};
+  // Today's electricity per wall-clock hour 0–23 (kWh): Odin's actual_cons for the
+  // hours gone, its plan for the rest. Bit h of today_actual_mask = hour h is actual.
+  float today_energy_kwh[24]{};
+  uint32_t today_actual_mask{0};
+  bool has_today_energy{false};
   float last_run_execution_ms{NAN};
   float last_run_evaluated_nodes{NAN};
   float last_run_total_cost{NAN};

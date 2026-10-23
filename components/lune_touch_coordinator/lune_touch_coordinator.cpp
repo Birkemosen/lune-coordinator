@@ -3729,7 +3729,9 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
   int status = 0;
   odin_plan::Snapshot plan{};
   static float plan_energy[odin_plan::HORIZON_HOURS];
+  static float plan_actual_cons[odin_plan::HORIZON_HOURS];
   bool has_energy = false;
+  bool has_actual_cons = false;
   float plan_last_run_exec_ms = NAN;
   float plan_last_run_nodes = NAN;
   float plan_last_run_cost = NAN;
@@ -3852,6 +3854,7 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
                    copy_operation_mode_array(response["operation_mode"], plan.operation_mode) &&
                    odin_plan::validate(plan);
     has_energy = plan.success && copy_nullable_float_array(response["energy_consumption"], plan_energy);
+    has_actual_cons = plan.success && copy_nullable_float_array(response["actual_cons"], plan_actual_cons);
     plan.has_actual_prod = plan.success &&
                            (copy_nullable_float_array(response["actual_heat_prod"], plan.actual_prod) ||
                             copy_nullable_float_array(response["actual_prod"], plan.actual_prod));
@@ -3901,6 +3904,23 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
         std::strncpy(odin_plan_.decision_reason_horizon[h], "unknown",
                      sizeof(odin_plan_.decision_reason_horizon[h]) - 1);
         odin_plan_.heat_production_count++;
+      }
+      // Today's electricity by hour: actual for the hours gone (where Odin has it),
+      // plan for the current hour and the rest (cost of the day = Σ kWh × price).
+      odin_plan_.has_today_energy = has_energy;
+      odin_plan_.today_actual_mask = 0;
+      for (size_t h = 0; h < 24; h++) {
+        const size_t i = static_cast<size_t>(plan.today_start_index) + h;
+        float v = NAN;
+        if (i < odin_plan::HORIZON_HOURS) {
+          if (h < plan.current_hour && has_actual_cons && std::isfinite(plan_actual_cons[i])) {
+            v = plan_actual_cons[i];
+            odin_plan_.today_actual_mask |= (1UL << h);
+          } else if (has_energy) {
+            v = plan_energy[i];
+          }
+        }
+        odin_plan_.today_energy_kwh[h] = v;
       }
       // History ≤ idx_now only — never feed future plan slots into past comparison.
       odin_plan_.past_count = 0;
@@ -14164,6 +14184,18 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   arr("band_max_c", odin.band_max_horizon, 1);
   arr("expected_c", odin.expected_temp_horizon, 2);
   arr("energy_kwh", odin.energy_horizon, 2);
+  // Today by wall-clock hour 0–23: actual electricity for the hours gone, plan for
+  // the rest; the UI multiplies by today's prices for the day's expected cost.
+  appendf_(buffer, capacity, off, "\"today_kwh\":[");
+  for (size_t h = 0; h < 24; h++) {
+    char tok[16];
+    json_float_token_(tok, sizeof(tok), odin_ok && odin.has_today_energy ? odin.today_energy_kwh[h] : NAN, 2);
+    appendf_(buffer, capacity, off, "%s%s", h ? "," : "", tok);
+  }
+  appendf_(buffer, capacity, off, "],\"today_actual\":[");
+  for (size_t h = 0; h < 24; h++)
+    appendf_(buffer, capacity, off, "%s%d", h ? "," : "", (odin.today_actual_mask >> h) & 1U ? 1 : 0);
+  appendf_(buffer, capacity, off, "],");
   appendf_(buffer, capacity, off, "\"mode\":[");
   for (size_t h = 0; h < H; h++)
     appendf_(buffer, capacity, off, "%s%d", h ? "," : "",
