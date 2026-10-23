@@ -2278,11 +2278,12 @@
     if (!n) {
       setBind('plan.todayCost', '—');
       setText('plan.todaySplit', '');
+      setText('tile.todayCost', '');
       return;
     }
     setBind('plan.todayCost', esc(num(cost, 2)) + ' <small>' + esc(cur) + '</small>');
     setText('plan.todaySplit', t('plan.todaySplit', { spent: num(spent, 2), rest: num(cost - spent, 2), kwh: num(e, 1), cur: cur }));
-    setText('tile.planStatus', t('tile.planStatusOdinCost', { c: num(cost, cost >= 10 ? 0 : 1), cur: cur }));
+    setText('tile.todayCost', t('tile.todayCost', { c: num(cost, cost >= 10 ? 0 : 1), cur: cur }));
   }
 
   function applyHeatPlan(p) {

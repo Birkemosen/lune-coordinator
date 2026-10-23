@@ -1017,7 +1017,7 @@
   "tile.planNow": "Varmer nu",
   "tile.planKwh": "≈ {v} kWh",
   "tile.planStatusOdin": "Planlagt af Odin",
-  "tile.planStatusOdinCost": "Planlagt af Odin · i dag ≈ {c} {cur}",
+  "tile.todayCost": "I dag ≈ {c} {cur}",
   "plan.today": "I dag (forventet)",
   "plan.todaySplit": "{spent} {cur} brugt indtil nu · {rest} {cur} resten af dagen · {kwh} kWh strøm",
   "tile.price": "Elpris nu {p} {cur}/kWh",
