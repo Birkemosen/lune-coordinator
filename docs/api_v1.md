@@ -1282,7 +1282,8 @@ hour.
   "house": {"target_c": 22.0, "temp_c": 21.8},
   "odin": {"available": true, "control": true,
            "heat_kw": [0, 0, 4.81, …], "band_min_c": [21.5, …], "band_max_c": [23.5, …],
-           "expected_c": [23.8, …], "mode": [0, 0, 2, …],
+           "expected_c": [23.8, …], "energy_kwh": [0, 0, 1.1, …],
+           "today_kwh": [0.05, …, 1.1, …], "today_actual": [1, 1, …, 0, …], "mode": [0, 0, 2, …],
            "lift_applied": false, "lift_c": [0, 0, 0.5, …]},
   "rooms": [
     {"room_id": "v62-z1", "name": "Josephine",
@@ -1293,8 +1294,11 @@ hour.
 ```
 
 `odin.*` comes from the ingested Odin plan (`/forecast → odin_plan`), `lift_c` from the
-Odin comfort lift (applied, else wanted). `preload` / `charge` are `null` when none is
-planned; `from`/`to` are hours from now.
+Odin comfort lift (applied, else wanted). `energy_kwh` is Odin's planned electricity per
+hour from now. `today_kwh` is today's electricity per wall-clock hour 0–23: Odin's
+`actual_cons` for the hours gone (`today_actual` = 1), its plan for the current hour and the
+rest; the dashboard multiplies it by today's prices (`GET /prices`) for the day's expected cost.
+`preload` / `charge` are `null` when none is planned; `from`/`to` are hours from now.
 
 ### `POST /heat-source/control`
 
