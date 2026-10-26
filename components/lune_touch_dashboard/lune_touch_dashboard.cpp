@@ -1487,6 +1487,12 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 400, "invalid_param", "odin_sync_band_c / _below_c / _above_c must be 0.2-2.0");
       return;
     }
+    float gains_w = NAN;
+    parse_float_param(api, api.json_body, "internal_gains_w", &gains_w);
+    if (std::isfinite(gains_w) && !coordinator_->set_internal_gains_w(gains_w)) {
+      send_error_(api, 400, "invalid_param", "internal_gains_w must be 0-2000");
+      return;
+    }
     const bool accepted = coordinator_->set_heat_source_control(
         has_odin_enabled, odin_enabled != 0, max_lift_c, has_forwarder ? forwarder : nullptr,
         has_target ? target_tmpl : nullptr, has_request ? request_tmpl : nullptr,

@@ -235,6 +235,10 @@ struct OdinControlState {
   float thermal_mass_kwh_per_k{NAN};
   float heat_loss_kw_per_k{NAN};
   uint32_t last_physics_ms{0};
+  float hp_max_kw{NAN};  // Odin's hp_max_thermal_kw (the heat pump's planned ceiling)
+  // Internal gains (people + household electricity, W). Odin's learned heat loss
+  // is net of them; Touch adds them back for calibration and learning.
+  float internal_gains_w{650.0f};
   // Control.
   lune_touch_odin::Lift wanted{};
   lune_touch_odin::Lift applied{};
@@ -692,6 +696,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_weather_settings(float max_boost_c, char *response, size_t capacity);
   /// band_c sets both sides (legacy); below_c / above_c set one side each. NAN = unchanged.
   bool set_odin_sync(bool has_enabled, bool enabled, float band_c, float below_c = NAN, float above_c = NAN);
+  bool set_internal_gains_w(float watts);
   bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
   bool set_valves_follow_hp_enabled(bool enabled);

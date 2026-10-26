@@ -282,7 +282,8 @@
     odin: { enabled: true, max_lift_c: 1.5, status: 'lifted', reason: 'slab_charge', last_action: 'write_lift',
       user_schedule_known: true, yielded: false,
       wanted: { active: true, start_hour: 15, hours: 3, lift_c: 0.5, energy_kwh: 6.0 },
-      applied: { active: true, start_hour: 15, hours: 3, lift_c: 0.5 } },
+      applied: { active: true, start_hour: 15, hours: 3, lift_c: 0.5 },
+      sync: { enabled: true, below_c: 0.5, above_c: 0.5, target_c: 22 }, internal_gains_w: 650, hp_max_kw: 8 },
     link: { status: 'ok', alarm: false, odin_reachable: true, forwarder_known: true, forwarder_active: true, takeover: true,
       telemetry_age_s: 40, odin_room_c: 22.4 },
     generic: { applies: false, curve_gain: 2, curve_max_offset_c: 5, status: 'idle' }
@@ -572,6 +573,7 @@
       });
       if (body.curve_gain != null) mockControl.generic.curve_gain = Number(body.curve_gain);
       if (body.curve_max_offset_c != null) mockControl.generic.curve_max_offset_c = Number(body.curve_max_offset_c);
+      if (body.internal_gains_w != null) mockControl.odin.internal_gains_w = Number(body.internal_gains_w);
       return { result: 'stored', control: mockControl };
     }
     return { ok: true, mock: true, path: path, body: body };
@@ -1870,12 +1872,14 @@
     renderHome();
   }
 
-  // Flow guide (.need): secondary flow for full load at typical W/m² by house age and
-  // the house's own UA (learned, else calibrated from Odin, else the prior), over the
-  // floor-heating area at 5 K flow–return; marks for the heat pump's flow and the pump now.
-  var NEED_DT_K = 5, NEED_IN_C = 20, NEED_OUT_C = -12, NEED_TIERS = [25, 35, 55, 70, 90];
+  // Flow guide (.need): secondary flow for full load at typical W/m² by house age, the
+  // house's own (UA × (target − design outdoor) − internal gains; UA learned, else
+  // calibrated from Odin, else the prior) and the heat pump at its planned ceiling, over
+  // the floor-heating area at 5 K flow–return; marks for the heat pump's flow and the pump now.
+  var NEED_DT_K = 5, NEED_OUT_C = -12, NEED_TIERS = [25, 35, 55, 70, 90];
   function needLpm(watts) { return watts / (4186 * NEED_DT_K) * 60; }
   function renderFlowNeed(primary, nowLpm) {
+    state.needArgs = [primary, nowLpm];
     var box = qs('[data-bind-need]');
     var area = 0, ua = 0, learned = true, seen = {};
     (state.zones || []).forEach(function (z) {
@@ -1889,20 +1893,28 @@
     });
     var cal = (state.strategy && state.strategy.ua_calibration) || {};
     var src = learned ? 'pump.src.learned' : cal.calibrated ? 'pump.src.odin' : 'pump.src.prior';
-    var load = ua * (NEED_IN_C - NEED_OUT_C);
+    var odin = (state.heatControl && state.heatControl.odin) || {};
+    var target = odin.sync && finite(odin.sync.target_c) ? Number(odin.sync.target_c) : 21;
+    var gains = finite(odin.internal_gains_w) ? Number(odin.internal_gains_w) : 0;
+    var load = Math.max(0, ua * (target - NEED_OUT_C) - gains);
     var house = area > 0 && ua > 0 ? needLpm(load) : null;
+    var hpKw = finite(odin.hp_max_kw) && Number(odin.hp_max_kw) > 0 ? Number(odin.hp_max_kw) : null;
+    var hp = hpKw != null ? needLpm(hpKw * 1000) : null;
+    setText('pump.needNote', area > 0 ? t('pump.needNote', { a: num(area, 0), t: num(target, 1), g: num(gains, 0) }) : t('pump.needNoteNone'));
     var pri = finite(primary) && Number(primary) > 0 ? Number(primary) : null;
     var now = finite(nowLpm) && Number(nowLpm) > 0 ? Number(nowLpm) : null;
-    setText('pump.needNote', area > 0 ? t('pump.needNote', { a: num(area, 0) }) : t('pump.needNoteNone'));
+
     if (!box) return;
     var vals = NEED_TIERS.map(function (w) { return area > 0 ? needLpm(area * w) : null; });
-    var top = Math.max.apply(null, vals.concat([house, pri, now]).filter(function (v) { return v != null; }).concat([1])) * 1.05;
+    var top = Math.max.apply(null, vals.concat([house, hp, pri, now]).filter(function (v) { return v != null; }).concat([1])) * 1.05;
     var pct = function (v) { return (v / top * 100).toFixed(1); };
     qsa('.need-row', box).forEach(function (row) {
-      var v = row.hasAttribute('data-house') ? house : vals[NEED_TIERS.indexOf(Number(row.getAttribute('data-w')))];
+      var v = row.hasAttribute('data-house') ? house : row.hasAttribute('data-hp') ? hp
+        : vals[NEED_TIERS.indexOf(Number(row.getAttribute('data-w')))];
       row.style.setProperty('--v', v == null ? 0 : pct(v));
       fText(row, 'v', v == null ? '—' : t('pump.needVal', { lpm: num(v, 1) }));
     });
+    fText(box, 'hpkw', hpKw == null ? '' : t('pump.needHpKw', { kw: num(hpKw, 1) }));
     fText(box, 'hw', house == null ? '' : t('pump.needHouseVal', { w: num(load / area, 0), src: t(src) }));
     [['lim', pri, 'pump.needLim'], ['now', now, 'pump.needNow']].forEach(function (m) {
       if (m[1] == null) { box.removeAttribute('data-' + m[0]); box.style.removeProperty('--' + m[0]); }
@@ -1917,6 +1929,12 @@
   function applyHeatControl(ctl) {
     if (!ctl) return;
     state.heatControl = ctl;
+    if (state.needArgs) renderFlowNeed(state.needArgs[0], state.needArgs[1]);
+    var cfg = qs('form[data-save="circulation"]');
+    if (cfg && !formBusy(cfg) && ctl.odin && ctl.odin.internal_gains_w != null) {
+      putVal(cfg.querySelector('[name="internal_gains_w"]'), Number(ctl.odin.internal_gains_w).toFixed(0));
+      if (cfg.luneResnap) cfg.luneResnap();
+    }
     var o = ctl.odin || {};
     var link = ctl.link || {};
     var d = ctl.demand || {};
@@ -3438,7 +3456,13 @@
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
         if (has(ch, 'valves_follow_hp_enabled'))
           await post('/heat-source/settings', { valves_follow_hp_enabled: bit(fval(form, 'valves_follow_hp_enabled')) });
-        var balanceOnly = Object.keys(ch).every(function (k) { return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled'; });
+        if (has(ch, 'internal_gains_w')) {
+          var savedCtl = await post('/heat-source/control', { internal_gains_w: fval(form, 'internal_gains_w') });
+          if (savedCtl && savedCtl.control) applyHeatControl(savedCtl.control);
+        }
+        var balanceOnly = Object.keys(ch).every(function (k) {
+          return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled' || k === 'internal_gains_w';
+        });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',
           host: data.host || '',

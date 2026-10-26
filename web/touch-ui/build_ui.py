@@ -556,6 +556,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <div class="need-rows">{''.join(f'<div class="need-row" data-w="{w}"><span class="need-name">{T("pump.needTier." + k)} <small>{w} W/m²</small></span>'
                      f'<span class="need-track"><i></i></span><span class="num" data-f="v">{DASH}</span></div>'
                      for k, w in (("low", 25), ("new", 35), ("y80", 55), ("y60", 70), ("old", 90)))}
+              <div class="need-row" data-hp><span class="need-name">{T("pump.needHp")} <small data-f="hpkw"></small></span>
+                <span class="need-track"><i></i></span><span class="num" data-f="v">{DASH}</span></div>
               <div class="need-row" data-house><span class="need-name">{T("pump.needHouse")} <small data-f="hw"></small></span>
                 <span class="need-track"><i></i></span><span class="num" data-f="v">{DASH}</span></div>
             </div>
@@ -803,6 +805,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
                 "", extra=note(T("heat.houseBalanceHint")))}
         {group(T("heat.valves"), sswitch("valves_follow_hp_enabled", T("heat.valvesSw"), T("heat.valvesSub"), False), extra=note(T("heat.valvesHint")))}
+        {group(T("heat.gains"), sstep("internal_gains_w", T("heat.gainsLabel"), 650, 0, 2000, 50, "W", dec=0, hint=T("heat.gainsHint")),
+               extra=note(T("heat.gainsGuide")))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
                sport("pump_port", T("pumpCfg.port")))}
         {group(T("pump.entities"), sinput("flow_entity", T("pumpCfg.flowEntity"), "pump_flow", id_="pump_flow_entity") +
@@ -961,7 +965,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )
     rt = {k: T(k) for k in rt_keys}

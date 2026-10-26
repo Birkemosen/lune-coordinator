@@ -1612,6 +1612,7 @@ void LuneTouchCoordinator::setup() {
   load_preload_learning_();
   load_settings_();
   load_odin_control_();
+  model_.set_internal_gains_w(odin_control_.internal_gains_w);
   load_exposure_learning_();
   load_price_settings_();
   {
@@ -3051,6 +3052,7 @@ void LuneTouchCoordinator::run_odin_control_() {
   const bool reachable = fetch_json_(url, body, STATE_CAP, &status, 6000);
   int32_t telemetry_age_s = -1;
   float odin_room = NAN;
+  float hp_max_kw = NAN;
   bool have_schedule = false;
   lune_touch_odin::Profile remote{};
   if (reachable) {
@@ -3065,8 +3067,11 @@ void LuneTouchCoordinator::run_odin_control_() {
     filter["ec_bzn"] = true;
     filter["fixed_price"] = true;
     filter["entsoe_token"] = true;
+    filter["hp_max_thermal_kw"] = true;
     JsonDocument doc;
     if (!deserializeJson(doc, body, DeserializationOption::Filter(filter))) {
+      if (!doc["hp_max_thermal_kw"].isNull())
+        hp_max_kw = doc["hp_max_thermal_kw"].as<float>();
       OdinPriceView view{};
       view.known = !doc["price_source"].isNull() || !doc["price_mode"].isNull();
       copy_str_(view.price_mode, sizeof(view.price_mode), doc["price_mode"] | "");
@@ -3157,6 +3162,8 @@ void LuneTouchCoordinator::run_odin_control_() {
     odin_control_.takeover_known = takeover_known;
     odin_control_.takeover_active = takeover_active;
     odin_control_.telemetry_age_s = telemetry_age_s;
+    if (std::isfinite(hp_max_kw) && hp_max_kw > 0.0f)
+      odin_control_.hp_max_kw = hp_max_kw;
     odin_control_.mqtt_telemetry_age_s = mqtt_age_s;
     odin_control_.odin_room_c = odin_room;
     odin_control_.last_http_status = status;
@@ -3358,6 +3365,9 @@ void LuneTouchCoordinator::load_odin_control_() {
   blob_len = sizeof(f);
   if (nvs_get_blob(handle, "odc_syn_up", &f, &blob_len) == ESP_OK && std::isfinite(f))
     odin_control_.sync_above_c = std::clamp(f, 0.2f, 2.0f);
+  blob_len = sizeof(f);
+  if (nvs_get_blob(handle, "house_gains", &f, &blob_len) == ESP_OK && std::isfinite(f))
+    odin_control_.internal_gains_w = std::clamp(f, 0.0f, 2000.0f);
   float syn[4]{};
   blob_len = sizeof(syn);
   if (nvs_get_blob(handle, "odc_syn_ap", syn, &blob_len) == ESP_OK &&
@@ -3424,6 +3434,7 @@ void LuneTouchCoordinator::save_odin_control_() {
   if (err == ESP_OK) err = nvs_set_u8(handle, "odc_syn_en", control.sync_enabled ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_band", &control.sync_below_c, sizeof(float));
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_up", &control.sync_above_c, sizeof(float));
+  if (err == ESP_OK) err = nvs_set_blob(handle, "house_gains", &control.internal_gains_w, sizeof(float));
   const float syn[4]{owner.sync.on ? 1.0f : 0.0f, owner.sync.sp, owner.sync.below_c, owner.sync.above_c};
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_ap", syn, sizeof(syn));
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_turl", levers.target_url_template);
@@ -8934,10 +8945,10 @@ void LuneTouchCoordinator::maybe_calibrate_house_physics_() {
   char reason[40]{};
   if (!take_state_lock_(100))
     return;
-  // Calibrate once, and again when Odin's learned heat loss has moved ≥ 10 %.
+  // Calibrate once, and again when the target (Odin's heat loss + internal gains) has moved ≥ 10 %.
   if (model_.house_calibrated()) {
     const float used = model_.house_calibrated_hl_w_per_k();
-    const float now_hl = model_.odin_heat_loss_w_per_k();
+    const float now_hl = model_.calibration_target_hl_w_per_k();
     if (!(used > 0.0f) || !(now_hl > 0.0f) || std::fabs(now_hl - used) < 0.1f * used) {
       give_state_lock_();
       return;
@@ -14378,6 +14389,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const uint32_t bad_s = c.link_bad_since_ms == 0 ? 0 : (now - c.link_bad_since_ms) / 1000UL;
   char sync_target[16];
   json_float_token_(sync_target, sizeof(sync_target), c.sync_target_c, 2);
+  char hpmax[16];
+  json_float_token_(hpmax, sizeof(hpmax), c.hp_max_kw, 1);
   std::snprintf(
       buffer, capacity,
       "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
@@ -14387,7 +14400,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"reason\":\"%s\",\"last_action\":\"%s\",\"user_schedule_known\":%s,\"yielded\":%s,"
       "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"energy_kwh\":%.2f},"
       "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f},"
-      "\"thermal_mass_kwh_per_k\":%s,\"heat_loss_kw_per_k\":%s,"
+      "\"thermal_mass_kwh_per_k\":%s,\"heat_loss_kw_per_k\":%s,\"internal_gains_w\":%.0f,\"hp_max_kw\":%s,"
       "\"last_write_age_s\":%u,\"last_http_status\":%d,\"last_error\":\"%s\"},"
       "\"link\":{\"status\":\"%s\",\"alarm\":%s,\"bad_for_s\":%u,\"odin_reachable\":%s,"
       "\"forwarder_known\":%s,\"forwarder_active\":%s,\"takeover\":%s,\"telemetry_age_s\":%s,"
@@ -14407,6 +14420,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       static_cast<double>(c.wanted_energy_kwh),
       c.applied.active() ? "true" : "false", static_cast<unsigned>(c.applied.start_hour),
       static_cast<unsigned>(c.applied.hours), static_cast<double>(c.applied.lift_c), tm, hl,
+      static_cast<double>(c.internal_gains_w), hpmax,
       static_cast<unsigned>(write_age_s), c.last_http_status, err,
       c.link_status, c.link_alarm ? "true" : "false", static_cast<unsigned>(bad_s),
       c.odin_reachable ? "true" : "false", c.forwarder_known ? "true" : "false",
@@ -14436,6 +14450,18 @@ bool LuneTouchCoordinator::set_odin_sync(bool has_enabled, bool enabled, float b
   if (std::isfinite(above_c))
     odin_control_.sync_above_c = above_c;
   odin_control_.last_cycle_ms = 0;   // act on the next odin task kick
+  give_state_lock_();
+  save_odin_control_();
+  return true;
+}
+
+bool LuneTouchCoordinator::set_internal_gains_w(float watts) {
+  if (!std::isfinite(watts) || watts < 0.0f || watts > 2000.0f)
+    return false;
+  if (!take_state_lock_(100))
+    return false;
+  odin_control_.internal_gains_w = watts;
+  model_.set_internal_gains_w(watts);
   give_state_lock_();
   save_odin_control_();
   return true;

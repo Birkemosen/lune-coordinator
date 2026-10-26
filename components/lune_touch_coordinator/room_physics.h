@@ -28,6 +28,10 @@ inline constexpr float UA_DAY_ALPHA = 0.25f;
 inline constexpr float UA_DAY_CV_START = 0.3f;
 // The room must be near equilibrium over the day (net change ≤ this).
 inline constexpr float UA_DAY_MAX_NET_CHANGE_K = 0.5f;
+// Internal gains: reference ΔT for adding them back to Odin's heat loss.
+inline constexpr float GAINS_REF_DT_DEFAULT_K = 12.0f;
+inline constexpr float GAINS_REF_DT_MIN_K = 8.0f;
+inline constexpr float GAINS_REF_TAU_H = 168.0f;
 // Samples further apart than this are a gap, not an interval to integrate.
 inline constexpr float UA_SAMPLE_MAX_GAP_H = 10.0f / 60.0f;
 

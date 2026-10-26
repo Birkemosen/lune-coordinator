@@ -1436,6 +1436,7 @@ static void test_room_physics_contract_vectors() {
 static void test_daily_ua_learning() {
   // Two rooms, true UA proportional to area (15 + 7.5 W/K), 20 K inside–outside.
   HouseModel model;
+  model.set_internal_gains_w(0.0f);
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
   model.bind_zone("living", "Living", 0, 0);
   model.bind_zone("bed", "Bed", 0, 1);
@@ -1484,6 +1485,27 @@ static void test_daily_ua_learning() {
     model.accumulate_ua_day(step_h, 15.0f);
   }
   expect(model.close_ua_day(out, 4) == 0, "ua day: mild day (6 K) does not count");
+  // With 300 W internal gains the heat pump delivers that much less for the same loss:
+  // learning adds each room's area share back (living 2/3 → 200 W / 20 K = +10 W/K).
+  HouseModel g;
+  g.set_internal_gains_w(300.0f);
+  g.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  g.bind_zone("living", "Living", 0, 0);
+  g.bind_zone("bed", "Bed", 0, 1);
+  g.apply_v6_physics_mirror(0, 0, 0x01, 20.0f, floor, 18.0f, 0.0f, 18.0f, 0.0f, 0, 1, "", "", "g1", nullptr);
+  g.apply_v6_physics_mirror(0, 1, 0x00, 10.0f, floor, 5.0f, 0.0f, 5.0f, 0.0f, 0, 1, "", "", "g2", nullptr);
+  t = 1000;
+  for (float h = 0.0f; h < 24.0f; h += step_h) {
+    t += 300000;
+    g.update_zone_live_by_binding(0, 0, 21.0f, true, 21.0f, true, "heat", true, t, 50.0f, true);
+    g.update_zone_live_by_binding(0, 1, 21.0f, true, 21.0f, true, "heat", true, t, 50.0f, true);
+    g.allocate_delivered_kwh(22.5f * 20.0f / 1000.0f * step_h, t);
+    g.accumulate_ua_day(step_h, 1.0f);
+  }
+  g.close_ua_day(out, 4);
+  const LogicalRoom *gl = g.room_by_id("living");
+  expect(gl != nullptr && std::fabs(gl->ua_learned_w_per_k - 25.0f) < 0.5f, "ua day: gains added back (living 15 + 10 W/K)");
+  expect(std::fabs(g.reference_dt_k() - 20.0f) < 0.1f, "gains: reference dT follows the house (20 K)");
 }
 
 static void test_calibration_uses_default_priors() {
@@ -1499,6 +1521,7 @@ static void test_calibration_uses_default_priors() {
                                        "", "", "g1", nullptr), "calibration: mirror");
   expect(std::fabs(model.ua_default_prior_sum_included_w_per_k() - 26.0f) < 0.01f,
          "calibration: default prior from area and walls (20 × (0.5 + 2 × 0.4))");
+  model.set_internal_gains_w(0.0f);
   model.set_odin_heat_loss_w_per_k(13.0f);
   model.set_odin_tau_h(0.0f);
   float ub = 0, uw = 0, cs = 0;
@@ -1506,6 +1529,9 @@ static void test_calibration_uses_default_priors() {
   expect(model.compute_house_calibration(&ub, &uw, &cs, reason, sizeof(reason)), "calibration: computes");
   expect(std::fabs(ub - 0.25f) < 0.001f && std::fabs(uw - 0.2f) < 0.001f,
          "calibration: scale from default priors, not the already scaled V6 prior");
+  // Gains are added back at the reference ΔT (12 K before any sample): 13 + 120 / 12 = 23 W/K.
+  model.set_internal_gains_w(120.0f);
+  expect(std::fabs(model.calibration_target_hl_w_per_k() - 23.0f) < 0.01f, "calibration: target adds gains / reference dT");
 }
 
 int main() {

@@ -1093,7 +1093,7 @@ bool HouseModel::compute_house_calibration(float *u_base_out, float *u_wall_out,
     return false;
   }
   const auto cal = physics::calibrate_house(
-      odin_heat_loss_w_per_k_ / 1000.0f, odin_tau_h_, ua_default_prior_sum_included_w_per_k(),
+      calibration_target_hl_w_per_k() / 1000.0f, odin_tau_h_, ua_default_prior_sum_included_w_per_k(),
       c_slab_sum_included_kwh_per_k(), area_sum_included_m2());
   if (reason != nullptr && reason_capacity > 0) {
     std::strncpy(reason, cal.reason, reason_capacity - 1);
@@ -1115,7 +1115,7 @@ void HouseModel::apply_house_calibration(float u_base, float u_wall, float c_str
   house_u_wall_ = u_wall;
   house_c_struct_ = c_struct;
   house_calibrated_ = true;
-  house_calibrated_hl_w_per_k_ = odin_heat_loss_w_per_k_;
+  house_calibrated_hl_w_per_k_ = calibration_target_hl_w_per_k();
 }
 
 float HouseModel::required_flow_temp_c(float ua_eff, float area_m2, float r_m2k_per_w,
@@ -1133,6 +1133,18 @@ float HouseModel::required_flow_temp_c(float ua_eff, float area_m2, float r_m2k_
   return t_surface + dt * 0.5f;
 }
 
+float HouseModel::reference_dt_k() const {
+  const float dt = house_dt_ewma_k_ > 0.0f ? house_dt_ewma_k_ : physics::GAINS_REF_DT_DEFAULT_K;
+  return dt < physics::GAINS_REF_DT_MIN_K ? physics::GAINS_REF_DT_MIN_K : dt;
+}
+
+float HouseModel::calibration_target_hl_w_per_k() const {
+  if (!(odin_heat_loss_w_per_k_ > 0.0f))
+    return 0.0f;
+  const float gains = internal_gains_w_ > 0.0f ? internal_gains_w_ : 0.0f;
+  return odin_heat_loss_w_per_k_ + gains / reference_dt_k();
+}
+
 bool HouseModel::zone_in_room(size_t i, const char *room_id) const {
   if (i >= zone_count_ || !zones_[i].enabled || room_id == nullptr)
     return false;
@@ -1146,6 +1158,8 @@ void HouseModel::accumulate_ua_day(float hours, float outdoor_c) {
   if (!std::isfinite(hours) || hours <= 0.0f || hours > physics::UA_SAMPLE_MAX_GAP_H ||
       !std::isfinite(outdoor_c))
     return;
+  float dt_sum = 0.0f;
+  size_t dt_n = 0;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
     if (!rooms_[i].enabled || !rooms_[i].include_in_house_temperature)
       continue;
@@ -1157,6 +1171,14 @@ void HouseModel::accumulate_ua_day(float hours, float outdoor_c) {
     if (!std::isfinite(ua_day_[i].first_c))
       ua_day_[i].first_c = r.temp_c;
     ua_day_[i].last_c = r.temp_c;
+    dt_sum += r.temp_c - outdoor_c;
+    dt_n++;
+  }
+  if (dt_n > 0) {
+    const float dt = dt_sum / static_cast<float>(dt_n);
+    house_dt_ewma_k_ = house_dt_ewma_k_ > 0.0f
+                           ? house_dt_ewma_k_ + (hours / physics::GAINS_REF_TAU_H) * (dt - house_dt_ewma_k_)
+                           : dt;
   }
 }
 
@@ -1176,7 +1198,12 @@ size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
       continue;
     if (!(std::fabs(day.last_c - day.first_c) <= physics::UA_DAY_MAX_NET_CHANGE_K))
       continue;
-    const float ua_est = (day.kwh * 1000.0f / day.hours) / mean_dt;
+    // The room also gets its area share of the internal gains: they are heat it loses too.
+    const float area_all = area_sum_included_m2();
+    const float gains = internal_gains_w_ > 0.0f && area_all > 0.0f && room.total_area_m2 > 0.0f
+                            ? internal_gains_w_ * room.total_area_m2 / area_all
+                            : 0.0f;
+    const float ua_est = (day.kwh * 1000.0f / day.hours + gains) / mean_dt;
     const float prior = room.ua_prior_w_per_k > 0.0f ? room.ua_prior_w_per_k
                                                      : geometry_ua_w_per_k(room.total_area_m2);
     if (!std::isfinite(ua_est) || !physics::ua_learned_in_band(ua_est, prior))

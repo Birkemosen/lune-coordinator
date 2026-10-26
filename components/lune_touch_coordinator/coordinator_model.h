@@ -606,6 +606,14 @@ class HouseModel {
   float house_c_struct() const { return house_c_struct_; }
   bool house_calibrated() const { return house_calibrated_; }
   float house_calibrated_hl_w_per_k() const { return house_calibrated_hl_w_per_k_; }
+  // Internal gains (W) the house gets for free; Odin's heat loss is net of them.
+  void set_internal_gains_w(float watts) { internal_gains_w_ = watts; }
+  float internal_gains_w() const { return internal_gains_w_; }
+  // House inside−outside ΔT, slow EWMA (≈ a week) over the circulation samples:
+  // the ΔT Odin's heat loss was learned at, to add the gains back (≥ 8 K).
+  float reference_dt_k() const;
+  // Calibration target: Odin's learned heat loss + internal gains / reference ΔT.
+  float calibration_target_hl_w_per_k() const;
   // Compute Odin house calibration; does not write V6. Returns false if blocked.
   bool compute_house_calibration(float *u_base_out, float *u_wall_out, float *c_struct_out,
                                  char *reason, size_t reason_capacity) const;
@@ -726,7 +734,9 @@ class HouseModel {
   float house_u_wall_{0.4f};
   float house_c_struct_{0.06f};
   bool house_calibrated_{false};
-  float house_calibrated_hl_w_per_k_{0.0f};  // Odin heat loss the calibration used
+  float house_calibrated_hl_w_per_k_{0.0f};  // calibration target the last calibration used
+  float internal_gains_w_{650.0f};
+  float house_dt_ewma_k_{0.0f};  // 0 = no sample yet
   struct UaDay {
     float kwh{0.0f};
     float dt_kh{0.0f};
