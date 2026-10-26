@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.26
+
+- `.need` (Touch): flowbehov som vandrette bjælker pr. varmebehov (lavenergi → ældre hus) med «Dette hus» (`data-house`) i pumpens datafarve og to lodrette mærker på alle bjælker: varmepumpens flow (`data-lim`, stiplet grænse for opblanding) og pumpen nu (`data-now`). `.need-legend` forklarer mærkerne i tekst.
+
 ## 2.3.25
 
 - `.ht-viz .dhw` / `.ht-viz .leg`: varmt vand og legionella som skraverede bånd også i hjemmefeltets lille graf (som `.trend` i arket).

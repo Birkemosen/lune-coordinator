@@ -641,6 +641,18 @@ int64_t current_epoch_s_() {
   return epoch_s >= lune_touch_forecast_timeline::MIN_VALID_EPOCH_S ? epoch_s : 0;
 }
 
+// V6 authenticates Touch writes with the key header plus a UTC timestamp and a
+// fresh nonce in the body. Appends `,"auth_timestamp_s":…,"auth_nonce":"…"`.
+void append_v6_auth_(char *payload, size_t capacity) {
+  const size_t len = std::strlen(payload);
+  if (len == 0 || payload[len - 1] != '}')
+    return;
+  std::snprintf(payload + len - 1, capacity - (len - 1),
+                ",\"auth_timestamp_s\":%lld,\"auth_nonce\":\"p%08lx%08lx\"}",
+                static_cast<long long>(current_epoch_s_()),
+                static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()));
+}
+
 size_t forecast_display_start_(const ForecastHourState *hours, uint8_t count) {
   if (hours == nullptr || count == 0)
     return lune_touch_forecast_timeline::NO_INDEX;
@@ -4186,11 +4198,12 @@ void LuneTouchCoordinator::flush_ua_learned_writes_() {
     const char *host = w.node.hostname[0] != '\0' ? w.node.hostname : w.node.fallback_ip;
     if (host == nullptr || host[0] == '\0')
       continue;
-    char payload[192];
+    char payload[288];
     std::snprintf(payload, sizeof(payload),
                   "{\"ua_w_per_k\":%.2f,\"confidence\":%.3f,\"observed_days\":%u,\"ts_epoch_s\":%lu}",
                   w.ua_w_per_k, w.confidence, static_cast<unsigned>(w.observed_days),
                   static_cast<unsigned long>(w.epoch_s));
+    append_v6_auth_(payload, sizeof(payload));
     char url[192];
     std::snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/ua-learned", host,
                   static_cast<unsigned>(w.zone_index + 1));
@@ -6367,7 +6380,7 @@ bool LuneTouchCoordinator::send_v6_zone_physics_(const ::lune_touch::PairedNode 
   if (node.fallback_ip[0] != '\0' &&
       (host_count == 0 || std::strcmp(node.fallback_ip, hosts[0]) != 0))
     hosts[host_count++] = node.fallback_ip;
-  char payload[320];
+  char payload[400];
   std::snprintf(payload, sizeof(payload),
                 "{\"expected_revision\":%lu,\"area_m2\":%.2f,\"exterior_walls\":%u,"
                 "\"slab_type\":\"%s\",\"active_thickness_cm\":%.1f,\"covering\":\"%s\"}",
@@ -6376,6 +6389,7 @@ bool LuneTouchCoordinator::send_v6_zone_physics_(const ::lune_touch::PairedNode 
                 slab_type != nullptr && slab_type[0] != '\0' ? slab_type : "unset",
                 std::isfinite(active_thickness_cm) ? active_thickness_cm : 0.0f,
                 covering != nullptr && covering[0] != '\0' ? covering : "unset");
+  append_v6_auth_(payload, sizeof(payload));
   for (size_t i = 0; i < host_count; i++) {
     char url[192];
     char body[256];
@@ -6401,11 +6415,12 @@ bool LuneTouchCoordinator::send_v6_house_physics_(const ::lune_touch::PairedNode
   if (node.fallback_ip[0] != '\0' &&
       (host_count == 0 || std::strcmp(node.fallback_ip, hosts[0]) != 0))
     hosts[host_count++] = node.fallback_ip;
-  char payload[192];
+  char payload[288];
   std::snprintf(payload, sizeof(payload),
                 "{\"u_base\":%.3f,\"u_wall\":%.3f,\"c_struct\":%.3f,\"source\":\"calibrated\","
                 "\"calibrated_at_epoch_s\":%lu}",
                 u_base, u_wall, c_struct, static_cast<unsigned long>(calibrated_at_epoch_s));
+  append_v6_auth_(payload, sizeof(payload));
   for (size_t i = 0; i < host_count; i++) {
     char url[192];
     char body[256];
@@ -8933,7 +8948,18 @@ void LuneTouchCoordinator::maybe_calibrate_house_physics_() {
   if (any && take_state_lock_(100)) {
     model_.apply_house_calibration(u_base, u_wall, c_struct);
     give_state_lock_();
-    log_event_("info", "physics", "house u_base/u_wall/c_struct calibrated");
+    char event[96];
+    std::snprintf(event, sizeof(event), "house calibrated: u_base %.3f u_wall %.3f c_struct %.3f",
+                  u_base, u_wall, c_struct);
+    log_event_("info", "physics", event);
+  } else if (!any) {
+    static uint32_t last_warn_ms = 0;
+    const uint32_t now = esphome::millis();
+    if (last_warn_ms == 0 || now - last_warn_ms > 3600000UL) {
+      last_warn_ms = now;
+      log_event_("warn", "physics", node_count == 0 ? "house calibration: no V6 with physics contract"
+                                                    : "house calibration: V6 rejected the write");
+    }
   }
 }
 

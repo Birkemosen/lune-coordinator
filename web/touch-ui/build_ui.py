@@ -552,7 +552,16 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <div class="sub"><h4>{T("pump.need")}</h4>
-          {kv([(T("pump.needTier." + k, w=w), "pump.need" + str(w)) for k, w in (("low", 25), ("new", 35), ("y80", 55), ("y60", 70), ("old", 90))] + [(T("pump.needHouse"), "pump.needHouse")])}
+          <div class="need" data-bind-need>
+            <div class="need-rows">{''.join(f'<div class="need-row" data-w="{w}"><span class="need-name">{T("pump.needTier." + k)} <small>{w} W/m²</small></span>'
+                     f'<span class="need-track"><i></i></span><span class="num" data-f="v">{DASH}</span></div>'
+                     for k, w in (("low", 25), ("new", 35), ("y80", 55), ("y60", 70), ("old", 90)))}
+              <div class="need-row" data-house><span class="need-name">{T("pump.needHouse")} <small data-f="hw"></small></span>
+                <span class="need-track"><i></i></span><span class="num" data-f="v">{DASH}</span></div>
+            </div>
+            <p class="need-legend"><span data-f="limKey" hidden><i class="need-key lim"></i><span data-f="lim"></span></span>
+              <span data-f="nowKey" hidden><i class="need-key now"></i><span data-f="now"></span></span></p>
+          </div>
           <p class="hint" data-bind="pump.needNote">{T("pump.needNoteNone")}</p></div>
         <p class="note">{T("flow.sub")}</p>'''
 
@@ -952,7 +961,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needOver", "pump.needHouseVal", "pump.needNote", "pump.needPri", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )
     rt = {k: T(k) for k in rt_keys}

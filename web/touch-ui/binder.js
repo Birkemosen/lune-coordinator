@@ -1862,7 +1862,7 @@
     setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
     setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
-    renderFlowNeed(mx.primary_l_min);
+    renderFlowNeed(mx.primary_l_min, lpm);
     setText('tile.pumpStatus', risk ? t('tile.pumpMixing')
       : lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
     if (state.zones) renderDist();
@@ -1870,11 +1870,13 @@
     renderHome();
   }
 
-  // Flow guide: secondary flow for full load at typical W/m² by house age and the house's own
-  // estimate (room UA), over the floor-heating area at 5 K flow–return.
-  var NEED_DT_K = 5, NEED_IN_C = 20, NEED_OUT_C = -12;
+  // Flow guide (.need): secondary flow for full load at typical W/m² by house age and
+  // the house's own UA (learned, else calibrated from Odin, else the prior), over the
+  // floor-heating area at 5 K flow–return; marks for the heat pump's flow and the pump now.
+  var NEED_DT_K = 5, NEED_IN_C = 20, NEED_OUT_C = -12, NEED_TIERS = [25, 35, 55, 70, 90];
   function needLpm(watts) { return watts / (4186 * NEED_DT_K) * 60; }
-  function renderFlowNeed(primary) {
+  function renderFlowNeed(primary, nowLpm) {
+    var box = qs('[data-bind-need]');
     var area = 0, ua = 0, learned = true, seen = {};
     (state.zones || []).forEach(function (z) {
       if (!z) return;
@@ -1883,20 +1885,32 @@
       if (!r || seen[z.room_id]) return;
       seen[z.room_id] = true;
       if (Number(r.ua_w_per_k) > 0) ua += Number(r.ua_w_per_k);
-      if (!(Number(r.ua_learned_w_per_k) > 0 && Number(r.ua_confidence) >= 0.5)) learned = false;
+      if (!(Number(r.ua_learned_w_per_k) > 0 && Number(r.ua_confidence) >= 0.6)) learned = false;
     });
-    var pri = finite(primary) ? Number(primary) : null;
-    [25, 35, 55, 70, 90].forEach(function (w) {
-      var lpm = area > 0 ? needLpm(area * w) : null;
-      setText('pump.need' + w, lpm == null ? '—'
-        : t(pri != null && lpm > pri ? 'pump.needOver' : 'pump.needVal', { lpm: num(lpm, 1), m3h: num(lpm * 0.06, 2) }));
-    });
+    var cal = (state.strategy && state.strategy.ua_calibration) || {};
+    var src = learned ? 'pump.src.learned' : cal.calibrated ? 'pump.src.odin' : 'pump.src.prior';
     var load = ua * (NEED_IN_C - NEED_OUT_C);
-    setText('pump.needHouse', area > 0 && ua > 0
-      ? t('pump.needHouseVal', { w: num(load / area, 0), lpm: num(needLpm(load), 1), src: t(learned ? 'pump.src.learned' : 'pump.src.prior') })
-      : '—');
-    setText('pump.needNote', !(area > 0) ? t('pump.needNoteNone')
-      : t('pump.needNote', { a: num(area, 0) }) + (pri != null ? ' ' + t('pump.needPri', { pri: num(pri, 1) }) : ''));
+    var house = area > 0 && ua > 0 ? needLpm(load) : null;
+    var pri = finite(primary) && Number(primary) > 0 ? Number(primary) : null;
+    var now = finite(nowLpm) && Number(nowLpm) > 0 ? Number(nowLpm) : null;
+    setText('pump.needNote', area > 0 ? t('pump.needNote', { a: num(area, 0) }) : t('pump.needNoteNone'));
+    if (!box) return;
+    var vals = NEED_TIERS.map(function (w) { return area > 0 ? needLpm(area * w) : null; });
+    var top = Math.max.apply(null, vals.concat([house, pri, now]).filter(function (v) { return v != null; }).concat([1])) * 1.05;
+    var pct = function (v) { return (v / top * 100).toFixed(1); };
+    qsa('.need-row', box).forEach(function (row) {
+      var v = row.hasAttribute('data-house') ? house : vals[NEED_TIERS.indexOf(Number(row.getAttribute('data-w')))];
+      row.style.setProperty('--v', v == null ? 0 : pct(v));
+      fText(row, 'v', v == null ? '—' : t('pump.needVal', { lpm: num(v, 1) }));
+    });
+    fText(box, 'hw', house == null ? '' : t('pump.needHouseVal', { w: num(load / area, 0), src: t(src) }));
+    [['lim', pri, 'pump.needLim'], ['now', now, 'pump.needNow']].forEach(function (m) {
+      if (m[1] == null) { box.removeAttribute('data-' + m[0]); box.style.removeProperty('--' + m[0]); }
+      else { box.setAttribute('data-' + m[0], ''); box.style.setProperty('--' + m[0], pct(m[1])); }
+      var key = qs('[data-f="' + m[0] + 'Key"]', box);
+      if (key) key.hidden = m[1] == null;
+      fText(box, m[0], m[1] == null ? '' : t(m[2], { v: num(m[1], 1) }));
+    });
   }
 
   // Odin comfort control, Asgard→Odin link health and generic heat-source levers.
