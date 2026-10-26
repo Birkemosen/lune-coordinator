@@ -1623,6 +1623,8 @@
     setText('hs.http.when', tempWhen);
     setText('hs.asgard.when', tempWhen);
     setText('hs.asgard.setpoint', setTxt);
+    // Overview: value and when in one row each.
+    setText('hs.asgard.tempLine', tempTxt + (tempWhen && tempWhen !== '—' ? ' · ' + tempWhen : ''));
     var valueToken = finite(weighted) ? Number(weighted).toFixed(1) : '';
     setText('hs.sent.url', sentUrl(hs, entity === '—' ? '' : entity, valueToken));
     var sync = heatSyncOn(hs);
@@ -1644,6 +1646,13 @@
         n.classList.remove('muted');
       }
     });
+    var setWhen = !sync ? t('hs.notSent') : (function () {
+      var ts = hs.target_sync || {};
+      if (!finite(ts.last_written_c)) return '';
+      var st2 = ts.failure_streak > 0 ? 'unreachable' : (finite(ts.last_confirmed_c) ? 'confirmed' : 'sent');
+      return whenText(ts.write_age_s != null ? Number(ts.write_age_s) : null, st2);
+    })();
+    setText('hs.asgard.setLine', setTxt + (setWhen ? ' · ' + setWhen : ''));
     qsa('[data-bind="heat.sentNote"]').forEach(function (n) {
       var show = !sync && hs.type !== 'generic_http';
       n.hidden = !show;
@@ -1863,10 +1872,20 @@
     if (st !== 'lifted' && w.active) stText += ' · ' + t('hs.odinWanted', { c: num(w.lift_c), h: w.start_hour, n: w.hours });
     setText('dash.odinPlan', stText);
     setText('dash.odinLink', linkText);
+    // Overview: "OK · MQTT" when all is well; a problem keeps its full sentence.
+    var linkBase = t('hs.link.' + ls, { s: link.telemetry_age_s != null ? Math.round(link.telemetry_age_s / 60) : '—' });
+    var linkShort = ls === 'ok' && linkBase.indexOf(' – ') > 0 ? linkBase.slice(0, linkBase.indexOf(' – ')) : linkBase;
+    setText('dash.odinLinkShort', linkShort + (link.mqtt_telemetry_age_s != null ? ' · MQTT' : ''));
+    var hh2 = function (x) { return String(((Number(x) % 24) + 24) % 24).padStart(2, '0'); };
+    setText('dash.odinPlanShort', st === 'lifted'
+      ? t('hs.odinLiftedShort', { c: num(a.lift_c), a: hh2(a.start_hour), b: hh2(Number(a.start_hour) + Number(a.hours)) })
+      : stText);
     var hsNow = state.heat || {};
     setShow('dash.odin', !!(o.enabled || hsNow.odin_host));
     var tk = link.takeover;
     setText('dash.odinDriver', tk === true ? t('driver.odin') : (tk === false ? t('driver.asgard') : '—'));
+    state.odinDriver = tk === true ? t('driver.odin') : (tk === false ? t('driver.asgard') : '—');
+    renderOdinDriveNow();
     paintTargetRole();
     var route = d.route || 'none';
     var routeText = t('hs.route.' + route, { c: num(d.target_uplift_c) });
@@ -2255,6 +2274,17 @@
       else txt = t('role.reserve');
     } else txt = sync ? t('role.drives', { c: num(d.target_uplift_c || 0) }) : t('role.off');
     setText('dash.targetRole', txt);
+    // Overview: the role's one word in the list, the explanation as a hint below.
+    var cut = txt.indexOf(' – ');
+    setText('dash.targetRoleShort', cut > 0 ? txt.slice(0, cut) : txt);
+    setText('dash.targetRoleNote', cut > 0 ? txt.slice(cut + 3) : '');
+  }
+
+  // Odin › "Drives now": who drives the pump and what Odin plans this hour, one row.
+  function renderOdinDriveNow() {
+    var d = state.odinDriver || '—';
+    var n = state.odinNowText || '—';
+    setText('dash.odinDriveNow', d === '—' && n === '—' ? '—' : t('heat.driveNow', { d: d, n: n }));
   }
 
   /* ---- Next heating: Odin's plan + Touch's preheating (GET /plan) ---------- */
@@ -2303,6 +2333,8 @@
       now = Number(mode[0]) === 1 ? t('now.dhw') : (kw > 0.05 ? t('now.heat', { kw: num(kw) }) : t('now.off'));
     }
     setText('dash.odinNow', now);
+    state.odinNowText = now;
+    renderOdinDriveNow();
     // Tile + metrics: the next block of space heat and its energy.
     var hh = function (x) { return String((start + x) % 24).padStart(2, '0'); };
     var a = -1, b = -1, blockKwh = 0, totalKwh = 0;

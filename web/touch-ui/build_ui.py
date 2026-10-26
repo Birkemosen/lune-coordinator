@@ -383,13 +383,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                   f'<th>{T("hs.calcWeight")}</th><th class="num">{T("hs.calcContrib")}</th></tr></thead>'
                   f'<tbody data-bind-weight-rows><tr><td colspan="4" class="muted">{DASH}</td></tr></tbody></table></div>'
                   f'<p class="note">{T("heat.howCalcNote")}</p></details>')
-    sent = (group(T("hs.subHouseTemp"),
-                  rrow(T("hs.sentValue"), "hs.asgard.temp", T("hs.houseTempHint")) +
-                  rrow(T("hs.sentWhen"), "hs.asgard.when") +
-                  rrow(T("hs.asgardTempEntity"), "hs.asgard.entity") +
-                  rrow(T("hs.rowSetpoint"), "hs.asgard.setpoint") +
-                  rrow(T("hs.sentWhen"), "hs.asgard.setpointWhen"), extra=calc_table, cls="hs-type-asgard") +
-            group(T("hs.sentHttp"),
+    # Asgard: the overview's compact list (heat_over); the entity lives in Settings › Connection.
+    sent = (group(T("hs.sentHttp"),
+                  rrow(T("heat.status"), "heat.badgeText") +
                   rrow(T("hs.rowTemp"), "hs.http.temp") +
                   rrow(T("hs.sentTarget"), "hs.http.entity") +
                   rrow(T("hs.sentWhen"), "hs.http.when"),
@@ -432,12 +428,16 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             {metric(T("heat.weighted"), "°C", "heat.weighted")}
             {metric(T("heat.setpoint"), "°C", "heat.setpoint")}
           </dl>
-          {kv([(T("heat.status"), "heat.badgeText"), (T("heat.lastPush"), "heat.lastPush"), (T("dash.targetRole"), "dash.targetRole"),
-               (T("dash.hpTemps"), "dash.hpTemps")])}
-          <p class="note muted" data-bind="heat.sentNote" hidden></p>
+          <div class="sub hs-type-asgard"><h4>Asgard</h4>
+            {kv([(T("heat.status"), "heat.badgeText"), (T("heat.houseTemp"), "hs.asgard.tempLine"),
+                 (T("heat.comfortTarget"), "hs.asgard.setLine"), (T("heat.role"), "dash.targetRoleShort")])}
+            <p class="hint" data-bind="dash.targetRoleNote"></p>
+            <p class="note muted" data-bind="heat.sentNote" hidden></p>
+            {calc_table}
+          </div>
           <div class="sub hs-type-asgard" data-bind-show="dash.odin" hidden><h4>Odin</h4>
-            {kv([(T("dash.odinLink"), "dash.odinLink"), (T("dash.odinDriver"), "dash.odinDriver"), (T("dash.odinNow"), "dash.odinNow"),
-                 (T("hs.odinState"), "dash.odinPlan"), (T("hs.route"), "odin.route")])}
+            {kv([(T("dash.odinLink"), "dash.odinLinkShort"), (T("heat.odinDrives"), "dash.odinDriveNow"),
+                 (T("hs.odinState"), "dash.odinPlanShort")])}
           </div>
           {sent}
         </div>'''
@@ -948,7 +948,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
-        "tile.todayCost", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
+        "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )
