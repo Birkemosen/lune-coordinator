@@ -2090,11 +2090,41 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
     setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
+    renderFlowNeed(mx.primary_l_min);
     setText('tile.pumpStatus', risk ? t('tile.pumpMixing')
       : lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
     if (state.zones) renderDist();
     applyCirculation(circ);
     renderHome();
+  }
+
+  // Flow guide: secondary flow for full load at 25/35/45 W/m² and the house's own
+  // estimate (room UA), over the floor-heating area at 5 K flow–return.
+  var NEED_DT_K = 5, NEED_IN_C = 20, NEED_OUT_C = -12;
+  function needLpm(watts) { return watts / (4186 * NEED_DT_K) * 60; }
+  function renderFlowNeed(primary) {
+    var area = 0, ua = 0, learned = true, seen = {};
+    (state.zones || []).forEach(function (z) {
+      if (!z) return;
+      if (Number(z.loop_area_m2) > 0) area += Number(z.loop_area_m2);
+      var r = z.room;
+      if (!r || seen[z.room_id]) return;
+      seen[z.room_id] = true;
+      if (Number(r.ua_w_per_k) > 0) ua += Number(r.ua_w_per_k);
+      if (!(Number(r.ua_learned_w_per_k) > 0 && Number(r.ua_confidence) >= 0.5)) learned = false;
+    });
+    var pri = finite(primary) ? Number(primary) : null;
+    [25, 35, 45].forEach(function (w) {
+      var lpm = area > 0 ? needLpm(area * w) : null;
+      setText('pump.need' + w, lpm == null ? '—'
+        : t(pri != null && lpm > pri ? 'pump.needOver' : 'pump.needVal', { lpm: num(lpm, 1), m3h: num(lpm * 0.06, 2) }));
+    });
+    var load = ua * (NEED_IN_C - NEED_OUT_C);
+    setText('pump.needHouse', area > 0 && ua > 0
+      ? t('pump.needHouseVal', { w: num(load / area, 0), lpm: num(needLpm(load), 1), src: t(learned ? 'pump.src.learned' : 'pump.src.prior') })
+      : '—');
+    setText('pump.needNote', !(area > 0) ? t('pump.needNoteNone')
+      : t('pump.needNote', { a: num(area, 0) }) + (pri != null ? ' ' + t('pump.needPri', { pri: num(pri, 1) }) : ''));
   }
 
   // Odin comfort control, Asgard→Odin link health and generic heat-source levers.

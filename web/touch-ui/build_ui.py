@@ -551,6 +551,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.recommended"), "pump.recommended"), (T("heat.valvesNow"), "heat.valvesNow"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
+        <div class="sub"><h4>{T("pump.need")}</h4>
+          {kv([(T("pump.needAt", w=25), "pump.need25"), (T("pump.needAt", w=35), "pump.need35"), (T("pump.needAt", w=45), "pump.need45"), (T("pump.needHouse"), "pump.needHouse")])}
+          <p class="hint" data-bind="pump.needNote">{T("pump.needNoteNone")}</p></div>
         <p class="note">{T("flow.sub")}</p>'''
 
     # ---- Styring (skabelon; binderen kloner én pr. styring): status, fremløb/retur, rum, link til V6
@@ -949,7 +952,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needOver", "pump.needHouseVal", "pump.needNote", "pump.needPri", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )
     rt = {k: T(k) for k in rt_keys}
