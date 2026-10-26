@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace lune_touch {
 
@@ -604,14 +605,28 @@ class HouseModel {
   float house_u_wall() const { return house_u_wall_; }
   float house_c_struct() const { return house_c_struct_; }
   bool house_calibrated() const { return house_calibrated_; }
+  float house_calibrated_hl_w_per_k() const { return house_calibrated_hl_w_per_k_; }
   // Compute Odin house calibration; does not write V6. Returns false if blocked.
   bool compute_house_calibration(float *u_base_out, float *u_wall_out, float *c_struct_out,
                                  char *reason, size_t reason_capacity) const;
   void apply_house_calibration(float u_base, float u_wall, float c_struct);
-  // T2: regress delivered energy vs (T_room − T_out). Returns true when a V6 write is warranted.
-  bool learn_ua_from_delivery(const char *room_id, float outdoor_c, float *ua_out,
-                              float *confidence_out, uint16_t *days_out,
-                              uint32_t now_epoch_s = 0);
+  // T2: daily UA learning. Each pump sample adds (T_room − T_out)·h per room
+  // (accumulate_ua_day) next to the room's share of the delivered kWh
+  // (allocate_delivered_kwh); at local midnight close_ua_day learns
+  // UA = mean W / mean ΔT from each whole qualifying day and starts a new day.
+  void accumulate_ua_day(float hours, float outdoor_c);
+  struct UaDayResult {
+    size_t room_index{0};
+    float ua_w_per_k{0.0f};
+    float confidence{0.0f};
+    uint16_t observed_days{0};
+  };
+  size_t close_ua_day(UaDayResult *out, size_t capacity);
+  // Sum of the default-constant (uncalibrated) priors of the included rooms, so a
+  // calibration does not feed back into the next one.
+  float ua_default_prior_sum_included_w_per_k() const;
+  // Loop (node, zone) belongs to this room: bound directly or as a sync-group member.
+  bool zone_in_room(size_t zone_index, const char *room_id) const;
   // T5 index-room helpers.
   static float required_flow_temp_c(float ua_eff, float area_m2, float r_m2k_per_w,
                                     float t_target_c, float t_out_c, float design_dt_c = 5.0f);
@@ -711,7 +726,17 @@ class HouseModel {
   float house_u_wall_{0.4f};
   float house_c_struct_{0.06f};
   bool house_calibrated_{false};
-  uint32_t ua_learned_last_write_epoch_s_[MAX_HOUSE_ZONES]{};
+  float house_calibrated_hl_w_per_k_{0.0f};  // Odin heat loss the calibration used
+  struct UaDay {
+    float kwh{0.0f};
+    float dt_kh{0.0f};
+    float hours{0.0f};
+    float first_c{std::numeric_limits<float>::quiet_NaN()};
+    float last_c{std::numeric_limits<float>::quiet_NaN()};
+  };
+  UaDay ua_day_[MAX_HOUSE_ROOMS]{};
+  float ua_cv_[MAX_HOUSE_ROOMS]{};    // spread of daily estimates (EWMA, relative)
+  float ua_trend_[MAX_HOUSE_ROOMS]{};  // daily EWMA; written once it moves ≥ 10 % past the gate
   PairedNode nodes_[MAX_NODES]{};
   LogicalRoom rooms_[MAX_HOUSE_ROOMS]{};
   ZoneBinding zones_[MAX_HOUSE_ZONES]{};

@@ -1870,7 +1870,7 @@
     renderHome();
   }
 
-  // Flow guide: secondary flow for full load at 25/35/45 W/m² and the house's own
+  // Flow guide: secondary flow for full load at typical W/m² by house age and the house's own
   // estimate (room UA), over the floor-heating area at 5 K flow–return.
   var NEED_DT_K = 5, NEED_IN_C = 20, NEED_OUT_C = -12;
   function needLpm(watts) { return watts / (4186 * NEED_DT_K) * 60; }
@@ -1886,7 +1886,7 @@
       if (!(Number(r.ua_learned_w_per_k) > 0 && Number(r.ua_confidence) >= 0.5)) learned = false;
     });
     var pri = finite(primary) ? Number(primary) : null;
-    [25, 35, 45].forEach(function (w) {
+    [25, 35, 55, 70, 90].forEach(function (w) {
       var lpm = area > 0 ? needLpm(area * w) : null;
       setText('pump.need' + w, lpm == null ? '—'
         : t(pri != null && lpm > pri ? 'pump.needOver' : 'pump.needVal', { lpm: num(lpm, 1), m3h: num(lpm * 0.06, 2) }));

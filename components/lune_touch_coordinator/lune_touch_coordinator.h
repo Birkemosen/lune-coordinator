@@ -893,6 +893,20 @@ class LuneTouchCoordinator : public esphome::Component {
   void sync_odin_plan_from_heat_source_();
   void clear_odin_plan_live_state_();
   bool fetch_circulation_pump_();
+  // Learned UA per loop for V6, queued under the state lock and sent after it.
+  struct UaWrite {
+    ::lune_touch::PairedNode node;
+    uint8_t zone_index{0};
+    float ua_w_per_k{0.0f};
+    float confidence{0.0f};
+    uint16_t observed_days{0};
+    uint32_t epoch_s{0};
+  };
+  UaWrite ua_writes_[::lune_touch::MAX_HOUSE_ZONES]{};
+  size_t ua_write_count_{0};
+  void queue_ua_learned_writes_(size_t room_index, float confidence, uint16_t observed_days,
+                                uint32_t epoch_s);
+  void flush_ua_learned_writes_();
   bool push_weighted_temperature_();
   bool sync_comfort_target_();
   bool step_flow_trim_();

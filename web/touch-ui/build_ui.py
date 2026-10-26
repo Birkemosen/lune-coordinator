@@ -552,7 +552,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <div class="sub"><h4>{T("pump.need")}</h4>
-          {kv([(T("pump.needAt", w=25), "pump.need25"), (T("pump.needAt", w=35), "pump.need35"), (T("pump.needAt", w=45), "pump.need45"), (T("pump.needHouse"), "pump.needHouse")])}
+          {kv([(T("pump.needTier." + k, w=w), "pump.need" + str(w)) for k, w in (("low", 25), ("new", 35), ("y80", 55), ("y60", 70), ("old", 90))] + [(T("pump.needHouse"), "pump.needHouse")])}
           <p class="hint" data-bind="pump.needNote">{T("pump.needNoteNone")}</p></div>
         <p class="note">{T("flow.sub")}</p>'''
 

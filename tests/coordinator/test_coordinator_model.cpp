@@ -1433,6 +1433,81 @@ static void test_room_physics_contract_vectors() {
          "ua-learned: write on confidence gate cross");
 }
 
+static void test_daily_ua_learning() {
+  // Two rooms, true UA proportional to area (15 + 7.5 W/K), 20 K inside–outside.
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  model.bind_zone("bed", "Bed", 0, 1);
+  FloorMirror floor{};
+  floor.unset = false;
+  std::strncpy(floor.slab_type, "cast_concrete", sizeof(floor.slab_type) - 1);
+  std::strncpy(floor.covering, "tile_stone", sizeof(floor.covering) - 1);
+  expect(model.apply_v6_physics_mirror(0, 0, 0x01, 20.0f, floor, 18.0f, 0.0f, 18.0f, 0.0f, 0, 1,
+                                       "", "", "g1", nullptr), "ua day: living physics");
+  expect(model.apply_v6_physics_mirror(0, 1, 0x00, 10.0f, floor, 5.0f, 0.0f, 5.0f, 0.0f, 0, 1,
+                                       "", "", "g2", nullptr), "ua day: bed physics");
+  const float step_h = 5.0f / 60.0f;
+  auto run_hours = [&](float hours) {
+    uint32_t t = 1000;
+    for (float h = 0.0f; h < hours; h += step_h) {
+      t += 300000;
+      model.update_zone_live_by_binding(0, 0, 21.0f, true, 21.0f, true, "heat", true, t, 50.0f, true);
+      model.update_zone_live_by_binding(0, 1, 21.0f, true, 21.0f, true, "heat", true, t, 50.0f, true);
+      model.allocate_delivered_kwh(22.5f * 20.0f / 1000.0f * step_h, t);
+      model.accumulate_ua_day(step_h, 1.0f);
+    }
+  };
+  // A gap is skipped, not integrated.
+  model.accumulate_ua_day(3.0f, 1.0f);
+  run_hours(12.0f);
+  HouseModel::UaDayResult out[4];
+  expect(model.close_ua_day(out, 4) == 0, "ua day: half a day does not count");
+  const LogicalRoom *living = model.room_by_id("living");
+  expect(living != nullptr && living->delivered_kwh_today == 0.0f, "ua day: midnight clears today's kWh");
+  run_hours(24.0f);
+  expect(living->delivered_kwh_today > 7.0f && living->delivered_kwh_today < 7.4f,
+         "ua day: today's kWh is the room's share (7.2 kWh)");
+  const size_t n = model.close_ua_day(out, 4);
+  expect(n == 2, "ua day: both rooms learn from a whole day");
+  const LogicalRoom *bed = model.room_by_id("bed");
+  expect(std::fabs(living->ua_learned_w_per_k - 15.0f) < 0.3f, "ua day: living UA = 15 W/K");
+  expect(std::fabs(bed->ua_learned_w_per_k - 7.5f) < 0.2f, "ua day: bed UA = 7.5 W/K");
+  expect(living->ua_observed_days == 1 && bed->ua_observed_days == 1, "ua day: one day per day");
+  expect(living->ua_confidence > 0.0f && living->ua_confidence < 0.1f, "ua day: low confidence after one day");
+  // A day colder than 8 K inside–outside teaches nothing.
+  uint32_t t = 1000;
+  for (float h = 0.0f; h < 24.0f; h += step_h) {
+    t += 300000;
+    model.update_zone_live_by_binding(0, 0, 21.0f, true, 21.0f, true, "heat", true, t, 50.0f, true);
+    model.allocate_delivered_kwh(0.01f, t);
+    model.accumulate_ua_day(step_h, 15.0f);
+  }
+  expect(model.close_ua_day(out, 4) == 0, "ua day: mild day (6 K) does not count");
+}
+
+static void test_calibration_uses_default_priors() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  FloorMirror floor{};
+  floor.unset = false;
+  std::strncpy(floor.slab_type, "cast_concrete", sizeof(floor.slab_type) - 1);
+  std::strncpy(floor.covering, "tile_stone", sizeof(floor.covering) - 1);
+  // V6 prior already scaled by an earlier calibration (0.5 of the default 18 W/K).
+  expect(model.apply_v6_physics_mirror(0, 0, 0x05, 20.0f, floor, 9.0f, 0.0f, 9.0f, 0.0f, 0, 1,
+                                       "", "", "g1", nullptr), "calibration: mirror");
+  expect(std::fabs(model.ua_default_prior_sum_included_w_per_k() - 26.0f) < 0.01f,
+         "calibration: default prior from area and walls (20 × (0.5 + 2 × 0.4))");
+  model.set_odin_heat_loss_w_per_k(13.0f);
+  model.set_odin_tau_h(0.0f);
+  float ub = 0, uw = 0, cs = 0;
+  char reason[32]{};
+  expect(model.compute_house_calibration(&ub, &uw, &cs, reason, sizeof(reason)), "calibration: computes");
+  expect(std::fabs(ub - 0.25f) < 0.001f && std::fabs(uw - 0.2f) < 0.001f,
+         "calibration: scale from default priors, not the already scaled V6 prior");
+}
+
 int main() {
   test_node_staleness();
   test_update_node_host_keeps_identity();
@@ -1465,6 +1540,8 @@ int main() {
   test_same_node_merge_rejected();
   test_ua_physics_mirror_and_index_room();
   test_room_physics_contract_vectors();
+  test_daily_ua_learning();
+  test_calibration_uses_default_priors();
 
   if (g_failures > 0) {
     std::printf("%d test(s) FAILED.\n", g_failures);

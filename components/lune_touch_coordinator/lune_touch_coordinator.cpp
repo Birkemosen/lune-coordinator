@@ -3089,17 +3089,22 @@ void LuneTouchCoordinator::run_odin_control_() {
   if (reachable && (last_physics_ms == 0 || now_ms - last_physics_ms >= PHYSICS_MS)) {
     std::snprintf(url, sizeof(url), "http://%s:%u/api/debug", odin_host, static_cast<unsigned>(odin_port));
     int dstatus = 0;
-    if (fetch_json_(url, body, STATE_CAP, &dstatus, 6000)) {
+    // /api/debug carries the whole plan (≈14 KB on Odin 2.0.1) — too big for STATE_CAP.
+    static constexpr size_t DEBUG_CAP = 32768;
+    char *debug_body = alloc_psram_body_(DEBUG_CAP);
+    if (debug_body != nullptr && fetch_json_(url, debug_body, DEBUG_CAP, &dstatus, 6000)) {
       JsonDocument filter;
       filter["latest_response"]["used_thermal_mass"] = true;
       filter["latest_response"]["used_heat_loss"] = true;
       JsonDocument doc;
-      if (!deserializeJson(doc, body, DeserializationOption::Filter(filter))) {
+      if (!deserializeJson(doc, debug_body, DeserializationOption::Filter(filter))) {
         thermal_mass = doc["latest_response"]["used_thermal_mass"] | NAN;
         heat_loss = doc["latest_response"]["used_heat_loss"] | NAN;
         physics_fetched = true;
       }
     }
+    if (debug_body != nullptr)
+      heap_caps_free(debug_body);
   }
   heap_caps_free(body);
 
@@ -4092,68 +4097,43 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
                                         : circulation_.refresh_interval_idle_s;
       if (want >= 10 && want <= 3600)
         circulation_.refresh_interval_s = want;
-      if (circulation_.has_thermal_kw && std::isfinite(circulation_.thermal_kw) &&
-          circulation_.thermal_kw > 0.0f && circulation_.last_success_ms != 0) {
-        static uint32_t last_energy_ms = 0;
-        if (last_energy_ms != 0 && circulation_.last_fetch_ms > last_energy_ms) {
-          const float hours =
-              static_cast<float>(circulation_.last_fetch_ms - last_energy_ms) / 3600000.0f;
-          const float kwh = circulation_.thermal_kw * hours;
-          model_.allocate_delivered_kwh(kwh, circulation_.last_fetch_ms);
-          if (odin_plan_.heat_window_active || odin_plan_.preload_timing_bias_enabled)
-            odin_plan_.bias_window_delivered_kwh += kwh;
-          // T2: UA learning writeback when confidence/relative change warrants it (§5.2).
-          if (model_.has_outdoor_temp()) {
-            const float t_out = model_.outdoor_temp_c();
-            const uint32_t now_epoch =
-                static_cast<uint32_t>(circulation_.last_fetch_ms / 1000UL);
-            for (size_t ri = 0; ri < model_.room_count(); ri++) {
-              const auto *room = model_.room(ri);
-              if (room == nullptr || !room->include_in_house_temperature)
-                continue;
-              float ua = 0.0f;
-              float conf = 0.0f;
-              uint16_t days = 0;
-              if (!model_.learn_ua_from_delivery(room->room_id, t_out, &ua, &conf, &days,
-                                                 now_epoch))
-                continue;
-              for (size_t zi = 0; zi < model_.zone_count(); zi++) {
-                const auto *z = model_.zone(zi);
-                if (z == nullptr || !z->enabled || z->is_group_secondary ||
-                    std::strcmp(z->room_id, room->room_id) != 0)
-                  continue;
-                const auto *node = model_.node(z->node_index);
-                if (node == nullptr || std::strcmp(node->firmware, "mock") == 0)
-                  continue;
-                if (!node_supports_physics_writes_(*node))
-                  continue;
-                char payload[192];
-                std::snprintf(payload, sizeof(payload),
-                              "{\"ua_w_per_k\":%.2f,\"confidence\":%.3f,\"observed_days\":%u,"
-                              "\"ts_epoch_s\":%lu}",
-                              z->ua_learned_w_per_k, conf, static_cast<unsigned>(days),
-                              static_cast<unsigned long>(now_epoch));
-                char url[192];
-                const char *host =
-                    node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
-                if (host == nullptr || host[0] == '\0')
-                  continue;
-                std::snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/ua-learned", host,
-                              static_cast<unsigned>(z->zone_index + 1));
-                char body[256];
-                int status = 0;
-                if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
-                  char event[96];
-                  std::snprintf(event, sizeof(event), "ua-learned %s/z%u %.1f W/K conf %.2f",
-                                room->room_id, static_cast<unsigned>(z->zone_index + 1),
-                                z->ua_learned_w_per_k, conf);
-                  log_event_("info", "physics", event);
-                }
-              }
-            }
+      // Integrate between consecutive samples only; a longer gap (pump unreachable,
+      // reboot) is skipped rather than counted as hours at the current power.
+      static uint32_t last_energy_ms = 0;
+      const uint32_t now_fetch_ms = circulation_.last_fetch_ms;
+      const float sample_h = last_energy_ms != 0 && now_fetch_ms > last_energy_ms
+                                 ? static_cast<float>(now_fetch_ms - last_energy_ms) / 3600000.0f
+                                 : 0.0f;
+      last_energy_ms = now_fetch_ms;
+      const bool sample_ok = sample_h > 0.0f && sample_h <= ::lune_touch::physics::UA_SAMPLE_MAX_GAP_H;
+      if (sample_ok && circulation_.has_thermal_kw && std::isfinite(circulation_.thermal_kw) &&
+          circulation_.thermal_kw > 0.0f) {
+        const float kwh = circulation_.thermal_kw * sample_h;
+        model_.allocate_delivered_kwh(kwh, now_fetch_ms);
+        if (odin_plan_.heat_window_active || odin_plan_.preload_timing_bias_enabled)
+          odin_plan_.bias_window_delivered_kwh += kwh;
+      }
+      if (sample_ok && model_.has_outdoor_temp())
+        model_.accumulate_ua_day(sample_h, model_.outdoor_temp_c());
+      // T2: at local midnight learn UA from the whole day just ended (§5.2). The
+      // first known date only starts a clean day (clears totals kept from before).
+      const int64_t epoch_now = current_epoch_s_();
+      if (epoch_now > 0) {
+        const time_t raw = static_cast<time_t>(epoch_now);
+        struct tm local {};
+        if (localtime_r(&raw, &local) != nullptr) {
+          static int ua_day_ymd = 0;
+          const int ymd = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
+          if (ua_day_ymd != ymd) {
+            const bool learn = ua_day_ymd != 0;
+            ua_day_ymd = ymd;
+            ::lune_touch::HouseModel::UaDayResult days[::lune_touch::MAX_HOUSE_ROOMS];
+            const size_t n = model_.close_ua_day(days, learn ? ::lune_touch::MAX_HOUSE_ROOMS : 0);
+            for (size_t k = 0; k < n; k++)
+              queue_ua_learned_writes_(days[k].room_index, days[k].confidence, days[k].observed_days,
+                                       static_cast<uint32_t>(epoch_now));
           }
         }
-        last_energy_ms = circulation_.last_fetch_ms;
       }
     } else {
       std::strncpy(circulation_.last_error, error, sizeof(circulation_.last_error) - 1);
@@ -4170,9 +4150,65 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
     }
     give_state_lock_();
   }
+  flush_ua_learned_writes_();
   if (!any)
     log_event_("warn", "circulation", error[0] != '\0' ? error : "unreachable");
   return any;
+}
+
+// Caller holds the state lock.
+void LuneTouchCoordinator::queue_ua_learned_writes_(size_t room_index, float confidence,
+                                                    uint16_t observed_days, uint32_t epoch_s) {
+  const auto *room = model_.room(room_index);
+  if (room == nullptr)
+    return;
+  for (size_t zi = 0; zi < model_.zone_count() && ua_write_count_ < ::lune_touch::MAX_HOUSE_ZONES; zi++) {
+    const auto *z = model_.zone(zi);
+    if (z == nullptr || !model_.zone_in_room(zi, room->room_id) || !(z->ua_learned_w_per_k > 0.0f))
+      continue;
+    const auto *node = model_.node(z->node_index);
+    if (node == nullptr || std::strcmp(node->firmware, "mock") == 0 ||
+        !node_supports_physics_writes_(*node))
+      continue;
+    UaWrite &w = ua_writes_[ua_write_count_++];
+    w.node = *node;
+    w.zone_index = z->zone_index;
+    w.ua_w_per_k = z->ua_learned_w_per_k;
+    w.confidence = confidence;
+    w.observed_days = observed_days;
+    w.epoch_s = epoch_s;
+  }
+}
+
+void LuneTouchCoordinator::flush_ua_learned_writes_() {
+  for (size_t k = 0; k < ua_write_count_; k++) {
+    const UaWrite &w = ua_writes_[k];
+    const char *host = w.node.hostname[0] != '\0' ? w.node.hostname : w.node.fallback_ip;
+    if (host == nullptr || host[0] == '\0')
+      continue;
+    char payload[192];
+    std::snprintf(payload, sizeof(payload),
+                  "{\"ua_w_per_k\":%.2f,\"confidence\":%.3f,\"observed_days\":%u,\"ts_epoch_s\":%lu}",
+                  w.ua_w_per_k, w.confidence, static_cast<unsigned>(w.observed_days),
+                  static_cast<unsigned long>(w.epoch_s));
+    char url[192];
+    std::snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/ua-learned", host,
+                  static_cast<unsigned>(w.zone_index + 1));
+    char body[256];
+    int status = 0;
+    char event[96];
+    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+      std::snprintf(event, sizeof(event), "ua-learned %s/z%u %.1f W/K conf %.2f day %u", w.node.node_id,
+                    static_cast<unsigned>(w.zone_index + 1), w.ua_w_per_k, w.confidence,
+                    static_cast<unsigned>(w.observed_days));
+      log_event_("info", "physics", event);
+    } else {
+      std::snprintf(event, sizeof(event), "ua-learned %s/z%u rejected (HTTP %d)", w.node.node_id,
+                    static_cast<unsigned>(w.zone_index + 1), status);
+      log_event_("warn", "physics", event);
+    }
+  }
+  ua_write_count_ = 0;
 }
 
 void LuneTouchCoordinator::poll_once_() {
@@ -8864,9 +8900,14 @@ void LuneTouchCoordinator::maybe_calibrate_house_physics_() {
   char reason[40]{};
   if (!take_state_lock_(100))
     return;
+  // Calibrate once, and again when Odin's learned heat loss has moved ≥ 10 %.
   if (model_.house_calibrated()) {
-    give_state_lock_();
-    return;
+    const float used = model_.house_calibrated_hl_w_per_k();
+    const float now_hl = model_.odin_heat_loss_w_per_k();
+    if (!(used > 0.0f) || !(now_hl > 0.0f) || std::fabs(now_hl - used) < 0.1f * used) {
+      give_state_lock_();
+      return;
+    }
   }
   const bool ready =
       model_.compute_house_calibration(&u_base, &u_wall, &c_struct, reason, sizeof(reason));
@@ -8883,7 +8924,7 @@ void LuneTouchCoordinator::maybe_calibrate_house_physics_() {
       log_event_("warn", "physics", "house calibration blocked: inconsistent_physics");
     return;
   }
-  const uint32_t epoch = static_cast<uint32_t>(esphome::millis() / 1000UL);
+  const uint32_t epoch = static_cast<uint32_t>(current_epoch_s_());
   bool any = false;
   for (size_t i = 0; i < node_count; i++) {
     if (send_v6_house_physics_(nodes[i], u_base, u_wall, c_struct, epoch))

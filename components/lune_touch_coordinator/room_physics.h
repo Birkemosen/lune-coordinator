@@ -21,6 +21,15 @@ inline constexpr float UA_LEARNED_CONFIDENCE_GATE = 0.60f;
 inline constexpr uint16_t UA_LEARNED_MIN_DAYS = 7;
 inline constexpr float UA_LEARNED_REL_CHANGE = 0.10f;
 inline constexpr uint32_t UA_LEARNED_MIN_INTERVAL_S = 7u * 24u * 3600u;
+// Daily UA learning: a day counts when observed ≥ 20 h with house ΔT ≥ 8 K.
+inline constexpr float UA_DAY_MIN_HOURS = 20.0f;
+inline constexpr float UA_DAY_MIN_DT_K = 8.0f;
+inline constexpr float UA_DAY_ALPHA = 0.25f;
+inline constexpr float UA_DAY_CV_START = 0.3f;
+// The room must be near equilibrium over the day (net change ≤ this).
+inline constexpr float UA_DAY_MAX_NET_CHANGE_K = 0.5f;
+// Samples further apart than this are a gap, not an interval to integrate.
+inline constexpr float UA_SAMPLE_MAX_GAP_H = 10.0f / 60.0f;
 
 inline constexpr float CALIB_SCALE_MIN = 0.25f;
 inline constexpr float CALIB_SCALE_MAX = 4.0f;

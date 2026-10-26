@@ -1034,6 +1034,23 @@ float HouseModel::ua_prior_sum_included_w_per_k() const {
   return sum;
 }
 
+float HouseModel::ua_default_prior_sum_included_w_per_k() const {
+  float sum = 0.0f;
+  for (size_t i = 0; i < room_count_; i++) {
+    if (!rooms_[i].include_in_house_temperature)
+      continue;
+    float room_sum = 0.0f;
+    for (size_t z = 0; z < zone_count_; z++) {
+      if (zone_in_room(z, rooms_[i].room_id) && zones_[z].v6_area_m2 > 0.0f)
+        room_sum += physics::ua_prior_w_per_k(zones_[z].v6_area_m2, zones_[z].exterior_walls);
+    }
+    if (!(room_sum > 0.0f) && rooms_[i].total_area_m2 > 0.0f)
+      room_sum = geometry_ua_w_per_k(rooms_[i].total_area_m2);
+    sum += room_sum;
+  }
+  return sum;
+}
+
 float HouseModel::c_slab_sum_included_kwh_per_k() const {
   float sum = 0.0f;
   for (size_t i = 0; i < zone_count_; i++) {
@@ -1076,7 +1093,7 @@ bool HouseModel::compute_house_calibration(float *u_base_out, float *u_wall_out,
     return false;
   }
   const auto cal = physics::calibrate_house(
-      odin_heat_loss_w_per_k_ / 1000.0f, odin_tau_h_, ua_prior_sum_included_w_per_k(),
+      odin_heat_loss_w_per_k_ / 1000.0f, odin_tau_h_, ua_default_prior_sum_included_w_per_k(),
       c_slab_sum_included_kwh_per_k(), area_sum_included_m2());
   if (reason != nullptr && reason_capacity > 0) {
     std::strncpy(reason, cal.reason, reason_capacity - 1);
@@ -1098,6 +1115,7 @@ void HouseModel::apply_house_calibration(float u_base, float u_wall, float c_str
   house_u_wall_ = u_wall;
   house_c_struct_ = c_struct;
   house_calibrated_ = true;
+  house_calibrated_hl_w_per_k_ = odin_heat_loss_w_per_k_;
 }
 
 float HouseModel::required_flow_temp_c(float ua_eff, float area_m2, float r_m2k_per_w,
@@ -1115,86 +1133,102 @@ float HouseModel::required_flow_temp_c(float ua_eff, float area_m2, float r_m2k_
   return t_surface + dt * 0.5f;
 }
 
-bool HouseModel::learn_ua_from_delivery(const char *room_id, float outdoor_c, float *ua_out,
-                                        float *confidence_out, uint16_t *days_out,
-                                        uint32_t now_epoch_s) {
-  LogicalRoom *room = find_room_(room_id);
-  if (room == nullptr || !std::isfinite(outdoor_c))
+bool HouseModel::zone_in_room(size_t i, const char *room_id) const {
+  if (i >= zone_count_ || !zones_[i].enabled || room_id == nullptr)
     return false;
-  const ZoneBinding *primary = find_binding_by_loop_(room->primary_loop_id);
-  if (primary == nullptr)
-    return false;
-  size_t live_index = find_binding_index_(primary->node_index, primary->zone_index);
-  if (live_index >= zone_count_)
-    return false;
-  const ZoneLiveState &live = live_[live_index];
-  if (!live.fresh || !live.has_temperature || !std::isfinite(live.temperature_c))
-    return false;
-  const float dT = live.temperature_c - outdoor_c;
-  // Contract §5.1: house-average ΔT ≥ 8 K for a qualifying day.
-  if (dT < 8.0f)
-    return false;
-  if (!(room->delivered_kwh_today > 0.05f))
-    return false;
-  const float hours = 12.0f;
-  const float mean_w = (room->delivered_kwh_today * 1000.0f) / hours;
-  const float ua_est = mean_w / dT;
-  if (!std::isfinite(ua_est) || ua_est < 1.0f || ua_est > 500.0f)
-    return false;
-  const float prior = room->ua_prior_w_per_k > 0.0f ? room->ua_prior_w_per_k
-                                                    : geometry_ua_w_per_k(room->total_area_m2);
-  if (!physics::ua_learned_in_band(ua_est, prior))
-    return false;
-  uint16_t days = room->ua_observed_days;
-  if (days < 60)
-    days = static_cast<uint16_t>(days + 1);
-  const float conf = physics::ua_confidence(days, 0.05f);
-  const float prev_conf = room->ua_confidence;
-  const float prev_learned = room->ua_learned_w_per_k;
-  uint32_t last_write = 0;
-  for (size_t i = 0; i < zone_count_; i++) {
-    if (!zones_[i].enabled || zones_[i].is_group_secondary ||
-        !same_text_(zones_[i].room_id, room_id))
+  if (zones_[i].room_id[0] != '\0')
+    return same_text_(zones_[i].room_id, room_id);
+  const char *group = group_room_id_(zones_[i].node_index, zones_[i].zone_index);
+  return group != nullptr && same_text_(group, room_id);
+}
+
+void HouseModel::accumulate_ua_day(float hours, float outdoor_c) {
+  if (!std::isfinite(hours) || hours <= 0.0f || hours > physics::UA_SAMPLE_MAX_GAP_H ||
+      !std::isfinite(outdoor_c))
+    return;
+  for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
+    if (!rooms_[i].enabled || !rooms_[i].include_in_house_temperature)
       continue;
-    if (ua_learned_last_write_epoch_s_[i] > last_write)
-      last_write = ua_learned_last_write_epoch_s_[i];
-  }
-  const bool first = !(prev_learned > 0.0f);
-  const float alpha = first ? 1.0f : 0.35f;
-  const float blended = first ? ua_est : (prev_learned * (1.0f - alpha) + ua_est * alpha);
-  if (!physics::should_write_ua_learned(blended, prev_learned, conf, prev_conf, now_epoch_s,
-                                        last_write))
-    return false;
-  room->ua_learned_w_per_k = blended;
-  room->ua_confidence = conf;
-  room->ua_observed_days = days;
-  room->ua_effective_w_per_k = physics::ua_effective_w_per_k(prior, blended, conf, days);
-  room->ua_w_per_k = room->ua_effective_w_per_k;
-  for (size_t i = 0; i < zone_count_; i++) {
-    if (!zones_[i].enabled || zones_[i].is_group_secondary ||
-        !same_text_(zones_[i].room_id, room_id))
+    const RoomComfortReading r = room_comfort_reading(i, false, 0, 0);
+    if (!r.has_temp)
       continue;
-    const float share = (zones_[i].v6_area_m2 > 0.0f && room->total_area_m2 > 0.0f)
-                            ? zones_[i].v6_area_m2 / room->total_area_m2
-                            : 1.0f;
-    zones_[i].ua_learned_w_per_k = blended * share;
-    zones_[i].ua_confidence = conf;
-    zones_[i].ua_observed_days = days;
-    const float loop_prior =
-        zones_[i].ua_prior_w_per_k > 0.0f ? zones_[i].ua_prior_w_per_k : prior * share;
-    zones_[i].ua_effective_w_per_k =
-        physics::ua_effective_w_per_k(loop_prior, zones_[i].ua_learned_w_per_k, conf, days);
-    if (now_epoch_s != 0)
-      ua_learned_last_write_epoch_s_[i] = now_epoch_s;
+    ua_day_[i].dt_kh += (r.temp_c - outdoor_c) * hours;
+    ua_day_[i].hours += hours;
+    if (!std::isfinite(ua_day_[i].first_c))
+      ua_day_[i].first_c = r.temp_c;
+    ua_day_[i].last_c = r.temp_c;
   }
-  if (ua_out != nullptr)
-    *ua_out = blended;
-  if (confidence_out != nullptr)
-    *confidence_out = conf;
-  if (days_out != nullptr)
-    *days_out = days;
-  bump_weights_revision(now_epoch_s != 0 ? now_epoch_s * 1000UL : 0);
-  return true;
+}
+
+size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
+  size_t n = 0;
+  for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
+    const UaDay day = ua_day_[i];
+    ua_day_[i] = UaDay{};
+    LogicalRoom &room = rooms_[i];
+    room.delivered_kwh_today = 0.0f;
+    if (!room.enabled || !room.include_in_house_temperature)
+      continue;
+    if (day.hours < physics::UA_DAY_MIN_HOURS || !(day.kwh > 0.05f))
+      continue;
+    const float mean_dt = day.dt_kh / day.hours;
+    if (mean_dt < physics::UA_DAY_MIN_DT_K)
+      continue;
+    if (!(std::fabs(day.last_c - day.first_c) <= physics::UA_DAY_MAX_NET_CHANGE_K))
+      continue;
+    const float ua_est = (day.kwh * 1000.0f / day.hours) / mean_dt;
+    const float prior = room.ua_prior_w_per_k > 0.0f ? room.ua_prior_w_per_k
+                                                     : geometry_ua_w_per_k(room.total_area_m2);
+    if (!std::isfinite(ua_est) || !physics::ua_learned_in_band(ua_est, prior))
+      continue;
+    const float prev = room.ua_learned_w_per_k;
+    const bool first = !(prev > 0.0f) || room.ua_observed_days == 0;
+    const float trend_prev = ua_trend_[i] > 0.0f ? ua_trend_[i] : prev;
+    const float trend = first ? ua_est : trend_prev + physics::UA_DAY_ALPHA * (ua_est - trend_prev);
+    ua_trend_[i] = trend;
+    float cv = ua_cv_[i] > 0.0f ? ua_cv_[i] : physics::UA_DAY_CV_START;
+    if (!first)
+      cv += physics::UA_DAY_ALPHA * (std::fabs(ua_est - trend_prev) / trend_prev - cv);
+    ua_cv_[i] = cv;
+    const uint16_t days = room.ua_observed_days < 3650 ? room.ua_observed_days + 1 : 3650;
+    const float conf = physics::ua_confidence(days, cv);
+    // Contract §5.2: weights stay quasi-static. Below the gate the learned value is
+    // not in use and follows the trend daily; past it, it moves only when the
+    // trend has drifted ≥ 10 % (the day count and confidence still advance).
+    const bool in_use = room.ua_confidence >= physics::UA_LEARNED_CONFIDENCE_GATE;
+    const float blended = first || !in_use || std::fabs(trend - prev) >= physics::UA_LEARNED_REL_CHANGE * prev
+                              ? trend
+                              : prev;
+    room.ua_learned_w_per_k = blended;
+    room.ua_confidence = conf;
+    room.ua_observed_days = days;
+    room.ua_effective_w_per_k = physics::ua_effective_w_per_k(prior, blended, conf, days);
+    room.ua_w_per_k = room.ua_effective_w_per_k;
+    for (size_t z = 0; z < zone_count_; z++) {
+      if (!zone_in_room(z, room.room_id))
+        continue;
+      const float share = (zones_[z].v6_area_m2 > 0.0f && room.total_area_m2 > 0.0f)
+                              ? zones_[z].v6_area_m2 / room.total_area_m2
+                              : 1.0f;
+      zones_[z].ua_learned_w_per_k = blended * share;
+      zones_[z].ua_confidence = conf;
+      zones_[z].ua_observed_days = days;
+      const float loop_prior =
+          zones_[z].ua_prior_w_per_k > 0.0f ? zones_[z].ua_prior_w_per_k : prior * share;
+      zones_[z].ua_effective_w_per_k =
+          physics::ua_effective_w_per_k(loop_prior, zones_[z].ua_learned_w_per_k, conf, days);
+    }
+    if (out != nullptr && n < capacity) {
+      out[n].room_index = i;
+      out[n].ua_w_per_k = blended;
+      out[n].confidence = conf;
+      out[n].observed_days = days;
+    }
+    n++;
+  }
+  if (n > 0)
+    bump_weights_revision(0);
+  return n < capacity ? n : capacity;
 }
 
 bool HouseModel::update_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
@@ -1736,33 +1770,32 @@ bool HouseModel::allocate_delivered_kwh(float total_kwh, uint32_t now_ms) {
   if (!std::isfinite(total_kwh) || total_kwh <= 0.0f)
     return false;
   (void)now_ms;
+  // Flow share ≈ loop area × valve opening. Not UA: UA is what this energy teaches.
   float weight_sum = 0.0f;
   float weights[MAX_HOUSE_ROOMS]{};
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
     if (!rooms_[i].enabled || !rooms_[i].include_in_house_temperature)
       continue;
-    float valve_share = 0.0f;
-    size_t loops = 0;
+    float w = 0.0f;
     for (size_t z = 0; z < zone_count_; z++) {
-      if (!zones_[z].enabled || !same_text_(zones_[z].room_id, rooms_[i].room_id))
+      if (!zone_in_room(z, rooms_[i].room_id))
         continue;
-      loops++;
-      if (live_[z].fresh && live_[z].has_valve && live_[z].valve_pct > 1.0f)
-        valve_share += live_[z].valve_pct;
+      if (!(live_[z].fresh && live_[z].has_valve && live_[z].valve_pct > 1.0f))
+        continue;
+      const float area = zones_[z].v6_area_m2 > 0.0f ? zones_[z].v6_area_m2 : 10.0f;
+      w += area * live_[z].valve_pct / 100.0f;
     }
-    if (loops == 0 || valve_share < 1.0f)
-      continue;
-    bool used_ua = false;
-    weights[i] = room_aggregation_weight(rooms_[i], &used_ua, house_weighting_) * (valve_share / 100.0f);
-    (void)used_ua;
-    weight_sum += weights[i];
+    weights[i] = w;
+    weight_sum += w;
   }
   if (weight_sum <= 0.0f)
     return false;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
     if (weights[i] <= 0.0f)
       continue;
-    rooms_[i].delivered_kwh_today += total_kwh * (weights[i] / weight_sum);
+    const float kwh = total_kwh * (weights[i] / weight_sum);
+    rooms_[i].delivered_kwh_today += kwh;
+    ua_day_[i].kwh += kwh;
   }
   return true;
 }
