@@ -809,7 +809,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code,
                    uint32_t timeout_ms);
   bool post_json_(const char *url, const char *payload, char *body, size_t body_capacity,
-                  int *status_code, const char *authority_key = nullptr);
+                  int *status_code, const char *authority_key = nullptr, bool as_json = false);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
   // House balance: per-loop hydraulics mirrored from V6 /zones (RAM only), the
   // computed board scales, and the push to V6 (/zones/{n}/house-balance).
@@ -881,7 +881,7 @@ class LuneTouchCoordinator : public esphome::Component {
                              const char *slab_type, float active_thickness_cm,
                              const char *covering);
   bool send_v6_house_physics_(const ::lune_touch::PairedNode &node, float u_base, float u_wall,
-                              float c_struct, uint32_t calibrated_at_epoch_s);
+                              float c_struct, uint32_t calibrated_at_epoch_s, char *error = nullptr, size_t error_capacity = 0);
   bool poll_node_groups_(size_t node_index, const ::lune_touch::PairedNode &node);
   void maybe_migrate_walls_to_v6_();
   void maybe_calibrate_house_physics_();

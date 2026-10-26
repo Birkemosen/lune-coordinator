@@ -4210,7 +4210,7 @@ void LuneTouchCoordinator::flush_ua_learned_writes_() {
     char body[256];
     int status = 0;
     char event[96];
-    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_, true)) {
       std::snprintf(event, sizeof(event), "ua-learned %s/z%u %.1f W/K conf %.2f day %u", w.node.node_id,
                     static_cast<unsigned>(w.zone_index + 1), w.ua_w_per_k, w.confidence,
                     static_cast<unsigned>(w.observed_days));
@@ -4741,7 +4741,7 @@ bool LuneTouchCoordinator::fetch_json_(const char *url, char *body, size_t body_
 
 bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char *body,
                                       size_t body_capacity, int *status_code,
-                                      const char *authority_key) {
+                                      const char *authority_key, bool as_json) {
   if (body == nullptr || body_capacity == 0 || url == nullptr)
     return false;
   body[0] = '\0';
@@ -4762,15 +4762,20 @@ bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char
   // request args. application/json goes through handleBody(), which V6 does not
   // implement — so JSON POSTs arrive with an empty body and look like invalid
   // proposals. Keep JSON at the call site, encode form on the wire.
+  // V6's physics endpoints (/physics/house, /zones/N/physics, /zones/N/ua-learned)
+  // read the raw JSON body (handleBody) and ignore form args: as_json sends it as is.
   std::string form_body;
-  if (!json_object_to_form_(payload, form_body)) {
+  if (as_json) {
+    form_body = payload != nullptr ? payload : "{}";
+  } else if (!json_object_to_form_(payload, form_body)) {
     ESP_LOGW(TAG, "Unable to encode POST payload for %s", url);
     esp_http_client_cleanup(client);
     return false;
   }
   const char *post_body = form_body.c_str();
   const size_t post_length = std::strlen(post_body);
-  esp_http_client_set_header(client, "Content-Type", "application/x-www-form-urlencoded");
+  esp_http_client_set_header(client, "Content-Type",
+                             as_json ? "application/json" : "application/x-www-form-urlencoded");
   if (authority_key != nullptr && authority_key[0] != '\0')
     esp_http_client_set_header(client, "X-Lune-Authority-Key", authority_key);
 
@@ -6396,7 +6401,7 @@ bool LuneTouchCoordinator::send_v6_zone_physics_(const ::lune_touch::PairedNode 
     int status = 0;
     std::snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/physics", hosts[i],
                   static_cast<unsigned>(zone_index + 1));
-    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_))
+    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_, true))
       return true;
     ESP_LOGD(TAG, "V6 zone physics write failed via %s (%d)", hosts[i], status);
   }
@@ -6405,7 +6410,8 @@ bool LuneTouchCoordinator::send_v6_zone_physics_(const ::lune_touch::PairedNode 
 
 bool LuneTouchCoordinator::send_v6_house_physics_(const ::lune_touch::PairedNode &node, float u_base,
                                                   float u_wall, float c_struct,
-                                                  uint32_t calibrated_at_epoch_s) {
+                                                  uint32_t calibrated_at_epoch_s, char *error,
+                                                  size_t error_capacity) {
   if (!node_supports_physics_writes_(node))
     return false;
   const char *hosts[2]{};
@@ -6426,8 +6432,21 @@ bool LuneTouchCoordinator::send_v6_house_physics_(const ::lune_touch::PairedNode
     char body[256];
     int status = 0;
     std::snprintf(url, sizeof(url), "http://%s/api/v1/physics/house", hosts[i]);
-    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_))
+    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_, true))
       return true;
+    if (error != nullptr && error_capacity > 0) {
+      const char *code = std::strstr(body, "\"code\":\"");
+      char code_text[40]{};
+      if (code != nullptr) {
+        code += 8;
+        size_t n = 0;
+        while (code[n] != '\0' && code[n] != '"' && n + 1 < sizeof(code_text)) {
+          code_text[n] = code[n];
+          n++;
+        }
+      }
+      std::snprintf(error, error_capacity, "HTTP %d %s", status, code_text);
+    }
   }
   return false;
 }
@@ -8939,10 +8958,14 @@ void LuneTouchCoordinator::maybe_calibrate_house_physics_() {
       log_event_("warn", "physics", "house calibration blocked: inconsistent_physics");
     return;
   }
+  // V6 rejects writes without a valid UTC timestamp: wait for SNTP.
   const uint32_t epoch = static_cast<uint32_t>(current_epoch_s_());
+  if (epoch == 0)
+    return;
   bool any = false;
+  char error[64]{};
   for (size_t i = 0; i < node_count; i++) {
-    if (send_v6_house_physics_(nodes[i], u_base, u_wall, c_struct, epoch))
+    if (send_v6_house_physics_(nodes[i], u_base, u_wall, c_struct, epoch, error, sizeof(error)))
       any = true;
   }
   if (any && take_state_lock_(100)) {
@@ -8955,10 +8978,14 @@ void LuneTouchCoordinator::maybe_calibrate_house_physics_() {
   } else if (!any) {
     static uint32_t last_warn_ms = 0;
     const uint32_t now = esphome::millis();
-    if (last_warn_ms == 0 || now - last_warn_ms > 3600000UL) {
+    if (last_warn_ms == 0 || now - last_warn_ms > 600000UL) {
       last_warn_ms = now;
-      log_event_("warn", "physics", node_count == 0 ? "house calibration: no V6 with physics contract"
-                                                    : "house calibration: V6 rejected the write");
+      char event[96];
+      if (node_count == 0)
+        std::snprintf(event, sizeof(event), "house calibration: no V6 with physics contract");
+      else
+        std::snprintf(event, sizeof(event), "house calibration: V6 rejected the write (%s)", error);
+      log_event_("warn", "physics", event);
     }
   }
 }
