@@ -9441,7 +9441,11 @@ bool LuneTouchCoordinator::set_heat_source_settings(
       (trim_mode == nullptr || trim_mode[0] == '\0') &&
       (v6_control_mode == nullptr || v6_control_mode[0] == '\0') &&
       (house_weighting == nullptr || house_weighting[0] == '\0') &&
-      (type == nullptr || type[0] == '\0') && !has_odin_plan) {
+      (type == nullptr || type[0] == '\0') && !has_odin_plan && !has_absorb_arm &&
+      !has_arm_energy_cost_modulation && !has_mqtt &&
+      (plan_source_mode == nullptr || plan_source_mode[0] == '\0') &&
+      (odin_host == nullptr || odin_host[0] == '\0')) {
+    // Nothing to save. (absorb_arm_enabled / MQTT / Odin host alone are real saves.)
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"settings_required\"}");
     return false;
   }

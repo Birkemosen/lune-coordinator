@@ -447,6 +447,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <dl class="metrics">
           {metric(T("plan.next"), "", "tile.planVal")}
           {metric(T("plan.energy"), "kWh", "plan.energyKwh")}
+          {metric(T("plan.energyEl"), "kWh", "plan.energyElKwh")}
           {metric(T("plan.priceNow"), "", "price.nowShort")}
           {metric(T("plan.today"), "", "plan.todayCost")}
         </dl>
@@ -844,7 +845,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <div data-hs-type="{hs_type}" style="display:grid;gap:var(--space-5)">
           {ggroup(T("heat.comfortSync"), sswitch("target_sync_enabled", T("heat.targetSync"), T("heat.targetSyncSub"), True),
                   sinput("climate_entity", T("hs.asgardClimate"), "Virtual Thermostat z1"), extra=note(T("hs.targetSyncHint")), cls="hs-type-asgard")}
-          {group(T("heat.odinPlan"), sswitch("odin_plan_enabled", T("heat.odinPlanSw"), T("hs.odinPlanHint"), True), cls="hs-type-asgard")}
+          {group(T("heat.odinPlan"), sswitch("odin_plan_enabled", T("heat.odinPlanSw"), T("hs.odinPlanHint"), True) +
+                 sswitch("absorb_arm_enabled", T("heat.absorbArmSw"), T("heat.absorbArmSub"), False), cls="hs-type-asgard")}
           {ggroup(T("heat.odinSync"), sswitch("odin_sync_enabled", T("heat.odinSyncSw"), T("heat.odinSyncSub"), False),
                   sstep("odin_sync_below_c", T("heat.odinSyncBelow"), 0.5, 0.2, 2.0, 0.1, "°C")
                   + sstep("odin_sync_above_c", T("heat.odinSyncAbove"), 0.5, 0.2, 2.0, 0.1, "°C"), extra=note(T("hs.odinSyncHint")), cls="hs-type-asgard")}
@@ -946,7 +948,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
-        "tile.todayCost", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
+        "tile.todayCost", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )

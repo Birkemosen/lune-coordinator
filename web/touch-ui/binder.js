@@ -141,6 +141,7 @@
       { node_id: 'lune-v6-cbe680', name: 'Stue', worst_kpa: 17.6, scale: 0.74, applied: 1 },
       { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: 32.1, scale: 1, applied: 1 }] },
     odin_plan_enabled: true,
+    absorb_arm_enabled: true,
     odin_host: 'odin.local',
     physical_house_temperature_c: 21.6,
     house_comfort_target_c: 21.5,
@@ -550,6 +551,7 @@
       if (body.enabled != null) mockHeat.enabled = bool(body.enabled);
       if (body.target_sync_enabled != null) mockHeat.target_sync_enabled = bool(body.target_sync_enabled);
       if (body.odin_plan_enabled != null) mockHeat.odin_plan_enabled = bool(body.odin_plan_enabled);
+      if (body.absorb_arm_enabled != null) mockHeat.absorb_arm_enabled = bool(body.absorb_arm_enabled);
       if (body.house_balance_enabled != null) mockHeat.house_balance.enabled = bool(body.house_balance_enabled);
       if (body.valves_follow_hp_enabled != null) mockHeat.valves_follow_hp.enabled = bool(body.valves_follow_hp_enabled);
       if (body.climate_entity) mockHeat.climate_entity = body.climate_entity;
@@ -1789,6 +1791,7 @@
       putVal(bf.querySelector('[name="climate_entity"]'), hs.climate_entity || '');
       putVal(bf.querySelector('[name="target_sync_enabled"]'), !!(hs.target_sync_enabled || (hs.asgard && hs.asgard.sync_enabled)));
       putVal(bf.querySelector('[name="odin_plan_enabled"]'), !!hs.odin_plan_enabled);
+      putVal(bf.querySelector('[name="absorb_arm_enabled"]'), !!hs.absorb_arm_enabled);
       if (bf.luneResnap) bf.luneResnap();
     }
     // Valves follow the heat pump: what Touch tells the V6s now.
@@ -2324,6 +2327,10 @@
     setText('tile.planStatus', odin.available ? t('tile.planStatusOdin') : (p.rooms && p.rooms.length ? t('planG.noOdin') : t('tile.planNone')));
     renderTodayCost();
     setBind('plan.energyKwh', odin.available ? esc(num(totalKwh)) + ' <small>kWh</small>' : '—');
+    // Electricity Odin plans for the same 24 h (incl. hot water): what the price applies to.
+    var elKwh = 0;
+    (odin.energy_kwh || []).slice(0, H).forEach(function (x) { if (finite(x)) elKwh += Number(x); });
+    setBind('plan.energyElKwh', odin.available ? esc(num(elKwh)) + ' <small>kWh</small>' : '—');
     var viz = qs('[data-bind-viz="plan"]');
     if (viz) {
       var max = 0;
@@ -3256,6 +3263,7 @@
     if (has(ch, 'target_sync_enabled')) p.target_sync_enabled = bit(fval(form, 'target_sync_enabled'));
     if (has(ch, 'climate_entity')) p.climate_entity = String(fval(form, 'climate_entity') || '').trim();
     if (has(ch, 'odin_plan_enabled')) p.odin_plan_enabled = bit(fval(form, 'odin_plan_enabled'));
+    if (has(ch, 'absorb_arm_enabled')) p.absorb_arm_enabled = bit(fval(form, 'absorb_arm_enabled'));
     if (has(ch, 'house_balance_enabled')) p.house_balance_enabled = bit(fval(form, 'house_balance_enabled'));
     if (has(ch, 'odin_control_enabled')) c.odin_enabled = bit(fval(form, 'odin_control_enabled'));
     if (has(ch, 'odin_max_lift_c')) c.odin_max_lift_c = fval(form, 'odin_max_lift_c');
