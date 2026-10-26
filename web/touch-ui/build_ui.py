@@ -557,7 +557,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     def manifold_sheet(n):
         over = f'''
         <p class="msg warn" data-f="offline" hidden><span><b>{T("v6.offlineStrong")}</b> <span data-f="offlineBody"></span></span></p>
-        <dl class="metrics">{metric(T("m.supply"), "°C", f="flow")}{metric(T("m.return"), "°C", cls="c-info", f="ret")}</dl>
+        <dl class="metrics">{metric(T("m.supply"), "°C", f="flow")}{metric(T("m.return"), "°C", cls="c-info", f="ret")}{metric("ΔT", "K", f="dt")}</dl>
         {kv([(T("ctrl.status"), None, DASH, "state"), (T("ctrl.host"), None, DASH, "host"), ("IP", None, DASH, "ip"), (T("fw.installed"), None, DASH, "fw")])}
         <div class="sub"><h4>{T("mani.zones")}</h4><div class="comfort" data-f="zones"></div></div>
         <div class="actions"><a class="btn" data-f="link" href="#" target="_blank" rel="noopener">{T("v6.open")}</a></div>'''

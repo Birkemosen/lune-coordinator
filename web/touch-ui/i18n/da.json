@@ -735,7 +735,7 @@
   "status.offline": "Offline",
   "sheet.close": "Luk",
   "sheet.tabs": "Faner",
-  "sheet.manifoldStatus": "{flow}° → {ret}° · {n} rum",
+  "sheet.manifoldStatus": "{flow}° → {ret}° · ΔT {dt} · {n} rum",
   "sheet.roomStatus": "{m} · {zones} · {temp} · {open} % åben · {state}",
   "tab.overview": "Overblik",
   "tab.history": "Historik",

@@ -735,7 +735,7 @@
   "status.offline": "Offline",
   "sheet.close": "Close",
   "sheet.tabs": "Tabs",
-  "sheet.manifoldStatus": "{flow}° → {ret}° · {n} rooms",
+  "sheet.manifoldStatus": "{flow}° → {ret}° · ΔT {dt} · {n} rooms",
   "sheet.roomStatus": "{m} · {zones} · {temp} · {open} % open · {state}",
   "tab.overview": "Overview",
   "tab.history": "History",

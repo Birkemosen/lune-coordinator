@@ -946,6 +946,7 @@
       var rt = (node && node.runtime) || {};
       var offline = node && node.reachable === false;
       var temps = finite(rt.flow_c) || finite(rt.return_c) ? ' · ' + deg(rt.flow_c) + ' → ' + deg(rt.return_c) : '';
+      if (finite(rt.flow_c) && finite(rt.return_c)) temps += ' · ΔT ' + num(Number(rt.flow_c) - Number(rt.return_c));
       var head = document.getElementById('sheet-m' + m)
         ? '<button class="room-group-head" type="button" popovertarget="sheet-m' + m + '">' + esc(name) + ' <small>M' + m + esc(temps) + '</small></button>'
         : '<p class="room-group-head">' + esc(name) + ' <small>M' + m + esc(temps) + '</small></p>';
@@ -999,12 +1000,16 @@
       var h = offline ? hoursSince(node) : null;
       fText(sh, 'name', name);
       fText(sh, 'status', offline ? (h != null ? t('v6.offline', { h: h }) : t('v6.offlineNoTime'))
-        : t('sheet.manifoldStatus', { flow: num(rt.flow_c), ret: num(rt.return_c), n: zones.length }));
+        : t('sheet.manifoldStatus', { flow: num(rt.flow_c), ret: num(rt.return_c), n: zones.length,
+            dt: finite(rt.flow_c) && finite(rt.return_c) ? num(Number(rt.flow_c) - Number(rt.return_c)) : '—' }));
       var off = fEl(sh, 'offline');
       if (off) off.hidden = !offline;
       fText(sh, 'offlineBody', offline && h != null ? t('v6.offlineBody', { h: h }) : '');
       fHtml(sh, 'flow', esc(num(rt.flow_c)) + ' <small>°C</small>');
       fHtml(sh, 'ret', esc(num(rt.return_c)) + ' <small>°C</small>');
+      // ΔT flow − return; near 0 or negative means little or no flow through the manifold.
+      fHtml(sh, 'dt', finite(rt.flow_c) && finite(rt.return_c)
+        ? esc(num(Number(rt.flow_c) - Number(rt.return_c))) + ' <small>K</small>' : '—');
       var badge = offline ? '<span class="badge warn">' + esc(t('status.offline')) + '</span>' : '<span class="badge ok">' + esc(t('status.online')) + '</span>';
       fHtml(sh, 'state', badge);
       fHtml(sh, 'host', '<span class="mono">' + esc(node.hostname || '—') + '</span>');
