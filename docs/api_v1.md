@@ -1307,7 +1307,7 @@ All fields optional; absent = unchanged; an empty template string clears that le
 | Field | Meaning |
 |---|---|
 | `odin_enabled` | `1`/`0` — lift Odin's comfort schedule. Turning it off restores the user's schedule. |
-| `odin_max_lift_c` | 0.3–3.0 °C (default 1.5) |
+| `odin_max_lift_c` | Deprecated, ignored: the lift is capped by the weather preload boost (`POST /weather/settings` `max_boost_c`); GET `odin.max_lift_c` reports that value |
 | `odin_sync_enabled` | `1`/`0` — Odin's comfort setpoint follows the house target (one block all day) |
 | `odin_sync_below_c` / `odin_sync_above_c` | 0.2–2.0 °C (default 0.5 each) — Odin's band below / above the house target; may differ (e.g. 0.5 / 1.0) |
 | `odin_sync_band_c` | 0.2–2.0 °C — legacy: sets both sides. GET `sync.band_c` reports the larger side |

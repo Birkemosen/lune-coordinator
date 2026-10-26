@@ -444,7 +444,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
 
     # ---- Næste varme: Odins plan + Touch' forvarmning; elpris i dag; plan mod virkelighed
     plan_over = f'''
-        <dl class="metrics">
+        <dl class="metrics label-first">
           {metric(T("plan.next"), "", "tile.planVal")}
           {metric(T("plan.energy"), "kWh", "plan.energyKwh")}
           {metric(T("plan.energyEl"), "kWh", "plan.energyElKwh")}
@@ -850,8 +850,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {ggroup(T("heat.odinSync"), sswitch("odin_sync_enabled", T("heat.odinSyncSw"), T("heat.odinSyncSub"), False),
                   sstep("odin_sync_below_c", T("heat.odinSyncBelow"), 0.5, 0.2, 2.0, 0.1, "°C")
                   + sstep("odin_sync_above_c", T("heat.odinSyncAbove"), 0.5, 0.2, 2.0, 0.1, "°C"), extra=note(T("hs.odinSyncHint")), cls="hs-type-asgard")}
-          {ggroup(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
-                  sstep("odin_max_lift_c", T("heat.odinMaxLift"), 1.5, 0.3, 3.0, 0.1, "°C"), extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
+          {group(T("heat.odinControl"), sswitch("odin_control_enabled", T("heat.odinControlSw"), T("heat.odinControlSub"), False),
+                 extra=note(T("hs.odinControlHint")), cls="hs-type-asgard")}
           <p class="note hs-type-http">{T("heat.httpBehavior")}</p>
           {group(T("hs.connection"), subpage(T("link.heatConn"), heat_conn, vbind="heat.badgeText"))}
           </div>

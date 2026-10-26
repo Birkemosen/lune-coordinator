@@ -2863,7 +2863,9 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   int end = -1;
   uint8_t lag_floor_h = 0;
   if (take_state_lock_(100)) {
-    params.max_lift_c = odin_control_.max_lift_c;
+    // One setting for "how far Touch may raise ahead": Weather › Preload › Max.
+    // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
+    params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
     thermal_mass = odin_control_.thermal_mass_kwh_per_k;
     const auto strategy = model_.strategy_snapshot();
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
@@ -14300,7 +14302,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
       route, static_cast<double>(held), static_cast<double>(uplift),
-      c.enabled ? "true" : "false", static_cast<double>(c.max_lift_c),
+      c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
       c.sync_enabled ? "true" : "false",
       static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),
       static_cast<double>(c.sync_above_c), sync_target,

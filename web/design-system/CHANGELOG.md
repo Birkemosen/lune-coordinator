@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.24
+
+- `.metrics.label-first`: etiketten står over tallet (samme talstørrelse) — til korte etiketter som overskrifter (Touch › Næste varme: «Næste varme», «Varme 24 t», «Strøm 24 t», «Elpris nu», «I dag»).
+
 ## 2.3.23
 
 - `.home-tile[data-dhw] > .ht-status`: Varme-feltets statuslinje i varmefarve (accent-ink, varme som tekst), mens varmepumpen lader varmt vand eller kører legionella. Frem/retur er så beholderens kreds; arket viser en `.badge.hot` «Varmt vand» med forklaring (Touch).

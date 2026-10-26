@@ -821,6 +821,9 @@
   .metric dd small { font-size: var(--fs-sm); font-weight: 500; color: var(--muted); letter-spacing: 0; }
   .metric { display: flex; flex-direction: column; gap: 4px; }
   .metric dt { font-size: var(--fs-sm); color: var(--muted); }
+  /* Etiketten over tallet (samme talstørrelse): korte etiketter som overskrifter, fx i
+     Næste varme-arket, hvor lange etiketter under tallene brød i flere linjer. */
+  .metrics.label-first .metric dd { order: 0; }
 
   .kv { display: grid; font-size: var(--fs-sm); }
   .kv > div { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: max(0px, (var(--row-h) - 20px) / 2) 0; border-bottom: 1px solid var(--border); }
