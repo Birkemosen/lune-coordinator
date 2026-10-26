@@ -41,6 +41,7 @@ blueprint:
         - sensor_battery
         - sensor
         - valve
+        - device
       selector:
         select:
           multiple: true
@@ -62,6 +63,8 @@ blueprint:
               value: sensor
             - label: Valve motor (V6)
               value: valve
+            - label: Controller restarted after a crash (V6)
+              value: device
     min_severity:
       name: Minimum severity
       description: >-
