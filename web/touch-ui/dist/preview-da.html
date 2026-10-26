@@ -1690,8 +1690,8 @@
   .trend .grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .trend .nowl { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
   /* Varmt vand / legionella (varmekildens driftsform): skraverede bånd bag linjerne, som i planen. */
-  .trend .dhw { fill: url(#lds-hatch-heat); }
-  .trend .leg { fill: url(#lds-hatch-heat-dense); }
+  .trend .dhw, .ht-viz .dhw { fill: url(#lds-hatch-heat); }
+  .trend .leg, .ht-viz .leg { fill: url(#lds-hatch-heat-dense); }
   .chart-legend :is(.ldhw, .lleg) { width: 14px; height: 10px; border-top: 0; }
   .hchart-panel[data-empty] { display: flex; }
   .hchart-panel[data-empty] .hchart-y { display: none; }
@@ -2338,7 +2338,7 @@
             <span class="chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg></span><b>Varme</b>
             <span class="ht-status" data-bind="heat.badgeText">Venter</span>
             <span class="ht-fr"><small>Frem</small><b data-bind="tile.heatFlow">—</b><svg class="fr-arc" viewBox="0 0 12 40" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="lds-fr" x1="0" y1="0" x2="0" y2="1"><stop offset="0"/><stop offset=".25"/><stop offset=".5"/><stop offset=".75"/><stop offset="1"/></linearGradient></defs><path d="M1 1 A 11 19 0 0 1 1 39"/></svg><span class="fr-dt"><small>ΔT</small><b data-bind="tile.heatDt">—</b></span><small>Retur</small><b data-bind="tile.heatRet">—</b></span>
-            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><g class="marks"></g><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>
           <button class="home-tile" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
             <span class="chip-icon" data-tone="violet" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><b>Næste varme</b>

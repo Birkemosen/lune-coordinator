@@ -1190,6 +1190,18 @@
     viz.querySelector('polyline.f').setAttribute('points', fp.join(' '));
     viz.querySelector('polyline.r').setAttribute('points', pts(rs).join(' '));
     viz.querySelector('path.a').setAttribute('d', 'M' + fp[0].split(',')[0] + ',64 L' + fp.join(' L') + ' L' + fp[fp.length - 1].split(',')[0] + ',64Z');
+    // Hot water / legionella bands, as in the sheet's chart.
+    var mg = viz.querySelector('g.marks');
+    if (mg) {
+      var marks = String(h.marks || ''), bw = 240 / Math.max(n - 1, 1), mh = '';
+      for (var mi = 0; mi < marks.length; mi++) {
+        var mk = Number(marks.charAt(mi)) || 0;
+        if (!mk) continue;
+        var x0 = Math.max(0, mi * bw - bw / 2).toFixed(1);
+        mh += '<rect class="' + (mk & 2 ? 'leg' : 'dhw') + '" x="' + x0 + '" y="0" width="' + bw.toFixed(1) + '" height="64"/>';
+      }
+      mg.innerHTML = mh;
+    }
   }
 
   function drawHeatHistory(panel, rng, h) {

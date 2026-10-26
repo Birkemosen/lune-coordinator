@@ -1679,8 +1679,8 @@
   .trend .grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .trend .nowl { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
   /* Varmt vand / legionella (varmekildens driftsform): skraverede bånd bag linjerne, som i planen. */
-  .trend .dhw { fill: url(#lds-hatch-heat); }
-  .trend .leg { fill: url(#lds-hatch-heat-dense); }
+  .trend .dhw, .ht-viz .dhw { fill: url(#lds-hatch-heat); }
+  .trend .leg, .ht-viz .leg { fill: url(#lds-hatch-heat-dense); }
   .chart-legend :is(.ldhw, .lleg) { width: 14px; height: 10px; border-top: 0; }
   .hchart-panel[data-empty] { display: flex; }
   .hchart-panel[data-empty] .hchart-y { display: none; }

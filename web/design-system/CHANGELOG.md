@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.25
+
+- `.ht-viz .dhw` / `.ht-viz .leg`: varmt vand og legionella som skraverede bånd også i hjemmefeltets lille graf (som `.trend` i arket).
+
 ## 2.3.24
 
 - `.metrics.label-first`: etiketten står over tallet (samme talstørrelse) — til korte etiketter som overskrifter (Touch › Næste varme: «Næste varme», «Varme 24 t», «Strøm 24 t», «Elpris nu», «I dag»).

@@ -300,7 +300,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <span class="chip-icon" aria-hidden="true">{I["heat"]}</span><b>{T("tile.heat")}</b>
             <span class="ht-status" data-bind="heat.badgeText">{T("status.waiting")}</span>
             <span class="ht-fr"><small>{T("tile.flow")}</small><b data-bind="tile.heatFlow">{DASH}</b><svg class="fr-arc" viewBox="0 0 12 40" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="lds-fr" x1="0" y1="0" x2="0" y2="1"><stop offset="0"/><stop offset=".25"/><stop offset=".5"/><stop offset=".75"/><stop offset="1"/></linearGradient></defs><path d="M1 1 A 11 19 0 0 1 1 39"/></svg><span class="fr-dt"><small>ΔT</small><b data-bind="tile.heatDt">{DASH}</b></span><small>{T("tile.return")}</small><b data-bind="tile.heatRet">{DASH}</b></span>
-            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
+            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><g class="marks"></g><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>'''
     tile_plan = f'''
           <button class="home-tile" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
