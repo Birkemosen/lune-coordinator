@@ -23,7 +23,9 @@ blueprint:
       name: Phones
       description: >-
         Phones with the Home Assistant Companion app. Notifications go to
-        notify.mobile_app_<device name>.
+        notify.mobile_app_<device name>. Apple Watch devices are skipped: they
+        have no notify action of their own (the phone mirrors to the watch), and
+        calling a missing action stops the automation before the other phones.
       selector:
         device:
           multiple: true
@@ -136,7 +138,13 @@ variables:
   tag: "{{ ev.id }}"
   group: "lune-{{ ev.device | default('lune') }}"
   targets: >-
-    {{ [notify_devices] if notify_devices is string else (notify_devices or []) }}
+    {% set ds = [notify_devices] if notify_devices is string else (notify_devices or []) %}
+    {% set ns = namespace(out=[]) %}
+    {% for d in ds %}
+      {% set label = ((device_attr(d, 'name') or '') ~ ' ' ~ (device_attr(d, 'model') or '')) | lower %}
+      {% if 'watch' not in label %}{% set ns.out = ns.out + [d] %}{% endif %}
+    {% endfor %}
+    {{ ns.out }}
   in_quiet_hours: >-
     {% set t = now().strftime('%H:%M:%S') %}
     {% if not quiet_hours %}false

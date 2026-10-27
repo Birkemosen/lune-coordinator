@@ -2309,6 +2309,10 @@ bool LuneTouchCoordinator::push_weighted_temperature_() {
   } else {
     std::strncpy(error, "coverage degraded", sizeof(error) - 1);
   }
+  // Asgard keeps one decimal. Send what it will store, or a x.x5 value reads
+  // back 0.05 off - on the edge of values_match() - and counts as a mismatch.
+  if (std::isfinite(value_to_write))
+    value_to_write = std::round(value_to_write * 10.0f) / 10.0f;
   if (!std::isfinite(value_to_write)) {
     // No healthy or safely held physical signal; do not publish a partial-house average.
   } else if (!esphome::network::is_connected()) {
