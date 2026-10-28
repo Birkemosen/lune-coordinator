@@ -15,3 +15,4 @@ tests/dashboard/.stamp_version_tmp.yaml
 .mypy_cache/
 .DS_Store
 __pycache__/
+.env
