@@ -77,7 +77,7 @@ ENERGY_PRICE_OUT ?= /tmp/test_lune_touch_energy_price
 .PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy upload ota-size-check ota deploy install-registry-partition monitor \
         config-mini build-mini deploy-mini ota-mini release-mini release-deploy-mini dashboard touch-ui dashboard-build \
         design-tokens design-verify \
-        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-problems test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-energy-price clean
+        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-problems test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-history test-energy-price clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
@@ -297,6 +297,10 @@ test-hp-history:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/hp_history/test_hp_history.cpp -o $(HP_HISTORY_OUT)
 	$(HP_HISTORY_OUT)
 
+test-history:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/history/test_history.cpp -o /tmp/test_lune_touch_history
+	/tmp/test_lune_touch_history
+
 test-energy-price:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/energy_price/test_energy_price.cpp -o $(ENERGY_PRICE_OUT)
 	$(ENERGY_PRICE_OUT)
@@ -326,7 +330,7 @@ test-simulation:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator -I components/forecast -I ../lune/lune-v6/components/lv6_dashboard components/lune_touch_coordinator/coordinator_model.cpp components/forecast/forecast_model.cpp tests/simulation/test_end_to_end_simulation.cpp -o $(SIMULATION_OUT) -lm
 	$(SIMULATION_OUT)
 
-test: design-verify test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-energy-price test-circulation-pump test-hp-diagnostics test-problems test-simulation test-dashboard test-display
+test: design-verify test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-history test-energy-price test-circulation-pump test-hp-diagnostics test-problems test-simulation test-dashboard test-display
 
 test-dashboard:
 	sh tests/dashboard/test_phase8_overview.sh

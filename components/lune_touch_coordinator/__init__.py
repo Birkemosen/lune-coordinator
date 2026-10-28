@@ -36,3 +36,4 @@ async def to_code(config):
     include_builtin_idf_component("mbedtls")
     include_builtin_idf_component("mqtt")
     include_builtin_idf_component("nvs_flash")
+    include_builtin_idf_component("spiffs")  # room history (7 d) survives a reboot

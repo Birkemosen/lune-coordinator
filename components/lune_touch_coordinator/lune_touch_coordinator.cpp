@@ -29,6 +29,7 @@
 #include "esp_http_client.h"
 #include "esp_netif.h"
 #include "esp_ota_ops.h"
+#include "esp_spiffs.h"
 #include "esp_system.h"
 #include "freertos/idf_additions.h"
 #include <nvs.h>
@@ -1859,6 +1860,7 @@ void LuneTouchCoordinator::odin_task_() {
     if (odin_plan_.odin_host[0] != '\0') {
       fetch_odin_physics_();
       run_odin_control_();
+      poll_odin_history_();   // every 30 min (checked inside)
     }
   }
 }
@@ -2112,6 +2114,7 @@ void LuneTouchCoordinator::poll_task_() {
       run_hp_diagnostics_(esphome::millis());
       run_problems_(esphome::millis());
       run_exposure_learning_();
+      sample_room_history_();   // once a minute (checked inside); saves to flash when an hour closes
 
       if (circulation_due)
         schedule_circulation_fetch_();
@@ -2618,6 +2621,288 @@ void LuneTouchCoordinator::write_heat_history_json(char *buffer, size_t capacity
   }
   if (off + 2 < capacity)
     std::snprintf(buffer + off, capacity - off, "}");
+}
+
+// ---- Room history (room sheet › History) ----------------------------------
+// One sample a minute per room from the live V6 zones; an hour's mean lands in
+// a 7-day store in PSRAM, which is written to SPIFFS each time an hour closes.
+
+namespace {
+constexpr const char *ROOM_HISTORY_PATH = "/hist/rooms.bin";
+}  // namespace
+
+void LuneTouchCoordinator::load_room_history_() {
+  room_history_loaded_ = true;
+  if (room_history_store_ == nullptr)
+    room_history_store_ = psram_scratch_<room_history::Store>(1);
+  if (room_history_store_ == nullptr)
+    return;
+  if (!spiffs_mounted_) {
+    esp_vfs_spiffs_conf_t conf{};
+    conf.base_path = "/hist";
+    conf.partition_label = "spiffs";
+    conf.max_files = 2;
+    conf.format_if_mount_failed = true;
+    const esp_err_t err = esp_vfs_spiffs_register(&conf);
+    spiffs_mounted_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
+    if (!spiffs_mounted_)
+      ESP_LOGW(TAG, "Room history: SPIFFS mount failed (%s); history lives in RAM only", esp_err_to_name(err));
+  }
+  bool loaded = false;
+  if (spiffs_mounted_) {
+    FILE *f = std::fopen(ROOM_HISTORY_PATH, "rb");
+    if (f != nullptr) {
+      loaded = std::fread(room_history_store_, sizeof(room_history::Store), 1, f) == 1 &&
+               room_history_store_->magic == room_history::MAGIC;
+      std::fclose(f);
+    }
+  }
+  if (!loaded)
+    room_history_store_->magic = 0;   // attach() clears it
+  room_history_.attach(room_history_store_);
+  ESP_LOGI(TAG, "Room history: %s", loaded ? "restored from flash" : "starting empty");
+}
+
+void LuneTouchCoordinator::save_room_history_() {
+  if (!spiffs_mounted_ || room_history_store_ == nullptr)
+    return;
+  // Write a copy taken under the lock, then swap the file in.
+  static room_history::Store *copy = psram_scratch_<room_history::Store>(1);
+  if (copy == nullptr || !take_state_lock_(200))
+    return;
+  std::memcpy(copy, room_history_store_, sizeof(room_history::Store));
+  give_state_lock_();
+  static constexpr const char *TMP = "/hist/rooms.tmp";
+  FILE *f = std::fopen(TMP, "wb");
+  if (f == nullptr)
+    return;
+  const bool ok = std::fwrite(copy, sizeof(room_history::Store), 1, f) == 1;
+  std::fclose(f);
+  if (!ok) {
+    std::remove(TMP);
+    return;
+  }
+  std::remove(ROOM_HISTORY_PATH);
+  std::rename(TMP, ROOM_HISTORY_PATH);
+}
+
+void LuneTouchCoordinator::sample_room_history_() {
+  if (time_ == nullptr)
+    return;
+  const uint32_t now_ms = esphome::millis();
+  if (room_history_sample_ms_ != 0 && now_ms - room_history_sample_ms_ < 60000UL)
+    return;
+  const auto now = time_->now();
+  if (!now.is_valid())
+    return;
+  room_history_sample_ms_ = now_ms;
+  if (!room_history_loaded_)
+    load_room_history_();
+  if (room_history_store_ == nullptr)
+    return;
+  const uint32_t now_s = static_cast<uint32_t>(now.timestamp);
+  bool closed = false;
+  if (!take_state_lock_(100))
+    return;
+  for (size_t r = 0; r < model_.room_count(); r++) {
+    const auto *room = model_.room(r);
+    if (room == nullptr || room->room_id[0] == '\0')
+      continue;
+    // A room may span several loops: mean of its fresh temperatures and valves, its first target.
+    float sum_t = 0.0f, sum_v = 0.0f, target = NAN;
+    int n_t = 0, n_v = 0;
+    for (size_t z = 0; z < model_.zone_count(); z++) {
+      const auto *zb = model_.zone(z);
+      const auto *live = model_.zone_live(z);
+      if (zb == nullptr || live == nullptr || std::strcmp(zb->room_id, room->room_id) != 0)
+        continue;
+      if (live->fresh && live->has_temperature && std::isfinite(live->temperature_c)) {
+        sum_t += live->temperature_c;
+        n_t++;
+      }
+      if (live->fresh && live->has_valve && std::isfinite(live->valve_pct)) {
+        sum_v += live->valve_pct;
+        n_v++;
+      }
+      if (!std::isfinite(target) && live->has_setpoint && std::isfinite(live->setpoint_c))
+        target = live->setpoint_c;
+    }
+    closed |= room_history_.sample(room->room_id, n_t ? sum_t / n_t : NAN, n_t > 0, target, std::isfinite(target),
+                                   n_v ? sum_v / n_v : NAN, n_v > 0, now_s);
+  }
+  closed |= room_history_.tick(now_s);
+  give_state_lock_();
+  if (closed)
+    save_room_history_();
+}
+
+void LuneTouchCoordinator::write_room_history_json(const char *room_id, char *buffer, size_t capacity,
+                                                   uint8_t range) const {
+  if (buffer == nullptr || capacity == 0)
+    return;
+  const size_t n = range == 1 ? room_history::HOURS : 48;
+  static int16_t *t = psram_scratch_<int16_t>(room_history::HOURS);
+  static int16_t *sp = psram_scratch_<int16_t>(room_history::HOURS);
+  static uint8_t *v = psram_scratch_<uint8_t>(room_history::HOURS);
+  uint32_t now_s = 0;
+  if (time_ != nullptr) {
+    const auto now = time_->now();
+    if (now.is_valid())
+      now_s = static_cast<uint32_t>(now.timestamp);
+  }
+  bool ok = false;
+  if (t != nullptr && sp != nullptr && v != nullptr && now_s != 0 && room_id != nullptr && take_state_lock_(50)) {
+    ok = room_history_.series(room_id, now_s, n, t, sp, v);
+    give_state_lock_();
+  }
+  size_t off = 0;
+  const uint32_t from_ts = (now_s / 3600 - static_cast<uint32_t>(n - 1)) * 3600;
+  appendf_(buffer, capacity, off, "{\"available\":%s,\"range\":\"%s\",\"from_ts\":%lu,\"step_s\":3600,\"now_ts\":%lu",
+           ok ? "true" : "false", range == 1 ? "7d" : "48h", static_cast<unsigned long>(ok ? from_ts : 0),
+           static_cast<unsigned long>(now_s));
+  if (ok) {
+    auto put16 = [&](const char *key, const int16_t *a) {
+      appendf_(buffer, capacity, off, ",\"%s\":[", key);
+      for (size_t i = 0; i < n; i++) {
+        if (a[i] == room_history::NONE)
+          appendf_(buffer, capacity, off, "%snull", i ? "," : "");
+        else
+          appendf_(buffer, capacity, off, "%s%.1f", i ? "," : "", static_cast<double>(a[i]) / 10.0);
+      }
+      appendf_(buffer, capacity, off, "]");
+    };
+    put16("temp_c", t);
+    put16("target_c", sp);
+    appendf_(buffer, capacity, off, ",\"valve_pct\":[");
+    for (size_t i = 0; i < n; i++) {
+      if (v[i] == room_history::NO_VALVE)
+        appendf_(buffer, capacity, off, "%snull", i ? "," : "");
+      else
+        appendf_(buffer, capacity, off, "%s%u", i ? "," : "", static_cast<unsigned>(v[i]));
+    }
+    appendf_(buffer, capacity, off, "]");
+  }
+  appendf_(buffer, capacity, off, "}");
+}
+
+// ---- House history (Next heating / Weather › History) ---------------------
+
+bool LuneTouchCoordinator::poll_odin_history_() {
+  if (time_ == nullptr)
+    return false;
+  const auto now = time_->now();
+  if (!now.is_valid())
+    return false;
+  char host[64]{};
+  uint16_t port = 80;
+  if (!take_state_lock_(100))
+    return false;
+  if (house_history_ == nullptr)
+    house_history_ = psram_scratch_<house_history::Series>(1);
+  const bool due = house_history_ != nullptr && odin_plan_.odin_host[0] != '\0' &&
+                   (house_history_->fetched_ms == 0 || esphome::millis() - house_history_->fetched_ms >= 1800000UL);
+  if (due) {
+    std::strncpy(host, odin_plan_.odin_host, sizeof(host) - 1);
+    port = odin_plan_.odin_port == 0 ? 80 : odin_plan_.odin_port;
+    house_history_->fetched_ms = esphome::millis();   // also on failure: retry in 30 min
+  }
+  give_state_lock_();
+  if (!due)
+    return false;
+
+  const uint32_t to_ts = static_cast<uint32_t>(now.timestamp);
+  const uint32_t from_ts = (to_ts / 3600 - static_cast<uint32_t>(house_history::MAX_HOURS - 1)) * 3600;
+  static house_history::Parser *parser = psram_scratch_<house_history::Parser>(1);
+  static house_history::Series *series = psram_scratch_<house_history::Series>(1);
+  if (parser == nullptr || series == nullptr)
+    return false;
+  parser->begin(from_ts, house_history::MAX_HOURS);
+  char url[160];
+  std::snprintf(url, sizeof(url), "http://%s:%u/dashboard/history?type=hour&from=%lu&to=%lu", host,
+                static_cast<unsigned>(port), static_cast<unsigned long>(from_ts), static_cast<unsigned long>(to_ts));
+  esp_http_client_config_t cfg{};
+  cfg.url = url;
+  cfg.method = HTTP_METHOD_GET;
+  cfg.timeout_ms = 10000;
+  cfg.disable_auto_redirect = true;
+  cfg.user_data = parser;
+  cfg.event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
+    if (evt != nullptr && evt->user_data != nullptr && evt->event_id == HTTP_EVENT_ON_DATA && evt->data != nullptr &&
+        evt->data_len > 0)
+      static_cast<house_history::Parser *>(evt->user_data)
+          ->feed(static_cast<const char *>(evt->data), static_cast<size_t>(evt->data_len));
+    return ESP_OK;
+  };
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (client == nullptr)
+    return false;
+  const esp_err_t err = esp_http_client_perform(client);
+  const int status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
+  esp_http_client_cleanup(client);
+  if (err != ESP_OK || status != 200) {
+    ESP_LOGD(TAG, "Odin history failed: %s / %d", esp_err_to_name(err), status);
+    return false;
+  }
+  std::memset(series, 0, sizeof(house_history::Series));
+  parser->finish(series);
+  series->fetched_ms = esphome::millis();
+  if (take_state_lock_(100)) {
+    std::memcpy(house_history_, series, sizeof(house_history::Series));
+    give_state_lock_();
+  }
+  ESP_LOGD(TAG, "Odin history: %u rows", static_cast<unsigned>(parser->rows()));
+  return series->valid;
+}
+
+void LuneTouchCoordinator::write_house_history_json(char *buffer, size_t capacity, uint8_t range) const {
+  if (buffer == nullptr || capacity == 0)
+    return;
+  static house_history::Series *s = psram_scratch_<house_history::Series>(1);
+  bool have = false;
+  if (s != nullptr && take_state_lock_(50)) {
+    if (house_history_ != nullptr && house_history_->valid) {
+      std::memcpy(s, house_history_, sizeof(house_history::Series));
+      have = true;
+    }
+    give_state_lock_();
+  }
+  const size_t want = range == 1 ? house_history::MAX_HOURS : 48;
+  const size_t n = have ? std::min<size_t>(want, s->n) : 0;
+  const size_t first = have ? s->n - n : 0;
+  size_t off = 0;
+  appendf_(buffer, capacity, off,
+           "{\"available\":%s,\"range\":\"%s\",\"from_ts\":%lu,\"step_s\":3600,\"age_s\":%lu",
+           have && n >= 2 ? "true" : "false", range == 1 ? "7d" : "48h",
+           static_cast<unsigned long>(have ? s->from_ts + first * 3600 : 0),
+           static_cast<unsigned long>(have ? (esphome::millis() - s->fetched_ms) / 1000UL : 0));
+  if (have && n >= 2) {
+    auto put = [&](const char *key, const int16_t *a, double div, const char *fmt) {
+      appendf_(buffer, capacity, off, ",\"%s\":[", key);
+      for (size_t i = 0; i < n; i++) {
+        const int16_t x = a[first + i];
+        if (x == house_history::NONE)
+          appendf_(buffer, capacity, off, "%snull", i ? "," : "");
+        else
+          appendf_(buffer, capacity, off, fmt, i ? "," : "", static_cast<double>(x) / div);
+      }
+      appendf_(buffer, capacity, off, "]");
+    };
+    put("out_c", s->out_x10, 10.0, "%s%.1f");
+    put("house_c", s->room_x100, 100.0, "%s%.2f");
+    put("house_exp_c", s->exp_room_x100, 100.0, "%s%.2f");
+    put("heat_kwh", s->prod_x100, 100.0, "%s%.2f");
+    put("dhw_kwh", s->dhw_x100, 100.0, "%s%.2f");
+    put("plan_kwh", s->plan_x100, 100.0, "%s%.2f");
+    // Odin's operation mode per hour: 0 off, 1 hot water, 2 heating, … ("-" = no row).
+    appendf_(buffer, capacity, off, ",\"mode\":\"");
+    for (size_t i = 0; i < n && off + 4 < capacity; i++) {
+      const uint8_t m = s->mode[first + i];
+      buffer[off++] = m <= 9 ? static_cast<char>('0' + m) : '-';
+      buffer[off] = '\0';
+    }
+    appendf_(buffer, capacity, off, "\"");
+  }
+  appendf_(buffer, capacity, off, "}");
 }
 
 std::string LuneTouchCoordinator::display_heat_pump_temps_text() const {

@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.27
+
+- `.hchart` med fortid og prognose: intervallet `48h` (ud over `24h` / `7d`), `.trend .future` (svag flade efter «nu»), `.t` / `.tf` (temperatur, prognose stiplet), `.sp` (mål som trappekurve), `.o` / `.of` (ude), `.vb` (ventilåbning), `.heat` (timer med varme), `.pl` / `.ac` / `.acw` (planlagt, leveret, heraf varmt vand). `.axis.at` placerer x-mærker efter tid (`--x`). `.hchart-panel.pair`: øverste af to paneler med hver sin skala, uden x-akse. Forklaring: `.lt`, `.ltf`, `.lsp`, `.lo`, `.lof`, `.lpl`, `.lac`, `.lfut`.
+
 ## 2.3.26
 
 - `.need` (Touch): flowbehov som vandrette bjælker pr. varmebehov (lavenergi → ældre hus) med «Dette hus» (`data-house`) i pumpens datafarve og to lodrette mærker på alle bjælker: varmepumpens flow (`data-lim`, stiplet grænse for opblanding) og pumpen nu (`data-now`). `.need-legend` forklarer mærkerne i tekst.

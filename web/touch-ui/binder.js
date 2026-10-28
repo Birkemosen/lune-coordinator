@@ -388,6 +388,26 @@
       var mks = Array.from({ length: hn }, function (_, i) { return wk ? (i % 12 === 3 ? '1' : '0') : (i >= 26 && i <= 28) || (i >= 70 && i <= 72) ? '1' : '0'; }).join('');
       return { available: true, range: wk ? '7d' : '24h', from_ts: Math.floor(Date.now() / 1000) - hn * hstep, step_s: hstep, age_s: 30, feed_c: hf, return_c: hr2, marks: mks };
     }
+    // Past hours for the history charts (hour-aligned, last = the hour in progress).
+    var hm = /^\/history\/(house|room\/[^/]+)\/(48h|7d)$/.exec(path);
+    if (hm) {
+      var n = hm[2] === '7d' ? 168 : 48, nowH = Math.floor(Date.now() / 3600000), from = (nowH - n + 1) * 3600;
+      var at = function (i) { return new Date((from + i * 3600) * 1000).getHours(); };
+      if (hm[1] === 'house') {
+        return { available: true, range: hm[2], from_ts: from, step_s: 3600, age_s: 300,
+          out_c: Array.from({ length: n }, function (_, i) { return i === n - 1 ? null : +(9 + 4 * Math.sin((at(i) - 9) / 24 * 2 * Math.PI)).toFixed(1); }),
+          house_c: Array.from({ length: n }, function (_, i) { return i === n - 1 ? null : +(22.2 + 0.35 * Math.sin(i / 7)).toFixed(2); }),
+          house_exp_c: Array.from({ length: n }, function () { return 22.2; }),
+          heat_kwh: Array.from({ length: n }, function (_, i) { var h = at(i); return i === n - 1 ? null : (h >= 1 && h <= 4 ? 5.2 : (h === 13 ? 2.4 : 0)); }),
+          dhw_kwh: Array.from({ length: n }, function (_, i) { return at(i) === 13 ? 1.8 : 0; }),
+          plan_kwh: Array.from({ length: n }, function (_, i) { var h = at(i); return h >= 1 && h <= 4 ? 4.4 : 0; }),
+          mode: Array.from({ length: n }, function (_, i) { var h = at(i); return h === 13 ? '1' : (h >= 1 && h <= 4 ? '2' : '0'); }).join('') };
+      }
+      return { available: true, range: hm[2], from_ts: from, step_s: 3600, now_ts: Math.floor(Date.now() / 1000),
+        temp_c: Array.from({ length: n }, function (_, i) { return +(21.7 + 0.4 * Math.sin((at(i) - 4) / 24 * 2 * Math.PI)).toFixed(1); }),
+        target_c: Array.from({ length: n }, function (_, i) { return at(i) >= 22 || at(i) < 6 ? 21.5 : 22; }),
+        valve_pct: Array.from({ length: n }, function (_, i) { var h = at(i); return h >= 1 && h <= 5 ? 80 : (h === 14 ? 30 : 0); }) };
+    }
     if (path === '/plan') {
       var hk = Array.from({ length: 24 }, function (_, i) { return (i >= 3 && i <= 5) ? 2.7 : (i === 14 ? 2.1 : 0); });
       return {
@@ -639,6 +659,7 @@
     var lo = Infinity, hi = -Infinity;
     seriesList.forEach(function (arr) {
       (arr || []).forEach(function (v) {
+        if (v == null || v === '') return;   // a gap, not 0 °C
         var n = Number(v);
         if (!isFinite(n)) return;
         if (n < lo) lo = n;
@@ -1151,6 +1172,8 @@
     try {
       var data = await get('/zones/' + encodeURIComponent(r.room_id) + '/comfort-chart');
       var chart = data && data.comfort_chart;
+      (state.comfort || (state.comfort = {}))[r.room_id] = chart || null;
+      drawRoomAhead(slot);
       var exp = (chart && chart.expected_temp_c) || [];
       var real = exp.filter(finite).length;
       box.toggleAttribute('data-empty', real < 2);
@@ -1161,6 +1184,183 @@
       var n = exp.length;
       fHtml(box, 'axis', axisHtml([t('trend.now'), '+' + Math.round(n / 2) + ' ' + (i18n._h || 'h'), '+' + n + ' ' + (i18n._h || 'h')]));
     } catch (e) { box.setAttribute('data-empty', ''); }
+  }
+
+  /* ---- Past + the next 24 h (.hchart[data-ahead], LDS 2.3.27) ----------------------
+     Past: hourly points from the Touch (the last one is the hour in progress). Ahead: 24
+     hourly points from the forecast or Odin's plan, the first one the current hour. One
+     slot per hour; "now" sits at the start of the current hour. */
+  var AHEAD_H = 24;
+  function aheadX(n) {
+    var total = Math.max(n - 1 + AHEAD_H, 1);
+    return function (i) { return i / total * 240; };
+  }
+  function aheadPath(vals, start, X, Y, step) {
+    var d = '', pen = false;
+    (vals || []).forEach(function (v, i) {
+      if (!finite(v)) { pen = false; return; }
+      var x = X(start + i).toFixed(1), y = Y(Number(v)).toFixed(1);
+      if (step) d += (pen ? ' V' + y : ' M' + x + ',' + y) + ' H' + X(start + i + 1).toFixed(1);
+      else d += (pen ? ' L' : ' M') + x + ',' + y;
+      pen = true;
+    });
+    return d.trim();
+  }
+  function aheadRect(cls, x, w, y0, y1) {
+    var top = Math.min(y0, y1), h = Math.abs(y1 - y0);
+    if (!(h > 0.05) || !(w > 0)) return '';
+    return '<rect class="' + cls + '" x="' + x.toFixed(2) + '" y="' + top.toFixed(1) + '" width="' + w.toFixed(2) + '" height="' + h.toFixed(1) + '"/>';
+  }
+  function aheadAxis(panel, fromTs, n, rng) {
+    var total = n - 1 + AHEAD_H, lang = document.documentElement.lang || 'en';
+    var nowX = (n - 1) / total * 100, out = [];
+    for (var k = 0; k <= total; k++) {
+      var d = new Date((fromTs + k * 3600) * 1000), h = d.getHours();
+      if (rng === '7d' ? h !== 12 : h % 12 !== 0) continue;
+      var x = k / total * 100;
+      if (Math.abs(x - nowX) < 8 || x < 4 || x > 90) continue;
+      var lbl = rng === '7d' ? d.toLocaleDateString(lang, { weekday: 'short' }) : String(h).padStart(2, '0');
+      out.push('<span style="--x:' + x.toFixed(1) + '">' + esc(lbl) + '</span>');
+    }
+    out.push('<span style="--x:' + nowX.toFixed(1) + '"><b>' + esc(t('trend.now')) + '</b></span>');
+    out.push('<span class="e" style="--x:100">+' + AHEAD_H + ' ' + esc(i18n._h || 'h') + '</span>');
+    fHtml(panel, 'x', out.join(''));
+  }
+  // o: { n, from_ts, rng, lines: [{cls, vals, start, step}], kw: max kW (bars, axis from 0) or absent
+  //      (temperatures, axis ≥ 3 °C), bars(X, Y, H) / marks(X, H) → SVG }
+  function drawAhead(panel, o) {
+    if (!panel) return;
+    var lines = o.lines || [];
+    var have = o.n >= 2 && (lines.some(function (l) { return (l.vals || []).filter(finite).length >= 2; }) || o.kw > 0);
+    panel.toggleAttribute('data-empty', !have);
+    if (!have) return;
+    var H = 100, X = aheadX(o.n), lo, hi;
+    if (o.kw) { lo = 0; hi = Math.max(1, Math.ceil(o.kw)); }
+    else {
+      var r = axisRange(lines.map(function (l) { return l.vals; }), 3);
+      lo = Math.floor(r.lo); hi = Math.ceil(r.hi);
+    }
+    var Y = function (v) { return H - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo) * H; };
+    var svg = qs('svg', panel), xn = X(o.n - 1);
+    var fut = svg.querySelector('rect.future');
+    if (fut) { fut.setAttribute('x', xn.toFixed(1)); fut.setAttribute('width', (240 - xn).toFixed(1)); }
+    var nl = svg.querySelector('line.nowl');
+    if (nl) { nl.setAttribute('x1', xn.toFixed(1)); nl.setAttribute('x2', xn.toFixed(1)); }
+    ['t', 'tf', 'sp', 'o', 'of'].forEach(function (c) { var el = svg.querySelector('path.' + c); if (el) el.setAttribute('d', ''); });
+    lines.forEach(function (l) {
+      var el = svg.querySelector('path.' + l.cls);
+      if (el) el.setAttribute('d', aheadPath(l.vals, l.start || 0, X, Y, l.step));
+    });
+    var bars = svg.querySelector('g.bars'), marks = svg.querySelector('g.marks');
+    if (bars) bars.innerHTML = o.bars ? o.bars(X, Y, H) : '';
+    if (marks) marks.innerHTML = o.marks ? o.marks(X, H) : '';
+    var ys = o.kw ? [hi, hi / 2, 0] : [hi, Math.round((hi + lo) / 2), lo];
+    fHtml(panel, 'y', ys.map(function (v) {
+      return '<span>' + esc(o.kw ? num(v, v % 1 ? 1 : 0) : String(v)) + (o.kw ? ' kW' : '°') + '</span>';
+    }).join(''));
+    aheadAxis(panel, Number(o.from_ts) || 0, o.n, o.rng);
+  }
+  function arr(a, n) { return Array.from({ length: n }, function (_, i) { var v = a && a[i]; return finite(v) ? Number(v) : null; }); }
+
+  // Room › History: temperature, target and valve from the Touch's own week, then the
+  // comfort chart's next 24 h (expected temperature and scheduled target).
+  async function loadRoomAhead(slot) {
+    var r = state.roomSlots[slot - 1];
+    if (!r) return;
+    var key = 'room:' + r.room_id, ra = state.roomAhead || (state.roomAhead = {});
+    if (ra[key] && Date.now() - ra[key].at < 300000) { drawRoomAhead(slot); return; }
+    ra[key] = { at: Date.now() };
+    await Promise.all(['48h', '7d'].map(async function (rng) {
+      try { ra[key][rng] = await get('/history/room/' + encodeURIComponent(r.room_id) + '/' + rng); }
+      catch (e) { ra[key][rng] = null; }
+    }));
+    drawRoomAhead(slot);
+  }
+  function drawRoomAhead(slot) {
+    var r = state.roomSlots[slot - 1], sh = qs('#sheet-r' + slot);
+    if (!r || !sh) return;
+    var box = qs('[data-ahead]', sh), hist = (state.roomAhead || {})['room:' + r.room_id] || {};
+    if (!box) return;
+    var name = (r.primary && r.primary.name) || r.room_id;
+    var chart = (state.comfort || {})[r.room_id] || {};
+    var expC = arr(chart.expected_temp_c, AHEAD_H), spF = arr(chart.scheduled_setpoint_c, AHEAD_H);
+    ['48h', '7d'].forEach(function (rng) {
+      var panel = qs('[data-f="p' + rng + '"]', box), h = hist[rng];
+      if (panel) { var sv = qs('svg', panel); if (sv) sv.setAttribute('aria-label', t('room.histChartAria', { name: name })); }
+      if (!(h && h.available)) { if (panel) panel.setAttribute('data-empty', ''); return; }
+      var n = (h.temp_c || []).length, temp = arr(h.temp_c, n), sp = arr(h.target_c, n), valve = arr(h.valve_pct, n);
+      drawAhead(panel, {
+        n: n, from_ts: h.from_ts, rng: rng,
+        lines: [
+          { cls: 't', vals: temp, start: 0 },
+          { cls: 'tf', vals: expC, start: n - 1 },
+          { cls: 'sp', vals: sp.slice(0, n - 1).concat(spF), start: 0, step: true }
+        ],
+        bars: function (X, Y, H) {
+          var w = X(1) - X(0), out = '';
+          valve.forEach(function (v, i) { if (v > 0) out += aheadRect('vb', X(i), w, H, H - v / 100 * H * 0.3); });
+          return out;
+        }
+      });
+    });
+  }
+
+  // Next heating / Weather › History: Odin's hourly ledger (Touch caches it), then the
+  // plan (heat, expected house temperature) and the weather forecast for the next 24 h.
+  async function loadHouseAhead() {
+    var ha = state.houseAhead || (state.houseAhead = {});
+    if (ha.at && Date.now() - ha.at < 300000) { drawHouseAhead(); return; }
+    ha.at = Date.now();
+    await Promise.all(['48h', '7d'].map(async function (rng) {
+      try { ha[rng] = await get('/history/house/' + rng); } catch (e) { ha[rng] = null; }
+    }));
+    drawHouseAhead();
+  }
+  function drawHouseAhead() {
+    var ha = state.houseAhead || {}, odin = (state.plan && state.plan.odin) || {};
+    var fc = state.forecast || {}, hours = fc.hours || [];
+    var start = (fc.cache && fc.cache.decision_start_index >= 0) ? fc.cache.decision_start_index : 0;
+    var planKw = odin.available ? arr(odin.heat_kw, AHEAD_H) : arr([], AHEAD_H);
+    var expHouse = odin.available ? arr(odin.expected_c, AHEAD_H) : arr([], AHEAD_H);
+    var outF = arr(hours.slice(start, start + AHEAD_H).map(function (x) { return x.temp_c; }), AHEAD_H);
+    var planBox = qs('[data-ahead="plan"]'), wxBox = qs('[data-ahead="wx"]');
+    ['48h', '7d'].forEach(function (rng) {
+      var h = ha[rng], ok = h && h.available;
+      var n = ok ? (h.out_c || h.house_c || []).length : 0;
+      var heat = arr(ok && h.heat_kwh, n), dhw = arr(ok && h.dhw_kwh, n), plan = arr(ok && h.plan_kwh, n);
+      // Next heating: planned (grey) and delivered (orange, hot water hatched) per hour, then the plan.
+      var maxKw = 0;
+      heat.concat(plan, planKw).forEach(function (v) { if (v > maxKw) maxKw = v; });
+      var pp = planBox && qs('[data-f="p' + rng + '"]', planBox);
+      if (!ok) { if (pp) pp.setAttribute('data-empty', ''); }
+      else drawAhead(pp, {
+        n: n, from_ts: h.from_ts, rng: rng, kw: Math.max(maxKw, 1), lines: [],
+        bars: function (X, Y, H) {
+          var w = X(1) - X(0), out = '';
+          for (var i = 0; i < n - 1; i++) {
+            if (plan[i] > 0) out += aheadRect('pl', X(i) + w * 0.08, w * 0.4, H, Y(plan[i]));
+            var all = heat[i] || 0, hw = Math.min(all, dhw[i] || 0);
+            if (all - hw > 0) out += aheadRect('ac', X(i) + w * 0.52, w * 0.4, H, Y(all - hw));
+            if (hw > 0) out += aheadRect('acw', X(i) + w * 0.52, w * 0.4, Y(all - hw), Y(all));
+          }
+          planKw.forEach(function (v, k) { if (v > 0) out += aheadRect('pl', X(n - 1 + k) + w * 0.08, w * 0.4, H, Y(v)); });
+          return out;
+        }
+      });
+      // Weather: outside on top, the house below; hours with heat hatched behind the house.
+      var op = wxBox && qs('[data-f="o' + rng + '"]', wxBox), hp = wxBox && qs('[data-f="h' + rng + '"]', wxBox);
+      if (!ok) { if (op) op.setAttribute('data-empty', ''); if (hp) hp.setAttribute('data-empty', ''); return; }
+      drawAhead(op, { n: n, from_ts: h.from_ts, rng: rng, lines: [
+        { cls: 'o', vals: arr(h.out_c, n), start: 0 }, { cls: 'of', vals: outF, start: n - 1 }] });
+      drawAhead(hp, { n: n, from_ts: h.from_ts, rng: rng, lines: [
+        { cls: 't', vals: arr(h.house_c, n), start: 0 }, { cls: 'tf', vals: expHouse, start: n - 1 }],
+        marks: function (X, H) {
+          var w = X(1) - X(0), out = '';
+          for (var i = 0; i < n - 1; i++) if ((heat[i] || 0) - (dhw[i] || 0) > 0.05) out += aheadRect('heat', X(i), w, 0, H);
+          planKw.forEach(function (v, k) { if (v > 0) out += aheadRect('heat', X(n - 1 + k), w, 0, H); });
+          return out;
+        } });
+    });
   }
 
   // Heat sheet: flow/return from Asgard's own history (the Touch averages it into
@@ -3876,8 +4076,9 @@
     }
     // A room sheet fetches its 24 h comfort chart when it opens.
     var m = /^sheet-r(\d+)$/.exec(tg.id || '');
-    if (m) loadComfortChart(Number(m[1]));
+    if (m) { loadComfortChart(Number(m[1])); loadRoomAhead(Number(m[1])); }
     if (tg.id === 'sheet-heat') loadHeatHistory();
+    if (tg.id === 'sheet-plan' || tg.id === 'sheet-weather') loadHouseAhead();
   }, true);
 
   document.addEventListener('click', function (e) {

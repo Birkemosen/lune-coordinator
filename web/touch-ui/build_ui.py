@@ -399,6 +399,32 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 f'<polyline class="f" points=""/><line class="nowl" x1="239.5" x2="239.5" y1="0" y2="100"/></svg>'
                 f'<div class="axis" aria-hidden="true" data-f="x"></div></div>')
 
+    def ahead_panel(rng, aria, f, cls=""):
+        """Én periode af en graf med fortid + de næste 24 t (LDS .hchart, 2.3.27); binderen tegner."""
+        return (f'<div class="hchart-panel{cls}" data-range="{rng}" data-empty data-f="{f}{rng}"><p class="empty">{T("hist.empty")}</p>'
+                f'<div class="hchart-y" aria-hidden="true" data-f="y"></div>'
+                f'<svg class="trend" viewBox="0 0 240 100" preserveAspectRatio="none" role="img" aria-label="{aria}">'
+                f'<rect class="future" x="240" y="0" width="0" height="100"/>'
+                f'<line class="grid" x1="0" x2="240" y1="0.5" y2="0.5"/><line class="grid" x1="0" x2="240" y1="50" y2="50"/>'
+                f'<line class="grid" x1="0" x2="240" y1="99.5" y2="99.5"/><g class="marks"></g><g class="bars"></g>'
+                f'<path class="sp" d=""/><path class="o" d=""/><path class="of" d=""/><path class="t" d=""/><path class="tf" d=""/>'
+                f'<line class="nowl" x1="240" x2="240" y1="0" y2="100"/></svg>'
+                f'<div class="axis at" aria-hidden="true" data-f="x"></div></div>')
+
+    def ahead_chart(name, aria, legend, panels=None):
+        """48 t / 7 d bagud + 24 t frem; panels = [(f, cls)] (to paneler = to skalaer over hinanden)."""
+        panels = panels or [("p", "")]
+        body = "".join(ahead_panel(rng, aria, f, cls) for rng in ("48h", "7d") for f, cls in panels)
+        return (f'<div class="hchart" data-ahead="{name}">'
+                f'<input class="state" type="radio" name="ha-{name}" id="ha-{name}-48h" value="48h" checked aria-label="{T("hist.r48")}">'
+                f'<input class="state" type="radio" name="ha-{name}" id="ha-{name}-7d" value="7d" aria-label="{T("hchart.r7")}">'
+                f'<div class="hchart-range" aria-hidden="true"><label for="ha-{name}-48h" data-range="48h">{T("hist.r48")}</label>'
+                f'<label for="ha-{name}-7d" data-range="7d">{T("hchart.r7")}</label></div>'
+                f'{body}<p class="chart-legend" aria-hidden="true">{legend}</p></div>')
+
+    def lg(cls, key):
+        return f'<span><i class="{cls}"></i>{T(key)}</span>'
+
     def sheet_link(cat, key):
         return f'<a class="sheet-link" href="#{T("hash.system")}/{T("hash." + cat)}">{T(key)}</a>'
 
@@ -470,10 +496,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {kv([(T("price.now"), "price.now"), (T("price.cheapest"), "price.min"), (T("price.dearest"), "price.max"), (T("price.peakAvg"), "price.peak")])}
         </div>'''
     plan_hist = f'''
-        <div class="sub" data-empty data-f="pvr"><h4>{T("plan.vsActual")}</h4>
-          <p class="empty">{T("room.noHistory")}</p>
-          <div class="bars" style="--bars-n:12"><div class="bars-plot" role="img" aria-label="{T("plan.vsActualAria")}" data-bind-pvr></div>
-            <div class="bars-legend"><span><i class="lp"></i>{T("plan.planned")}</span><span><i class="la"></i>{T("plan.actual")}</span></div></div>
+        <div class="sub"><h4>{T("plan.histTitle")}</h4>
+          {ahead_chart("plan", T("plan.histAria"), lg("lpl", "plan.planned") + lg("lac", "plan.actual") + lg("lleg", "hchart.lDhw") + lg("lfut", "hist.lNext"))}
           {kv([(T("plan.planned"), "plan.planned"), (T("plan.actual"), "plan.actual")])}
         </div>'''
 
@@ -524,7 +548,10 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <span><i class="lpre"></i>{T("fc.lPre")}</span>
           </p>
         </div>'''
-    wx_hist = trend("wx.past", "wx-past", T("wx.pastAria"), f="wxpast")
+    wx_hist = f'''
+        <div class="sub"><h4>{T("wx.histTitle")}</h4>
+          {ahead_chart("wx", T("wx.histAria"), lg("lo", "hist.lOut") + lg("lof", "hist.lOutFc") + lg("lt", "hist.lHouse") + lg("ltf", "hist.lHouseFc") + lg("ldhw", "hist.lHeat") + lg("lfut", "hist.lNext"), panels=[("o", " pair"), ("h", "")])}
+        </div>'''
     # Vejrets indstillinger samlet ét sted (DESIGN.md 15): preload og placering.
     wx_set = f'''
         <form data-save="weather" data-patch>
@@ -598,6 +625,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <div class="sub"><h4 data-f="loopsTitle">{T("room.loops", m="V6")}</h4><dl class="kv" data-f="loops"></dl></div>
         {trend("room.next24", "", T("room.next24Aria", name=rid), f'<span class="legend"><i class="lt"></i>{T("legend.temp")}<i class="lg"></i>{T("legend.target")}</span>', f="next24")}'''
         hist = f'''
+        <div class="sub"><h4>{T("room.histChart")}</h4>
+          {ahead_chart(rid, T("room.histChartAria", name=rid), lg("lt", "legend.temp") + lg("ltf", "hist.lFc") + lg("lsp", "legend.target") + lg("ldhw", "hist.lValve") + lg("lfut", "hist.lNext"))}
+        </div>
         <div class="sub" data-empty data-f="hist"><h4>{T("room.histTitle")}</h4>
           <p class="empty">{T("room.noHistory")}</p>
           {kv([(T("room.histAvg"), None, DASH, "hAvg"), (T("room.histMin"), None, DASH, "hMin"), (T("room.histMax"), None, DASH, "hMax"),
@@ -964,7 +994,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
-        "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria",
+        "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria", "room.histChartAria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
     )

@@ -1812,9 +1812,11 @@
   .hchart-range label { display: grid; place-items: center; min-height: calc(var(--hit) - 8px); padding: 0 var(--space-4); border-radius: var(--r-pill);
     font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; }
   .hchart > input[value="24h"]:checked ~ .hchart-range label[data-range="24h"],
+  .hchart > input[value="48h"]:checked ~ .hchart-range label[data-range="48h"],
   .hchart > input[value="7d"]:checked ~ .hchart-range label[data-range="7d"] { background: var(--inv-bg); color: var(--inv-fg); }
   .hchart > input:focus-visible ~ .hchart-range { outline: 2px solid var(--focus); outline-offset: 2px; }
   .hchart > input[value="24h"]:checked ~ .hchart-panel:not([data-range="24h"]),
+  .hchart > input[value="48h"]:checked ~ .hchart-panel:not([data-range="48h"]),
   .hchart > input[value="7d"]:checked ~ .hchart-panel:not([data-range="7d"]) { display: none; }
   .hchart-panel { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "y plot" ". x"; gap: var(--space-2) var(--space-3); }
   .hchart-panel .trend { grid-area: plot; height: 200px; }
@@ -1834,6 +1836,41 @@
   .chart-legend .lf { border-color: var(--accent); }
   .chart-legend .lr { border-color: var(--data-return); }
   .hchart:has(> .hchart-panel[data-empty]:only-of-type) .chart-legend { display: none; }
+
+  /* Fortid + prognose i samme graf (.hchart.hchart--ahead, fx Rum, Næste varme, Vejr): 48 t / 7 d bagud
+     og 24 t frem. «Nu» står inde i grafen (.nowl, x sat af binderen), fremtiden ligger på en svag flade
+     (.future), og prognosen er stiplet. Mål tegnes som trappekurve. x-aksen placerer mærkerne efter
+     tid (.axis.at, style="--x:…" i procent). To størrelser med hver sin skala (ude / hus) står som to
+     paneler over hinanden; det øverste (.hchart-panel.pair) har ingen x-akse. */
+  .trend .future { fill: var(--raised); opacity: .45; }
+  .trend .t   { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .tf  { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-dasharray: 4 4; stroke-linejoin: round; vector-effect: non-scaling-stroke; opacity: .75; }
+  .trend .sp  { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+  .trend .o   { fill: none; stroke: var(--data-outdoor); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .of  { fill: none; stroke: var(--data-outdoor); stroke-width: 1.6; stroke-dasharray: 4 4; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .vb  { fill: url(#lds-hatch-heat); }      /* ventilåbning: skraverede søjler fra bunden */
+  .trend .heat { fill: url(#lds-hatch-heat); }     /* timer med varme bag en temperaturkurve */
+  .trend .pl  { fill: var(--seg-off); }            /* planlagt varme pr. time */
+  .trend .ac  { fill: var(--accent); }             /* leveret varme pr. time */
+  .trend .acw { fill: url(#lds-hatch-heat-dense); } /* heraf varmt vand */
+  .hchart-panel.pair .axis { display: none; }
+  .hchart-panel.pair .trend { height: 140px; }
+  .hchart-panel.pair + .hchart-panel .trend { height: 100px; }
+  .axis.at { position: relative; display: block; height: 1.5em; }
+  .axis.at span { position: absolute; left: calc(var(--x, 0) * 1%); transform: translateX(-50%); white-space: nowrap; }
+  .axis.at span.s { transform: none; }                 /* mærke ved venstre kant */
+  .axis.at span.e { transform: translateX(-100%); }    /* mærke ved højre kant */
+  .axis.at b { color: var(--fg); }
+  .chart-legend .lt  { border-color: var(--fg); }
+  .chart-legend .ltf { border-top: 2px dashed var(--fg); }
+  .chart-legend .lsp { border-top: 1.4px dashed var(--muted); }
+  .chart-legend .lo  { border-color: var(--data-outdoor); }
+  .chart-legend .lof { border-top: 2px dashed var(--data-outdoor); }
+  .chart-legend :is(.lpl, .lac, .lfut) { width: 14px; height: 10px; border-top: 0; }
+  .chart-legend .lpl  { background: var(--seg-off); }
+  .chart-legend .lac  { background: var(--accent); }
+  .chart-legend .lfut { background: var(--raised); }
+  /* Ventilåbning, timer med varme og varmt vand bruger skraveringen fra .ldhw / .lleg. */
 
   /* Link nederst i et ark til tingens indstillinger på System («Indstillinger for varmekilde ›»). */
   .sheet-link { justify-self: start; display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--hit);

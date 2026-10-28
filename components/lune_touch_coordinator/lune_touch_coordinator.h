@@ -9,6 +9,8 @@
 #include "exposure_learning.h"
 #include "flow_trim.h"
 #include "hp_history.h"
+#include "house_history.h"
+#include "room_history.h"
 #include "house_demand.h"
 #include "odin_comfort.h"
 #include "odin_mqtt.h"
@@ -543,6 +545,11 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_circulation_json(char *buffer, size_t capacity) const;
   /// Heat sheet chart: Asgard flow/return averaged into buckets. range 0 = 24 h, 1 = 7 d.
   void write_heat_history_json(char *buffer, size_t capacity, uint8_t range) const;
+  /// Room sheet › History: hourly temperature, target and valve for one room, the last
+  /// 48 h (range 0) or 7 d (range 1); the last point is the hour in progress.
+  void write_room_history_json(const char *room_id, char *buffer, size_t capacity, uint8_t range) const;
+  /// Next heating / Weather › History: Odin's hourly ledger (plan, heat, rooms, outside).
+  void write_house_history_json(char *buffer, size_t capacity, uint8_t range) const;
   void write_events_json(char *buffer, size_t capacity) const;
   /// Problems for the "Active problems" / "Problems" entities (main loop).
   /// False when the state is busy; the caller then skips this publish.
@@ -1089,6 +1096,12 @@ class LuneTouchCoordinator : public esphome::Component {
   bool poll_asgard_telemetry_();
   /// Asgard /dashboard/history → hp_history_[range] (stream-parsed, no full body in RAM).
   bool poll_asgard_history_(uint8_t range);
+  /// Odin GET /dashboard/history?type=hour → house_history_ (7 d, stream-parsed).
+  bool poll_odin_history_();
+  /// One sample a minute per room into room_history_; saves the week to flash hourly.
+  void sample_room_history_();
+  void load_room_history_();
+  void save_room_history_();
   NodeTelemetryState node_telemetry_[::lune_touch::MAX_NODES]{};
   EventRecord events_[EVENT_CAPACITY]{};
   size_t event_next_{0};
@@ -1148,6 +1161,14 @@ class LuneTouchCoordinator : public esphome::Component {
   char asgard_mode_[16]{"advisory"};
   HeatSourceState heat_source_{};
   hp_history::Series hp_history_[2]{};   // 0 = 24 h (96 × 15 min), 1 = 7 d (84 × 2 h)
+  // Odin's hourly ledger, 7 d (PSRAM; nullptr until the first fetch allocates it).
+  house_history::Series *house_history_{nullptr};
+  // Room history: the week's store in PSRAM, saved to SPIFFS when an hour closes.
+  room_history::Store *room_history_store_{nullptr};
+  room_history::Recorder room_history_;
+  uint32_t room_history_sample_ms_{0};
+  bool room_history_loaded_{false};
+  bool spiffs_mounted_{false};
   bool heat_source_push_requested_{false};
   HeatSourceProbeKind heat_source_probe_kind_{HeatSourceProbeKind::NONE};
   SemaphoreHandle_t heat_source_probe_done_{nullptr};

@@ -858,6 +858,34 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/history/house/48h") == 0 || strcmp(path, "/history/house/7d") == 0) {
+      if (coordinator_)
+        coordinator_->write_house_history_json(data_buf_, DATA_BUF_SIZE, path[15] == '7' ? 1 : 0);
+      else
+        snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
+    {
+      // /history/room/<room_id>/48h | /7d
+      static constexpr const char *ROOM_PREFIX = "/history/room/";
+      const size_t plen = strlen(ROOM_PREFIX);
+      if (strncmp(path, ROOM_PREFIX, plen) == 0) {
+        const char *rest = path + plen;
+        const char *slash = strrchr(rest, '/');
+        char room_id[32]{};
+        if (slash != nullptr && slash > rest && static_cast<size_t>(slash - rest) < sizeof(room_id) &&
+            (strcmp(slash, "/48h") == 0 || strcmp(slash, "/7d") == 0)) {
+          memcpy(room_id, rest, static_cast<size_t>(slash - rest));
+          if (coordinator_)
+            coordinator_->write_room_history_json(room_id, data_buf_, DATA_BUF_SIZE, slash[1] == '7' ? 1 : 0);
+          else
+            snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+          send_ok_(request, data_buf_);
+          return;
+        }
+      }
+    }
     if (strcmp(path, "/heat-source/history/24h") == 0 || strcmp(path, "/heat-source/history/7d") == 0) {
       if (coordinator_)
         coordinator_->write_heat_history_json(data_buf_, DATA_BUF_SIZE, path[21] == '7' ? 1 : 0);

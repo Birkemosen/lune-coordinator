@@ -1098,5 +1098,21 @@
   "problem.odin.title": "Odin svarer ikke",
   "problem.odin.msg": "Touch har ikke haft forbindelse til Odin i over 30 minutter. Varmeplanen bliver ikke opdateret.",
   "problem.room.title": "{room} når ikke sin temperatur",
-  "problem.room.msg": "{room} har ikke nået {target} °C i 24 timer (højst {max} °C)."
+  "problem.room.msg": "{room} har ikke nået {target} °C i 24 timer (højst {max} °C).",
+  "hist.r48": "48 t",
+  "hist.empty": "Ingen historik endnu.",
+  "hist.lNext": "Næste 24 t",
+  "hist.lFc": "Forventet",
+  "hist.lValve": "Ventil åben",
+  "hist.lOut": "Ude",
+  "hist.lOutFc": "Ude, prognose",
+  "hist.lHouse": "Hus",
+  "hist.lHouseFc": "Hus, forventet",
+  "hist.lHeat": "Varme kører",
+  "plan.histTitle": "Planlagt og leveret varme pr. time",
+  "plan.histAria": "Planlagt og leveret varme pr. time, historik og plan for de næste 24 timer",
+  "wx.histTitle": "Ude og hus",
+  "wx.histAria": "Ude- og hustemperatur, historik og de næste 24 timer",
+  "room.histChart": "Temperatur, mål og ventil",
+  "room.histChartAria": "{name}: temperatur, mål og ventil, historik og de næste 24 timer"
 }

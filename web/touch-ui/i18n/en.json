@@ -1098,5 +1098,21 @@
   "problem.odin.title": "Odin is not answering",
   "problem.odin.msg": "Touch has had no contact with Odin for more than 30 minutes. The heating plan is not updated.",
   "problem.room.title": "{room} is not reaching its temperature",
-  "problem.room.msg": "{room} has not reached {target} °C in 24 hours (highest {max} °C)."
+  "problem.room.msg": "{room} has not reached {target} °C in 24 hours (highest {max} °C).",
+  "hist.r48": "48 h",
+  "hist.empty": "No history yet.",
+  "hist.lNext": "Next 24 h",
+  "hist.lFc": "Expected",
+  "hist.lValve": "Valve open",
+  "hist.lOut": "Outside",
+  "hist.lOutFc": "Outside, forecast",
+  "hist.lHouse": "House",
+  "hist.lHouseFc": "House, expected",
+  "hist.lHeat": "Heating",
+  "plan.histTitle": "Planned and delivered heat per hour",
+  "plan.histAria": "Planned and delivered heat per hour, history and plan for the next 24 hours",
+  "wx.histTitle": "Outside and house",
+  "wx.histAria": "Outside and house temperature, history and the next 24 hours",
+  "room.histChart": "Temperature, target and valve",
+  "room.histChartAria": "{name}: temperature, target and valve, history and the next 24 hours"
 }
