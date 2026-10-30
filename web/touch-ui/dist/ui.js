@@ -3811,7 +3811,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var boards = (hb && hb.boards) || [];
     body.innerHTML = boards.map(function (b) {
       var none = b.worst_kpa == null;
-      var hint = none ? t('heat.houseBalanceNone') : t('heat.houseBalanceRow', { kpa: num(b.worst_kpa, 1) });
+      var hint = none ? t('heat.houseBalanceNone') : t('heat.houseBalanceRow', { kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) });   // 1 m head = 9.81 kPa
       return '<div class="setting"><div class="setting-label"><span>' + esc(b.name || b.node_id || '—') +
         '</span><small>' + hint + '</small></div><div class="setting-control"><span class="setting-value">' +
         (none ? '—' : num(b.scale, 2)) + '</span></div></div>';

@@ -810,7 +810,7 @@
   "heat.houseBalanceSw": "Balancér mellem manifolder",
   "heat.houseBalanceSub": "Groft skøn ud fra areal, rør og sløjfeafstand",
   "heat.houseBalanceHint": "Uden strengreguleringsventiler tager den manifold, der har korte og brede sløjfer, flow fra de andre. Touch drosler derfor den lette manifold, så husets mest krævende sløjfe stadig får flow. Fordelingen inden for hver manifold styrer V6 selv. Er Touch væk i 15 min, går V6 tilbage til sin egen balance.",
-  "heat.houseBalanceRow": "Største sløjfe {kpa} kPa",
+  "heat.houseBalanceRow": "Største sløjfe {kpa} kPa ({m} m)",
   "heat.houseBalanceNone": "Ingen rørdata fra V6",
   "heat.climateEntity": "Climate-entity",
   "heat.odinPlan": "Odin-plan",
