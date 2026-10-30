@@ -72,7 +72,8 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched; it says
     how many rooms have solar hold-off when any do.
   - **Circulation** — flow (m³/h), power and the split per controller. The tile turns
-    yellow with **Mixing risk** when the circulation pump moves more water than the heat pump.
+    yellow with **Too little flow** when the circulation pump moves less water than the heat
+    pump, and with **Mixing risk** when it moves far more (over 125 %).
 - **Heat map** — rooms per controller. Each room shows its temperature, a chip with the
   distance to target (blue below, neutral near, orange above), a five-step valve bar and the
   opening. Rooms are sized by floor area. A room opens its sheet; a controller heading opens
@@ -278,15 +279,30 @@ See [forecast preload](forecast_preload.md),
 ### Circulation
 
 Flow, head and power from the circulation pump, and the approximate split per controller and
-zone (worked out from valve openings). A warning appears when the pump moves more water than
-the heat pump while heating (mixing in the buffer tank).
+zone (worked out from valve openings).
 
-**Recommended flow** is 90 % of the heat pump's measured flow while heating, rounded down to
-0.5 l/min, so no return water is drawn into the supply. The warning also says what to set:
-with a pump that reports its head, the constant pressure (m) that gives that flow through the
-valves as they are now (head ∝ flow²), otherwise the flow to turn the pump down to. Touch only
-advises — the pump is set on the pump itself. **Settings** holds the house balance
-and the pump's connection.
+With a buffer tank the heat going into the tank should be no more than the heat drawn out of
+it, so the circulation pump should move at least as much water as the heat pump. Touch
+compares the two flows while the heat pump heats:
+
+- **Under 97 %** — *The heat pump gets its own water back*: its surplus runs through the tank
+  straight back to it, the return warms up, and it reaches its target early and stops after
+  short runs.
+- **100–125 %** — fine. A little floor return mixes into the supply (under 1 K).
+- **Over 125 %** — *Risk of mixing*: much floor return is drawn into the supply, so the heat
+  pump has to run hotter for the same room temperature.
+
+**Recommended flow** is 5 % above the heat pump's measured flow while heating, rounded up to
+0.5 l/min. A warning also says what to set: with a pump that reports its head, the constant
+pressure (m) that gives that flow through the valves as they are now (head ∝ flow²), otherwise
+the flow to turn the pump up or down to. **Heat into / out of the tank** shows the heat pump's
+output and the heat the floors draw (secondary flow × Zone 1 feed − return from Asgard's
+1-wire probes, else the V6 manifold sensors), from the last sample while heating. Touch only
+advises — the pump is set on the pump itself.
+
+**Settings** holds the house balance, the pump's connection and **Heat pump › Maximum
+output**: Odin's value when Odin gives one (read-only, change it in Odin), otherwise set here.
+It is used for the *Heat pump at full output* row in *Flow needed*.
 
 **House balance** (*Balance between manifolds*, off by default): without balancing valves the
 manifold with short, wide loops takes flow from the others. Touch estimates each loop's
@@ -425,7 +441,8 @@ What Touch reports (V6 reports its own valves and sensors):
 | Category | Problem | When | Severity |
 |---|---|---|---|
 | Heat pump | Delivers more / less than Odin's plan | 30 min mean off plan for 30 min (see [Heat](#heat)) | warning |
-| Hydraulics | Mixing in the buffer tank | Secondary flow above primary for 10 min | warning |
+| Hydraulics | Too little flow on the secondary side | Secondary flow under 97 % of primary for 10 min | warning |
+| Hydraulics | Mixing in the buffer tank | Secondary flow over 125 % of primary for 10 min | warning |
 | Connectivity | A Lune V6 is not answering | No answer for 10 min | error |
 | Connectivity | Asgard is not answering | No answer for 10 min (heat source on) | error |
 | Connectivity | Odin is not answering | No answer for 30 min (Odin address set) | warning |

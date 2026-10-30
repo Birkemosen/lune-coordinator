@@ -61,15 +61,23 @@ inline bool parse_sensor_response(const char *body, float *value) {
   return asgard_adapter::parse_number_response(body, value);
 }
 
-// Mixing in the separator: when the secondary pump moves more water than the heat pump,
-// return water is drawn back into the supply and the zones get a cooler flow, so the
-// heat pump has to run hotter for the same room temperature. Only judged while the
-// heat pump's own pump runs for space heating (operation_mode 2): during hot water the
-// primary flow goes to the tank, and a stopped primary says nothing about the ratio.
-enum class Mixing : uint8_t { Unknown, Ok, Risk };
+// Balance across the buffer tank (gekkekoe: heat going into the tank ≤ heat drawn from it).
+// With a parallel tank the flows decide where the water goes:
+//   secondary < primary  SHORT   the heat pump's surplus runs through the tank straight back
+//                                to the heat pump; its return warms up, it reaches its target
+//                                early and cycles. The tank charges instead of the floors.
+//   secondary ≈ primary  OK      (100–125 %): all of the heat pump's water goes to the floors;
+//                                a little floor return mixed into the supply costs < 1 K.
+//   secondary ≫ primary  MIXING  much floor return is drawn back into the supply, so the heat
+//                                pump has to run hotter for the same room temperature.
+// Only judged while the heat pump's own pump runs for space heating (operation_mode 2):
+// during hot water the primary flow goes to the tank, and a stopped primary says nothing.
+enum class Mixing : uint8_t { Unknown, Ok, Short, Risk };
 
-/// Secondary may exceed primary by this much before it counts as mixing (sensor noise).
-constexpr float MIXING_RISK_RATIO = 1.05f;
+/// Below this secondary/primary ratio the heat pump gets its own water back (sensor noise allowed).
+constexpr float SHORT_FLOW_RATIO = 0.97f;
+/// Above this ratio the supply is diluted enough to matter.
+constexpr float MIXING_RISK_RATIO = 1.25f;
 /// Below this the primary flow is a start-up/stop transient, not a steady value.
 constexpr float MIXING_MIN_PRIMARY_LMIN = 3.0f;
 /// How long a measured ratio is shown after the heat pump stops.
@@ -84,18 +92,31 @@ inline bool mixing_sample_usable(float primary_lmin, float secondary_lmin, bool 
 inline Mixing mixing_state(float ratio) {
   if (!std::isfinite(ratio) || ratio <= 0.0f)
     return Mixing::Unknown;
+  if (ratio < SHORT_FLOW_RATIO)
+    return Mixing::Short;
   return ratio > MIXING_RISK_RATIO ? Mixing::Risk : Mixing::Ok;
 }
 
-// Recommended secondary flow: a little below the heat pump's flow, so no return water is
-// drawn into the supply, and not so far below that the floors lose ΔT. Rounded down to
-// 0.5 l/min, the resolution a pump setting is made in.
-constexpr float RECOMMENDED_SECONDARY_SHARE = 0.9f;
+// Recommended secondary flow: a little above the heat pump's flow, so none of its water
+// goes back through the tank, and not so far above that the supply is diluted. Rounded up
+// to 0.5 l/min, the resolution a pump setting is made in.
+constexpr float RECOMMENDED_SECONDARY_SHARE = 1.05f;
 
 inline float recommended_secondary_lmin(float primary_lmin) {
   if (!std::isfinite(primary_lmin) || primary_lmin < MIXING_MIN_PRIMARY_LMIN)
     return NAN;
-  return std::floor(primary_lmin * RECOMMENDED_SECONDARY_SHARE * 2.0f) / 2.0f;
+  return std::ceil(primary_lmin * RECOMMENDED_SECONDARY_SHARE * 2.0f - 1e-3f) / 2.0f;
+}
+
+/// Heat carried by a water flow: l/min × ΔT K → kW (c = 4.186 kJ/kg·K). NAN without a
+/// usable ΔT (a stopped flow or reversed sensors say nothing).
+inline float water_kw(float flow_lmin, float feed_c, float return_c) {
+  if (!std::isfinite(flow_lmin) || !std::isfinite(feed_c) || !std::isfinite(return_c) || flow_lmin <= 0.0f)
+    return NAN;
+  const float dt = feed_c - return_c;
+  if (dt <= 0.2f || dt > 30.0f)
+    return NAN;
+  return flow_lmin / 60.0f * 4.186f * dt;
 }
 
 /// Head the pump would need for target_lmin through the same open valves: the system
@@ -109,7 +130,12 @@ inline float head_for_flow_m(float head_m, float flow_lmin, float target_lmin) {
 }
 
 inline const char *mixing_name(Mixing m) {
-  return m == Mixing::Risk ? "risk" : m == Mixing::Ok ? "ok" : "unknown";
+  switch (m) {
+    case Mixing::Ok: return "ok";
+    case Mixing::Short: return "short";
+    case Mixing::Risk: return "risk";
+    default: return "unknown";
+  }
 }
 
 }  // namespace esphome::lune_touch_coordinator::circulation_pump
