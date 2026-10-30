@@ -301,7 +301,8 @@ output and the heat the floors draw (secondary flow × Zone 1 feed − return fr
 advises — the pump is set on the pump itself.
 
 **Settings** holds the house balance, the pump's connection and **Heat pump › Maximum
-output**: Odin's value when Odin gives one (read-only, change it in Odin), otherwise set here.
+output**: Odin's value while Odin gives one (read-only, change it in Odin), otherwise set here
+— also when no Odin address is set or Odin has not answered for 30 minutes.
 It is used for the *Heat pump at full output* row in *Flow needed*.
 
 **House balance** (*Balance between manifolds*, off by default): without balancing valves the

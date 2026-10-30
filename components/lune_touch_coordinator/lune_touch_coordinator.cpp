@@ -3272,6 +3272,7 @@ void LuneTouchCoordinator::run_odin_control_() {
   static constexpr uint32_t MIN_LIFT_WRITE_MS = 20UL * 60000UL;
   static constexpr int32_t TELEMETRY_STALE_S = 900;
   static constexpr uint32_t LINK_ALARM_MS = 10UL * 60000UL;
+  static constexpr uint32_t ODIN_HP_MAX_LAPSE_MS = 30UL * 60000UL;
 
   char odin_host[64]{};
   uint16_t odin_port = 80;
@@ -3292,6 +3293,9 @@ void LuneTouchCoordinator::run_odin_control_() {
   odin_control_.last_cycle_ms = now_ms;
   std::strncpy(odin_host, odin_plan_.odin_host, sizeof(odin_host) - 1);
   odin_port = odin_plan_.odin_port == 0 ? 80 : odin_plan_.odin_port;
+  // Without an Odin address, Odin's heat pump ceiling no longer applies (Touch's own does).
+  if (odin_host[0] == '\0')
+    odin_control_.hp_max_kw = NAN;
   asgard = heat_source_.enabled && heat_source_type_is_asgard_(heat_source_.type) &&
            heat_source_.host[0] != '\0';
   std::strncpy(asgard_host, heat_source_.host, sizeof(asgard_host) - 1);
@@ -3463,6 +3467,9 @@ void LuneTouchCoordinator::run_odin_control_() {
     odin_control_.odin_reachable = reachable;
     if (reachable)
       odin_last_ok_ms_ = now_ms;
+    // Odin silent as long as the connectivity problem waits (30 min): its ceiling lapses.
+    else if (odin_last_ok_ms_ == 0 || now_ms - odin_last_ok_ms_ >= ODIN_HP_MAX_LAPSE_MS)
+      odin_control_.hp_max_kw = NAN;
     odin_control_.forwarder_known = forwarder_known;
     odin_control_.forwarder_active = forwarder_active;
     odin_control_.takeover_known = takeover_known;

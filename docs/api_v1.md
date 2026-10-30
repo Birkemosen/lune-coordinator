@@ -1331,7 +1331,7 @@ All fields optional; absent = unchanged; an empty template string clears that le
 | `curve_gain` | 0–10 °C flow per °C room need (default 2.0) |
 | `curve_max_offset_c` | 0–15 °C (default 5.0) |
 | `internal_gains_w` | 0–2000 W — free heat from people and appliances (default 650) |
-| `hp_max_kw` | 1–40 kW, `0` clears — the heat pump's maximum output, used only while Odin gives no `hp_max_thermal_kw`. GET `odin.hp_max_kw` is the value in use, `odin.hp_max_kw_source` `odin` / `user` / `none`, `odin.hp_max_kw_user` the one set here |
+| `hp_max_kw` | 1–40 kW, `0` clears — the heat pump's maximum output, used while Odin gives no `hp_max_thermal_kw` (no Odin address, or Odin silent for 30 min). GET `odin.hp_max_kw` is the value in use, `odin.hp_max_kw_source` `odin` / `user` / `none`, `odin.hp_max_kw_user` the one set here |
 
 Templates take `{host}`, `{port}` (the heat source's) and `{value}`; they are sent as an
 empty `POST`. Response: `{"result":"saved","control":{…GET body…}}`.
