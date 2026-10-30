@@ -1521,7 +1521,9 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   // Mixing: the last sample taken while heating, shown for MIXING_HOLD_MS after it.
   const bool mix_held = source.mix_ms != 0 && now_ms - source.mix_ms <= circulation_pump::MIXING_HOLD_MS;
   const auto mix = mix_held ? circulation_pump::mixing_state(source.mix_ratio) : circulation_pump::Mixing::Unknown;
-  char mix_ratio[16], mix_primary[16], mix_secondary[16], mix_age[16];
+  char mix_ratio[16], mix_primary[16], mix_secondary[16], mix_age[16], mix_in[16], mix_out[16];
+  json_float_token_(mix_in, sizeof(mix_in), mix_held ? source.mix_in_kw : NAN, 1);
+  json_float_token_(mix_out, sizeof(mix_out), mix_held ? source.mix_out_kw : NAN, 1);
   json_float_token_(mix_ratio, sizeof(mix_ratio), mix_held ? source.mix_ratio : NAN, 2);
   json_float_token_(mix_primary, sizeof(mix_primary), mix_held ? source.mix_primary_lmin : NAN, 1);
   json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
@@ -1545,7 +1547,7 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            "\"thermal_kw\":%s,\"thermal_kw_source\":\"%s\","
            "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\","
            "\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
-           "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s}}",
+           "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s,\"in_kw\":%s,\"out_kw\":%s}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port),
            static_cast<unsigned>(source.refresh_interval_s),
            static_cast<unsigned>(source.refresh_interval_idle_s),
@@ -1554,7 +1556,7 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            status, source.last_http_status, age_s, flow, flow_lmin_tok, head, power, thermal,
            thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error,
            circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
-           mix_rec_head);
+           mix_rec_head, mix_in, mix_out);
 }
 
 enum class CirculationUiStatus : uint8_t { Hidden, Waiting, Ok, Stale, Offline };
@@ -2444,13 +2446,15 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
   bool water_pump = false;
   float flow_lmin = NAN;
   float output_kw = NAN;
+  float sec_feed = NAN, sec_ret = NAN;
   bool defrost = false;
   int mode = -1;
   if (ok) {
     JsonDocument filter;
     for (const char *k : {"hp_feed_temp", "hp_return_temp", "outside_temp", "z1_flow_temp_target",
                           "compressor_frequency", "status_compressor", "operation_mode",
-                          "flow_rate", "status_water_pump", "computed_output_power", "status_defrost"})
+                          "flow_rate", "status_water_pump", "computed_output_power", "status_defrost",
+                          "ow_role_z1_feed", "ow_role_z1_return"})
       filter[k] = true;
     JsonDocument doc;
     ok = !deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -2467,6 +2471,8 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       water_pump = doc["status_water_pump"] | false;
       output_kw = f("computed_output_power");
       defrost = doc["status_defrost"] | false;
+      sec_feed = f("ow_role_z1_feed");
+      sec_ret = f("ow_role_z1_return");
       ok = std::isfinite(feed) || std::isfinite(ret);
     }
   }
@@ -2483,8 +2489,11 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     heat_source_.hp_water_pump_on = water_pump;
     heat_source_.hp_output_kw = output_kw;
     heat_source_.hp_status_defrost = defrost;
+    heat_source_.hp_sec_feed_c = sec_feed;
+    heat_source_.hp_sec_return_c = sec_ret;
     heat_source_.hp_telemetry_ms = esphome::millis();
-    // Mixing sample: Alpha2 secondary flow against the heat pump's primary flow.
+    // Balance sample: Alpha2 secondary flow against the heat pump's primary flow, and the
+    // heat on each side of the tank where the temperatures are known.
     const uint32_t now_ms = esphome::millis();
     const bool circ_fresh = circulation_.has_flow && circulation_.last_success_ms != 0 &&
                             now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
@@ -2493,6 +2502,14 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       circulation_.mix_primary_lmin = flow_lmin;
       circulation_.mix_secondary_lmin = secondary_lmin;
       circulation_.mix_ratio = secondary_lmin / flow_lmin;
+      circulation_.mix_in_kw = std::isfinite(output_kw) && output_kw > 0.0f
+                                   ? output_kw
+                                   : circulation_pump::water_kw(flow_lmin, feed, ret);
+      // Heat drawn out: Asgard's Zone 1 probes, else the manifolds' own flow/return (thermal_kw).
+      const float out_kw = circulation_pump::water_kw(secondary_lmin, sec_feed, sec_ret);
+      circulation_.mix_out_kw = std::isfinite(out_kw) ? out_kw
+                                : circulation_.has_thermal_kw && circulation_.thermal_kw > 0.0f ? circulation_.thermal_kw
+                                                                                                 : NAN;
       circulation_.mix_ms = now_ms == 0 ? 1 : now_ms;
     }
     give_state_lock_();
@@ -3657,6 +3674,9 @@ void LuneTouchCoordinator::load_odin_control_() {
   blob_len = sizeof(f);
   if (nvs_get_blob(handle, "house_gains", &f, &blob_len) == ESP_OK && std::isfinite(f))
     odin_control_.internal_gains_w = std::clamp(f, 0.0f, 2000.0f);
+  blob_len = sizeof(f);
+  if (nvs_get_blob(handle, "hp_max_user", &f, &blob_len) == ESP_OK && std::isfinite(f) && f >= 1.0f && f <= 40.0f)
+    odin_control_.hp_max_kw_user = f;
   float syn[4]{};
   blob_len = sizeof(syn);
   if (nvs_get_blob(handle, "odc_syn_ap", syn, &blob_len) == ESP_OK &&
@@ -3724,6 +3744,8 @@ void LuneTouchCoordinator::save_odin_control_() {
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_band", &control.sync_below_c, sizeof(float));
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_up", &control.sync_above_c, sizeof(float));
   if (err == ESP_OK) err = nvs_set_blob(handle, "house_gains", &control.internal_gains_w, sizeof(float));
+  const float hp_max_user = std::isfinite(control.hp_max_kw_user) ? control.hp_max_kw_user : 0.0f;
+  if (err == ESP_OK) err = nvs_set_blob(handle, "hp_max_user", &hp_max_user, sizeof(float));
   const float syn[4]{owner.sync.on ? 1.0f : 0.0f, owner.sync.sp, owner.sync.below_c, owner.sync.above_c};
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_syn_ap", syn, sizeof(syn));
   if (err == ESP_OK) err = nvs_set_str(handle, "gl_turl", levers.target_url_template);
@@ -14678,8 +14700,13 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const uint32_t bad_s = c.link_bad_since_ms == 0 ? 0 : (now - c.link_bad_since_ms) / 1000UL;
   char sync_target[16];
   json_float_token_(sync_target, sizeof(sync_target), c.sync_target_c, 2);
-  char hpmax[16];
-  json_float_token_(hpmax, sizeof(hpmax), c.hp_max_kw, 1);
+  // The heat pump's ceiling: Odin's when it gives one, else the one set in Touch.
+  const bool hp_max_odin = std::isfinite(c.hp_max_kw) && c.hp_max_kw > 0.0f;
+  const bool hp_max_user = std::isfinite(c.hp_max_kw_user);
+  char hpmax[16], hpmax_user[16];
+  json_float_token_(hpmax, sizeof(hpmax), hp_max_odin ? c.hp_max_kw : c.hp_max_kw_user, 1);
+  json_float_token_(hpmax_user, sizeof(hpmax_user), c.hp_max_kw_user, 1);
+  const char *hpmax_src = hp_max_odin ? "odin" : hp_max_user ? "user" : "none";
   std::snprintf(
       buffer, capacity,
       "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
@@ -14690,6 +14717,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"energy_kwh\":%.2f},"
       "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f},"
       "\"thermal_mass_kwh_per_k\":%s,\"heat_loss_kw_per_k\":%s,\"internal_gains_w\":%.0f,\"hp_max_kw\":%s,"
+      "\"hp_max_kw_source\":\"%s\",\"hp_max_kw_user\":%s,"
       "\"last_write_age_s\":%u,\"last_http_status\":%d,\"last_error\":\"%s\"},"
       "\"link\":{\"status\":\"%s\",\"alarm\":%s,\"bad_for_s\":%u,\"odin_reachable\":%s,"
       "\"forwarder_known\":%s,\"forwarder_active\":%s,\"takeover\":%s,\"telemetry_age_s\":%s,"
@@ -14709,7 +14737,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       static_cast<double>(c.wanted_energy_kwh),
       c.applied.active() ? "true" : "false", static_cast<unsigned>(c.applied.start_hour),
       static_cast<unsigned>(c.applied.hours), static_cast<double>(c.applied.lift_c), tm, hl,
-      static_cast<double>(c.internal_gains_w), hpmax,
+      static_cast<double>(c.internal_gains_w), hpmax, hpmax_src, hpmax_user,
       static_cast<unsigned>(write_age_s), c.last_http_status, err,
       c.link_status, c.link_alarm ? "true" : "false", static_cast<unsigned>(bad_s),
       c.odin_reachable ? "true" : "false", c.forwarder_known ? "true" : "false",
@@ -14751,6 +14779,17 @@ bool LuneTouchCoordinator::set_internal_gains_w(float watts) {
     return false;
   odin_control_.internal_gains_w = watts;
   model_.set_internal_gains_w(watts);
+  give_state_lock_();
+  save_odin_control_();
+  return true;
+}
+
+bool LuneTouchCoordinator::set_hp_max_kw_user(float kw) {
+  if (!std::isfinite(kw) || kw < 0.0f || kw > 40.0f || (kw > 0.0f && kw < 1.0f))
+    return false;
+  if (!take_state_lock_(100))
+    return false;
+  odin_control_.hp_max_kw_user = kw > 0.0f ? kw : NAN;
   give_state_lock_();
   save_odin_control_();
   return true;
@@ -16314,6 +16353,19 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
                   static_cast<double>(sec), static_cast<double>(pri));
     log_event_("warn", "circulation", msg);
   }
+  if (e.short_raised) {
+    std::snprintf(msg, sizeof(msg), "tank short flow: secondary %.1f l/min < primary %.1f l/min",
+                  static_cast<double>(sec), static_cast<double>(pri));
+    log_event_("warn", "circulation", msg);
+  }
+  if (e.short_cleared) {
+    if (std::isfinite(sec) && std::isfinite(pri))
+      std::snprintf(msg, sizeof(msg), "tank short flow ended: secondary %.1f l/min >= primary %.1f l/min",
+                    static_cast<double>(sec), static_cast<double>(pri));
+    else
+      std::snprintf(msg, sizeof(msg), "tank short flow cleared (no flow data)");
+    log_event_("info", "circulation", msg);
+  }
   if (e.mix_cleared) {
     if (std::isfinite(sec) && std::isfinite(pri))
       std::snprintf(msg, sizeof(msg), "tank mixing ended: secondary %.1f l/min < primary %.1f l/min",
@@ -16430,6 +16482,10 @@ void LuneTouchCoordinator::run_problems_(uint32_t now_ms) {
     e = tr.update("hydraulics.mixing", "hydraulics", pr::Severity::Warning, hp_diag_.mixing, !hp_diag_.mixing,
                   now_ms, 0);
     texts(tx::MIXING_TITLE, tx::MIXING_MSG, k, v, 4);
+    handle(e, "");
+    e = tr.update("hydraulics.short_flow", "hydraulics", pr::Severity::Warning, hp_diag_.short_flow,
+                  !hp_diag_.short_flow, now_ms, 0);
+    texts(tx::SHORT_FLOW_TITLE, tx::SHORT_FLOW_MSG, k, v, 4);
     handle(e, "");
   }
 

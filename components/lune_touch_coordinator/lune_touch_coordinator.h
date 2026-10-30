@@ -185,6 +185,8 @@ struct HeatSourceState {
   bool hp_compressor_on{false};
   int8_t hp_operation_mode{-1};
   float hp_output_kw{NAN};       // computed_output_power (kW, live)
+  float hp_sec_feed_c{NAN};      // secondary feed/return: Asgard's 1-wire probes mapped to Zone 1
+  float hp_sec_return_c{NAN};    // (ow_role_z1_feed / ow_role_z1_return), NAN when not mapped
   bool hp_status_defrost{false}; // status_defrost
   uint32_t hp_telemetry_ms{0};
 };
@@ -238,6 +240,7 @@ struct OdinControlState {
   float heat_loss_kw_per_k{NAN};
   uint32_t last_physics_ms{0};
   float hp_max_kw{NAN};  // Odin's hp_max_thermal_kw (the heat pump's planned ceiling)
+  float hp_max_kw_user{NAN};  // set in Touch; used only while Odin gives none
   // Internal gains (people + household electricity, W). Odin's learned heat loss
   // is net of them; Touch adds them back for calibration and learning.
   float internal_gains_w{650.0f};
@@ -286,6 +289,8 @@ struct CirculationPumpState {
   float mix_ratio{NAN};
   float mix_primary_lmin{NAN};
   float mix_secondary_lmin{NAN};
+  float mix_in_kw{NAN};    // heat into the tank (Asgard output, else primary flow × THW1−THW2)
+  float mix_out_kw{NAN};   // heat drawn from it (secondary flow × Zone 1 feed−return, else thermal_kw)
   uint32_t mix_ms{0};
 };
 
@@ -704,6 +709,8 @@ class LuneTouchCoordinator : public esphome::Component {
   /// band_c sets both sides (legacy); below_c / above_c set one side each. NAN = unchanged.
   bool set_odin_sync(bool has_enabled, bool enabled, float band_c, float below_c = NAN, float above_c = NAN);
   bool set_internal_gains_w(float watts);
+  /// Heat pump's maximum output (kW) for when Odin gives none; 0 clears it.
+  bool set_hp_max_kw_user(float kw);
   bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
   bool set_valves_follow_hp_enabled(bool enabled);

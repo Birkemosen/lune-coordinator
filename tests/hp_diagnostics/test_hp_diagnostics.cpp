@@ -1,5 +1,6 @@
 // Host tests for hp_diagnostics.h, with the morning of 21 Oct 2026 as the case:
-// plan 3.9–6.3 kW, delivered 8–9.7 kW; secondary 15 l/min against primary 13 l/min.
+// plan 3.9–6.3 kW, delivered 8–9.7 kW; primary 13 l/min, secondary 13.5 (balanced),
+// 17 (mixing) or 12 (short: the heat pump gets its own water back).
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -20,7 +21,7 @@ static Input heating(float out_kw, float plan_kw, uint32_t t) {
   in.plan_known = true;
   in.plan_kw = plan_kw;
   in.primary_lmin = 13.0f;
-  in.secondary_lmin = 12.0f;
+  in.secondary_lmin = 13.5f;
   return in;
 }
 
@@ -33,6 +34,7 @@ static uint32_t run(State &s, uint32_t t, uint32_t n, F make, Edges *acc = nullp
       acc->over_raised |= e.over_raised; acc->over_cleared |= e.over_cleared;
       acc->under_raised |= e.under_raised; acc->under_cleared |= e.under_cleared;
       acc->mix_raised |= e.mix_raised; acc->mix_cleared |= e.mix_cleared;
+      acc->short_raised |= e.short_raised; acc->short_cleared |= e.short_cleared;
     }
   }
   return t;
@@ -140,28 +142,49 @@ int main() {
       step(s, heating(9.0f, 5.0f, 1000), 1000 + i * 100);
     assert(s.count[(1000 / MIN + 1) % MEAN_MINUTES] == 1);
   }
-  // --- Mixing: 15 l/min secondary over 13 primary for 10 min.
+  // --- Mixing: 17 l/min secondary over 13 primary (131 %) for 10 min.
   {
-    auto mixing = [](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = 15.0f; return in; };
+    auto sec = [](float v) { return [v](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = v; return in; }; };
     State s;
-    uint32_t t = run(s, 1000, 9, mixing);
+    uint32_t t = run(s, 1000, 9, sec(17.0f));
     assert(!s.mixing && s.mix == Mix::Ok);
     Edges e;
-    t = run(s, t, 2, mixing, &e);
-    assert(s.mixing && e.mix_raised && s.mix == Mix::Mixing);
-    assert(s.secondary_lmin == 15.0f && s.primary_lmin == 13.0f);
+    t = run(s, t, 2, sec(17.0f), &e);
+    assert(s.mixing && e.mix_raised && s.mix == Mix::Mixing && !s.short_flow);
+    assert(s.secondary_lmin == 17.0f && s.primary_lmin == 13.0f);
     // Primary pump stops: the flag stays (idle), no clear.
-    t = run(s, t, 5, [](uint32_t tt) { Input in = heating(0.0f, 6.0f, tt); in.primary_pump_on = false; in.secondary_lmin = 15.0f; return in; });
+    t = run(s, t, 5, [](uint32_t tt) { Input in = heating(0.0f, 6.0f, tt); in.primary_pump_on = false; in.secondary_lmin = 17.0f; return in; });
     assert(s.mixing && s.mix == Mix::Mixing);
-    // Between 1.00 and 1.05 ×: neither raise nor clear.
-    t = run(s, t, 20, [](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = 13.3f; return in; });
+    // Between 1.15 and 1.25 ×: neither raise nor clear.
+    t = run(s, t, 20, sec(15.5f));
     assert(s.mixing);
-    // Secondary below primary for 10 min: clears.
+    // 120 % is not mixing: 22.7 against 19.0 l/min never raises.
+    State b;
+    run(b, 1000, 30, [](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.primary_lmin = 19.0f; in.secondary_lmin = 22.7f; return in; });
+    assert(!b.mixing && !b.short_flow && b.mix == Mix::Ok);
+    // Below 1.15 × for 10 min: clears.
     Edges c;
-    t = run(s, t, 9, [](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = 12.0f; return in; }, &c);
+    t = run(s, t, 9, sec(14.0f), &c);
     assert(s.mixing && !c.mix_cleared);
-    run(s, t, 2, [](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = 12.0f; return in; }, &c);
+    run(s, t, 2, sec(14.0f), &c);
     assert(!s.mixing && c.mix_cleared && s.mix == Mix::Ok);
+  }
+  // --- Short: 12 l/min secondary under 13 primary (92 %) for 10 min.
+  {
+    auto sec = [](float v) { return [v](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = v; return in; }; };
+    State s;
+    Edges e;
+    uint32_t t = run(s, 1000, 9, sec(12.0f), &e);
+    assert(!s.short_flow && !e.short_raised);
+    t = run(s, t, 2, sec(12.0f), &e);
+    assert(s.short_flow && e.short_raised && s.mix == Mix::Short && !s.mixing);
+    // 0.97–1.00 ×: neither raise nor clear.
+    t = run(s, t, 20, sec(12.8f));
+    assert(s.short_flow);
+    // Secondary at primary or above for 10 min: clears.
+    Edges c;
+    run(s, t, 11, sec(13.5f), &c);
+    assert(!s.short_flow && c.short_cleared && s.mix == Mix::Ok);
   }
   // Hot water: primary goes to the tank, mixing not judged.
   {

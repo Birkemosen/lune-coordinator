@@ -384,12 +384,13 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     heat_pump: { available: true, feed_c: 36.0, return_c: 29.0, compressor_on: true, compressor_hz: 38, output_kw: 9.1 },
     hp_diagnostics: {
       plan_deviation: { state: 'over', mean_kw: 9.1, planned_kw: 6.3, window_min: 30 },
-      mixing: { state: 'mixing', primary_l_min: 13.0, secondary_l_min: 15.0 }
+      mixing: { state: 'short', primary_l_min: 19.0, secondary_l_min: 17.5 }
     },
     circulation: {
       host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38,
       flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
-      mixing: { state: 'risk', ratio: 1.31, primary_l_min: 17.0, secondary_l_min: 22.3, age_s: 120 }
+      mixing: { state: 'short', ratio: 0.92, primary_l_min: 19.0, secondary_l_min: 17.5, age_s: 120,
+        recommended_l_min: 20.0, recommended_head_m: 5.5, in_kw: 5.3, out_kw: 4.9 }
     }
   };
 
@@ -511,7 +512,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       user_schedule_known: true, yielded: false,
       wanted: { active: true, start_hour: 15, hours: 3, lift_c: 0.5, energy_kwh: 6.0 },
       applied: { active: true, start_hour: 15, hours: 3, lift_c: 0.5 },
-      sync: { enabled: true, below_c: 0.5, above_c: 0.5, target_c: 22 }, internal_gains_w: 650, hp_max_kw: 8 },
+      sync: { enabled: true, below_c: 0.5, above_c: 0.5, target_c: 22 }, internal_gains_w: 650, hp_max_kw: 8, hp_max_kw_source: 'odin', hp_max_kw_user: null },
     link: { status: 'ok', alarm: false, odin_reachable: true, forwarder_known: true, forwarder_active: true, takeover: true,
       telemetry_age_s: 40, odin_room_c: 22.4 },
     generic: { applies: false, curve_gain: 2, curve_max_offset_c: 5, status: 'idle' }
@@ -822,6 +823,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (body.curve_gain != null) mockControl.generic.curve_gain = Number(body.curve_gain);
       if (body.curve_max_offset_c != null) mockControl.generic.curve_max_offset_c = Number(body.curve_max_offset_c);
       if (body.internal_gains_w != null) mockControl.odin.internal_gains_w = Number(body.internal_gains_w);
+      if (body.hp_max_kw != null) mockControl.odin.hp_max_kw_user = Number(body.hp_max_kw) > 0 ? Number(body.hp_max_kw) : null;
       return { result: 'stored', control: mockControl };
     }
     return { ok: true, mock: true, path: path, body: body };
@@ -2214,12 +2216,17 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var dv = hd.plan_deviation || {};
     var mz = hd.mixing || {};
     var devOn = (dv.state === 'over' || dv.state === 'under') && finite(dv.mean_kw) && finite(dv.planned_kw);
-    var mixOn = mz.state === 'mixing' && finite(mz.primary_l_min) && finite(mz.secondary_l_min);
+    var mzFlows = finite(mz.primary_l_min) && finite(mz.secondary_l_min);
+    var mixOn = mz.state === 'mixing' && mzFlows;
+    var shortOn = mz.state === 'short' && mzFlows;
+    var mzVars = { sec: num(mz.secondary_l_min, 0), pri: num(mz.primary_l_min, 0) };
     var hdParts = [];
     if (devOn) hdParts.push(t('hpd.dev', { act: num(dv.mean_kw, 1), plan: num(dv.planned_kw, 1), min: dv.window_min || 30 }));
-    if (mixOn) hdParts.push(t('hpd.mix', { sec: num(mz.secondary_l_min, 0), pri: num(mz.primary_l_min, 0) }));
+    if (mixOn) hdParts.push(t('hpd.mix', mzVars));
+    if (shortOn) hdParts.push(t('hpd.short', mzVars));
     setShow('hpd.show', hdParts.length > 0);
-    setText('hpd.strong', devOn ? t(dv.state === 'over' ? 'hpd.overStrong' : 'hpd.underStrong') : mixOn ? t('hpd.mixStrong') : '');
+    setText('hpd.strong', devOn ? t(dv.state === 'over' ? 'hpd.overStrong' : 'hpd.underStrong')
+      : mixOn ? t('hpd.mixStrong') : shortOn ? t('hpd.shortStrong') : '');
     setText('hpd.body', hdParts.join(' '));
     setText('dash.hpTemps', hp.available && hp.feed_c != null && hp.return_c != null
       ? num(hp.feed_c) + ' → ' + num(hp.return_c) + ' °C · ' +
@@ -2273,27 +2280,34 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('pump.host', circ.host || '—');
     setText('tile.pumpVal', finite(circ.flow_m3h) ? num(circ.flow_m3h, 1) + ' m³/h' : '—');
     setText('tile.pumpSub', finite(circ.power_w) ? num(circ.power_w, 0) + ' W' : '');
-    // Mixing in the buffer tank: secondary flow above primary while heating (Touch judges it).
+    // Balance across the buffer tank, judged while heating (circulation_pump.h): «short» =
+    // the heat pump gets its own water back, «risk» = floor return diluting the supply.
     var mx = circ.mixing || {};
     var risk = mx.state === 'risk';
+    var shortFlow = mx.state === 'short';
     var mxVars = { sec: num(mx.secondary_l_min, 1), pri: num(mx.primary_l_min, 1),
       pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
-      rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1) };
+      rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1),
+      in: num(mx.in_kw, 1), out: num(mx.out_kw, 1) };
     // Advice: the head to set (constant pressure) when the pump reports one, else the flow.
     var advice = !finite(mx.recommended_l_min) ? ''
-      : t(finite(mx.recommended_head_m) ? 'pump.mixAdviceHead' : 'pump.mixAdvice', mxVars);
+      : t(finite(mx.recommended_head_m) ? 'pump.mixAdviceHead' : shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
-      if (risk) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');
+      if (risk || shortFlow) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');
       var chip = pumpTile.querySelector('.chip-icon');
-      if (chip) chip.setAttribute('data-tone', risk ? 'warn' : 'water');
+      if (chip) chip.setAttribute('data-tone', risk || shortFlow ? 'warn' : 'water');
     }
     setShow('pump.mixing', risk);
+    setShow('pump.short', shortFlow);
     setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
+    setText('pump.shortBody', shortFlow ? (t('pump.shortBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
     setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
+    setText('pump.balance', !finite(mx.in_kw) ? '—'
+      : t(finite(mx.out_kw) ? 'pump.balanceVal' : 'pump.balanceInOnly', mxVars));
     renderFlowNeed(mx.primary_l_min, lpm);
-    setText('tile.pumpStatus', risk ? t('tile.pumpMixing')
+    setText('tile.pumpStatus', risk ? t('tile.pumpMixing') : shortFlow ? t('tile.pumpShort')
       : lpm != null && lpm > 0 ? t('tile.pumpStatus') : t('tile.pumpNone'));
     if (state.zones) renderDist();
     applyCirculation(circ);
@@ -2359,6 +2373,14 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     state.heatControl = ctl;
     if (state.needArgs) renderFlowNeed(state.needArgs[0], state.needArgs[1]);
     var cfg = qs('form[data-save="circulation"]');
+    // The heat pump's ceiling: Odin's is read-only here; without it Touch's own is edited.
+    var od = ctl.odin || {};
+    var hpOdin = od.hp_max_kw_source === 'odin' && finite(od.hp_max_kw);
+    setShow('pump.hpMaxOdin', hpOdin);
+    setShow('pump.hpMaxEdit', !hpOdin);
+    setText('pump.hpMaxOdin', hpOdin ? t('pump.hpMaxVal', { kw: num(od.hp_max_kw, 1) }) : '—');
+    if (cfg && !formBusy(cfg) && od.hp_max_kw_source != null)
+      putVal(cfg.querySelector('[name="hp_max_kw"]'), finite(od.hp_max_kw_user) ? Number(od.hp_max_kw_user).toFixed(1) : '0.0');
     if (cfg && !formBusy(cfg) && ctl.odin && ctl.odin.internal_gains_w != null) {
       putVal(cfg.querySelector('[name="internal_gains_w"]'), Number(ctl.odin.internal_gains_w).toFixed(0));
       if (cfg.luneResnap) cfg.luneResnap();
@@ -3884,12 +3906,15 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
         if (has(ch, 'valves_follow_hp_enabled'))
           await post('/heat-source/settings', { valves_follow_hp_enabled: bit(fval(form, 'valves_follow_hp_enabled')) });
-        if (has(ch, 'internal_gains_w')) {
-          var savedCtl = await post('/heat-source/control', { internal_gains_w: fval(form, 'internal_gains_w') });
+        if (has(ch, 'internal_gains_w') || has(ch, 'hp_max_kw')) {
+          var ctlBody = {};
+          if (has(ch, 'internal_gains_w')) ctlBody.internal_gains_w = fval(form, 'internal_gains_w');
+          if (has(ch, 'hp_max_kw')) ctlBody.hp_max_kw = fval(form, 'hp_max_kw');
+          var savedCtl = await post('/heat-source/control', ctlBody);
           if (savedCtl && savedCtl.control) applyHeatControl(savedCtl.control);
         }
         var balanceOnly = Object.keys(ch).every(function (k) {
-          return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled' || k === 'internal_gains_w';
+          return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled' || k === 'internal_gains_w' || k === 'hp_max_kw';
         });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',

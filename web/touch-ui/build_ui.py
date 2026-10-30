@@ -570,12 +570,13 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     # ---- Cirkulation: pumpen og fordeling pr. styring
     pump_over = f'''
         <p class="msg warn" data-bind-show="pump.mixing" hidden><span><b>{T("pump.mixStrong")}</b> <span data-bind="pump.mixBody"></span></span></p>
+        <p class="msg warn" data-bind-show="pump.short" hidden><span><b>{T("pump.shortStrong")}</b> <span data-bind="pump.shortBody"></span></span></p>
         <dl class="metrics">
           {metric(T("pump.flow"), "l/min", "pump.flow")}
           {metric(T("pump.head"), "m", "pump.head")}
           {metric(T("pump.power"), "W", "pump.power")}
         </dl>
-        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.recommended"), "pump.recommended"), (T("heat.valvesNow"), "heat.valvesNow"), (T("pump.host"), "pump.host")])}
+        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.balance"), "pump.balance"), (T("pump.recommended"), "pump.recommended"), (T("heat.valvesNow"), "heat.valvesNow"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <div class="sub"><h4>{T("pump.need")}</h4>
@@ -837,6 +838,11 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         {group(T("heat.valves"), sswitch("valves_follow_hp_enabled", T("heat.valvesSw"), T("heat.valvesSub"), False), extra=note(T("heat.valvesHint")))}
         {group(T("heat.gains"), sstep("internal_gains_w", T("heat.gainsLabel"), 650, 0, 2000, 50, "W", dec=0, hint=T("heat.gainsHint")),
                extra=note(T("heat.gainsGuide")))}
+        {group(T("pump.hpGroup"),
+               srow(f"<span>{T('pump.hpMax')}</span>", f'<span class="setting-value" data-bind="pump.hpMaxOdin">{DASH}</span>',
+                    T("pump.hpMaxOdinHint"), attrs=' data-bind-show="pump.hpMaxOdin" hidden') +
+               srow(lab("hp_max_kw", T("pump.hpMax")), stepper("hp_max_kw", 0, 0, 40, 0.5, "kW", T("pump.hpMax")),
+                    T("pump.hpMaxHint"), attrs=' data-bind-show="pump.hpMaxEdit"'))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
                sport("pump_port", T("pumpCfg.port")))}
         {group(T("pump.entities"), sinput("flow_entity", T("pumpCfg.flowEntity"), "pump_flow", id_="pump_flow_entity") +
@@ -996,7 +1002,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria", "room.histChartAria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
-        "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix",
+        "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

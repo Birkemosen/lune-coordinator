@@ -40,13 +40,22 @@ int main() {
   assert(!mixing_sample_usable(1.0f, 32.0f, true, 2));     // start-up transient
   assert(!mixing_sample_usable(17.0f, NAN, true, 2));
   assert(mixing_state(32.0f / 17.0f) == Mixing::Risk);     // the 2026-10-07 block
-  assert(mixing_state(1.04f) == Mixing::Ok);               // within sensor noise
-  assert(mixing_state(0.9f) == Mixing::Ok);
+  assert(mixing_state(22.7f / 19.0f) == Mixing::Ok);       // 120 %: < 1 K diluted, no bypass
+  assert(mixing_state(1.0f) == Mixing::Ok);
+  assert(mixing_state(0.98f) == Mixing::Ok);               // within sensor noise
+  assert(mixing_state(0.9f) == Mixing::Short);             // the heat pump gets its own water back
   assert(mixing_state(NAN) == Mixing::Unknown);
   assert(std::strcmp(mixing_name(Mixing::Risk), "risk") == 0);
-  // Recommended secondary flow: 90 % of the primary, rounded down to 0.5 l/min.
-  assert(recommended_secondary_lmin(19.0f) == 17.0f);
-  assert(recommended_secondary_lmin(28.7f) == 25.5f);
+  assert(std::strcmp(mixing_name(Mixing::Short), "short") == 0);
+  // Recommended: 5 % above the heat pump's flow, rounded up to 0.5 l/min.
+  assert(recommended_secondary_lmin(19.0f) == 20.0f);
+  assert(recommended_secondary_lmin(20.0f) == 21.0f);
+  assert(recommended_secondary_lmin(28.7f) == 30.5f);
+  // Heat in a flow: 19 l/min × 4 K ≈ 5.3 kW; no ΔT → unknown.
+  assert(std::fabs(water_kw(19.0f, 31.0f, 27.0f) - 5.30f) < 0.01f);
+  assert(std::isnan(water_kw(19.0f, 27.0f, 27.0f)));
+  assert(std::isnan(water_kw(19.0f, 26.0f, 27.0f)));
+  assert(std::isnan(water_kw(NAN, 31.0f, 27.0f)));
   assert(std::isnan(recommended_secondary_lmin(1.0f)));
   assert(std::isnan(recommended_secondary_lmin(NAN)));
   // 29 l/min at 6.6 m through the same valves: 17 l/min needs about 2.3 m.

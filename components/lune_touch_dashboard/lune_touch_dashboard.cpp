@@ -1521,6 +1521,12 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 400, "invalid_param", "internal_gains_w must be 0-2000");
       return;
     }
+    float hp_max_kw = NAN;
+    parse_float_param(api, api.json_body, "hp_max_kw", &hp_max_kw);
+    if (std::isfinite(hp_max_kw) && !coordinator_->set_hp_max_kw_user(hp_max_kw)) {
+      send_error_(api, 400, "invalid_param", "hp_max_kw must be 0 (clear) or 1-40");
+      return;
+    }
     const bool accepted = coordinator_->set_heat_source_control(
         has_odin_enabled, odin_enabled != 0, max_lift_c, has_forwarder ? forwarder : nullptr,
         has_target ? target_tmpl : nullptr, has_request ? request_tmpl : nullptr,

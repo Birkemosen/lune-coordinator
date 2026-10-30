@@ -300,7 +300,7 @@ Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
 ```json
 "hp_diagnostics": {
   "plan_deviation": { "state": "over", "mean_kw": 9.1, "planned_kw": 6.3, "window_min": 30 },
-  "mixing": { "state": "mixing", "primary_l_min": 13.0, "secondary_l_min": 15.0 }
+  "mixing": { "state": "short", "primary_l_min": 19.0, "secondary_l_min": 17.5 }
 }
 ```
 
@@ -313,8 +313,10 @@ Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
   the compressor running; clears above 0.85 × plan. A raised flag survives pauses
   (`idle`) for up to 30 min.
 - `mixing.state`: `unknown` (no Asgard or Alpha2 flow), `idle` (a pump stopped, or not
-  space heating), `ok`, `mixing` (secondary > primary × 1.05 for 10 min; clears when
-  secondary < primary for 10 min). Flows in l/min (secondary = Alpha2 m³/h × 1000/60);
+  space heating), `ok`, `short` (secondary < primary × 0.97 for 10 min: the heat pump gets
+  its own water back through the tank; clears when secondary ≥ primary for 10 min),
+  `mixing` (secondary > primary × 1.25 for 10 min; clears when secondary < primary × 1.15
+  for 10 min). Flows in l/min (secondary = Alpha2 m³/h × 1000/60);
   last judged values, `null` when unknown.
 - Each raise and clear is logged once in `GET /events` (source `heat_source` for the plan,
   `circulation` for mixing).
@@ -365,7 +367,7 @@ sent only when it did):
 ]
 ```
 
-Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.mixing`,
+Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.short_flow`, `hydraulics.mixing`,
 `connectivity.v6:<node_id>`, `connectivity.asgard`, `connectivity.odin` and
 `room.not_reached:<room_id>`. Room sensors are V6's, so humidity, battery and sensor
 problems come from V6.
@@ -1191,9 +1193,20 @@ head/flow. Delivered energy is integrated into per-room
   "thermal_kw": 2.15,
   "thermal_kw_source": "measured",
   "hydraulic_authority": 0.72,
-  "last_error": ""
+  "last_error": "",
+  "mixing": { "state": "ok", "ratio": 1.2, "primary_l_min": 19.0, "secondary_l_min": 22.7,
+              "age_s": 600, "recommended_l_min": 20.0, "recommended_head_m": 3.9,
+              "in_kw": 5.3, "out_kw": 5.1 }
 }
 ```
+
+`mixing` is the last sample taken while Asgard reports space heating with its pump on,
+held for 6 h (all values `null` and `state` `unknown` without one). `state` is `short`
+(ratio < 0.97), `ok` or `risk` (ratio > 1.25). `recommended_l_min` is 5 % above the primary
+flow, rounded up to 0.5 l/min; `recommended_head_m` the constant pressure for it through the
+valves as they are now. `in_kw` is Asgard's `computed_output_power` (else primary flow ×
+`hp_feed_temp − hp_return_temp`); `out_kw` is the secondary flow × Asgard's 1-wire Zone 1
+feed − return (`ow_role_z1_feed/return`), else `thermal_kw`; `null` when unknown.
 
 `GET /heat-source` and `GET /diagnostics` embed the same object as
 `circulation`.
@@ -1317,6 +1330,8 @@ All fields optional; absent = unchanged; an empty template string clears that le
 | `curve_offset_url_template` | Generic: `{value}` = curve shift (°C) |
 | `curve_gain` | 0–10 °C flow per °C room need (default 2.0) |
 | `curve_max_offset_c` | 0–15 °C (default 5.0) |
+| `internal_gains_w` | 0–2000 W — free heat from people and appliances (default 650) |
+| `hp_max_kw` | 1–40 kW, `0` clears — the heat pump's maximum output, used only while Odin gives no `hp_max_thermal_kw`. GET `odin.hp_max_kw` is the value in use, `odin.hp_max_kw_source` `odin` / `user` / `none`, `odin.hp_max_kw_user` the one set here |
 
 Templates take `{host}`, `{port}` (the heat source's) and `{value}`; they are sent as an
 empty `POST`. Response: `{"result":"saved","control":{…GET body…}}`.
