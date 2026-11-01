@@ -531,7 +531,7 @@ Varianter:
 
 | Klasse | Brug |
 |---|---|
-| `.panel.alert` | Fejl der kræver handling nu. Kompakt: titel og tekst til venstre, knap til højre (én linje på bred skærm). Baggrund `danger-surface`, solid rød kant (`danger-fill`), rød ikonbrik med "!", titel i normal tekstfarve, knap i `danger-fill` med hvid tekst. Maks. én pr. visning, altid øverst. |
+| `.panel.alert` | Fejl der kræver handling nu. Kompakt: titel og tekst til venstre, knap til højre (én linje på bred skærm). Baggrund `danger-surface`, solid rød kant (`danger-fill`), rød ikonbrik med "!", titel i normal tekstfarve, knap i `danger-fill` med hvid tekst. Maks. én pr. visning, altid øverst. Som formular med en guide (fx V6' «Nulstil fejl»): den primære knap er rød og aldrig «clean», de øvrige knapper er neutrale. En spærret zone (`blocked`) tæller som fejl og giver alarmen, selvom zonefeltet er gult. |
 | `.panel.tone-info` | Informativ fremhævning (sjælden). |
 | `form.panel` | Formular. Én gem-knap i footeren. |
 
@@ -608,6 +608,8 @@ Alle zoner med aktuel/mål og 24-timers graf. Hver række er et `<label>` for zo
 - Værdien bliver gul (`c-warn`), når temperaturen er > 0,5 °C under målet.
 - Smalt panel: grafen under navnet. Bredt panel (≥ 560 px): på samme række; værdikolonnen har fast bredde, så graferne flugter.
 
+**Zonekort (`.zcards` / `.zcard`, V6 Hjem fra 2.3.29).** På V6' Hjem afløser zonekortene komfortlisten: én `button.zcard` pr. zone (åbner zonens ark) med id, navn og åbning (`.zcard-open`, «åben 8 %») øverst, aktuel/mål i `.val` og en lav 24 t-graf (`.zc.mini`, 72 px) med y-akse i HTML: temperatur (`.t`), mål som trappe (`.sp`) og perioder hvor zonen kaldte på varme skraveret (`.pre`, `url(#lds-hatch-heat)`). Grafen placeres efter tid, så en kort historik efter en genstart starter midt i grafen. Kortene står i et gitter (`repeat(auto-fill, minmax(260px, 1fr))`): 2 pr. række i et c7-panel, 1 på mobil. Under to temperaturpunkter får kortet `data-empty`, og grafen afløses af `.empty`. Tilstand på kortet (`data-state`) farver id og værdi som i komfortlisten. Står «Varme nu» ved siden af, vokser dens fremløb/retur-graf (`.panel > .trend-wrap`) til panelets højde i stedet for tom luft. Forklaringen i panelhovedet får `.lh` (skravering) for varme. Komfortlisten (`.comfort`) bruges fortsat i Touch' manifoldark.
+
 ### 5.9 Grafer
 
 Alle grafer er inline-SVG uden bibliotek.
@@ -629,7 +631,9 @@ Regler:
 
 **Søjler med aflæsning (`.bars[data-readout]`, Touch):** fx dagens elpris. Hover eller tryk på en søjle fremhæver den (`.col[data-active]`, `--fg`) og viser time og værdi i `.bars-readout` over plottet (`aria-live`); den aktuelle time står lidt kraftigere (`.col[data-now]`). Teksten kommer fra `data-label` på søjlen (i18n), ikke fra `title`.
 
-**Fordeling (`.dist`, Touch):** omtrentlig andel af pumpens flow pr. manifold. Flow er en mængde, og bjælker er aldrig flerfarvede (3.2.2): `.dist-bar` med `.dist-seg` (`--w` = andel i %) i `--fg` med faldende styrke (`data-i` 0–3) og en tynd skillelinje. Under den `.dist-rows`: nøgle (`.dist-key`, samme styrke), navn, %, l/min og en tynd bjælke (`.dist-bar--thin`) med manifoldens zoner. `.dist-note` forklarer, at tallene er omtrentlige (beregnet ud fra ventilåbning).
+**Fordeling (`.dist`, Touch):** omtrentlig andel af pumpens flow pr. manifold. Flow er pumpens vand, så bjælken er i én kulør (`--data-pump`) med faldende styrke pr. manifold (`data-i` 0–3, samme nuancer som donutten i Cirkulation-feltet, `.ht-dist`) og en tynd skillelinje; aldrig flere kulører (3.2.2). Under den `.dist-rows`: nøgle (`.dist-key`, samme nuance), navn, %, l/min og en tynd bjælke (`.dist-bar--thin`) med manifoldens zoner i manifoldens nuance. `.dist-note` forklarer, at tallene er omtrentlige (beregnet ud fra ventilåbning).
+
+**Flowbehov (`.need`, Touch, fra 2.3.30):** sekundært flow ved fuld last pr. varmebehov. Bjælkerne er neutrale; «Dette hus» (`data-house`) i `--data-pump`. To lodrette mærker på alle bjælker, adskilt på både kulør og streg: varmepumpens flow (`data-lim`, stiplet i `--accent`, varme) og pumpen nu (`data-now`, fuld i `--data-pump`). Mærkerne er 3 px med en `--card`-kant, så de står frem over bjælkerne. `.need-legend` forklarer begge i tekst.
 
 **Plan vs. virkelighed (`.bars`)**: planlagt varme neutral (`.plan`, `--seg-off`), faktisk i `--accent` (`.act`). Højder via `--plan` / `--act` (0–100). Akser og forklaring i HTML (`.bars-legend`). Antal kolonner: `--bars-n`. Bruges på Touch' hus-dashboard, når varmekilden er Asgard (Odin).
 

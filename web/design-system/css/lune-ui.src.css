@@ -925,6 +925,25 @@
   .comfort [data-state="blocked"] :is(.id, .val) { color: var(--warn); }
   .comfort [data-state="learning"] :is(.id, .val) { color: var(--violet); }
 
+  /* Zonekort (V6 Hjem): ét kort pr. zone med tal og en lav 24 t-graf (.zc.mini) — temperatur,
+     mål som trappekurve og perioder med varme skraveret. Kortet er en knap, der åbner zonens ark.
+     2 kort pr. række i et c7-panel, 1 på mobil. Tom historik → data-empty: grafen klapper sammen til .empty. */
+  .zcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: var(--space-3); }
+  .zcard { display: grid; gap: var(--space-2); align-content: start; width: 100%; padding: var(--space-3) var(--space-4); border: 0; border-radius: var(--r-tile); background: var(--raised); color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
+  .zcard:hover { box-shadow: inset 0 0 0 1px var(--border); }
+  .zcard-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+  .zcard .id { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+  .zcard .name { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .zcard-open { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+  .zcard .val { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
+  .zcard .val b { font-size: var(--fs-lg); font-weight: 600; color: var(--fg); }
+  .zcard[data-state="fault"] :is(.id, .val) { color: var(--danger); }
+  .zcard[data-state="blocked"] :is(.id, .val) { color: var(--warn); }
+  .zcard[data-state="learning"] :is(.id, .val) { color: var(--violet); }
+  .zc.mini { grid-template-columns: 28px minmax(0, 1fr); row-gap: 4px; }
+  .zc.mini :is(.zc-y, .zc-plot) { height: 72px; }
+  .zc.mini .zc-x span { visibility: visible; }
+
   @container (min-width: 560px) {
     .comfort > :is(label, button) {
       grid-template-columns: 40px minmax(90px, 140px) minmax(0, 1fr) 112px;  /* fast værdikolonne → graferne flugter */
@@ -942,6 +961,9 @@
   /* Fremløb/retur-trend i "Varme nu": fylder panelets bund, så kortet
      står lige så højt som komfortlisten ved siden af uden tom luft */
   .trend-wrap { margin-top: auto; }
+  /* Står panelet ved siden af et højere (fx zonekortene), vokser grafen i stedet for tom luft. */
+  .panel > .trend-wrap:not([data-empty]) { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .panel > .trend-wrap:not([data-empty]) > .trend { flex: 1 1 auto; }
   .trend-wrap h4 { display: flex; align-items: center; }
   .trend { display: block; width: 100%; height: 120px; overflow: visible; }
   .trend .f  { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
@@ -1147,21 +1169,22 @@
   .plan-x .d { color: var(--fg); font-weight: 600; }
   .plan-empty-lane { grid-column: 2; font-size: var(--fs-xs); color: var(--faint); }
 
-  /* Fordeling (.dist, Touch): omtrentlig andel af pumpens flow pr. manifold. Flow er en
-     mængde → neutral, og bjælker er aldrig flerfarvede (3.2.2): segmenterne er --fg i
-     faldende styrke (data-i 0–3) med en tynd skillelinje. Rækkerne under bærer navn,
-     % og l/min, så tonen aldrig er eneste signal. */
+  /* Fordeling (.dist, Touch): omtrentlig andel af pumpens flow pr. manifold. Flow er pumpens
+     vand → én kulør (data-pump) i faldende styrke pr. manifold (data-i 0–3), som donutten i
+     Cirkulation-feltet (.ht-dist). Aldrig flere kulører (3.2.2). Rækkerne under bærer nøgle,
+     navn, % og l/min, og manifoldens tynde zonebjælke har samme nuance, så tonen aldrig er
+     eneste signal. */
   .dist { display: grid; gap: var(--space-3); }
   .dist-bar { display: flex; height: 22px; overflow: hidden; border-radius: var(--r-pill); background: var(--seg-off); }
   .dist-bar--thin { height: 8px; }
-  .dist-seg { flex: 0 0 calc(var(--w, 0) * 1%); min-width: 0; background: color-mix(in srgb, var(--fg) var(--k, 100%), transparent); }
+  .dist-seg { flex: 0 0 calc(var(--w, 0) * 1%); min-width: 0; background: color-mix(in srgb, var(--data-pump) var(--k, 100%), var(--card)); }
   .dist-seg + .dist-seg { box-shadow: inset 2px 0 0 var(--card); }
   .dist [data-i="0"] { --k: 100%; }
-  .dist [data-i="1"] { --k: 72%; }
-  .dist [data-i="2"] { --k: 50%; }
-  .dist [data-i="3"] { --k: 32%; }
+  .dist [data-i="1"] { --k: 58%; }
+  .dist [data-i="2"] { --k: 32%; }
+  .dist [data-i="3"] { --k: 18%; }
   .dist-rows { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--space-2) var(--space-4); align-items: center; font-size: var(--fs-sm); }
-  .dist-key { width: 10px; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--fg) var(--k, 100%), transparent); }
+  .dist-key { width: 10px; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--data-pump) var(--k, 100%), var(--card)); }
   .dist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dist-rows .num { text-align: right; color: var(--muted); }
   .dist-rows .dist-bar--thin { grid-column: 2 / -1; margin-top: -4px; }
@@ -1169,9 +1192,10 @@
 
   /* Flowbehov (.need, Touch): sekundært flow ved fuld last pr. varmebehov (W/m²). Flow er
      en mængde → neutrale bjælker; «Dette hus» (data-house) i pumpens datafarve. To lodrette
-     mærker på alle bjælker: varmepumpens flow (data-lim, stiplet = grænse for opblanding)
-     og pumpen nu (data-now, fuld). Binderen sætter --v (bjælke), --lim og --now i % af
-     skalaen. Tal og forklaring i HTML (.need-legend), så stregtypen aldrig er eneste signal. */
+     mærker på alle bjælker, adskilt på både kulør og streg: varmepumpens flow (data-lim,
+     stiplet i varme, --accent = grænse for korte cykler) og pumpen nu (data-now, fuld i
+     data-pump). Mærkerne har en --card-kant, så de står frem over bjælkerne. Binderen sætter
+     --v (bjælke), --lim og --now i % af skalaen. Tal og forklaring i HTML (.need-legend). */
   .need { display: grid; gap: var(--space-3); }
   .need-rows { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-3) var(--space-3); align-items: center; font-size: var(--fs-sm); }
   .need-row { display: contents; }
@@ -1184,15 +1208,15 @@
   .need-row[data-house] .num { color: var(--fg); }
   .need-row[data-house] .need-track > i { background: var(--data-pump); }
   .need[data-lim] .need-track::before,
-  .need[data-now] .need-track::after { content: ""; position: absolute; top: -4px; bottom: -4px; z-index: 1; }
-  .need[data-lim] .need-track::before { left: calc(clamp(0, var(--lim, 0), 100) * 1%); border-left: 2px dashed var(--fg); }
-  .need[data-now] .need-track::after { left: calc(clamp(0, var(--now, 0), 100) * 1%); border-left: 2px solid var(--data-pump); }
+  .need[data-now] .need-track::after { content: ""; position: absolute; top: -5px; bottom: -5px; z-index: 1; width: 3px; margin-left: -1.5px; border-radius: 1px; box-shadow: 0 0 0 2px var(--card); }
+  .need[data-lim] .need-track::before { left: calc(clamp(0, var(--lim, 0), 100) * 1%); background: repeating-linear-gradient(to bottom, var(--accent) 0 4px, transparent 4px 7px); }
+  .need[data-now] .need-track::after { left: calc(clamp(0, var(--now, 0), 100) * 1%); background: var(--data-pump); }
   .need-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); font-size: var(--fs-xs); color: var(--muted); }
   .need-legend > span { display: inline-flex; align-items: center; gap: var(--space-2); }
   .need-legend > span[hidden] { display: none; }
-  .need-key { width: 0; height: 12px; }
-  .need-key.lim { border-left: 2px dashed var(--fg); }
-  .need-key.now { border-left: 2px solid var(--data-pump); }
+  .need-key { width: 3px; height: 14px; border-radius: 1px; }
+  .need-key.lim { background: repeating-linear-gradient(to bottom, var(--accent) 0 4px, transparent 4px 7px); }
+  .need-key.now { background: var(--data-pump); }
   @media (max-width: 519.98px) {
     .need-name small { display: block; margin-left: 0; }
   }
@@ -1296,6 +1320,7 @@
   .legend i { display: inline-block; width: 14px; height: 0; margin-left: 6px; }
   .legend .lt { border-top: 1.6px solid var(--fg); }
   .legend .lg { border-top: 1px dashed var(--muted); }
+  .legend .lh { width: 14px; height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, transparent) 0 1.5px, transparent 1.5px 5px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
   @media (max-width: 599.98px) { .legend { display: none; } }
 
   /* ---- 4.6 Klima-kontrol (Tesla-inspireret) ---------------------------
@@ -1710,8 +1735,8 @@
   .ht-dist svg { flex: none; width: 88px; height: 88px; transform: rotate(-90deg); }
   .ht-dist circle { fill: none; stroke-width: 6; }
   .ht-dist .trk { stroke: var(--seg-off); }
-  .ht-dist :is(circle, i)[data-i="0"] { --k: 100%; } .ht-dist :is(circle, i)[data-i="1"] { --k: 62%; }
-  .ht-dist :is(circle, i)[data-i="2"] { --k: 40%; } .ht-dist :is(circle, i)[data-i="3"] { --k: 26%; }
+  .ht-dist :is(circle, i)[data-i="0"] { --k: 100%; } .ht-dist :is(circle, i)[data-i="1"] { --k: 58%; }
+  .ht-dist :is(circle, i)[data-i="2"] { --k: 32%; } .ht-dist :is(circle, i)[data-i="3"] { --k: 18%; }
   .ht-dist circle[data-i] { stroke: color-mix(in srgb, var(--data-pump) var(--k), var(--card)); }
   .ht-dist ul { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); min-width: 0; }
   .ht-dist li { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
@@ -2020,7 +2045,13 @@
   .seg { display: inline-flex; width: fit-content; max-width: 100%; min-height: var(--hit); padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
   .seg label { flex: 0 0 auto; display: grid; }
   .seg span { padding: 0 var(--space-4) !important; }
-  @media (max-width: 599.98px) { .seg { display: flex; width: auto; } .seg label { flex: 1; } }
+  /* Mobil: segmentet fylder rækken under labelen, og pillerne er smallere, så fire valg kan stå side om side. */
+  @media (max-width: 599.98px) {
+    .seg { display: flex; width: auto; } .seg label { flex: 1; }
+    .seg span { padding: 0 var(--space-2) !important; }
+    .setting-control:has(> .seg) { flex: 1 1 100%; margin-left: 0; }
+    .setting-control > .seg { width: 100%; }
+  }
   .seg input { position: absolute; opacity: 0; pointer-events: none; }
   .seg span { display: grid; place-items: center; white-space: nowrap; padding: 0 var(--space-3); border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; text-align: center; }
   .seg input:checked + span { background: var(--inv-bg); color: var(--inv-fg); }
@@ -2078,8 +2109,9 @@
   .btn.primary { background: var(--inv-bg); color: var(--inv-fg); }
   .btn.primary:hover { background: color-mix(in srgb, var(--inv-bg) 85%, transparent); }
   /* Gem (DESIGN.md 6.1). Clean: gem-knappen er synlig men neutral — aldrig disabled/skjult. */
-  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary,
-  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary:hover { background: var(--raised); color: var(--muted); }
+  /* En alarm-formular (.panel.alert) er en handling, ikke en gem: dens primære knap er aldrig «clean». */
+  form[data-js]:not(.alert):not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary,
+  form[data-js]:not(.alert):not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary:hover { background: var(--raised); color: var(--muted); }
   form[data-js]:not([data-dirty]) > .panel-foot > button[type="reset"] { display: none; }
   .panel-foot .foot-start { margin-right: auto; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; min-width: 0; }
   .panel-foot > .save-status { margin-right: auto; }
@@ -2114,6 +2146,9 @@
   /* Knap på inverteret panel */
   .panel.alert .btn { background: var(--danger-fill); color: var(--on-fill); }
   .panel.alert .btn:hover { background: color-mix(in oklab, var(--danger-fill) 85%, black); color: var(--on-fill); }
+  /* Alarm med en primær handling (fx Nulstil fejl): de øvrige knapper er neutrale, så kun den primære er rød. */
+  .panel.alert:has(.btn.primary) .btn:not(.primary) { background: var(--card); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border); }
+  .panel.alert:has(.btn.primary) .btn:not(.primary):hover { background: var(--inv-bg); color: var(--inv-fg); }
   form:has(:user-invalid) .btn.primary { opacity: .4; pointer-events: none; }
 
   /* Bekræftelse uden modal */
