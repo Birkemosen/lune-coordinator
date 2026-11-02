@@ -25,17 +25,45 @@ Asgard and Odin are separate projects by their own authors; Lune is not affiliat
 Active entrypoints (standalone checkout):
 
 ```text
-configurations/lune-touch-7.yaml   # Touch — Waveshare ESP32-S3-Touch-LCD-7B
-configurations/lune-mini.yaml      # Mini — headless, no LVGL package
+configurations/lune-touch-7.yaml        # Touch — Waveshare ESP32-S3-Touch-LCD-7B
+configurations/lune-mini.yaml           # Mini — headless, ESP32-S3 N16R8
+configurations/lune-mini-n8r8.yaml      # Mini — headless, ESP32-S3 N8R8
+configurations/*-release.yaml           # the same, as public images without secrets
 ```
 
-Shared stack: custom 16 MB OTA partitions, network/OTA/safe mode, USB serial
-provisioning, diagnostics, `lune_touch_coordinator`, Touch API, and the embedded
-web UI. Touch adds LCD/LVGL; Mini omits the display package.
+Shared stack: network/OTA/safe mode, USB serial provisioning, diagnostics,
+`lune_touch_coordinator`, Touch API, and the embedded web UI. Touch adds LCD/LVGL;
+Mini omits the display package. The board profile (`packages/board/`) sets flash,
+PSRAM and partitions.
 
-Hardware profile: Waveshare ESP32-S3-Touch-LCD-7B, 1024×600 RGB565, GT911 touch,
-CH422G panel power/reset. LCD timings and buffer rules live in
-`docs/LCD_STABILITY.md`; field checks in `docs/field_validation.md`.
+### Lune Touch
+
+Waveshare ESP32-S3-Touch-LCD-7B, 1024×600 RGB565, GT911 touch, CH422G panel
+power/reset. LCD timings and buffer rules live in `docs/LCD_STABILITY.md`; field
+checks in `docs/field_validation.md`.
+
+### Lune Mini
+
+The same coordinator on a standard ESP32-S3 board without a display, set up and used
+from the web UI and Home Assistant. It needs **octal PSRAM** (history, HTTP bodies
+and TLS for the weather forecast live there):
+
+| Module | Flash / PSRAM | Example board | Config | OTA slot / history |
+|---|---|---|---|---|
+| N16R8 | 16 MB / 8 MB octal | ESP32-S3-DevKitC-1-N16R8 | `lune-mini.yaml` | 6.4 MB / 3.4 MB |
+| N8R8 | 8 MB / 8 MB octal | ESP32-S3-DevKitC-1-N8R8 | `lune-mini-n8r8.yaml` | 3 MB / 1.8 MB |
+
+Modules with quad PSRAM (N8R2, N4R2) or none (N8, N16) are not supported. Mini is
+about 1.7 MB.
+
+First flash: write `lune-mini-n16r8-<version>.factory.bin` or
+`lune-mini-n8r8-<version>.factory.bin` from the GitHub release at offset 0, e.g. with
+[ESPHome Web](https://web.esphome.io) over USB. Then join the **Lune Mini Setup**
+WiFi, pick your network in the captive portal and open the device in a browser.
+Home Assistant sets the API encryption key when you add the device. Updates: the
+`.ota.bin` from the release, uploaded from the web UI (System › Firmware).
+
+### Building
 
 ```bash
 make config
@@ -44,10 +72,11 @@ make deploy HOST=192.168.x.x
 make config-mini
 make build-mini
 make deploy-mini HOST=192.168.x.x
+make build-mini-n8r8
 make test
 ```
 
-`make build` / `make deploy` append a development suffix (`v0.1.0-1`, …). Release
+`make build` / `make deploy` append a development suffix (`v1.0.0-1`, …). Release
 builds drop it:
 
 ```bash
@@ -58,7 +87,15 @@ make release-mini
 ```
 
 `make build-verify` compiles without touching `version.yaml`. Firmware is checked
-against the 0x640000 OTA slot in `partitions/lune_touch_16mb_ota.csv`.
+against the board's OTA slot (0x640000, or 0x300000 for N8R8).
+
+### Secrets and public images
+
+Development builds of your own devices include `packages/network/build-secrets.yaml`:
+the WiFi seed, the API encryption key and the OTA password from `secrets.yaml`. The
+`configurations/*-release.yaml` entrypoints leave it out, so a published image
+carries none of them. `make release-firmware` builds all three public images into
+`dist/` (`<name>-<version>.factory.bin` and `.ota.bin`) after `make prepare-release`.
 
 ## Web UI
 

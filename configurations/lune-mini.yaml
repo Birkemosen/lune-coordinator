@@ -3,6 +3,7 @@
 #
 # Lune Mini headless ESP32-S3 coordinator entrypoint. It runs the same
 # coordinator/API/dashboard runtime as Lune Touch, with display/LVGL omitted.
+# Board: ESP32-S3 N16R8 (16 MB flash, 8 MB octal PSRAM).
 
 substitutions:
   device_name: lune-mini
@@ -13,3 +14,5 @@ substitutions:
 
 packages:
   base: !include ../lune-coordinator-base.yaml
+  board: !include ../packages/board/esp32-s3-n16r8.yaml
+  secrets: !include ../packages/network/build-secrets.yaml

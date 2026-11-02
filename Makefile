@@ -75,7 +75,8 @@ HP_HISTORY_OUT ?= /tmp/test_lune_touch_hp_history
 ENERGY_PRICE_OUT ?= /tmp/test_lune_touch_energy_price
 
 .PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy upload ota-size-check ota deploy install-registry-partition monitor \
-        config-mini build-mini deploy-mini ota-mini release-mini release-deploy-mini dashboard touch-ui dashboard-build \
+        config-mini build-mini deploy-mini ota-mini release-mini release-deploy-mini \
+        config-mini-n8r8 build-mini-n8r8 deploy-mini-n8r8 release-firmware release-image dashboard touch-ui dashboard-build \
         design-tokens design-verify \
         test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-problems test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-history test-energy-price clean
 
@@ -91,6 +92,8 @@ help:
 	@echo "  make deploy-mini HOST=192.168.x.x"
 	@echo "  make ota-mini HOST=192.168.x.x"
 	@echo "  make release-mini     Compile a Lune Mini release without build suffix"
+	@echo "  make build-mini-n8r8  Lune Mini on an 8 MB ESP32-S3 (N8R8); also config-/deploy-mini-n8r8"
+	@echo "  make release-firmware Public images without secrets in dist/ (Touch, Mini N16R8, Mini N8R8)"
 	@echo "  make ota-size-check   Verify firmware fits the OTA slot"
 	@echo "  make ota HOST=192.168.x.x"
 	@echo "  make deploy           Bump build + compile + upload Lune Touch (USB or HOST OTA)"
@@ -187,6 +190,38 @@ release-mini:
 release-deploy-mini:
 	$(MAKE) CONFIG=configurations/lune-mini.yaml BUILD_NAME=lune-mini release-deploy
 
+# Lune Mini on an ESP32-S3 with 8 MB flash (N8R8): own partition table, 3 MB OTA slots.
+MINI_N8R8 = CONFIG=configurations/lune-mini-n8r8.yaml BUILD_NAME=lune-mini OTA_SLOT_BYTES=3145728
+
+config-mini-n8r8:
+	$(MAKE) $(MINI_N8R8) config
+
+build-mini-n8r8:
+	$(MAKE) $(MINI_N8R8) build
+
+deploy-mini-n8r8:
+	$(MAKE) $(MINI_N8R8) deploy
+
+# Public firmware images for a GitHub release: configurations/*-release.yaml leave
+# out packages/network/build-secrets.yaml, so no image carries the build host's WiFi,
+# API key or OTA password. Stamp version.yaml first (prepare-release); each image is
+# compiled and copied to dist/<name>-<version>.factory.bin (first USB flash, offset 0)
+# and .ota.bin (update from the web UI).
+DIST_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/dist
+RELEASE_VERSION = $(shell sed -n 's/^[[:space:]]*firmware_version:[[:space:]]*"\([^"]*\)".*/\1/p' version.yaml)
+
+release-firmware: check
+	$(MAKE) release-image CONFIG=configurations/lune-touch-7-release.yaml BUILD_NAME=lune-touch IMAGE=lune-touch
+	$(MAKE) release-image CONFIG=configurations/lune-mini-release.yaml BUILD_NAME=lune-mini IMAGE=lune-mini-n16r8
+	$(MAKE) release-image CONFIG=configurations/lune-mini-n8r8-release.yaml BUILD_NAME=lune-mini OTA_SLOT_BYTES=3145728 IMAGE=lune-mini-n8r8
+	@ls -l $(DIST_DIR)
+
+release-image:
+	$(MAKE) compile
+	@mkdir -p $(DIST_DIR)
+	cp $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)/firmware.factory.bin $(DIST_DIR)/$(IMAGE)-$(RELEASE_VERSION).factory.bin
+	cp $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)/firmware.ota.bin $(DIST_DIR)/$(IMAGE)-$(RELEASE_VERSION).ota.bin
+
 ota-size-check:
 	@if [ ! -f "$(FIRMWARE_BIN)" ]; then \
 		echo "Firmware binary not found: $(FIRMWARE_BIN)"; \
@@ -197,7 +232,7 @@ ota-size-check:
 	pct=$$(awk "BEGIN { printf \"%.1f\", ($$size / $(OTA_SLOT_BYTES)) * 100 }"); \
 	echo "$(BUILD_NAME) OTA size: $$size / $(OTA_SLOT_BYTES) bytes ($$pct%)"; \
 	if [ $$size -gt $(OTA_SLOT_BYTES) ]; then \
-		echo "ERROR: firmware.bin exceeds Lune Touch OTA slot"; \
+		echo "ERROR: firmware.bin exceeds the OTA slot"; \
 		exit 1; \
 	fi; \
 	if [ $$size -gt $$warn ]; then \
