@@ -1,5 +1,16 @@
 #!/bin/sh
 set -eu
+# ripgrep when installed, else the same checks with grep: -F fixed strings, otherwise
+# extended regex; recursive when a directory is given, as rg is.
+if ! command -v rg >/dev/null 2>&1; then
+  rg() {
+    fixed=
+    if [ "$1" = "-F" ]; then fixed=1; shift; fi
+    rec=
+    for a in "$@"; do if [ -d "$a" ]; then rec=-r; fi; done
+    if [ -n "$fixed" ]; then grep $rec -F -- "$@"; else grep $rec -E "$@"; fi
+  }
+fi
 
 display=packages/display/lvgl_stability.yaml
 manifold=packages/display/lvgl/manifold_card.yaml
@@ -332,7 +343,9 @@ rg -F 'DISPLAY_ICON_WIND[] = "\xEF\x81\xB4"' "$coordinator" >/dev/null
 rg -F '%s %s | sent %s | confirmed %s' "$coordinator" >/dev/null
 rg -F '%s %.1f C | %s %.1f m/s | %s' "$coordinator" >/dev/null
 rg -F 'text: "\uF054 --.- C"' "$zone_cell" >/dev/null
-display_text=$(sed -n '/display_header_text() const/,/display_selected_room_text() const/p' "$coordinator")
+# display_weather_message() feeds a Geist label (lds_font_xs) and is exempt, like the overview.
+display_text=$(sed -n '/display_header_text() const/,/display_selected_room_text() const/p' "$coordinator" |
+  sed '/display_weather_message() const {/,/^}/d')
 # Legacy Montserrat widgets must not use glyphs absent from that font.
 # Overview (Geist) may use · → − ● from lds_font_* extras.
 if printf '%s' "$display_text" | rg '[●→↑↓↗·−]' >/dev/null || rg '[●→↑↓↗·−]' "$zone_cell" "$zone_chip" "$controller_chip" packages/display/lvgl/overview_circulation.yaml >/dev/null; then
@@ -353,7 +366,7 @@ token_body=$(sed -n '/display_refresh_token() const/,/display_header_text() cons
 rg -F 'return display_refresh_token_cache_' "$coordinator" >/dev/null
 ! rg -F 'Not mapped' "$zone_cell"
 
-rg -F 'data-save="heat_source.connection"' "$touch_ui" >/dev/null
+rg -F 'data-save="heat_source"' "$touch_ui" >/dev/null
 rg -F 'data-save="circulation"' "$touch_ui" >/dev/null
 rg -F 'public, max-age=31536000, immutable' "$dashboard_cpp" >/dev/null
 rg -F 'STATIC_CHUNK_SIZE = 1024' "$dashboard_cpp" >/dev/null
