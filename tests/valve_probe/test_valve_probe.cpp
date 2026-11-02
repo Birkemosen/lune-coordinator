@@ -37,7 +37,6 @@ static void test_fit_rejects_flat_or_noisy() {
 }
 
 static void test_schedule() {
-  assert(!in_window(0) && in_window(1) && in_window(4) && !in_window(5));
   const int64_t now = 1800000000;
   assert(loop_due(0, 0, now));
   assert(!loop_due(static_cast<uint32_t>(now - 86400), 0, now));

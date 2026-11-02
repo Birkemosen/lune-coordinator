@@ -12,10 +12,13 @@
 //   3. fit flow = base + delta · ramp(opening; start, full) by least squares;
 //   4. a good fit (delta and R² large enough) is written to V6 with its time.
 //
-// With a constant-pressure pump the change in total flow is the loop's own flow.
-// Runs at night while the heat pump is idle, a few loops per night, each loop
-// again after REMEASURE_S. Aborts (no result) when the heat pump wakes, the pump
-// reading goes stale or a V6 does not answer; V6 releases the hold by its TTL.
+// With a constant-pressure pump the change in total flow is the loop's own flow,
+// whether the heat source runs or not, so Touch measures whenever a pump reading is
+// available: one loop at a time, PAUSE_MS apart, until every loop has a curve, then
+// each loop again after REMEASURE_S. A change of heat-source phase during a run
+// (start, stop, hot water) moves temperatures and the pump's flow estimate, so it
+// aborts the run (no result), as do a stale pump reading and a V6 that does not
+// answer; V6 releases the hold by its TTL.
 // =============================================================================
 
 #pragma once
@@ -37,9 +40,7 @@ constexpr uint32_t HOLD_TTL_S = 300;          ///< V6 hold TTL, refreshed every 
 constexpr uint16_t CIRCULATION_POLL_S = 15;   ///< Pump poll interval while measuring
 constexpr float MIN_DELTA_LMIN = 0.8f;        ///< Smallest loop flow worth a curve
 constexpr float MIN_R2 = 0.8f;
-constexpr uint8_t WINDOW_START_H = 1;         ///< Local hours [start, end)
-constexpr uint8_t WINDOW_END_H = 5;
-constexpr uint8_t MAX_PER_NIGHT = 3;
+constexpr uint32_t PAUSE_MS = 5UL * 60UL * 1000UL;  ///< Between runs: balancing resumes
 constexpr uint32_t REMEASURE_S = 30UL * 86400UL;
 constexpr uint32_t RETRY_FAILED_S = 86400UL;
 constexpr size_t MAX_SAMPLES = 16;
@@ -130,9 +131,6 @@ inline Fit fit(const Point *pts, size_t n) {
   return best;
 }
 
-/// Inside the night window (local hour).
-inline bool in_window(int hour) { return hour >= WINDOW_START_H && hour < WINDOW_END_H; }
-
 /// Is a loop due? `measured_epoch_s` from V6 (0 = never), `failed_epoch_s` from
 /// Touch's own memory of a failed try (0 = none).
 inline bool loop_due(uint32_t measured_epoch_s, uint32_t failed_epoch_s, int64_t now_epoch_s) {
@@ -152,6 +150,7 @@ struct Run {
   uint8_t node{0};
   uint8_t zone{0};  ///< 0..5
   uint8_t step{0};
+  uint8_t phase{0};  ///< Heat-source phase at the start (caller's code); a change aborts
   uint32_t stage_start_ms{0};
   uint32_t last_sample_ms{0};
   float flow_sum{0.0f};
@@ -169,13 +168,14 @@ enum class Action : uint8_t {
 
 struct TickInput {
   uint32_t now_ms{0};
-  bool conditions_ok{false};  ///< heat pump idle, pump fresh, V6 boards reachable
+  bool conditions_ok{false};  ///< pump fresh, V6 boards reachable, phase unchanged
   bool has_flow_sample{false};
   float flow_lmin{NAN};
 };
 
-inline void start(Run &r, uint8_t node, uint8_t zone, uint32_t now_ms) {
+inline void start(Run &r, uint8_t node, uint8_t zone, uint32_t now_ms, uint8_t phase = 0) {
   r = Run{};
+  r.phase = phase;
   r.stage = Stage::Settling;
   r.node = node;
   r.zone = zone;

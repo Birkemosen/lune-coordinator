@@ -774,7 +774,7 @@ class LuneTouchCoordinator : public esphome::Component {
                     bool has_display_idle_timeout, uint32_t display_idle_timeout_s,
                     char *response, size_t capacity, const char *language = nullptr);
   bool request_display_wake(char *response, size_t capacity);
-  /// Measure one loop's valve curve as soon as the heat pump is idle (any hour).
+  /// Measure this loop's valve curve next (after the run in progress).
   /// node 1-based index of an approved V6, zone 1..6.
   bool request_valve_probe(int node, int zone, char *response, size_t capacity);
   bool consume_display_wake_request();
@@ -854,8 +854,8 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_house_balance_(uint32_t now_ms);
   bool send_v6_house_balance_(const char *host, uint8_t zone_index, float factor, uint32_t ttl_s);
   void append_house_balance_json_(char *buffer, size_t capacity) const;
-  // Valve curve measurement (valve_probe.h): the curve V6 reports per loop, the
-  // run in progress and the night's bookkeeping. RAM only; V6 keeps the curves.
+  // Valve curve measurement (valve_probe.h): the curve V6 reports per loop and the
+  // run in progress. RAM only; V6 keeps the curves.
   struct ValveProbeLoop {
     float start_pct{NAN};
     float full_pct{NAN};
@@ -872,8 +872,7 @@ class LuneTouchCoordinator : public esphome::Component {
   uint8_t vp_last_node_{0};
   uint8_t vp_last_zone_{0};
   int64_t vp_last_epoch_s_{0};
-  int vp_night_ymd_{0};
-  uint8_t vp_night_count_{0};
+  uint32_t vp_last_end_ms_{0};
   int8_t vp_request_node_{-1};
   int8_t vp_request_zone_{-1};
   uint32_t vp_last_flow_ms_{0};

@@ -16808,9 +16808,9 @@ void LuneTouchCoordinator::append_problems_json_(char *buffer, size_t capacity) 
 
 
 // -----------------------------------------------------------------------------
-// Valve curve measurement (valve_probe.h): at night, while the heat pump is idle,
-// every V6 holds its valves and one loop steps through its stroke; the pump's
-// flow gives the loop's curve, which is written back to its V6.
+// Valve curve measurement (valve_probe.h): whenever the circulation pump reports
+// its flow, every V6 holds its valves and one loop steps through its stroke; the
+// pump's flow gives the loop's curve, which is written back to its V6.
 // -----------------------------------------------------------------------------
 bool LuneTouchCoordinator::request_valve_probe(int node, int zone, char *response, size_t capacity) {
   if (node < 1 || node > static_cast<int>(::lune_touch::MAX_NODES) || zone < 1 ||
@@ -16845,9 +16845,6 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   constexpr size_t Z = ::lune_touch::ZONES_PER_NODE;
   constexpr uint32_t FRESH_MS = 3UL * 60UL * 1000UL;
   const int64_t epoch = current_epoch_s_();
-  int ymd = 0, hour = -1;
-  if (epoch > 0 && !epoch_to_local_(epoch, &ymd, &hour))
-    hour = -1;
 
   char hosts[N][64]{};
   bool host_ok[N]{};
@@ -16877,23 +16874,19 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   const bool circ_ok = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
                        now_ms - circulation_.last_success_ms < FRESH_MS && std::isfinite(flow_lmin) &&
                        flow_lmin > 3.0f;
-  const bool conditions = hp_phase_ == ::lune_touch_hp_phase::Phase::Idle && circ_ok && boards > 0 &&
-                          boards_fresh && epoch > 0 && authority_shared_key_[0] != '\0';
+  // Only running vs. not matters: Prestart/Idle follow Odin's plan without moving water.
+  const uint8_t phase = hp_phase_ == ::lune_touch_hp_phase::Phase::Running ? 1 : 0;
+  const bool ready = circ_ok && boards > 0 && boards_fresh && epoch > 0 && authority_shared_key_[0] != '\0';
   bool has_sample = false;
   if (circulation_.has_flow && circulation_.last_success_ms != vp_last_flow_ms_) {
     vp_last_flow_ms_ = circulation_.last_success_ms;
     has_sample = true;
   }
-  if (ymd != 0 && ymd != vp_night_ymd_) {
-    vp_night_ymd_ = ymd;
-    vp_night_count_ = 0;
-  }
-
   bool just_started = false;
   if (vp_run_.stage == vp::Stage::Off) {
     manual = vp_request_node_ >= 0;
-    const bool scheduled = hour >= 0 && vp::in_window(hour) && vp_night_count_ < vp::MAX_PER_NIGHT;
-    if (!conditions || (!manual && !scheduled)) {
+    const bool rested = vp_last_end_ms_ == 0 || now_ms - vp_last_end_ms_ >= vp::PAUSE_MS;
+    if (!ready || (!manual && !rested)) {
       give_state_lock_();
       return;
     }
@@ -16927,17 +16920,17 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
       give_state_lock_();
       return;
     }
-    vp::start(vp_run_, static_cast<uint8_t>(pick_node), static_cast<uint8_t>(pick_zone), now_ms);
+    vp::start(vp_run_, static_cast<uint8_t>(pick_node), static_cast<uint8_t>(pick_zone), now_ms, phase);
     just_started = true;
-    if (!manual)
-      vp_night_count_++;
   }
   vp::TickInput in;
   in.now_ms = now_ms;
-  in.conditions_ok = conditions;
+  in.conditions_ok = ready && phase == vp_run_.phase;
   in.has_flow_sample = has_sample;
   in.flow_lmin = flow_lmin;
   action = vp::tick(vp_run_, in, just_started);
+  if (vp_run_.stage == vp::Stage::Off)
+    vp_last_end_ms_ = now_ms == 0 ? 1 : now_ms;
   run = vp_run_;
   give_state_lock_();
 
@@ -16979,6 +16972,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     if (!sent) {
       if (take_state_lock_(100)) {
         vp_run_.stage = vp::Stage::Off;
+        vp_last_end_ms_ = now_ms == 0 ? 1 : now_ms;
         give_state_lock_();
       }
       stop_all();
@@ -16990,7 +16984,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   stop_all();
   if (action == vp::Action::Abort) {
     record("aborted", vp::Fit{}, false);
-    log_event_("info", "valve_curve", "aborted (heat pump, pump reading or V6)");
+    log_event_("info", "valve_curve", "aborted (heat source changed, pump reading or V6)");
     return;
   }
   // Finish
@@ -17095,11 +17089,10 @@ void LuneTouchCoordinator::append_valve_probe_json_(char *buffer, size_t capacit
                       : vp_run_.stage == vp::Stage::Measuring ? "measuring"
                                                               : "off";
   add(",\"valve_probe\":{\"stage\":\"%s\",\"node\":%u,\"zone\":%u,\"step\":%u,\"steps\":%u,"
-      "\"night_count\":%u,\"window\":[%u,%u],",
+      "\"pause_s\":%lu,",
       stage, static_cast<unsigned>(vp_run_.node + 1), static_cast<unsigned>(vp_run_.zone + 1),
       static_cast<unsigned>(vp_run_.step + 1), static_cast<unsigned>(vp::STEPS),
-      static_cast<unsigned>(vp_night_count_), static_cast<unsigned>(vp::WINDOW_START_H),
-      static_cast<unsigned>(vp::WINDOW_END_H));
+      static_cast<unsigned long>(vp::PAUSE_MS / 1000UL));
   char a[16], b[16], c[16], d[16];
   num(vp_last_fit_.start_pct, a, sizeof(a));
   num(vp_last_fit_.full_pct, b, sizeof(b));

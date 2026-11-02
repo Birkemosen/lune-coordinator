@@ -4,12 +4,14 @@
 
 ### Valve curves measured from the pump
 - V6's dynamic balancing turns each loop's flow into an opening through a valve curve
-  (where flow starts, where it is full). Touch measures it: at night (01–05) while the
-  heat pump is idle, every V6 holds its valves and one loop steps through its stroke
-  while Touch reads the circulation pump's flow; the fitted curve is written to the V6.
-  Up to three loops a night, each loop again after 30 days.
-- `POST /api/lune-touch/v1/valve-curves/measure` (`node`, `zone`) measures one loop as
-  soon as the heat pump is idle. Status and the curves in `GET /heat-source`
+  (where flow starts, where it is full). With a circulation pump connected, Touch
+  measures it: every V6 holds its valves and one loop steps through its stroke while
+  Touch reads the pump's flow; the fitted curve is written to the V6. One loop at a
+  time, five minutes apart, whether the heat source runs or not (a start, stop or
+  hot-water switch during a run aborts it); each loop again after 30 days. Without a
+  pump reading V6 keeps its default curve.
+- `POST /api/lune-touch/v1/valve-curves/measure` (`node`, `zone`) measures that loop
+  next. Status and the curves in `GET /heat-source`
   (`valve_probe`).
 
 ### Lune Mini on a standard ESP32-S3
