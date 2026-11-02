@@ -1,5 +1,22 @@
 # Changelog — Lune Design System
 
+## 2.3.30
+
+- `.dist`: fordelingen pr. manifold er i pumpens kulør (`--data-pump`) i nuancer pr. manifold som `.ht-dist`, i stedet for hvid/grå, og trinene er spredt mere (100/58/32/18 %, også i `.ht-dist`). Nøgle og zonebjælke følger manifoldens nuance.
+- `.need`: varmepumpens mærke er stiplet i varme (`--accent`) og pumpens mærke fuldt i `--data-pump`; begge 3 px med `--card`-kant, så de ikke forsvinder i bjælkerne eller i hinanden.
+
+## 2.3.29
+
+- `.zcards` / `.zcard` (V6 Hjem): ét kort pr. zone med aktuel/mål, åbning og en lav 24 t-graf (`.zc.mini`) — temperatur, mål som trappe og varmeperioder skraveret. Afløser komfortlisten på V6' Hjem; `.comfort` bliver i Touch.
+- `.legend .lh`: skravering for varme i panelhovedets forklaring.
+- `.panel > .trend-wrap`: fremløb/retur-grafen vokser til panelets højde, når naboen er højere.
+- V6-eksemplet viser zonekortene.
+
+## 2.3.28
+
+- `.panel.alert` som formular (fx V6' fejlguide): den primære knap («Nulstil fejl») er altid rød og aldrig «clean»-grå, og de øvrige knapper i en alarm med en primær handling er neutrale.
+- Mobil (< 600 px): et `.seg` i en indstillingsrække står under labelen i fuld bredde med smallere piller, så fire valg kan stå ved siden af hinanden uden at blive skåret af.
+
 ## 2.3.27
 
 - `.hchart` med fortid og prognose: intervallet `48h` (ud over `24h` / `7d`), `.trend .future` (svag flade efter «nu»), `.t` / `.tf` (temperatur, prognose stiplet), `.sp` (mål som trappekurve), `.o` / `.of` (ude), `.vb` (ventilåbning), `.heat` (timer med varme), `.pl` / `.ac` / `.acw` (planlagt, leveret, heraf varmt vand). `.axis.at` placerer x-mærker efter tid (`--x`). `.hchart-panel.pair`: øverste af to paneler med hver sin skala, uden x-akse. Forklaring: `.lt`, `.ltf`, `.lsp`, `.lo`, `.lof`, `.lpl`, `.lac`, `.lfut`.
