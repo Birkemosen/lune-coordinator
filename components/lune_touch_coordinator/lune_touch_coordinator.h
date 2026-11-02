@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hp_phase.h"
+#include "valve_probe.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
 #include "room_reached.h"
@@ -773,6 +774,9 @@ class LuneTouchCoordinator : public esphome::Component {
                     bool has_display_idle_timeout, uint32_t display_idle_timeout_s,
                     char *response, size_t capacity, const char *language = nullptr);
   bool request_display_wake(char *response, size_t capacity);
+  /// Measure one loop's valve curve as soon as the heat pump is idle (any hour).
+  /// node 1-based index of an approved V6, zone 1..6.
+  bool request_valve_probe(int node, int zone, char *response, size_t capacity);
   bool consume_display_wake_request();
   /// Display idle diagnostics: called from the LVGL 50 ms interval.
   void note_display_state(bool awake, bool paused, uint32_t inactive_ms);
@@ -850,6 +854,35 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_house_balance_(uint32_t now_ms);
   bool send_v6_house_balance_(const char *host, uint8_t zone_index, float factor, uint32_t ttl_s);
   void append_house_balance_json_(char *buffer, size_t capacity) const;
+  // Valve curve measurement (valve_probe.h): the curve V6 reports per loop, the
+  // run in progress and the night's bookkeeping. RAM only; V6 keeps the curves.
+  struct ValveProbeLoop {
+    float start_pct{NAN};
+    float full_pct{NAN};
+    uint32_t measured_epoch_s{0};
+    uint32_t failed_epoch_s{0};
+    bool enabled{false};
+    bool reported{false};  ///< V6 sends valve_curve (firmware with the curve)
+    uint32_t seen_ms{0};
+  };
+  ValveProbeLoop vp_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
+  ::lune_touch_valve_probe::Run vp_run_{};
+  ::lune_touch_valve_probe::Fit vp_last_fit_{};
+  char vp_last_result_[64]{};
+  uint8_t vp_last_node_{0};
+  uint8_t vp_last_zone_{0};
+  int64_t vp_last_epoch_s_{0};
+  int vp_night_ymd_{0};
+  uint8_t vp_night_count_{0};
+  int8_t vp_request_node_{-1};
+  int8_t vp_request_zone_{-1};
+  uint32_t vp_last_flow_ms_{0};
+  uint32_t vp_nonce_{0};
+  void run_valve_probe_(uint32_t now_ms);
+  bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop);
+  bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,
+                            uint32_t measured_epoch_s);
+  void append_valve_probe_json_(char *buffer, size_t capacity) const;
   // Valves follow the heat pump: phase pushed to every approved V6.
   ::lune_touch_hp_phase::State hp_phase_state_{};
   ::lune_touch_hp_phase::Phase hp_phase_{::lune_touch_hp_phase::Phase::Unknown};

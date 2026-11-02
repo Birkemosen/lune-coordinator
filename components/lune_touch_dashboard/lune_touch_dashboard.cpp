@@ -1651,6 +1651,13 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
   } else if (strcmp(path, "/display/wake") == 0) {
     const bool accepted = coordinator_->request_display_wake(data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/valve-curves/measure") == 0) {
+    uint32_t node = 0, zone = 0;
+    parse_uint_param(api, api.json_body, "node", &node);
+    parse_uint_param(api, api.json_body, "zone", &zone);
+    const bool accepted = coordinator_->request_valve_probe(static_cast<int>(node), static_cast<int>(zone),
+                                                            data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/forecast/fetch") == 0) {
     const bool accepted = coordinator_->request_forecast_fetch(data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
