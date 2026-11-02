@@ -97,7 +97,12 @@ static asgard_adapter::Config make_asgard_config_(const HeatSourceState &source)
 
 namespace {
 
+// OTA slot size of the board's partition table (diagnostics); the 8 MB Mini board sets it.
+#ifdef LUNE_OTA_SLOT_BYTES
+static constexpr uint32_t OTA_SLOT_BYTES = LUNE_OTA_SLOT_BYTES;
+#else
 static constexpr uint32_t OTA_SLOT_BYTES = 0x640000;
+#endif
 static constexpr uint32_t FORECAST_CACHE_MAGIC = 0x4C544657;  // LTFW
 static constexpr uint32_t PRELOAD_LEARN_MAGIC = 0x4C54504C;  // LTPL
 static constexpr uint16_t PRELOAD_LEARN_VERSION = 1;

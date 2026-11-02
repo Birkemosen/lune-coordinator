@@ -10,3 +10,4 @@ substitutions:
 
 packages:
   base: !include ../lune-touch.yaml
+  secrets: !include ../packages/network/build-secrets.yaml

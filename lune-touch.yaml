@@ -13,6 +13,7 @@ substitutions:
 
 packages:
   coordinator: !include lune-coordinator-base.yaml
+  board: !include packages/board/esp32-s3-16mb-psram.yaml
   display_tokens: !include packages/display/lvgl/tokens.generated.yaml
   display_fonts: !include packages/display/lvgl/fonts.yaml
   # LDS vægskærm-tema (Geist + RGB565-palet). Styles merges i lvgl_stability.

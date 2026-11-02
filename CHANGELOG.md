@@ -1,5 +1,22 @@
 # Changelog — Lune Touch
 
+## Unreleased (for v1.0.0)
+
+### Lune Mini on a standard ESP32-S3
+- Lune Mini, the coordinator without a display, has its own board profiles: ESP32-S3
+  N16R8 (16 MB flash, 8 MB octal PSRAM, `lune-mini.yaml`) and N8R8 (8 MB flash, own
+  partition table with 3 MB OTA slots, `lune-mini-n8r8.yaml`). The 7-inch panel
+  options are gone from Mini; Touch is unchanged.
+- The OTA slot in `GET /diagnostics` follows the board.
+
+### Public firmware images
+- `make release-firmware` builds public images for Touch, Mini N16R8 and Mini N8R8
+  (`<name>-<version>.factory.bin` and `.ota.bin`) from `configurations/*-release.yaml`.
+- Secrets moved to `packages/network/build-secrets.yaml` (WiFi seed, API encryption key,
+  OTA password), which only the development entrypoints include. A public image carries
+  none of the build host's secrets; Home Assistant sets the API key when it adds the
+  device.
+
 ## v1.0.0-rc1 — first release candidate (2026-11-02)
 
 First tagged release of Lune Touch: the whole-house coordinator for Lune V6 manifolds.

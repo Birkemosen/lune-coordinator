@@ -16,3 +16,4 @@ tests/dashboard/.stamp_version_tmp.yaml
 .DS_Store
 __pycache__/
 .env
+dist/
