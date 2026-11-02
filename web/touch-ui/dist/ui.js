@@ -1336,7 +1336,10 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       fHtml(sh, 'loops', r.loops.map(function (c) {
         var cz = mzOf(c);
         var lbl = (cz.m !== mz.m ? 'M' + cz.m + ' ' : '') + 'Z' + cz.z + (r.merged && c.name ? ' · ' + c.name : '');
-        var v = finite(c.valve_pct) && zoneHasData(c) ? t('room.valveShort', { v: num(c.valve_pct, 0) }) : '—';
+        // valve_pct is the loop's flow (% of full); pin_pct the valve's travel when V6 has a curve.
+        var v = !(finite(c.valve_pct) && zoneHasData(c)) ? '—'
+          : finite(c.pin_pct) ? t('room.valvePin', { v: num(c.valve_pct, 0), pin: num(c.pin_pct, 0) })
+          : t('room.valveShort', { v: num(c.valve_pct, 0) });
         if (r.merged && zoneHasData(c)) v = deg(c.temperature_c) + ' · ' + v;
         return '<div><dt>' + esc(lbl) + '</dt><dd>' + esc(v) + '</dd></div>';
       }).join(''));

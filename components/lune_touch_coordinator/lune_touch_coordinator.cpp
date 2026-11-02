@@ -5571,6 +5571,16 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     fields.temperature_c = fields.has_temperature ? (zone["temperature_c"] | 0.0f) : 0.0f;
     fields.setpoint_c = fields.has_setpoint ? (zone["setpoint_c"] | 0.0f) : 0.0f;
     fields.valve_pct = fields.has_valve ? (zone["valve_pct"] | 0.0f) : 0.0f;
+    // V6 with a valve curve reports the loop's flow (% of full): Touch shows and weighs
+    // flow; the pin's travel is kept for the text beside it.
+    if (node_index < ::lune_touch::MAX_NODES) {
+      float &pin = vp_loops_[node_index][zone_number - 1].pin_pct;
+      pin = NAN;
+      if (fields.has_valve && !zone["flow_pct"].isNull()) {
+        pin = fields.valve_pct;
+        fields.valve_pct = zone["flow_pct"] | 0.0f;
+      }
+    }
     fields.status = zone["state"].as<const char *>();
     if (fields.status == nullptr)
       fields.status = zone["status"] | "unknown";
@@ -12990,6 +13000,13 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     if (live != nullptr && live->has_temperature) snprintf(temp_buf, sizeof(temp_buf), "%.1f", live->temperature_c); else std::strncpy(temp_buf, "null", sizeof(temp_buf));
     if (live != nullptr && live->has_setpoint) snprintf(sp_buf, sizeof(sp_buf), "%.1f", live->setpoint_c); else std::strncpy(sp_buf, "null", sizeof(sp_buf));
     if (live != nullptr && live->has_valve) snprintf(valve_buf, sizeof(valve_buf), "%.1f", live->valve_pct); else std::strncpy(valve_buf, "null", sizeof(valve_buf));
+    char pin_buf[16];
+    {
+      const float pin = zone->node_index < ::lune_touch::MAX_NODES && zone->zone_index < ::lune_touch::ZONES_PER_NODE
+                            ? vp_loops_[zone->node_index][zone->zone_index].pin_pct
+                            : NAN;
+      if (std::isfinite(pin)) snprintf(pin_buf, sizeof(pin_buf), "%.1f", pin); else std::strncpy(pin_buf, "null", sizeof(pin_buf));
+    }
     if (history != nullptr && history->has_temperature) {
       snprintf(hist_avg_buf, sizeof(hist_avg_buf), "%.2f", history->average_temperature_c);
       snprintf(hist_min_buf, sizeof(hist_min_buf), "%.2f", history->min_temperature_c);
@@ -13059,7 +13076,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"ble_sensor_mismatch\":%s,\"ownership\":{\"walls\":\"v6\",\"area\":\"v6\","
                   "\"floor\":\"v6\",\"weather\":\"touch\"}},"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
-                  "\"valve_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
+                  "\"valve_pct\":%s,\"pin_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
                   "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"effective_source\":\"%s\","
                   "\"schedule_active\":%s,\"time_valid\":%s,\"priority\":%u},"
                   "\"resolver\":{\"fallback_base_target_c\":%.1f,\"touch_available\":%s,"
@@ -13111,7 +13128,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   room != nullptr && room->physics_conflict ? "true" : "false",
                   room != nullptr && room->ble_sensor_mismatch ? "true" : "false",
                   temp_buf, sp_buf, status_esc, live != nullptr && live->fresh && zone->enabled ? "true" : "false",
-                  valve_buf,
+                  valve_buf, pin_buf,
                   static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0),
                   zone->comfort_setpoint_c, zone->comfort_bias_c,
                   effective.setpoint_c,

@@ -863,6 +863,7 @@ class LuneTouchCoordinator : public esphome::Component {
     uint32_t failed_epoch_s{0};
     bool enabled{false};
     bool reported{false};  ///< V6 sends valve_curve (firmware with the curve)
+    float pin_pct{NAN};    ///< Valve pin travel when V6 reports flow_pct (live valve_pct is then flow)
     uint32_t seen_ms{0};
   };
   ValveProbeLoop vp_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
