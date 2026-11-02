@@ -844,10 +844,12 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                srow(lab("hp_max_kw", T("pump.hpMax")), stepper("hp_max_kw", 0, 0, 40, 0.5, "kW", T("pump.hpMax")),
                     T("pump.hpMaxHint"), attrs=' data-bind-show="pump.hpMaxEdit"'))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
-               sport("pump_port", T("pumpCfg.port")))}
-        {group(T("pump.entities"), sinput("flow_entity", T("pumpCfg.flowEntity"), "pump_flow", id_="pump_flow_entity") +
-               sinput("head_entity", T("pumpCfg.headEntity"), "pump_head_pressure", id_="pump_head_entity") +
-               sinput("power_entity", T("pumpCfg.powerEntity"), "pump_power", id_="pump_power_entity"))}
+               sport("pump_port", T("pumpCfg.port")) +
+               # Entitetsnavnene ændres sjældent: underside i samme gruppe (maks. 5 grupper pr. side).
+               subpage(T("pump.entities"), group(T("pump.entities"),
+                       sinput("flow_entity", T("pumpCfg.flowEntity"), "pump_flow", id_="pump_flow_entity") +
+                       sinput("head_entity", T("pumpCfg.headEntity"), "pump_head_pressure", id_="pump_head_entity") +
+                       sinput("power_entity", T("pumpCfg.powerEntity"), "pump_power", id_="pump_power_entity"))))}
         {savebar("circulation", T("pumpCfg.save"))}
       </form>'''
 

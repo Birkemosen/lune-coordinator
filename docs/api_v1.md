@@ -346,6 +346,22 @@ coefficients are persisted separately in the zone registry. It also includes `ot
 label/subtype, slot size, rollback state, and `pending_verify` flag so installers
 can confirm OTA recovery assumptions.
 
+`GET /diagnostics` also has `room_history`, the storage status of the room history
+(`/history/room/<id>/…`). When an hour closes, the week is written to SPIFFS in two
+slots in turn (`rooms.a`, `rooms.b`), so a failed write leaves the previous week; boot
+restores the valid slot with the newest hour:
+
+```json
+"room_history": {"boot": "restored", "mount_err": 0, "newest_hour": 498224,
+                 "saves": 3, "save_failures": 0, "last_save": "ok",
+                 "store_bytes": 20936, "fs_total": 3185441, "fs_used": 42670}
+```
+
+`boot` is what the first sample after boot found: `restored`, `restored_legacy` (the
+file of a build before 1.1.0-rc1), `no_file`, `short_read`, `bad_magic`, `no_spiffs`
+(mount failed, `mount_err` is the `esp_err_t`), `no_psram`, or `pending` before the
+clock is set. `last_save` is `ok`, `open_failed`, `write_failed`, `locked` or `none`.
+
 `GET /diagnostics` also lists the active problems Touch reports to Home Assistant
 (`esphome.lune_problem`, see `lune/shared/contracts/lune_notifications_contract_v1.md`
 and [Manual › Notifications](Manual.md#notifications)). Title and message are in the

@@ -2645,15 +2645,22 @@ void LuneTouchCoordinator::write_heat_history_json(char *buffer, size_t capacity
 // a 7-day store in PSRAM, which is written to SPIFFS each time an hour closes.
 
 namespace {
-constexpr const char *ROOM_HISTORY_PATH = "/hist/rooms.bin";
+// Two slots written in turn: rename() fails on this SPIFFS, so a save never replaces the
+// file it would need to fall back on. Boot takes the valid slot with the newest hour.
+constexpr const char *ROOM_HISTORY_SLOTS[2] = {"/hist/rooms.a", "/hist/rooms.b"};
+// Earlier builds: the final file, and the temp file a failed rename left behind.
+constexpr const char *ROOM_HISTORY_LEGACY[2] = {"/hist/rooms.bin", "/hist/rooms.tmp"};
 }  // namespace
 
 void LuneTouchCoordinator::load_room_history_() {
   room_history_loaded_ = true;
+  auto &st = room_history_storage_;
   if (room_history_store_ == nullptr)
     room_history_store_ = psram_scratch_<room_history::Store>(1);
-  if (room_history_store_ == nullptr)
+  if (room_history_store_ == nullptr) {
+    st.boot = "no_psram";
     return;
+  }
   if (!spiffs_mounted_) {
     esp_vfs_spiffs_conf_t conf{};
     conf.base_path = "/hist";
@@ -2662,45 +2669,87 @@ void LuneTouchCoordinator::load_room_history_() {
     conf.format_if_mount_failed = true;
     const esp_err_t err = esp_vfs_spiffs_register(&conf);
     spiffs_mounted_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
+    st.mount_err = spiffs_mounted_ ? 0 : static_cast<int>(err);
     if (!spiffs_mounted_)
       ESP_LOGW(TAG, "Room history: SPIFFS mount failed (%s); history lives in RAM only", esp_err_to_name(err));
+    else
+      esp_spiffs_info("spiffs", &st.fs_total, &st.fs_used);
   }
   bool loaded = false;
-  if (spiffs_mounted_) {
-    FILE *f = std::fopen(ROOM_HISTORY_PATH, "rb");
-    if (f != nullptr) {
-      loaded = std::fread(room_history_store_, sizeof(room_history::Store), 1, f) == 1 &&
-               room_history_store_->magic == room_history::MAGIC;
+  if (!spiffs_mounted_) {
+    st.boot = "no_spiffs";
+  } else {
+    // Read every candidate into the scratch copy; keep the valid one with the newest hour.
+    room_history::Store *cand = room_history_scratch_();
+    const char *paths[4] = {ROOM_HISTORY_SLOTS[0], ROOM_HISTORY_SLOTS[1], ROOM_HISTORY_LEGACY[0],
+                            ROOM_HISTORY_LEGACY[1]};
+    int best = -1;
+    bool any_file = false, any_full = false;
+    for (int i = 0; i < 4 && cand != nullptr; i++) {
+      FILE *f = std::fopen(paths[i], "rb");
+      if (f == nullptr)
+        continue;
+      any_file = true;
+      const bool full = std::fread(cand, sizeof(room_history::Store), 1, f) == 1;
       std::fclose(f);
+      any_full |= full;
+      if (!full || cand->magic != room_history::MAGIC)
+        continue;
+      if (best < 0 || cand->newest_hour > room_history_store_->newest_hour) {
+        std::memcpy(room_history_store_, cand, sizeof(room_history::Store));
+        best = i;
+      }
+    }
+    loaded = best >= 0;
+    if (loaded) {
+      st.boot = best < 2 ? "restored" : "restored_legacy";
+      st.newest_hour = room_history_store_->newest_hour;
+      room_history_next_slot_ = best == 0 ? 1 : 0;   // never overwrite the slot just restored
+    } else {
+      st.boot = !any_file ? "no_file" : (any_full ? "bad_magic" : "short_read");
     }
   }
   if (!loaded)
     room_history_store_->magic = 0;   // attach() clears it
   room_history_.attach(room_history_store_);
-  ESP_LOGI(TAG, "Room history: %s", loaded ? "restored from flash" : "starting empty");
+  ESP_LOGI(TAG, "Room history: %s", st.boot);
+}
+
+room_history::Store *LuneTouchCoordinator::room_history_scratch_() {
+  static room_history::Store *copy = psram_scratch_<room_history::Store>(1);
+  return copy;
 }
 
 void LuneTouchCoordinator::save_room_history_() {
   if (!spiffs_mounted_ || room_history_store_ == nullptr)
     return;
-  // Write a copy taken under the lock, then swap the file in.
-  static room_history::Store *copy = psram_scratch_<room_history::Store>(1);
+  auto &st = room_history_storage_;
+  auto fail = [&st](const char *why) {
+    st.save_failures++;
+    st.last_save = why;
+    ESP_LOGW(TAG, "Room history: save failed (%s)", why);
+  };
+  // Write a copy taken under the lock into the slot that does not hold the last good week.
+  room_history::Store *copy = room_history_scratch_();
   if (copy == nullptr || !take_state_lock_(200))
-    return;
+    return fail("locked");
   std::memcpy(copy, room_history_store_, sizeof(room_history::Store));
   give_state_lock_();
-  static constexpr const char *TMP = "/hist/rooms.tmp";
-  FILE *f = std::fopen(TMP, "wb");
+  const uint8_t slot = room_history_next_slot_ & 1U;
+  FILE *f = std::fopen(ROOM_HISTORY_SLOTS[slot], "wb");
   if (f == nullptr)
-    return;
+    return fail("open_failed");
   const bool ok = std::fwrite(copy, sizeof(room_history::Store), 1, f) == 1;
-  std::fclose(f);
-  if (!ok) {
-    std::remove(TMP);
-    return;
-  }
-  std::remove(ROOM_HISTORY_PATH);
-  std::rename(TMP, ROOM_HISTORY_PATH);
+  const bool closed = std::fclose(f) == 0;
+  if (!ok || !closed)
+    return fail("write_failed");   // the other slot still holds the previous week
+  room_history_next_slot_ = slot ^ 1U;
+  if (st.saves == 0)
+    for (const char *legacy : ROOM_HISTORY_LEGACY)
+      std::remove(legacy);
+  st.saves++;
+  st.last_save = "ok";
+  esp_spiffs_info("spiffs", &st.fs_total, &st.fs_used);
 }
 
 void LuneTouchCoordinator::sample_room_history_() {
@@ -14304,6 +14353,19 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
                   static_cast<unsigned long>(reset_age_s), static_cast<unsigned long>(display_diag_.sleeps),
                   static_cast<unsigned long>(display_diag_.wakes),
                   static_cast<unsigned long>(display_diag_.wake_requests));
+  }
+  {
+    const auto &st = room_history_storage_;
+    const size_t n = std::strlen(buffer);
+    if (n > 0 && buffer[n - 1] == '}' && n + 260 < capacity)
+      std::snprintf(buffer + n - 1, capacity - n + 1,
+                    ",\"room_history\":{\"boot\":\"%s\",\"mount_err\":%d,\"newest_hour\":%lu,"
+                    "\"saves\":%lu,\"save_failures\":%lu,\"last_save\":\"%s\",\"store_bytes\":%u,"
+                    "\"fs_total\":%u,\"fs_used\":%u}}",
+                    st.boot, st.mount_err, static_cast<unsigned long>(st.newest_hour),
+                    static_cast<unsigned long>(st.saves), static_cast<unsigned long>(st.save_failures),
+                    st.last_save, static_cast<unsigned>(sizeof(room_history::Store)),
+                    static_cast<unsigned>(st.fs_total), static_cast<unsigned>(st.fs_used));
   }
   append_problems_json_(buffer, capacity);
 }

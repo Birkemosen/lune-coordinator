@@ -1394,6 +1394,28 @@ static void test_ua_physics_mirror_and_index_room() {
   expect(std::strcmp(snap2.index_reason, "high_r") == 0, "index room: high covering R");
 }
 
+static void test_physics_conflict_clears_once_v6_wins() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("wc", "WC", 0, 2);
+  FloorMirror floor{};
+  floor.unset = false;
+  std::strncpy(floor.slab_type, "cast_concrete", sizeof(floor.slab_type) - 1);
+  std::strncpy(floor.covering, "tile", sizeof(floor.covering) - 1);
+  bool conflict = false;
+  model.apply_v6_physics_mirror(0, 2, 0x01, 15.0f, floor, 7.0f, 0.0f, 7.0f, 0.0f, 0, 1, "", "", "",
+                                &conflict);
+  expect(!conflict && !model.room_by_id("wc")->physics_conflict, "conflict: none on first mirror");
+  model.apply_v6_physics_mirror(0, 2, 0x03, 15.0f, floor, 7.0f, 0.0f, 7.0f, 0.0f, 0, 2, "", "", "",
+                                &conflict);
+  expect(conflict && model.room_by_id("wc")->physics_conflict && model.room_by_id("wc")->exterior_walls_union == 0x03,
+         "conflict: flagged when V6 walls change under Touch's, V6 wins");
+  model.apply_v6_physics_mirror(0, 2, 0x03, 15.0f, floor, 7.0f, 0.0f, 7.0f, 0.0f, 0, 2, "", "", "",
+                                &conflict);
+  expect(!conflict && !model.room_by_id("wc")->physics_conflict,
+         "conflict: cleared on the next poll with unchanged V6 walls");
+}
+
 static void test_room_physics_contract_vectors() {
   using namespace physics;
   // Contract §12 vector 1
@@ -1565,6 +1587,7 @@ int main() {
   test_weather_seed_survives_v6_refresh();
   test_same_node_merge_rejected();
   test_ua_physics_mirror_and_index_room();
+  test_physics_conflict_clears_once_v6_wins();
   test_room_physics_contract_vectors();
   test_daily_ua_learning();
   test_calibration_uses_default_priors();

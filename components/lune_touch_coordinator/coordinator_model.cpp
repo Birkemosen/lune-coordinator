@@ -788,7 +788,10 @@ bool HouseModel::apply_v6_physics_mirror(size_t node_index, size_t zone_index,
     // that hasn't been acknowledged, V6 wins.
     const bool had_v6 = z.walls_from_v6;
     const uint8_t prev_walls = z.exterior_walls;
-    if (had_v6 && (prev_walls != (exterior_walls & 0x0F)) && z.physics_conflict) {
+    if (had_v6 && prev_walls == (exterior_walls & 0x0F)) {
+      // V6's walls already won and are unchanged since the last poll: nothing left to resolve.
+      z.physics_conflict = false;
+    } else if (had_v6 && z.physics_conflict) {
       // already flagged
     } else if (had_v6 && prev_walls != (exterior_walls & 0x0F)) {
       // Detect if room still has pending Touch walls that differ — treat as conflict.

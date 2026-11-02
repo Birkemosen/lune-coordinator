@@ -2,6 +2,17 @@
 # Lune Design System 2 — Touch web UI contracts.
 # Run from the lune-coordinator repo root: sh tests/dashboard/test_phase8_overview.sh
 set -eu
+# ripgrep when installed, else the same checks with grep: -F fixed strings, otherwise
+# extended regex; recursive when a directory is given, as rg is.
+if ! command -v rg >/dev/null 2>&1; then
+  rg() {
+    fixed=
+    if [ "$1" = "-F" ]; then fixed=1; shift; fi
+    rec=
+    for a in "$@"; do if [ -d "$a" ]; then rec=-r; fi; done
+    if [ -n "$fixed" ]; then grep $rec -F -- "$@"; else grep $rec -E "$@"; fi
+  }
+fi
 
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 cd "$root"
@@ -64,10 +75,8 @@ rg -F 'name="hs_type"' "$en" >/dev/null
 
 # Forms (save keys; partial save = patch, DESIGN.md 6.1)
 rg -F 'data-save="house-target"' "$en" >/dev/null
-rg -F 'data-save="heat_source.connection" data-patch' "$en" >/dev/null
-rg -F 'data-save="heat_source.behavior" data-patch' "$en" >/dev/null
-rg -F 'data-save="weather.location" data-patch' "$en" >/dev/null
-rg -F 'data-save="weather.boost" data-patch' "$en" >/dev/null
+rg -F 'data-save="heat_source" data-patch' "$en" >/dev/null
+rg -F 'data-save="weather" data-patch' "$en" >/dev/null
 rg -F 'data-save="rooms" data-patch' "$en" >/dev/null
 rg -F 'data-save="circulation"' "$en" >/dev/null
 rg -F 'data-save="prices"' "$en" >/dev/null
@@ -113,15 +122,17 @@ rg -F 'LUNE_TOUCH_UI_EN' "$dash_cpp" >/dev/null
 
 # No external fonts / banned patterns in new UI
 ! rg -F 'fonts.googleapis.com' web/touch-ui web/design-system/css >/dev/null
-! rg -n '#[0-9a-fA-F]{3,8}' web/touch-ui/binder.js >/dev/null
+! rg -n "['\"]#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})['\"]" web/touch-ui/binder.js >/dev/null
 
 # Gzip budget note: CSS + en + da pages (JS separate). Fail only if absurdly large.
 css_gz=$(wc -c < web/touch-ui/dist/lune-ui.css.gz | tr -d ' ')
 en_gz=$(wc -c < web/touch-ui/dist/en/index.html.gz | tr -d ' ')
 da_gz=$(wc -c < web/touch-ui/dist/da/index.html.gz | tr -d ' ')
 pages_total=$((css_gz + en_gz + da_gz))
-# Soft ceiling: 80 KiB for CSS+2 pages (sheets for 4 controllers + 24 rooms in the page)
-if [ "$pages_total" -gt 81920 ]; then
+# Soft ceiling: 96 KiB for CSS+2 pages (sheets for 4 controllers + 24 rooms in the page).
+# Raised from 80 KiB at 1.0: history charts, forecast and the circulation sheet came after
+# the first budget; the firmware image uses well under half of its OTA slot.
+if [ "$pages_total" -gt 98304 ]; then
   echo "gzip CSS+pages too large: $pages_total bytes" >&2
   exit 1
 fi

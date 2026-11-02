@@ -1176,6 +1176,19 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t room_history_sample_ms_{0};
   bool room_history_loaded_{false};
   bool spiffs_mounted_{false};
+  uint8_t room_history_next_slot_{0};   // SPIFFS slot (rooms.a / rooms.b) the next save writes
+  room_history::Store *room_history_scratch_();
+  // Storage status for /diagnostics (room_history): why history did or did not survive a reboot.
+  struct RoomHistoryStorage {
+    int mount_err{0};            // esp_err_t of the SPIFFS mount; 0 = ok
+    const char *boot{"pending"}; // restored / restored_legacy / no_file / short_read / bad_magic / no_spiffs / no_psram
+    uint32_t newest_hour{0};     // newest stored hour at boot (unix_s / 3600)
+    uint32_t saves{0};
+    uint32_t save_failures{0};
+    const char *last_save{"none"};  // ok / open_failed / write_failed / locked
+    size_t fs_total{0};
+    size_t fs_used{0};
+  } room_history_storage_{};
   bool heat_source_push_requested_{false};
   HeatSourceProbeKind heat_source_probe_kind_{HeatSourceProbeKind::NONE};
   SemaphoreHandle_t heat_source_probe_done_{nullptr};
