@@ -1,11 +1,11 @@
 # Changelog — Lune Touch
 
-## v1.1.0-rc1 — first release candidate (2026-11-02)
+## v1.0.0-rc1 — first release candidate (2026-11-02)
 
 First tagged release of Lune Touch: the whole-house coordinator for Lune V6 manifolds,
 with Asgard (Ecodan) and Odin (optimizer) as the heat source. Runs on the Waveshare
 ESP32-S3 Touch LCD 7B (wall display plus web UI). If a week passes without changes,
-this becomes v1.1.0.
+this becomes v1.0.0.
 
 ### House and rooms
 - Logical rooms over V6 loops; a V6 sync group is one room with the area and UA of all

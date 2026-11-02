@@ -358,7 +358,7 @@ restores the valid slot with the newest hour:
 ```
 
 `boot` is what the first sample after boot found: `restored`, `restored_legacy` (the
-file of a build before 1.1.0-rc1), `no_file`, `short_read`, `bad_magic`, `no_spiffs`
+file of a build before 1.0.0-rc1), `no_file`, `short_read`, `bad_magic`, `no_spiffs`
 (mount failed, `mount_err` is the `esp_err_t`), `no_psram`, or `pending` before the
 clock is set. `last_save` is `ok`, `open_failed`, `write_failed`, `locked` or `none`.
 
