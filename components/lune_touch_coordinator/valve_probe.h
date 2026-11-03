@@ -13,9 +13,12 @@
 //   4. a good fit (delta and R² large enough) is written to V6 with its time.
 //
 // With a constant-pressure pump the change in total flow is the loop's own flow,
-// whether the heat source runs or not, so Touch measures whenever a pump reading is
-// available: one loop at a time, PAUSE_MS apart, until every loop has a curve, then
-// each loop again after REMEASURE_S. A change of heat-source phase during a run
+// whether the heat source runs or not. But a run holds every valve, so balancing is
+// off while it lasts: Touch measures while the heat source is not running, and only
+// falls back to measuring during a run after RUNNING_FALLBACK_S without a pause (a
+// heat source that never stops). One loop at a time, PAUSE_MS apart, until every
+// loop has a curve; then each loop again after REMEASURE_S, at most one
+// remeasurement per REMEASURE_GAP_S so they spread out. A change of heat-source phase during a run
 // (start, stop, hot water) moves temperatures and the pump's flow estimate, so it
 // aborts the run (no result), as do a stale pump reading and a V6 that does not
 // answer; V6 releases the hold by its TTL.
@@ -43,6 +46,8 @@ constexpr float MIN_R2 = 0.8f;
 constexpr uint32_t PAUSE_MS = 5UL * 60UL * 1000UL;  ///< Between runs: balancing resumes
 constexpr uint32_t REMEASURE_S = 30UL * 86400UL;
 constexpr uint32_t RETRY_FAILED_S = 86400UL;
+constexpr uint32_t RUNNING_FALLBACK_S = 86400UL;  ///< Running this long without a stop → measure anyway
+constexpr uint32_t REMEASURE_GAP_S = 86400UL;     ///< Between automatic remeasurements
 constexpr size_t MAX_SAMPLES = 16;
 
 struct Point {
@@ -140,6 +145,18 @@ inline bool loop_due(uint32_t measured_epoch_s, uint32_t failed_epoch_s, int64_t
   if (failed_epoch_s != 0 && now - static_cast<int64_t>(failed_epoch_s) < RETRY_FAILED_S)
     return false;
   return measured_epoch_s == 0 || now - static_cast<int64_t>(measured_epoch_s) >= REMEASURE_S;
+}
+
+/// May an automatic run start now? `idle_epoch_s`: when the heat source was last seen
+/// not running (or Touch's start); `remeasure`: the picked loop already has a curve;
+/// `last_remeasure_epoch_s`: start of the last automatic remeasurement (0 = none).
+inline bool may_start(bool hs_running, int64_t now_epoch_s, int64_t idle_epoch_s, bool remeasure,
+                      int64_t last_remeasure_epoch_s) {
+  if (now_epoch_s <= 0)
+    return false;
+  if (hs_running && now_epoch_s - idle_epoch_s < RUNNING_FALLBACK_S)
+    return false;
+  return !remeasure || last_remeasure_epoch_s <= 0 || now_epoch_s - last_remeasure_epoch_s >= REMEASURE_GAP_S;
 }
 
 enum class Stage : uint8_t { Off, Settling, Measuring };

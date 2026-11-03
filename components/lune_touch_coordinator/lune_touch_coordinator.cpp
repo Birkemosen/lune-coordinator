@@ -16894,6 +16894,8 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   // Only running vs. not matters: Prestart/Idle follow Odin's plan without moving water.
   const uint8_t phase = hp_phase_ == ::lune_touch_hp_phase::Phase::Running ? 1 : 0;
   const bool ready = circ_ok && boards > 0 && boards_fresh && epoch > 0 && authority_shared_key_[0] != '\0';
+  if (epoch > 0 && (phase == 0 || vp_idle_epoch_s_ == 0))
+    vp_idle_epoch_s_ = epoch;
   bool has_sample = false;
   if (circulation_.has_flow && circulation_.last_success_ms != vp_last_flow_ms_) {
     vp_last_flow_ms_ = circulation_.last_success_ms;
@@ -16937,6 +16939,14 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
       give_state_lock_();
       return;
     }
+    // A run holds every valve: wait for the heat source to stop, spread remeasurements.
+    const bool remeasure = vp_loops_[pick_node][pick_zone].measured_epoch_s != 0;
+    if (!manual && !vp::may_start(phase == 1, epoch, vp_idle_epoch_s_, remeasure, vp_last_remeasure_epoch_s_)) {
+      give_state_lock_();
+      return;
+    }
+    if (!manual && remeasure)
+      vp_last_remeasure_epoch_s_ = epoch;
     vp::start(vp_run_, static_cast<uint8_t>(pick_node), static_cast<uint8_t>(pick_zone), now_ms, phase);
     just_started = true;
   }

@@ -878,6 +878,8 @@ class LuneTouchCoordinator : public esphome::Component {
   int8_t vp_request_zone_{-1};
   uint32_t vp_last_flow_ms_{0};
   uint32_t vp_nonce_{0};
+  int64_t vp_idle_epoch_s_{0};            ///< Heat source last seen not running (or start)
+  int64_t vp_last_remeasure_epoch_s_{0};  ///< Last automatic remeasurement started
   void run_valve_probe_(uint32_t now_ms);
   bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop);
   bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,

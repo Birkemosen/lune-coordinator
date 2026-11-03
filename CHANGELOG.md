@@ -6,10 +6,12 @@
 - V6's dynamic balancing turns each loop's flow into an opening through a valve curve
   (where flow starts, where it is full). With a circulation pump connected, Touch
   measures it: every V6 holds its valves and one loop steps through its stroke while
-  Touch reads the pump's flow; the fitted curve is written to the V6. One loop at a
-  time, five minutes apart, whether the heat source runs or not (a start, stop or
-  hot-water switch during a run aborts it); each loop again after 30 days. Without a
-  pump reading V6 keeps its default curve.
+  Touch reads the pump's flow; the fitted curve is written to the V6. A run holds
+  every valve (balancing pauses), so Touch measures while the heat source is not
+  running, and during a run only if it has not stopped for a day (a start, stop or
+  hot-water switch during a run aborts it). One loop at a time, five minutes apart;
+  each loop again after 30 days, at most one remeasurement a day. Without a pump
+  reading V6 keeps its default curve.
 - `POST /api/lune-touch/v1/valve-curves/measure` (`node`, `zone`) measures that loop
   next. Status and the curves in `GET /heat-source`
   (`valve_probe`).

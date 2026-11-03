@@ -46,6 +46,17 @@ static void test_schedule() {
   assert(!loop_due(0, 0, 0));
 }
 
+static void test_may_start() {
+  const int64_t now = 1800000000;
+  assert(may_start(false, now, now, false, 0));                         // idle: go
+  assert(!may_start(true, now, now - 3600, false, 0));                  // running: wait for a stop
+  assert(may_start(true, now, now - RUNNING_FALLBACK_S, false, 0));     // never stops: measure anyway
+  assert(!may_start(false, now, now, true, now - 3600));                // one remeasurement per gap
+  assert(may_start(false, now, now, true, now - REMEASURE_GAP_S));
+  assert(may_start(false, now, now, false, now - 3600));                // first curves back to back
+  assert(!may_start(false, 0, 0, false, 0));
+}
+
 static void test_run_sequence() {
   Run r;
   start(r, 1, 2, 1000);
@@ -103,6 +114,7 @@ int main() {
   test_fit_recovers_curve();
   test_fit_rejects_flat_or_noisy();
   test_schedule();
+  test_may_start();
   test_run_sequence();
   test_run_aborts();
   std::printf("Valve probe tests passed.\n");
