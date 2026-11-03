@@ -435,6 +435,27 @@ char *alloc_psram_body_(size_t capacity) {
 }
 
 // Large registry blobs (~16 KiB) must not live in .dram0.bss — prefer PSRAM.
+// Old registry shapes are read once, at boot, to migrate. They share one scratch buffer,
+// in PSRAM when there is one; as function statics they held ~100 KB of internal DRAM for
+// good, which the HTTP server then lacked at boot.
+void *legacy_scratch_bytes_(size_t size) {
+  static void *buf = nullptr;
+  static size_t cap = 0;
+  if (size > cap) {
+    heap_caps_free(buf);
+    buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf == nullptr)
+      buf = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    cap = buf != nullptr ? size : 0;
+  }
+  return buf;
+}
+
+template <typename T> T *legacy_scratch_() {
+  void *p = legacy_scratch_bytes_(sizeof(T));
+  return p != nullptr ? new (p) T : nullptr;
+}
+
 ::lune_touch::PersistedState *alloc_persisted_state_() {
   void *p = heap_caps_malloc(sizeof(::lune_touch::PersistedState),
                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -7020,7 +7041,12 @@ bool LuneTouchCoordinator::load_registry_() {
         nvs_close(dedicated_handle);
       }
       // Attempt v12 dedicated blob (same chunk layout, smaller LogicalRoom).
-      static PersistedStateV12 legacy_v12;
+      PersistedStateV12 *legacy_v12_p = legacy_scratch_<PersistedStateV12>();
+      if (legacy_v12_p == nullptr) {
+        ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV12)));
+        return false;
+      }
+      PersistedStateV12 &legacy_v12 = *legacy_v12_p;
       std::memset(&legacy_v12, 0, sizeof(legacy_v12));
       if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
                                   &dedicated_handle) == ESP_OK) {
@@ -7057,7 +7083,12 @@ bool LuneTouchCoordinator::load_registry_() {
         nvs_close(dedicated_handle);
       }
       // Attempt v13 dedicated blob (ZoneBinding without unassigned flags).
-      static PersistedStateV13 legacy_v13;
+      PersistedStateV13 *legacy_v13_p = legacy_scratch_<PersistedStateV13>();
+      if (legacy_v13_p == nullptr) {
+        ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV13)));
+        return false;
+      }
+      PersistedStateV13 &legacy_v13 = *legacy_v13_p;
       std::memset(&legacy_v13, 0, sizeof(legacy_v13));
       if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
                                   &dedicated_handle) == ESP_OK) {
@@ -7094,7 +7125,12 @@ bool LuneTouchCoordinator::load_registry_() {
         nvs_close(dedicated_handle);
       }
       // Attempt v14 dedicated blob (pre-physics-ownership LogicalRoom/ZoneBinding).
-      static PersistedStateV14 legacy_v14;
+      PersistedStateV14 *legacy_v14_p = legacy_scratch_<PersistedStateV14>();
+      if (legacy_v14_p == nullptr) {
+        ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV14)));
+        return false;
+      }
+      PersistedStateV14 &legacy_v14 = *legacy_v14_p;
       std::memset(&legacy_v14, 0, sizeof(legacy_v14));
       if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
                                   &dedicated_handle) == ESP_OK) {
@@ -7159,7 +7195,13 @@ bool LuneTouchCoordinator::load_registry_() {
   }
 
   bool registry_migrated = false;
-  static PersistedStateV11 legacy_chunked;
+  PersistedStateV11 *legacy_chunked_p = legacy_scratch_<PersistedStateV11>();
+  if (legacy_chunked_p == nullptr) {
+    ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV11)));
+    nvs_close(handle);
+    return false;
+  }
+  PersistedStateV11 &legacy_chunked = *legacy_chunked_p;
   std::memset(&legacy_chunked, 0, sizeof(legacy_chunked));
   if (load_registry_chunks_for_(handle, &legacy_chunked)) {
     nvs_close(handle);
@@ -7256,7 +7298,13 @@ bool LuneTouchCoordinator::load_registry_() {
     }
   } else if (len == sizeof(PersistedStateV11)) {
     registry_migrated = true;
-    static PersistedStateV11 legacy;
+    PersistedStateV11 *legacy_p = legacy_scratch_<PersistedStateV11>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV11)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV11 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7277,7 +7325,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v11; runtime history reset");
   } else if (len == sizeof(PersistedStateV10)) {
     registry_migrated = true;
-    static PersistedStateV10 legacy;
+    PersistedStateV10 *legacy_p = legacy_scratch_<PersistedStateV10>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV10)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV10 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7295,7 +7349,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v10 to v11");
   } else if (len == sizeof(PersistedStateV9)) {
     registry_migrated = true;
-    static PersistedStateV9 legacy;
+    PersistedStateV9 *legacy_p = legacy_scratch_<PersistedStateV9>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV9)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV9 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7313,7 +7373,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v9 to v10");
   } else if (len == sizeof(PersistedStateV8)) {
     registry_migrated = true;
-    static PersistedStateV8 legacy;
+    PersistedStateV8 *legacy_p = legacy_scratch_<PersistedStateV8>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV8)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV8 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7333,7 +7399,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v8 to v9");
   } else if (len == sizeof(PersistedStateV7)) {
     registry_migrated = true;
-    static PersistedStateV7 legacy;
+    PersistedStateV7 *legacy_p = legacy_scratch_<PersistedStateV7>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV7)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV7 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7353,7 +7425,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v7 to v9");
   } else if (len == sizeof(PersistedStateV6)) {
     registry_migrated = true;
-    static PersistedStateV6 legacy;
+    PersistedStateV6 *legacy_p = legacy_scratch_<PersistedStateV6>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV6)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV6 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7372,7 +7450,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v6 to v9");
   } else if (len == sizeof(PersistedStateV5)) {
     registry_migrated = true;
-    static PersistedStateV5 legacy;
+    PersistedStateV5 *legacy_p = legacy_scratch_<PersistedStateV5>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV5)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV5 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7391,7 +7475,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v5 to v9");
   } else if (len == sizeof(PersistedStateV4)) {
     registry_migrated = true;
-    static PersistedStateV4 legacy;
+    PersistedStateV4 *legacy_p = legacy_scratch_<PersistedStateV4>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV4)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV4 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7428,7 +7518,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v4 to v9");
   } else if (len == sizeof(PersistedStateV3)) {
     registry_migrated = true;
-    static PersistedStateV3 legacy;
+    PersistedStateV3 *legacy_p = legacy_scratch_<PersistedStateV3>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV3)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV3 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
