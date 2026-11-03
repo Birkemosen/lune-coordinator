@@ -576,7 +576,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {metric(T("pump.head"), "m", "pump.head")}
           {metric(T("pump.power"), "W", "pump.power")}
         </dl>
-        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.balance"), "pump.balance"), (T("pump.recommended"), "pump.recommended"), (T("heat.valvesNow"), "heat.valvesNow"), (T("pump.host"), "pump.host")])}
+        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.balance"), "pump.balance"), (T("pump.recommended"), "pump.recommended"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <div class="sub"><h4>{T("pump.need")}</h4>
@@ -835,7 +835,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       <form data-save="circulation" data-patch>
         {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
                 "", extra=note(T("heat.houseBalanceHint")))}
-        {group(T("heat.valves"), sswitch("valves_follow_hp_enabled", T("heat.valvesSw"), T("heat.valvesSub"), False), extra=note(T("heat.valvesHint")))}
         {group(T("heat.gains"), sstep("internal_gains_w", T("heat.gainsLabel"), 650, 0, 2000, 50, "W", dec=0, hint=T("heat.gainsHint")),
                extra=note(T("heat.gainsGuide")))}
         {group(T("pump.hpGroup"),
@@ -968,7 +967,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "diag.pollOk", "diag.pollFail", "diag.ota.valid", "diag.ota.pending_verify", "diag.ota.new", "diag.ota.invalid",
         "diag.ota.aborted", "diag.ota.undefined",
         "m.supplyShort", "m.returnShort", "strip.lease.refused", "strip.lease.none", "strip.charge.now", "strip.charge.insufficient",
-        "hp.compOn", "hp.compOff", "flow.none", "flow.note", "flow.noteLpm", "flow.zoneTip",
+        "hp.compOn", "hp.compOff", "flow.none", "flow.note", "flow.noteMeasured", "flow.noteLpm", "flow.zoneTip",
         "role.reserve", "role.reserveNow", "role.asgardNow", "role.offOdin", "role.drives", "role.off",
         "driver.odin", "driver.asgard", "now.heat", "now.off", "now.dhw", "planG.odin", "planG.noOdin",
         "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient", "planG.tipLift",
@@ -1003,7 +1002,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.valvePin", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria", "room.histChartAria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
     )
     rt = {k: T(k) for k in rt_keys}

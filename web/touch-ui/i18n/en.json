@@ -125,6 +125,7 @@
   "flow.dist": "Split per manifold",
   "flow.none": "No open loops – the pump runs at minimum flow.",
   "flow.note": "Approximate: derived from valve openings. Pipe length to each manifold is not included.",
+  "flow.noteMeasured": "From each loop's flow and the flow it passes fully open, as measured from the pump. Pipe length to each manifold is not included.",
   "flow.noteLpm": "Approximate: derived from valve openings and the pump flow. Pipe length to each manifold is not included.",
   "flow.zoneTip": "{zone}: valve {v} % · {pct} % of the manifold",
   "flow.closed": "closed",

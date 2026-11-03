@@ -12,6 +12,8 @@
   hot-water switch during a run aborts it). One loop at a time, five minutes apart;
   each loop again after 30 days, at most one remeasurement a day. Without a pump
   reading V6 keeps its default curve.
+- The measurement also sends each loop's full flow (l/min) to V6, which keeps it with the curve. Loops measured before V6 stored it are measured again (as first measurements). The circulation sheet's split per controller then uses each loop's measured flow instead of counting every loop as equal.
+- «Følg varmepumpen» and «Loops now» are gone: V6's heat-pump law (dynamic balancing) does not use the heat pump's phase, so Touch no longer sends it.
 - `POST /api/lune-touch/v1/valve-curves/measure` (`node`, `zone`) measures that loop
   next. Status and the curves in `GET /heat-source`
   (`valve_probe`).

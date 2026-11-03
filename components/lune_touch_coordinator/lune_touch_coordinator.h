@@ -864,6 +864,7 @@ class LuneTouchCoordinator : public esphome::Component {
     bool enabled{false};
     bool reported{false};  ///< V6 sends valve_curve (firmware with the curve)
     float pin_pct{NAN};    ///< Valve pin travel when V6 reports flow_pct (live valve_pct is then flow)
+    float full_lmin{NAN};  ///< Loop's full flow as measured (V6 stores it with the curve)
     uint32_t seen_ms{0};
   };
   ValveProbeLoop vp_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
@@ -883,7 +884,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_valve_probe_(uint32_t now_ms);
   bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop);
   bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,
-                            uint32_t measured_epoch_s);
+                            uint32_t measured_epoch_s, float full_lmin);
   void append_valve_probe_json_(char *buffer, size_t capacity) const;
   // Valves follow the heat pump: phase pushed to every approved V6.
   ::lune_touch_hp_phase::State hp_phase_state_{};

@@ -5561,6 +5561,7 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
         vl.start_pct = vc["start_pct"] | NAN;
         vl.full_pct = vc["full_pct"] | NAN;
         vl.measured_epoch_s = vc["measured_epoch_s"] | 0u;
+        vl.full_lmin = vc["full_lmin"] | NAN;
       }
       vl.seen_ms = now_ms;
     }
@@ -13001,11 +13002,13 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     if (live != nullptr && live->has_setpoint) snprintf(sp_buf, sizeof(sp_buf), "%.1f", live->setpoint_c); else std::strncpy(sp_buf, "null", sizeof(sp_buf));
     if (live != nullptr && live->has_valve) snprintf(valve_buf, sizeof(valve_buf), "%.1f", live->valve_pct); else std::strncpy(valve_buf, "null", sizeof(valve_buf));
     char pin_buf[16];
+    char lmin_buf[16];
     {
-      const float pin = zone->node_index < ::lune_touch::MAX_NODES && zone->zone_index < ::lune_touch::ZONES_PER_NODE
-                            ? vp_loops_[zone->node_index][zone->zone_index].pin_pct
-                            : NAN;
+      const bool in_range = zone->node_index < ::lune_touch::MAX_NODES && zone->zone_index < ::lune_touch::ZONES_PER_NODE;
+      const float pin = in_range ? vp_loops_[zone->node_index][zone->zone_index].pin_pct : NAN;
       if (std::isfinite(pin)) snprintf(pin_buf, sizeof(pin_buf), "%.1f", pin); else std::strncpy(pin_buf, "null", sizeof(pin_buf));
+      const float lmin = in_range ? vp_loops_[zone->node_index][zone->zone_index].full_lmin : NAN;
+      if (std::isfinite(lmin)) snprintf(lmin_buf, sizeof(lmin_buf), "%.2f", lmin); else std::strncpy(lmin_buf, "null", sizeof(lmin_buf));
     }
     if (history != nullptr && history->has_temperature) {
       snprintf(hist_avg_buf, sizeof(hist_avg_buf), "%.2f", history->average_temperature_c);
@@ -13076,7 +13079,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"ble_sensor_mismatch\":%s,\"ownership\":{\"walls\":\"v6\",\"area\":\"v6\","
                   "\"floor\":\"v6\",\"weather\":\"touch\"}},"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
-                  "\"valve_pct\":%s,\"pin_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
+                  "\"valve_pct\":%s,\"pin_pct\":%s,\"full_lmin\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
                   "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"effective_source\":\"%s\","
                   "\"schedule_active\":%s,\"time_valid\":%s,\"priority\":%u},"
                   "\"resolver\":{\"fallback_base_target_c\":%.1f,\"touch_available\":%s,"
@@ -13128,7 +13131,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   room != nullptr && room->physics_conflict ? "true" : "false",
                   room != nullptr && room->ble_sensor_mismatch ? "true" : "false",
                   temp_buf, sp_buf, status_esc, live != nullptr && live->fresh && zone->enabled ? "true" : "false",
-                  valve_buf, pin_buf,
+                  valve_buf, pin_buf, lmin_buf,
                   static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0),
                   zone->comfort_setpoint_c, zone->comfort_bias_c,
                   effective.setpoint_c,
@@ -16116,7 +16119,9 @@ void LuneTouchCoordinator::run_hp_phase_(uint32_t now_ms) {
   in.plan_mode_next = odin_plan_.operation_mode_horizon[1];
   in.minute = minute;
   hp_phase_ = hpp::step(hp_phase_state_, in, now_ms);
-  const bool enabled = h.valves_follow_hp_enabled;
+  // V6's heat-pump law (dynamic balancing) no longer uses the phase, so Touch no longer
+  // sends it; the phase stays for the valve-curve measurement (valve_probe.h).
+  const bool enabled = false;
   const bool release = hp_phase_release_pending_;
   const bool changed = hp_phase_ != hp_phase_sent_;
   const bool due = release || changed || hp_phase_push_ms_ == 0 || now_ms - hp_phase_push_ms_ >= PERIOD_MS;
@@ -16925,10 +16930,12 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
           const ValveProbeLoop &vl = vp_loops_[i][z];
           if (!vl.reported || !vl.enabled || vl.seen_ms == 0 || now_ms - vl.seen_ms >= FRESH_MS)
             continue;
-          if (!vp::loop_due(vl.measured_epoch_s, vl.failed_epoch_s, epoch))
+          // A curve without its full flow (measured before V6 stored it) counts as unmeasured.
+          const uint32_t measured = std::isfinite(vl.full_lmin) ? vl.measured_epoch_s : 0;
+          if (!vp::loop_due(measured, vl.failed_epoch_s, epoch))
             continue;
-          if (vl.measured_epoch_s < oldest) {
-            oldest = vl.measured_epoch_s;
+          if (measured < oldest) {
+            oldest = measured;
             pick_node = static_cast<int>(i);
             pick_zone = static_cast<int>(z);
           }
@@ -16940,7 +16947,8 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
       return;
     }
     // A run holds every valve: wait for the heat source to stop, spread remeasurements.
-    const bool remeasure = vp_loops_[pick_node][pick_zone].measured_epoch_s != 0;
+    const ValveProbeLoop &picked = vp_loops_[pick_node][pick_zone];
+    const bool remeasure = picked.measured_epoch_s != 0 && std::isfinite(picked.full_lmin);
     if (!manual && !vp::may_start(phase == 1, epoch, vp_idle_epoch_s_, remeasure, vp_last_remeasure_epoch_s_)) {
       give_state_lock_();
       return;
@@ -17024,7 +17032,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     return;
   }
   const bool written = send_v6_valve_curve_(hosts[run.node], run.zone, fit.start_pct, fit.full_pct,
-                                            static_cast<uint32_t>(epoch));
+                                            static_cast<uint32_t>(epoch), fit.delta_lmin);
   snprintf(msg, sizeof(msg), "%s: flow from %.0f %%, full at %.0f %%, %.1f l/min",
            written ? "written" : "not written", fit.start_pct, fit.full_pct, fit.delta_lmin);
   record(msg, fit, !written);
@@ -17033,6 +17041,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     vl.start_pct = fit.start_pct;
     vl.full_pct = fit.full_pct;
     vl.measured_epoch_s = static_cast<uint32_t>(epoch);
+    vl.full_lmin = fit.delta_lmin;
     vl.failed_epoch_s = 0;
     give_state_lock_();
   }
@@ -17067,18 +17076,19 @@ bool LuneTouchCoordinator::send_v6_valve_test_(const char *host, int zone, float
 }
 
 bool LuneTouchCoordinator::send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct,
-                                                float full_pct, uint32_t measured_epoch_s) {
+                                                float full_pct, uint32_t measured_epoch_s, float full_lmin) {
   if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
     return false;
   const int64_t ts = current_epoch_s_();
   char nonce[48];
   snprintf(nonce, sizeof(nonce), "vc-%lld-%lu", static_cast<long long>(ts),
            static_cast<unsigned long>(++vp_nonce_));
-  char payload[224];
+  char payload[256];
   snprintf(payload, sizeof(payload),
-           "{\"start_pct\":%.1f,\"full_pct\":%.1f,\"measured_epoch_s\":%lu,\"auth_timestamp_s\":%lld,"
-           "\"auth_nonce\":\"%s\"}",
-           start_pct, full_pct, static_cast<unsigned long>(measured_epoch_s), static_cast<long long>(ts), nonce);
+           "{\"start_pct\":%.1f,\"full_pct\":%.1f,\"measured_epoch_s\":%lu,\"full_lmin\":%.2f,"
+           "\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+           start_pct, full_pct, static_cast<unsigned long>(measured_epoch_s),
+           std::isfinite(full_lmin) ? full_lmin : 0.0f, static_cast<long long>(ts), nonce);
   char url[160];
   snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/valve-curve", host, static_cast<unsigned>(zone_index + 1));
   char body[256];

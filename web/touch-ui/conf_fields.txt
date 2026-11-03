@@ -65,7 +65,6 @@ heat-source/absorb_arm_enabled
 heat-source/read_url_template
 heat-source/target_sync_enabled
 circulation/house_balance_enabled
-circulation/valves_follow_hp_enabled
 heat-source/target_url_template
 heat-source/write_url_template
 house-target/house_target

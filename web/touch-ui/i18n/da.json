@@ -125,6 +125,7 @@
   "flow.dist": "Fordeling pr. manifold",
   "flow.none": "Ingen åbne sløjfer – pumpen kører på minimumsflow.",
   "flow.note": "Omtrentlig: beregnet ud fra ventilåbningen. Rørlængde frem til hver manifold er ikke med.",
+  "flow.noteMeasured": "Ud fra hver sløjfes flow og det flow, den giver helt åben, målt med pumpen. Rørlængden til hver fordeler er ikke med.",
   "flow.noteLpm": "Omtrentlig: beregnet ud fra ventilåbningen og pumpens flow. Rørlængde frem til hver manifold er ikke med.",
   "flow.zoneTip": "{zone}: ventil {v} % · {pct} % af manifolden",
   "flow.closed": "lukket",

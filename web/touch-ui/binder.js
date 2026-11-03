@@ -2032,16 +2032,9 @@
       putVal(bf.querySelector('[name="absorb_arm_enabled"]'), !!hs.absorb_arm_enabled);
       if (bf.luneResnap) bf.luneResnap();
     }
-    // Valves follow the heat pump: what Touch tells the V6s now.
-    var vf = hs.valves_follow_hp || {};
-    if (hs.valves_follow_hp) {
-      var ph = ['running', 'prestart', 'idle'].indexOf(vf.phase) >= 0 ? vf.phase : 'unknown';
-      setText('heat.valvesNow', t('heat.phase.' + (vf.enabled ? ph : 'off')));
-    }
     var hbf = qs('form[data-save="circulation"]');
     if (hbf && !formBusy(hbf)) {
       putVal(hbf.querySelector('[name="house_balance_enabled"]'), !!(hs.house_balance || {}).enabled);
-      putVal(hbf.querySelector('[name="valves_follow_hp_enabled"]'), !!(hs.valves_follow_hp || {}).enabled);
       if (hbf.luneResnap) hbf.luneResnap();
     }
     drawHouseBalance(hs.house_balance);
@@ -2759,22 +2752,25 @@
     host.innerHTML = html;
   }
 
-  // Approximate split of the pump flow per manifold (LDS .dist): each loop's
-  // conductance is taken as its valve opening; a manifold's share is the sum of
-  // its open loops over all open loops. Pipe runs to each manifold are ignored.
+  // Split of the pump flow per manifold (LDS .dist). Each loop passes its flow
+  // fraction (valve_pct is V6's flow %) of its full flow. When every loop has a
+  // measured full flow (l/min, from the valve-curve measurement) that is used;
+  // otherwise every loop counts as equal. Pipe runs to each manifold are ignored.
   function renderDist() {
     var host = qs('[data-bind-dist]');
     if (!host) return;
     var zones = (state.zones || []).filter(function (z) { return z && !z.unassigned; });
+    var measured = zones.length > 0 && zones.every(function (z) { return finite(z.full_lmin) && Number(z.full_lmin) > 0; });
     var byNode = {};
     var total = 0;
     zones.forEach(function (z) {
       var n = Number(z.node_index) || 0;
       var v = Math.max(0, Math.min(100, Number(z.valve_pct) || 0));
+      var q = v / 100 * (measured ? Number(z.full_lmin) : 1);
       if (!byNode[n]) byNode[n] = { kv: 0, zones: [] };
-      byNode[n].kv += v / 100;
-      byNode[n].zones.push({ name: z.name || ('Z' + ((Number(z.zone_index) || 0) + 1)), v: v });
-      total += v / 100;
+      byNode[n].kv += q;
+      byNode[n].zones.push({ name: z.name || ('Z' + ((Number(z.zone_index) || 0) + 1)), v: v, q: q });
+      total += q;
     });
     var circ = (state.heat && state.heat.circulation) || {};
     var lpmTotal = finite(circ.flow_m3h) ? Number(circ.flow_m3h) * 1000 / 60 : null;
@@ -2795,7 +2791,7 @@
       bar += '<span class="dist-seg"' + di + ' style="--w:' + pct.toFixed(1) + '" title="' + esc(name + ' · ' + num(pct, 0) + ' %') + '"></span>';
       var zbar = '';
       g.zones.forEach(function (z) {
-        var zp = g.kv > 0 ? (z.v / 100) / g.kv * 100 : 0;
+        var zp = g.kv > 0 ? z.q / g.kv * 100 : 0;
         if (zp <= 0) return;
         zbar += '<span class="dist-seg"' + di + ' style="--w:' + zp.toFixed(1) + '" title="' +
           esc(t('flow.zoneTip', { zone: z.name, v: num(z.v, 0), pct: num(zp, 0) })) + '"></span>';
@@ -2806,7 +2802,7 @@
         '<div class="dist-bar dist-bar--thin">' + zbar + '</div>';
     });
     host.innerHTML = '<div class="dist-bar">' + bar + '</div><div class="dist-rows">' + rows + '</div>' +
-      '<p class="dist-note">' + esc(t(lpmTotal != null ? 'flow.noteLpm' : 'flow.note')) + '</p>';
+      '<p class="dist-note">' + esc(t(measured ? 'flow.noteMeasured' : (lpmTotal != null ? 'flow.noteLpm' : 'flow.note'))) + '</p>';
     setText('svc.dist', nodes.map(function (n) { return num(byNode[n].kv / total * 100, 0); }).join(' · ') + ' %');
     // Home's Circulation tile: the same split as a donut + legend.
     var td = qs('[data-bind-tiledist]');
@@ -3679,8 +3675,6 @@
       } else if (key === 'circulation') {
         if (has(ch, 'house_balance_enabled'))
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
-        if (has(ch, 'valves_follow_hp_enabled'))
-          await post('/heat-source/settings', { valves_follow_hp_enabled: bit(fval(form, 'valves_follow_hp_enabled')) });
         if (has(ch, 'internal_gains_w') || has(ch, 'hp_max_kw')) {
           var ctlBody = {};
           if (has(ch, 'internal_gains_w')) ctlBody.internal_gains_w = fval(form, 'internal_gains_w');
@@ -3689,7 +3683,7 @@
           if (savedCtl && savedCtl.control) applyHeatControl(savedCtl.control);
         }
         var balanceOnly = Object.keys(ch).every(function (k) {
-          return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled' || k === 'internal_gains_w' || k === 'hp_max_kw';
+          return k === 'house_balance_enabled' || k === 'internal_gains_w' || k === 'hp_max_kw';
         });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',
@@ -3842,7 +3836,7 @@
       if (key === 'heat_source') { await saveHeatConnection(form, ch); await saveHeatBehavior(form, ch); }
       else if (key === 'weather' && sw.name === 'solar_holdoff_enabled')
         await post('/weather/settings', { solar_holdoff_enabled: on ? 1 : 0 });
-      else if (key === 'circulation' && (sw.name === 'house_balance_enabled' || sw.name === 'valves_follow_hp_enabled')) {
+      else if (key === 'circulation' && sw.name === 'house_balance_enabled') {
         var one = {};
         one[sw.name] = on ? 1 : 0;
         await post('/heat-source/settings', one);
