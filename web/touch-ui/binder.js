@@ -3599,7 +3599,7 @@
       return '<div class="setting"><div class="setting-label"><label for="' + id + '">' + esc(name) +
         '</label><small>' + esc(hint) + '</small></div><div class="setting-control"><div class="stepper">' +
         '<button type="button" data-step="-1" aria-label="' + esc(t('common.decrease', { x: label.toLowerCase() })) + '">−</button>' +
-        '<span class="value"><input type="number" inputmode="numeric" id="' + id + '" name="hbw:' + esc(b.node_id || '') +
+        '<span class="value"><input type="number" inputmode="numeric" id="' + id + '" name="hbw_' + esc(b.node_id || '') +
         '" value="' + w + '" min="' + mn + '" max="' + mx + '" step="' + st + '"><span class="unit">%</span></span>' +
         '<button type="button" data-step="1" aria-label="' + esc(t('common.increase', { x: label.toLowerCase() })) + '">+</button>' +
         '</div></div></div>';
@@ -3693,7 +3693,8 @@
       } else if (key === 'circulation') {
         if (has(ch, 'house_balance_enabled'))
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
-        var weights = Object.keys(ch).filter(function (k) { return k.indexOf('hbw:') === 0; });
+        // Not «hbw:…»: lune-forms reads «:» as a radio/checkbox suffix and drops the rest.
+        var weights = Object.keys(ch).filter(function (k) { return k.indexOf('hbw_') === 0; });
         for (var wi = 0; wi < weights.length; wi++)
           await post('/heat-source/settings', { house_balance_weight_node: weights[wi].slice(4), house_balance_weight_pct: fval(form, weights[wi]) });
         if (has(ch, 'internal_gains_w') || has(ch, 'hp_max_kw')) {
@@ -3704,7 +3705,7 @@
           if (savedCtl && savedCtl.control) applyHeatControl(savedCtl.control);
         }
         var balanceOnly = Object.keys(ch).every(function (k) {
-          return k === 'house_balance_enabled' || k.indexOf('hbw:') === 0 || k === 'internal_gains_w' || k === 'hp_max_kw';
+          return k === 'house_balance_enabled' || k.indexOf('hbw_') === 0 || k === 'internal_gains_w' || k === 'hp_max_kw';
         });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',
