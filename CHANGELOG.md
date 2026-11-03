@@ -13,6 +13,8 @@
   each loop again after 30 days, at most one remeasurement a day. Without a pump
   reading V6 keeps its default curve.
 - The measurement also sends each loop's full flow (l/min) to V6, which keeps it with the curve. Loops measured before V6 stored it are measured again (as first measurements). The circulation sheet's split per controller then uses each loop's measured flow instead of counting every loop as equal.
+- The measurement is finer: after the coarse steps (0, 5 … 30, 40, 60, 100 %) Touch goes back below the rise and climbs through it in 2.5 % steps (at most 8; a wider rise gets wider steps), 90 s per point instead of 60 s, so start and full points no longer fall in the 30–40–60 % gaps. About 50 min per loop. Curves from before this count as unmeasured and are measured again.
+- House balance from measurements: once every loop has a measured full flow, a board's need is its most demanding loop's heat demand (V6's UA) per litre of full flow, instead of the pipe-friction estimate; V6 uses the same shares inside the board. Each board has a weight (50–150 %, 100 = as computed) in the circulation sheet to move heat between floors beyond what the model sees. `POST /heat-source/settings` with `house_balance_weight_node` and `house_balance_weight_pct`; `house_balance.basis`, `boards[].need` and `boards[].weight_pct` in `GET /heat-source`.
 - «Følg varmepumpen» and «Loops now» are gone: V6's heat-pump law (dynamic balancing) does not use the heat pump's phase, so Touch no longer sends it.
 - `POST /api/lune-touch/v1/valve-curves/measure` (`node`, `zone`) measures that loop
   next. Status and the curves in `GET /heat-source`

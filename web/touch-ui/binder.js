@@ -137,9 +137,9 @@
     climate_entity: 'Virtual Thermostat z1',
     target_sync_enabled: true,
     valves_follow_hp: { enabled: true, phase: 'idle' },
-    house_balance: { enabled: false, boards: [
-      { node_id: 'lune-v6-cbe680', name: 'Stue', worst_kpa: 17.6, scale: 0.74, applied: 1 },
-      { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: 32.1, scale: 1, applied: 1 }] },
+    house_balance: { enabled: true, basis: 'measured', weight_min: 50, weight_max: 150, weight_step: 5, boards: [
+      { node_id: 'lune-v6-cbe680', name: 'Stueetage', worst_kpa: null, need: 11.7, weight_pct: 100, scale: 0.70, applied: 0.70 },
+      { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: null, need: 16.7, weight_pct: 100, scale: 1, applied: 1 }] },
     odin_plan_enabled: true,
     absorb_arm_enabled: true,
     odin_host: 'odin.local',
@@ -575,6 +575,9 @@
       if (body.odin_plan_enabled != null) mockHeat.odin_plan_enabled = bool(body.odin_plan_enabled);
       if (body.absorb_arm_enabled != null) mockHeat.absorb_arm_enabled = bool(body.absorb_arm_enabled);
       if (body.house_balance_enabled != null) mockHeat.house_balance.enabled = bool(body.house_balance_enabled);
+      if (body.house_balance_weight_node) mockHeat.house_balance.boards.forEach(function (b) {
+        if (b.node_id === body.house_balance_weight_node) b.weight_pct = Number(body.house_balance_weight_pct);
+      });
       if (body.valves_follow_hp_enabled != null) mockHeat.valves_follow_hp.enabled = bool(body.valves_follow_hp_enabled);
       if (body.climate_entity) mockHeat.climate_entity = body.climate_entity;
       if (body.write_url_template) mockHeat.write_url_template = body.write_url_template;
@@ -3575,18 +3578,33 @@
   }
 
   // House balance: one read-value row per V6 board (scale Touch sends) under the switch.
+  // One row per V6 board: its share (scale) and what it is based on, and its weight
+  // (house_balance.h): 100 % = as computed; lower gives the board less of the flow.
   function drawHouseBalance(hb) {
     var sw = qs('input[name="house_balance_enabled"]');
     var body = sw && sw.closest('.gated') && sw.closest('.gated').querySelector('.gated-body');
-    if (!body) return;
-    var boards = (hb && hb.boards) || [];
-    body.innerHTML = boards.map(function (b) {
-      var none = b.worst_kpa == null;
-      var hint = none ? t('heat.houseBalanceNone') : t('heat.houseBalanceRow', { kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) });   // 1 m head = 9.81 kPa
-      return '<div class="setting"><div class="setting-label"><span>' + esc(b.name || b.node_id || '—') +
-        '</span><small>' + hint + '</small></div><div class="setting-control"><span class="setting-value">' +
-        (none ? '—' : num(b.scale, 2)) + '</span></div></div>';
+    if (!body || formBusy(sw.form)) return;
+    hb = hb || {};
+    var boards = hb.boards || [];
+    var mn = hb.weight_min || 50, mx = hb.weight_max || 150, st = hb.weight_step || 5;
+    var measured = hb.basis === 'measured';
+    setText('heat.houseBalanceBasis', measured ? t('heat.houseBalanceSubMeasured') : t('heat.houseBalanceSub'));
+    body.innerHTML = boards.map(function (b, i) {
+      var name = b.name || b.node_id || '—';
+      var hint = b.need != null ? t('heat.houseBalanceRowMeasured', { scale: num(b.scale, 2) })
+        : b.worst_kpa != null ? t('heat.houseBalanceRowModel', { scale: num(b.scale, 2), kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) })   // 1 m head = 9.81 kPa
+        : t('heat.houseBalanceNone');
+      var id = 'hbw_' + i, label = t('heat.houseBalanceWeight', { name: name });
+      var w = b.weight_pct != null ? b.weight_pct : 100;
+      return '<div class="setting"><div class="setting-label"><label for="' + id + '">' + esc(name) +
+        '</label><small>' + esc(hint) + '</small></div><div class="setting-control"><div class="stepper">' +
+        '<button type="button" data-step="-1" aria-label="' + esc(t('common.decrease', { x: label.toLowerCase() })) + '">−</button>' +
+        '<span class="value"><input type="number" inputmode="numeric" id="' + id + '" name="hbw:' + esc(b.node_id || '') +
+        '" value="' + w + '" min="' + mn + '" max="' + mx + '" step="' + st + '"><span class="unit">%</span></span>' +
+        '<button type="button" data-step="1" aria-label="' + esc(t('common.increase', { x: label.toLowerCase() })) + '">+</button>' +
+        '</div></div></div>';
     }).join('');
+    if (sw.form.luneResnap) sw.form.luneResnap();
   }
 
   async function saveHeatBehavior(form, ch) {
@@ -3675,6 +3693,9 @@
       } else if (key === 'circulation') {
         if (has(ch, 'house_balance_enabled'))
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
+        var weights = Object.keys(ch).filter(function (k) { return k.indexOf('hbw:') === 0; });
+        for (var wi = 0; wi < weights.length; wi++)
+          await post('/heat-source/settings', { house_balance_weight_node: weights[wi].slice(4), house_balance_weight_pct: fval(form, weights[wi]) });
         if (has(ch, 'internal_gains_w') || has(ch, 'hp_max_kw')) {
           var ctlBody = {};
           if (has(ch, 'internal_gains_w')) ctlBody.internal_gains_w = fval(form, 'internal_gains_w');
@@ -3683,7 +3704,7 @@
           if (savedCtl && savedCtl.control) applyHeatControl(savedCtl.control);
         }
         var balanceOnly = Object.keys(ch).every(function (k) {
-          return k === 'house_balance_enabled' || k === 'internal_gains_w' || k === 'hp_max_kw';
+          return k === 'house_balance_enabled' || k.indexOf('hbw:') === 0 || k === 'internal_gains_w' || k === 'hp_max_kw';
         });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',

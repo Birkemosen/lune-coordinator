@@ -5551,6 +5551,8 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
       hl.supply_m = zone["supply_pipe_length_m"] | 2.0f;
       hl.applied = zone["house_balance"] | 1.0f;
       hl.enabled = zone["enabled"] | true;
+      hl.ua_w_k = zone["ua_effective_w_per_k"] | 0.0f;
+      hl.full_lmin = zone["valve_curve"]["full_lmin"] | 0.0f;
       hl.seen_ms = now_ms;
       // Valve curve (V6 with dynamic balancing's curve); see valve_probe.h.
       ValveProbeLoop &vl = vp_loops_[node_index][zone_number - 1];
@@ -7841,6 +7843,10 @@ void LuneTouchCoordinator::load_settings_() {
     uint8_t house_balance = 0;
     if (nvs_get_u8(handle, "hs_hbal_en", &house_balance) == ESP_OK)
       heat_source_.house_balance_enabled = house_balance != 0;
+    size_t hbw_len = sizeof(hb_weights_);
+    if (nvs_get_blob(handle, "hs_hbal_w", hb_weights_, &hbw_len) != ESP_OK || hbw_len != sizeof(hb_weights_))
+      for (auto &w : hb_weights_)
+        w = HouseBalanceWeight{};
     uint8_t follow_hp = 0;
     if (nvs_get_u8(handle, "hs_vfhp_en", &follow_hp) == ESP_OK)
       heat_source_.valves_follow_hp_enabled = follow_hp != 0;
@@ -8066,6 +8072,7 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK) err = nvs_set_str(handle, "hs_climate", heat_source_.climate_entity);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_target_en", heat_source_.target_sync_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_hbal_en", heat_source_.house_balance_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_blob(handle, "hs_hbal_w", hb_weights_, sizeof(hb_weights_));
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_vfhp_en", heat_source_.valves_follow_hp_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_en", odin_plan_.enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_absorb", odin_plan_.absorb_arm_enabled ? 1 : 0);
@@ -16004,6 +16011,61 @@ bool LuneTouchCoordinator::set_house_balance_enabled(bool enabled) {
   return true;
 }
 
+// Caller holds the state lock.
+int LuneTouchCoordinator::house_balance_weight_(const char *node_id) const {
+  if (node_id == nullptr || node_id[0] == '\0')
+    return 100;
+  for (const auto &w : hb_weights_)
+    if (std::strncmp(w.node_id, node_id, sizeof(w.node_id)) == 0)
+      return ::lune_touch_house_balance::clamp_weight(w.pct);
+  return 100;
+}
+
+bool LuneTouchCoordinator::set_house_balance_weight(const char *node_id, int weight_pct) {
+  if (node_id == nullptr || node_id[0] == '\0' || std::strlen(node_id) >= sizeof(hb_weights_[0].node_id))
+    return false;
+  const int pct = ::lune_touch_house_balance::clamp_weight(weight_pct);
+  if (!take_state_lock_(100))
+    return false;
+  // Its own slot, else a free one (100 % is the default), else the slot of a board Touch no longer has.
+  HouseBalanceWeight *slot = nullptr;
+  for (auto &w : hb_weights_)
+    if (std::strncmp(w.node_id, node_id, sizeof(w.node_id)) == 0)
+      slot = &w;
+  for (auto &w : hb_weights_)
+    if (slot == nullptr && (w.node_id[0] == '\0' || w.pct == 100))
+      slot = &w;
+  for (auto &w : hb_weights_) {
+    if (slot != nullptr)
+      break;
+    bool known = false;
+    for (size_t i = 0; i < model_.node_count(); i++) {
+      const auto *node = model_.node(i);
+      known = known || (node != nullptr && std::strncmp(node->node_id, w.node_id, sizeof(w.node_id)) == 0);
+    }
+    if (!known)
+      slot = &w;
+  }
+  if (slot == nullptr) {
+    give_state_lock_();
+    return false;
+  }
+  const bool changed = std::strncmp(slot->node_id, node_id, sizeof(slot->node_id)) != 0 || slot->pct != pct;
+  std::strncpy(slot->node_id, node_id, sizeof(slot->node_id) - 1);
+  slot->node_id[sizeof(slot->node_id) - 1] = '\0';
+  slot->pct = static_cast<int16_t>(pct);
+  if (changed)
+    hb_last_push_ms_ = 0;  // recompute and push on the next poll
+  give_state_lock_();
+  if (changed) {
+    save_settings_();
+    char msg[64];
+    snprintf(msg, sizeof(msg), "house balance weight %s %d %%", node_id, pct);
+    log_event_("info", "settings", msg);
+  }
+  return true;
+}
+
 void LuneTouchCoordinator::run_house_balance_(uint32_t now_ms) {
   namespace hb = ::lune_touch_house_balance;
   constexpr size_t N = ::lune_touch::MAX_NODES;
@@ -16043,10 +16105,18 @@ void LuneTouchCoordinator::run_house_balance_(uint32_t now_ms) {
       targets[i].zone_on[z] = fresh && src.enabled;
       if (!fresh)
         continue;
-      loops[i * Z + z] = hb::Loop{src.area_m2, src.inner_mm, src.spacing_mm, src.supply_m, src.enabled};
+      loops[i * Z + z] = hb::Loop{src.area_m2, src.inner_mm,   src.spacing_mm, src.supply_m,
+                                  src.enabled, src.ua_w_k, src.full_lmin};
     }
   }
-  hb::board_scales(loops, N, Z, hb::Params{}, hb_worst_pa_, scale);
+  int weights[N];
+  for (size_t i = 0; i < N; i++) {
+    const auto *node = i < model_.node_count() ? model_.node(i) : nullptr;
+    weights[i] = house_balance_weight_(node != nullptr ? node->node_id : nullptr);
+  }
+  hb::Basis basis = hb::Basis::None;
+  hb::board_scales(loops, N, Z, hb::Params{}, hb_worst_pa_, scale, weights, &basis);
+  hb_basis_ = static_cast<uint8_t>(basis);
   for (size_t i = 0; i < N; i++)
     hb_scale_[i] = scale[i];
   hb_last_push_ms_ = now_ms == 0 ? 1 : now_ms;
@@ -16216,8 +16286,16 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
     return;
   add(",\"valves_follow_hp\":{\"enabled\":%s,\"phase\":\"%s\"}",
       heat_source_.valves_follow_hp_enabled ? "true" : "false", ::lune_touch_hp_phase::name(hp_phase_));
-  add(",\"house_balance\":{\"enabled\":%s,\"boards\":[",
-      heat_source_.house_balance_enabled ? "true" : "false");
+  const auto basis = static_cast<::lune_touch_house_balance::Basis>(hb_basis_);
+  add(",\"house_balance\":{\"enabled\":%s,\"basis\":\"%s\",\"weight_min\":%d,\"weight_max\":%d,"
+      "\"weight_step\":%d,\"boards\":[",
+      heat_source_.house_balance_enabled ? "true" : "false",
+      basis == ::lune_touch_house_balance::Basis::Measured ? "measured"
+      : basis == ::lune_touch_house_balance::Basis::Model  ? "model"
+                                                           : "none",
+      ::lune_touch_house_balance::WEIGHT_MIN, ::lune_touch_house_balance::WEIGHT_MAX,
+      ::lune_touch_house_balance::WEIGHT_STEP);
+  const bool measured_basis = basis == ::lune_touch_house_balance::Basis::Measured;
   bool first = true;
   for (size_t i = 0; i < model_.node_count() && i < ::lune_touch::MAX_NODES; i++) {
     const auto *node = model_.node(i);
@@ -16233,12 +16311,20 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
         break;
       }
     }
-    if (hb_worst_pa_[i] > 0.0f)
-      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":%.1f,\"scale\":%.2f,\"applied\":%.2f}",
-          first ? "" : ",", node->node_id, label, hb_worst_pa_[i] / 1000.0f, hb_scale_[i], applied);
+    const int weight = house_balance_weight_(node->node_id);
+    // need: measured = W/K per l/min of the board's most demanding loop; model = its pressure.
+    if (hb_worst_pa_[i] > 0.0f && measured_basis)
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":null,\"need\":%.1f,\"weight_pct\":%d,"
+          "\"scale\":%.2f,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, hb_worst_pa_[i], weight, hb_scale_[i], applied);
+    else if (hb_worst_pa_[i] > 0.0f)
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":%.1f,\"need\":null,\"weight_pct\":%d,"
+          "\"scale\":%.2f,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, hb_worst_pa_[i] / 1000.0f, weight, hb_scale_[i], applied);
     else
-      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":null,\"scale\":1.00,\"applied\":%.2f}",
-          first ? "" : ",", node->node_id, label, applied);
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":null,\"need\":null,\"weight_pct\":%d,"
+          "\"scale\":1.00,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, weight, applied);
     first = false;
   }
   give_state_lock_();
@@ -16930,8 +17016,8 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
           const ValveProbeLoop &vl = vp_loops_[i][z];
           if (!vl.reported || !vl.enabled || vl.seen_ms == 0 || now_ms - vl.seen_ms >= FRESH_MS)
             continue;
-          // A curve without its full flow (measured before V6 stored it) counts as unmeasured.
-          const uint32_t measured = std::isfinite(vl.full_lmin) ? vl.measured_epoch_s : 0;
+          // A curve without its full flow, or from before the refine pass, counts as unmeasured.
+          const uint32_t measured = vp::counted_epoch(vl.measured_epoch_s, std::isfinite(vl.full_lmin));
           if (!vp::loop_due(measured, vl.failed_epoch_s, epoch))
             continue;
           if (measured < oldest) {
@@ -16948,7 +17034,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     }
     // A run holds every valve: wait for the heat source to stop, spread remeasurements.
     const ValveProbeLoop &picked = vp_loops_[pick_node][pick_zone];
-    const bool remeasure = picked.measured_epoch_s != 0 && std::isfinite(picked.full_lmin);
+    const bool remeasure = vp::counted_epoch(picked.measured_epoch_s, std::isfinite(picked.full_lmin)) != 0;
     if (!manual && !vp::may_start(phase == 1, epoch, vp_idle_epoch_s_, remeasure, vp_last_remeasure_epoch_s_)) {
       give_state_lock_();
       return;
@@ -16997,7 +17083,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   };
 
   if (action == vp::Action::SendStep) {
-    const float pos = vp::STEP_PCT[run.step];
+    const float pos = run.plan[run.step];
     bool sent = true;
     for (size_t i = 0; i < N && sent; i++) {
       if (!host_ok[i])
@@ -17128,7 +17214,7 @@ void LuneTouchCoordinator::append_valve_probe_json_(char *buffer, size_t capacit
   add(",\"valve_probe\":{\"stage\":\"%s\",\"node\":%u,\"zone\":%u,\"step\":%u,\"steps\":%u,"
       "\"pause_s\":%lu,",
       stage, static_cast<unsigned>(vp_run_.node + 1), static_cast<unsigned>(vp_run_.zone + 1),
-      static_cast<unsigned>(vp_run_.step + 1), static_cast<unsigned>(vp::STEPS),
+      static_cast<unsigned>(vp_run_.step + 1), static_cast<unsigned>(vp_run_.n_steps),
       static_cast<unsigned long>(vp::PAUSE_MS / 1000UL));
   char a[16], b[16], c[16], d[16];
   num(vp_last_fit_.start_pct, a, sizeof(a));

@@ -714,6 +714,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_hp_max_kw_user(float kw);
   bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
+  /// Weight (house_balance.h WEIGHT_MIN..MAX %) of one V6 board in the house balance.
+  bool set_house_balance_weight(const char *node_id, int weight_pct);
   bool set_valves_follow_hp_enabled(bool enabled);
   bool request_forecast_fetch(char *response, size_t capacity);
   bool estimate_forecast_location(char *response, size_t capacity);
@@ -843,8 +845,17 @@ class LuneTouchCoordinator : public esphome::Component {
     float supply_m{2.0f};
     float applied{1.0f};
     bool enabled{false};
+    float ua_w_k{0.0f};
+    float full_lmin{0.0f};
     uint32_t seen_ms{0};
   };
+  struct HouseBalanceWeight {
+    char node_id[24]{};
+    int16_t pct{100};
+  };
+  HouseBalanceWeight hb_weights_[::lune_touch::MAX_NODES]{};
+  uint8_t hb_basis_{0};  ///< lune_touch_house_balance::Basis
+  int house_balance_weight_(const char *node_id) const;
   HouseBalanceLoop hb_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
   float hb_worst_pa_[::lune_touch::MAX_NODES]{};
   float hb_scale_[::lune_touch::MAX_NODES]{1.0f, 1.0f, 1.0f, 1.0f};

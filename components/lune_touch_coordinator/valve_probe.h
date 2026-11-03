@@ -9,8 +9,12 @@
 //   1. every loop on every V6 holds its position (V6 /valve-test, zone 0);
 //   2. the test loop steps through STEP_PCT; after each step settles, the pump's
 //      flow is averaged (MEASURE_MS);
-//   3. fit flow = base + delta · ramp(opening; start, full) by least squares;
-//   4. a good fit (delta and R² large enough) is written to V6 with its time.
+//   3. the coarse steps only bracket the rise, so a refine pass goes back to the
+//      last coarse step below the fitted start and climbs in REFINE_STEP_PCT steps
+//      to just past the fitted full point (plan_refine);
+//   4. fit flow = base + delta · ramp(opening; start, full) by least squares over
+//      every point;
+//   5. a good fit (delta and R² large enough) is written to V6 with its time.
 //
 // With a constant-pressure pump the change in total flow is the loop's own flow,
 // whether the heat source runs or not. But a run holds every valve, so balancing is
@@ -33,11 +37,14 @@
 
 namespace lune_touch_valve_probe {
 
-constexpr size_t STEPS = 10;
+constexpr size_t STEPS = 10;  ///< Coarse steps
 constexpr float STEP_PCT[STEPS] = {0, 5, 10, 15, 20, 25, 30, 40, 60, 100};
-constexpr uint32_t SETTLE_FIRST_MS = 150000;  ///< First step: the valve may travel far
+constexpr float REFINE_STEP_PCT = 2.5f;
+constexpr size_t MAX_REFINE = 8;  ///< Points inside the rise; a wider rise gets wider steps
+constexpr size_t MAX_STEPS = STEPS + 1 + MAX_REFINE;
+constexpr uint32_t SETTLE_FIRST_MS = 150000;  ///< First step of a pass: the valve may travel far
 constexpr uint32_t SETTLE_MS = 75000;
-constexpr uint32_t MEASURE_MS = 60000;
+constexpr uint32_t MEASURE_MS = 90000;  ///< The pump's flow jitters 0.1–0.2 l/min; a loop is 1–2
 constexpr uint32_t SAMPLE_STALE_MS = 90000;   ///< No pump reading this long → abort
 constexpr uint32_t HOLD_TTL_S = 300;          ///< V6 hold TTL, refreshed every step
 constexpr uint16_t CIRCULATION_POLL_S = 15;   ///< Pump poll interval while measuring
@@ -49,6 +56,9 @@ constexpr uint32_t RETRY_FAILED_S = 86400UL;
 constexpr uint32_t RUNNING_FALLBACK_S = 86400UL;  ///< Running this long without a stop → measure anyway
 constexpr uint32_t REMEASURE_GAP_S = 86400UL;     ///< Between automatic remeasurements
 constexpr size_t MAX_SAMPLES = 16;
+/// Curves measured before the refine pass existed count as unmeasured, so every loop
+/// gets the finer curve once without waiting REMEASURE_S.
+constexpr uint32_t METHOD_EPOCH_S = 1793733600;  // 2026-11-03 19:20 UTC
 
 struct Point {
   float pos_pct{NAN};
@@ -73,7 +83,7 @@ inline float ramp(float x, float start, float full) {
 }
 
 /// Least-squares fit of flow = base + delta · ramp(pos; start, full) over a grid of
-/// start (0..40 %, 0.5 steps) and full (start + 10 .. 100 %, 1 % steps).
+/// start (0..50 %, 0.5 steps) and full (start + 10 .. 100 %, 1 % steps).
 inline Fit fit(const Point *pts, size_t n) {
   Fit best;
   if (pts == nullptr || n < 4)
@@ -94,7 +104,7 @@ inline Fit fit(const Point *pts, size_t n) {
     if (std::isfinite(pts[k].pos_pct) && std::isfinite(pts[k].flow_lmin))
       sst += (pts[k].flow_lmin - mean_f) * (pts[k].flow_lmin - mean_f);
   float best_sse = INFINITY;
-  for (float s = 0.0f; s <= 40.0f; s += 0.5f) {
+  for (float s = 0.0f; s <= 50.0f; s += 0.5f) {
     for (float f = s + 10.0f; f <= 100.0f; f += 1.0f) {
       float mr = 0.0f;
       for (size_t k = 0; k < n; k++)
@@ -136,6 +146,43 @@ inline Fit fit(const Point *pts, size_t n) {
   return best;
 }
 
+/// Refine plan after the coarse pass: the last coarse step at or below the fitted
+/// start (approached from above, so it is measured again after a long settle), then
+/// REFINE_STEP_PCT steps up to, not including, the first coarse step at or above the
+/// fitted full point (or 5 points past it, whichever is lower). At most MAX_REFINE inner points; a wider rise gets steps of a
+/// multiple of REFINE_STEP_PCT. Returns the number of steps written (0: no clear rise,
+/// nothing to refine).
+inline size_t plan_refine(const Point *pts, size_t n, float *out, size_t max) {
+  const Fit f = fit(pts, n);
+  if (!f.ok || out == nullptr || max < 2)
+    return 0;
+  float lower = 0.0f, upper = 100.0f;
+  for (size_t k = 0; k < STEPS; k++) {
+    if (STEP_PCT[k] <= f.start_pct)
+      lower = std::max(lower, STEP_PCT[k]);
+    if (STEP_PCT[k] >= f.full_pct)
+      upper = std::min(upper, STEP_PCT[k]);
+  }
+  // The coarse step above the rise can be far (40 → 60 %): stop a little past the fit.
+  upper = std::min(upper, std::ceil((f.full_pct + 5.0f) / REFINE_STEP_PCT) * REFINE_STEP_PCT);
+  const float span = upper - lower;
+  float step = REFINE_STEP_PCT;
+  const size_t limit = std::min(MAX_REFINE, max - 1);
+  while (std::ceil(span / step - 1e-3f) - 1.0f > static_cast<float>(limit))
+    step += REFINE_STEP_PCT;
+  size_t m = 0;
+  out[m++] = lower;
+  for (float p = lower + step; p < upper - 1e-3f && m < max; p += step)
+    out[m++] = p;
+  return m;
+}
+
+/// The measured time that counts for scheduling: 0 (unmeasured) for a curve without
+/// its full flow or from before METHOD_EPOCH_S.
+inline uint32_t counted_epoch(uint32_t measured_epoch_s, bool has_full_flow) {
+  return has_full_flow && measured_epoch_s >= METHOD_EPOCH_S ? measured_epoch_s : 0;
+}
+
 /// Is a loop due? `measured_epoch_s` from V6 (0 = never), `failed_epoch_s` from
 /// Touch's own memory of a failed try (0 = none).
 inline bool loop_due(uint32_t measured_epoch_s, uint32_t failed_epoch_s, int64_t now_epoch_s) {
@@ -167,18 +214,21 @@ struct Run {
   uint8_t node{0};
   uint8_t zone{0};  ///< 0..5
   uint8_t step{0};
+  uint8_t n_steps{0};
+  uint8_t refine_from{0};  ///< First refine step; 0 until the coarse pass is done
   uint8_t phase{0};  ///< Heat-source phase at the start (caller's code); a change aborts
   uint32_t stage_start_ms{0};
   uint32_t last_sample_ms{0};
   float flow_sum{0.0f};
   uint8_t flow_n{0};
-  Point pts[STEPS]{};
+  float plan[MAX_STEPS]{};
+  Point pts[MAX_STEPS]{};
   uint8_t n_pts{0};
 };
 
 enum class Action : uint8_t {
   None,
-  SendStep,  ///< send STEP_PCT[run.step] to the test loop, hold the rest
+  SendStep,  ///< send run.plan[run.step] to the test loop, hold the rest
   Finish,    ///< all steps measured: stop the hold, fit
   Abort,     ///< stop the hold, no result
 };
@@ -197,6 +247,9 @@ inline void start(Run &r, uint8_t node, uint8_t zone, uint32_t now_ms, uint8_t p
   r.node = node;
   r.zone = zone;
   r.step = 0;
+  for (size_t k = 0; k < STEPS; k++)
+    r.plan[k] = STEP_PCT[k];
+  r.n_steps = STEPS;
   r.stage_start_ms = now_ms;
   r.last_sample_ms = now_ms;
 }
@@ -219,7 +272,8 @@ inline Action tick(Run &r, const TickInput &in, bool just_started) {
   }
   const uint32_t elapsed = in.now_ms - r.stage_start_ms;
   if (r.stage == Stage::Settling) {
-    const uint32_t settle = r.step == 0 ? SETTLE_FIRST_MS : SETTLE_MS;
+    const bool far = r.step == 0 || (r.refine_from != 0 && r.step == r.refine_from);
+    const uint32_t settle = far ? SETTLE_FIRST_MS : SETTLE_MS;
     if (elapsed >= settle) {
       r.stage = Stage::Measuring;
       r.stage_start_ms = in.now_ms;
@@ -241,8 +295,13 @@ inline Action tick(Run &r, const TickInput &in, bool just_started) {
   }
   Point &p = r.pts[r.n_pts++];
   p.flow_lmin = r.flow_sum / static_cast<float>(r.flow_n);
-  p.pos_pct = STEP_PCT[r.step];  // commanded; V6 reports targets, not the motor
-  if (r.step + 1 >= STEPS) {
+  p.pos_pct = r.plan[r.step];  // commanded; V6 reports targets, not the motor
+  if (r.step + 1 >= r.n_steps && r.refine_from == 0) {
+    const size_t k = plan_refine(r.pts, r.n_pts, r.plan + r.n_steps, MAX_STEPS - r.n_steps);
+    r.refine_from = r.n_steps;
+    r.n_steps = static_cast<uint8_t>(r.n_steps + k);
+  }
+  if (r.step + 1 >= r.n_steps) {
     r.stage = Stage::Off;
     return Action::Finish;
   }

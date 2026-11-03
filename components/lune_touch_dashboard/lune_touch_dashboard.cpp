@@ -1354,6 +1354,14 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       parse_uint_param(api, api.json_body, "house_balance_enabled", &house_balance);
       house_balance_saved = coordinator_->set_house_balance_enabled(house_balance != 0);
     }
+    if (present("house_balance_weight_node")) {
+      char weight_node[24]{};
+      uint32_t weight_pct = 100;
+      parse_text_param(api, api.json_body, "house_balance_weight_node", weight_node, sizeof(weight_node));
+      parse_uint_param(api, api.json_body, "house_balance_weight_pct", &weight_pct);
+      house_balance_saved = coordinator_->set_house_balance_weight(weight_node, static_cast<int>(weight_pct)) ||
+                            house_balance_saved;
+    }
     if (present("valves_follow_hp_enabled")) {
       uint32_t follow = 0;
       parse_uint_param(api, api.json_body, "valves_follow_hp_enabled", &follow);
