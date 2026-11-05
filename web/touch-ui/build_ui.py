@@ -841,7 +841,12 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                srow(f"<span>{T('pump.hpMax')}</span>", f'<span class="setting-value" data-bind="pump.hpMaxOdin">{DASH}</span>',
                     T("pump.hpMaxOdinHint"), attrs=' data-bind-show="pump.hpMaxOdin" hidden') +
                srow(lab("hp_max_kw", T("pump.hpMax")), stepper("hp_max_kw", 0, 0, 40, 0.5, "kW", T("pump.hpMax")),
-                    T("pump.hpMaxHint"), attrs=' data-bind-show="pump.hpMaxEdit"'))}
+                    T("pump.hpMaxHint"), attrs=' data-bind-show="pump.hpMaxEdit"') +
+               srow(lab("buffer_tank", T("pump.tank")),
+                    '<select class="select" id="buffer_tank" name="buffer_tank">' + "".join(
+                        f'<option value="{v}"{" selected" if v == "four_port" else ""}>{T("pump.tank." + v)}</option>'
+                        for v in ("none", "series", "three_port", "four_port")) + '</select>',
+                    T("pump.tankHint")))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
                sport("pump_port", T("pumpCfg.port")) +
                # Entitetsnavnene ændres sjældent: underside i samme gruppe (maks. 5 grupper pr. side).
@@ -1003,7 +1008,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.valvePin", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria", "room.histChartAria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRowModel", "heat.houseBalanceRowMeasured", "heat.houseBalanceSub", "heat.houseBalanceSubMeasured", "heat.houseBalanceWeight", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior",
-        "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
+        "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.chargingVal", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

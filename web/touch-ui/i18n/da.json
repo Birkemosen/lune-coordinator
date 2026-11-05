@@ -1134,6 +1134,13 @@
   "pump.hpGroup": "Varmepumpe",
   "pump.hpMax": "Maks. ydelse",
   "pump.hpMaxHint": "Bruges til «Varmepumpen fuld ydelse», når Odin ikke giver den. 0 = ikke sat.",
+  "pump.tank": "Buffertank",
+  "pump.tankHint": "3-vejs: fremløb direkte fra varmepumpen, tanken i returen. 4-vejs: tanken adskiller varmepumpe og hus. Afgør, om forskellen i flow er et problem.",
+  "pump.tank.none": "Ingen",
+  "pump.tank.series": "I serie",
+  "pump.tank.three_port": "3-vejs",
+  "pump.tank.four_port": "4-vejs",
+  "pump.chargingVal": "{sec} / {pri} l/min ({pct} %) · overskuddet lader tanken",
   "pump.hpMaxOdinHint": "Odins værdi. Ændres i Odin.",
   "pump.hpMaxVal": "{kw} kW · fra Odin"
 }

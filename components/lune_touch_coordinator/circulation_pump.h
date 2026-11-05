@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 // Read-only ESPHome web_server contract for a satellite Alpha2 Go node.
 // Touch polls flow/head/power; it must not command the pump or heat source.
@@ -72,7 +73,44 @@ inline bool parse_sensor_response(const char *body, float *value) {
 //                                pump has to run hotter for the same room temperature.
 // Only judged while the heat pump's own pump runs for space heating (operation_mode 2):
 // during hot water the primary flow goes to the tank, and a stopped primary says nothing.
-enum class Mixing : uint8_t { Unknown, Ok, Short, Risk };
+//
+// What the ratio means depends on how the tank is piped (BufferTank):
+//   four_port   tank as hydraulic separator: SHORT and MIXING as above.
+//   three_port  supply straight from the heat pump, tank in series on the return with its
+//               top on the supply tee: a primary surplus charges the tank top-down (the heat
+//               pump keeps cold return until it is full) → CHARGING, not a fault; a secondary
+//               surplus is drawn from the tank top and dilutes the supply as it cools → MIXING.
+//   series, none  one flow through heat pump and house: nothing to judge.
+enum class Mixing : uint8_t { Unknown, Ok, Short, Risk, Charging, NotApplicable };
+
+enum class BufferTank : uint8_t { None, Series, ThreePort, FourPort };
+
+inline const char *buffer_tank_name(BufferTank t) {
+  switch (t) {
+    case BufferTank::None: return "none";
+    case BufferTank::Series: return "series";
+    case BufferTank::ThreePort: return "three_port";
+    default: return "four_port";
+  }
+}
+
+inline bool parse_buffer_tank(const char *s, BufferTank *out) {
+  if (s == nullptr || out == nullptr)
+    return false;
+  const BufferTank all[] = {BufferTank::None, BufferTank::Series, BufferTank::ThreePort, BufferTank::FourPort};
+  for (BufferTank t : all) {
+    if (std::strcmp(s, buffer_tank_name(t)) == 0) {
+      *out = t;
+      return true;
+    }
+  }
+  return false;
+}
+
+/// A secondary deficit returns the heat pump's own water (a fault) only with a separator.
+inline bool judges_short(BufferTank t) { return t == BufferTank::FourPort; }
+/// A secondary surplus dilutes the supply wherever a tank feeds it.
+inline bool judges_mixing(BufferTank t) { return t == BufferTank::FourPort || t == BufferTank::ThreePort; }
 
 /// Below this secondary/primary ratio the heat pump gets its own water back (sensor noise allowed).
 constexpr float SHORT_FLOW_RATIO = 0.97f;
@@ -89,22 +127,29 @@ inline bool mixing_sample_usable(float primary_lmin, float secondary_lmin, bool 
          primary_lmin >= MIXING_MIN_PRIMARY_LMIN && std::isfinite(secondary_lmin) && secondary_lmin > 0.0f;
 }
 
-inline Mixing mixing_state(float ratio) {
+inline Mixing mixing_state(float ratio, BufferTank tank = BufferTank::FourPort) {
+  if (!judges_mixing(tank))
+    return Mixing::NotApplicable;
   if (!std::isfinite(ratio) || ratio <= 0.0f)
     return Mixing::Unknown;
   if (ratio < SHORT_FLOW_RATIO)
-    return Mixing::Short;
+    return judges_short(tank) ? Mixing::Short : Mixing::Charging;
   return ratio > MIXING_RISK_RATIO ? Mixing::Risk : Mixing::Ok;
 }
 
 // Recommended secondary flow: a little above the heat pump's flow, so none of its water
 // goes back through the tank, and not so far above that the supply is diluted. Rounded up
 // to 0.5 l/min, the resolution a pump setting is made in.
+// With a three-port tank a little below instead: the house then takes all of its water
+// straight from the heat pump and the small surplus charges the tank.
 constexpr float RECOMMENDED_SECONDARY_SHARE = 1.05f;
+constexpr float RECOMMENDED_SECONDARY_SHARE_3PORT = 0.95f;
 
-inline float recommended_secondary_lmin(float primary_lmin) {
-  if (!std::isfinite(primary_lmin) || primary_lmin < MIXING_MIN_PRIMARY_LMIN)
+inline float recommended_secondary_lmin(float primary_lmin, BufferTank tank = BufferTank::FourPort) {
+  if (!judges_mixing(tank) || !std::isfinite(primary_lmin) || primary_lmin < MIXING_MIN_PRIMARY_LMIN)
     return NAN;
+  if (tank == BufferTank::ThreePort)
+    return std::floor(primary_lmin * RECOMMENDED_SECONDARY_SHARE_3PORT * 2.0f + 1e-3f) / 2.0f;
   return std::ceil(primary_lmin * RECOMMENDED_SECONDARY_SHARE * 2.0f - 1e-3f) / 2.0f;
 }
 
@@ -134,6 +179,8 @@ inline const char *mixing_name(Mixing m) {
     case Mixing::Ok: return "ok";
     case Mixing::Short: return "short";
     case Mixing::Risk: return "risk";
+    case Mixing::Charging: return "charging";
+    case Mixing::NotApplicable: return "not_applicable";
     default: return "unknown";
   }
 }

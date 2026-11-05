@@ -269,6 +269,8 @@ struct CirculationPumpState {
   char flow_entity[48]{"pump_flow"};
   char head_entity[48]{"pump_head_pressure"};
   char power_entity[48]{"pump_power"};
+  // How the buffer tank is piped; decides what the flow ratio means (circulation_pump.h).
+  circulation_pump::BufferTank buffer_tank{circulation_pump::BufferTank::FourPort};
   bool reachable{false};
   bool has_flow{false};
   bool has_head{false};
@@ -766,7 +768,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool request_heat_source_test_push(char *response, size_t capacity);
   bool set_circulation_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
                                 const char *flow_entity, const char *head_entity,
-                                const char *power_entity, char *response, size_t capacity);
+                                const char *power_entity, char *response, size_t capacity,
+                                const char *buffer_tank = nullptr);
   bool request_circulation_refresh(char *response, size_t capacity);
   bool set_settings(const char *coordinator_name, const char *install_id,
                     const char *site_label, const char *install_mode,

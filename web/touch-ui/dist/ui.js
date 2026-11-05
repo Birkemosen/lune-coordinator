@@ -387,7 +387,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       mixing: { state: 'short', primary_l_min: 19.0, secondary_l_min: 17.5 }
     },
     circulation: {
-      host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38,
+      host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38, buffer_tank: 'four_port',
       flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
       mixing: { state: 'short', ratio: 0.92, primary_l_min: 19.0, secondary_l_min: 17.5, age_s: 120,
         recommended_l_min: 20.0, recommended_head_m: 5.5, in_kw: 5.3, out_kw: 4.9 }
@@ -738,7 +738,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       return { result: 'stored' };
     }
     if (path === '/circulation/settings') {
-      ['host', 'flow_entity', 'head_entity', 'power_entity'].forEach(function (k) { if (body[k] != null) mockHeat.circulation[k] = body[k]; });
+      ['host', 'flow_entity', 'head_entity', 'power_entity', 'buffer_tank'].forEach(function (k) { if (body[k]) mockHeat.circulation[k] = body[k]; });
       if (body.port) mockHeat.circulation.port = Number(body.port);
       return { result: 'stored' };
     }
@@ -2302,7 +2302,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.shortBody', shortFlow ? (t('pump.shortBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
-    setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
+    // Three-port tank: a primary surplus charges the tank, which is fine (circulation_pump.h).
+    setText('pump.mixRatio', finite(mx.ratio) ? t(mx.state === 'charging' ? 'pump.chargingVal' : 'pump.mixRatioVal', mxVars) : '—');
     setText('pump.balance', !finite(mx.in_kw) ? '—'
       : t(finite(mx.out_kw) ? 'pump.balanceVal' : 'pump.balanceInOnly', mxVars));
     renderFlowNeed(mx.primary_l_min, lpm);
@@ -3062,6 +3063,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     put('pump_flow_entity', circ.flow_entity || 'pump_flow');
     put('pump_head_entity', circ.head_entity || 'pump_head_pressure');
     put('pump_power_entity', circ.power_entity || 'pump_power');
+    put('buffer_tank', circ.buffer_tank);
     if (f.luneResnap) f.luneResnap();
   }
 
@@ -3721,7 +3723,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (circ.host) {
       await post('/circulation/settings', {
         enabled: '1', host: circ.host || '', port: circ.port || 80,
-        flow_entity: circ.flow_entity || '', head_entity: circ.head_entity || '', power_entity: circ.power_entity || ''
+        flow_entity: circ.flow_entity || '', head_entity: circ.head_entity || '', power_entity: circ.power_entity || '',
+        buffer_tank: circ.buffer_tank || ''
       });
       applied++;
     }
@@ -3941,7 +3944,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           port: data.pump_port || data.port || 80,
           flow_entity: data.flow_entity || '',
           head_entity: data.head_entity || '',
-          power_entity: data.power_entity || ''
+          power_entity: data.power_entity || '',
+          buffer_tank: data.buffer_tank || ''
         });
       } else if (key === 'prices') {
         priceSchedSync();

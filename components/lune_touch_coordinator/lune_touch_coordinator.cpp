@@ -1687,7 +1687,9 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   json_float_token_(flow_lmin_tok, sizeof(flow_lmin_tok), flow_lmin, 1);
   // Mixing: the last sample taken while heating, shown for MIXING_HOLD_MS after it.
   const bool mix_held = source.mix_ms != 0 && now_ms - source.mix_ms <= circulation_pump::MIXING_HOLD_MS;
-  const auto mix = mix_held ? circulation_pump::mixing_state(source.mix_ratio) : circulation_pump::Mixing::Unknown;
+  const auto mix = !circulation_pump::judges_mixing(source.buffer_tank) ? circulation_pump::Mixing::NotApplicable
+                   : mix_held ? circulation_pump::mixing_state(source.mix_ratio, source.buffer_tank)
+                              : circulation_pump::Mixing::Unknown;
   char mix_ratio[16], mix_primary[16], mix_secondary[16], mix_age[16], mix_in[16], mix_out[16];
   json_float_token_(mix_in, sizeof(mix_in), mix_held ? source.mix_in_kw : NAN, 1);
   json_float_token_(mix_out, sizeof(mix_out), mix_held ? source.mix_out_kw : NAN, 1);
@@ -1696,7 +1698,8 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
   // Recommended secondary flow from the held primary sample, and the head it needs through
   // the valves as they are now (live head and flow).
-  const float rec_lmin = mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin) : NAN;
+  const float rec_lmin =
+      mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin, source.buffer_tank) : NAN;
   const float rec_head = circulation_pump::head_for_flow_m(source.has_head ? source.head_m : NAN, flow_lmin, rec_lmin);
   char mix_rec[16], mix_rec_head[16];
   json_float_token_(mix_rec, sizeof(mix_rec), rec_lmin, 1);
@@ -1713,7 +1716,7 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            "\"flow_m3h\":%s,\"flow_l_min\":%s,\"head_m\":%s,\"power_w\":%s,"
            "\"thermal_kw\":%s,\"thermal_kw_source\":\"%s\","
            "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\","
-           "\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
+           "\"buffer_tank\":\"%s\",\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
            "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s,\"in_kw\":%s,\"out_kw\":%s}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port),
            static_cast<unsigned>(source.refresh_interval_s),
@@ -1722,7 +1725,7 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            power_entity, source.reachable ? "true" : "false", fresh ? "true" : "false",
            status, source.last_http_status, age_s, flow, flow_lmin_tok, head, power, thermal,
            thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error,
-           circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
+           circulation_pump::buffer_tank_name(source.buffer_tank), circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
            mix_rec_head, mix_in, mix_out);
 }
 
@@ -8172,6 +8175,9 @@ void LuneTouchCoordinator::load_settings_() {
     nvs_get_str(handle, "circ_head", circulation_.head_entity, &len);
     len = sizeof(circulation_.power_entity);
     nvs_get_str(handle, "circ_pwr", circulation_.power_entity, &len);
+    uint8_t tank = static_cast<uint8_t>(circulation_.buffer_tank);
+    if (nvs_get_u8(handle, "circ_tank", &tank) == ESP_OK && tank <= static_cast<uint8_t>(circulation_pump::BufferTank::FourPort))
+      circulation_.buffer_tank = static_cast<circulation_pump::BufferTank>(tank);
     float max_boost_c = weather_max_boost_c_;
     len = sizeof(max_boost_c);
     if (nvs_get_blob(handle, "weather_boost", &max_boost_c, &len) == ESP_OK &&
@@ -8345,6 +8351,7 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_flow", circulation_.flow_entity);
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_head", circulation_.head_entity);
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_pwr", circulation_.power_entity);
+    if (err == ESP_OK) err = nvs_set_u8(handle, "circ_tank", static_cast<uint8_t>(circulation_.buffer_tank));
     if (err == ESP_OK)
       err = nvs_set_blob(handle, "weather_boost", &weather_max_boost_c_, sizeof(weather_max_boost_c_));
     if (err == ESP_OK)
@@ -10630,8 +10637,14 @@ bool LuneTouchCoordinator::run_heat_source_test_push_(char *response, size_t cap
 bool LuneTouchCoordinator::set_circulation_settings(
     bool has_enabled, bool enabled, const char *host, uint16_t port,
     const char *flow_entity, const char *head_entity, const char *power_entity,
-    char *response, size_t capacity) {
-  if (!has_enabled && (host == nullptr || host[0] == '\0') && port == 0 &&
+    char *response, size_t capacity, const char *buffer_tank) {
+  const bool has_tank = buffer_tank != nullptr && buffer_tank[0] != '\0';
+  circulation_pump::BufferTank tank = circulation_pump::BufferTank::FourPort;
+  if (has_tank && !circulation_pump::parse_buffer_tank(buffer_tank, &tank)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_buffer_tank\"}");
+    return false;
+  }
+  if (!has_enabled && !has_tank && (host == nullptr || host[0] == '\0') && port == 0 &&
       (flow_entity == nullptr || flow_entity[0] == '\0') &&
       (head_entity == nullptr || head_entity[0] == '\0') &&
       (power_entity == nullptr || power_entity[0] == '\0')) {
@@ -10672,6 +10685,8 @@ bool LuneTouchCoordinator::set_circulation_settings(
     std::strncpy(circulation_.power_entity, power_entity, sizeof(circulation_.power_entity) - 1);
     circulation_.power_entity[sizeof(circulation_.power_entity) - 1] = '\0';
   }
+  if (has_tank)
+    circulation_.buffer_tank = tank;
   circulation_.refresh_interval_s = 300;
   if (circulation_.enabled && circulation_.host[0] != '\0')
     circulation_poll_requested_ = true;
@@ -10687,11 +10702,11 @@ bool LuneTouchCoordinator::set_circulation_settings(
   snprintf(response, capacity,
            "{\"result\":\"saved\",\"circulation\":{\"enabled\":%s,\"host\":\"%s\",\"port\":%u,"
            "\"refresh_interval_s\":%u,\"flow_entity\":\"%s\",\"head_entity\":\"%s\","
-           "\"power_entity\":\"%s\"}}",
+           "\"power_entity\":\"%s\",\"buffer_tank\":\"%s\"}}",
            circulation_.enabled ? "true" : "false", escaped_host,
            static_cast<unsigned>(circulation_.port),
            static_cast<unsigned>(circulation_.refresh_interval_s), escaped_flow, escaped_head,
-           escaped_power);
+           escaped_power, circulation_pump::buffer_tank_name(circulation_.buffer_tank));
   give_state_lock_();
   if (poll_task_handle_ != nullptr)
     xTaskNotifyGive(poll_task_handle_);
@@ -16770,7 +16785,10 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
   const bool circ_fresh = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
                           now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
   in.secondary_lmin = circ_fresh ? circulation_.flow_m3h * (1000.0f / 60.0f) : NAN;
-  const hd::Edges e = hd::step(hp_diag_, in, now_ms);
+  hd::Params hdp;
+  hdp.judge_short = circulation_pump::judges_short(circulation_.buffer_tank);
+  hdp.judge_mix = circulation_pump::judges_mixing(circulation_.buffer_tank);
+  const hd::Edges e = hd::step(hp_diag_, in, now_ms, hdp);
   const float mean = hp_diag_.mean_kw, plan = hp_diag_.plan_kw;
   const float pri = hp_diag_.primary_lmin, sec = hp_diag_.secondary_lmin;
   give_state_lock_();

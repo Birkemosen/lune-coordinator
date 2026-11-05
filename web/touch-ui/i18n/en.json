@@ -1134,6 +1134,13 @@
   "pump.hpGroup": "Heat pump",
   "pump.hpMax": "Maximum output",
   "pump.hpMaxHint": "Used for «Heat pump at full output» when Odin gives none. 0 = not set.",
+  "pump.tank": "Buffer tank",
+  "pump.tankHint": "Three-port: supply straight from the heat pump, tank on the return. Four-port: the tank separates heat pump and house. Decides whether a difference in flow is a problem.",
+  "pump.tank.none": "None",
+  "pump.tank.series": "In series",
+  "pump.tank.three_port": "Three-port",
+  "pump.tank.four_port": "Four-port",
+  "pump.chargingVal": "{sec} / {pri} l/min ({pct} %) · the surplus charges the tank",
   "pump.hpMaxOdinHint": "Odin's value. Change it in Odin.",
   "pump.hpMaxVal": "{kw} kW · from Odin"
 }

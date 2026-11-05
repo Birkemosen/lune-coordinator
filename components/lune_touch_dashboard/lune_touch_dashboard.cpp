@@ -1448,9 +1448,11 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     char flow_entity[64];
     char head_entity[64];
     char power_entity[64];
+    char buffer_tank[16];
     uint32_t enabled = 0;
     uint32_t port = 0;
     parse_text_param(api, api.json_body, "host", host, sizeof(host));
+    parse_text_param(api, api.json_body, "buffer_tank", buffer_tank, sizeof(buffer_tank));
     parse_text_param(api, api.json_body, "flow_entity", flow_entity, sizeof(flow_entity));
     parse_text_param(api, api.json_body, "head_entity", head_entity, sizeof(head_entity));
     parse_text_param(api, api.json_body, "power_entity", power_entity, sizeof(power_entity));
@@ -1462,7 +1464,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     }
     const bool accepted = coordinator_->set_circulation_settings(
         has_enabled, enabled != 0, host, static_cast<uint16_t>(port), flow_entity, head_entity,
-        power_entity, data_buf_, DATA_BUF_SIZE);
+        power_entity, data_buf_, DATA_BUF_SIZE, buffer_tank);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/circulation/refresh") == 0) {
     const bool accepted = coordinator_->request_circulation_refresh(data_buf_, DATA_BUF_SIZE);
