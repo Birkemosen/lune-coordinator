@@ -228,6 +228,95 @@ esp_err_t open_touch_registry_nvs_(nvs_open_mode_t mode, nvs_handle_t *handle) {
     return nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, mode, handle);
   return nvs_open(TOUCH_NAMESPACE, mode, handle);
 }
+// Touch's own namespaces (settings, weather, ledger) live on touchreg once it exists:
+// the default partition is 20 KB and also holds ESPHome's preferences and the PHY
+// calibration, and ran full (settings stopped persisting).
+esp_err_t open_touch_nvs_(const char *ns, nvs_open_mode_t mode, nvs_handle_t *handle) {
+  if (touch_registry_partition_ready_)
+    return nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, ns, mode, handle);
+  return nvs_open(ns, mode, handle);
+}
+
+esp_err_t copy_nvs_entry_(nvs_handle_t src, nvs_handle_t dst, const nvs_entry_info_t &info) {
+  const char *k = info.key;
+  switch (info.type) {
+    case NVS_TYPE_U8: { uint8_t v; esp_err_t e = nvs_get_u8(src, k, &v); return e == ESP_OK ? nvs_set_u8(dst, k, v) : e; }
+    case NVS_TYPE_I8: { int8_t v; esp_err_t e = nvs_get_i8(src, k, &v); return e == ESP_OK ? nvs_set_i8(dst, k, v) : e; }
+    case NVS_TYPE_U16: { uint16_t v; esp_err_t e = nvs_get_u16(src, k, &v); return e == ESP_OK ? nvs_set_u16(dst, k, v) : e; }
+    case NVS_TYPE_I16: { int16_t v; esp_err_t e = nvs_get_i16(src, k, &v); return e == ESP_OK ? nvs_set_i16(dst, k, v) : e; }
+    case NVS_TYPE_U32: { uint32_t v; esp_err_t e = nvs_get_u32(src, k, &v); return e == ESP_OK ? nvs_set_u32(dst, k, v) : e; }
+    case NVS_TYPE_I32: { int32_t v; esp_err_t e = nvs_get_i32(src, k, &v); return e == ESP_OK ? nvs_set_i32(dst, k, v) : e; }
+    case NVS_TYPE_U64: { uint64_t v; esp_err_t e = nvs_get_u64(src, k, &v); return e == ESP_OK ? nvs_set_u64(dst, k, v) : e; }
+    case NVS_TYPE_I64: { int64_t v; esp_err_t e = nvs_get_i64(src, k, &v); return e == ESP_OK ? nvs_set_i64(dst, k, v) : e; }
+    case NVS_TYPE_STR:
+    case NVS_TYPE_BLOB: {
+      const bool str = info.type == NVS_TYPE_STR;
+      size_t len = 0;
+      esp_err_t e = str ? nvs_get_str(src, k, nullptr, &len) : nvs_get_blob(src, k, nullptr, &len);
+      if (e != ESP_OK)
+        return e;
+      void *buf = heap_caps_malloc(len == 0 ? 1 : len, MALLOC_CAP_8BIT);
+      if (buf == nullptr)
+        return ESP_ERR_NO_MEM;
+      e = str ? nvs_get_str(src, k, static_cast<char *>(buf), &len) : nvs_get_blob(src, k, buf, &len);
+      if (e == ESP_OK)
+        e = str ? nvs_set_str(dst, k, static_cast<const char *>(buf)) : nvs_set_blob(dst, k, buf, len);
+      heap_caps_free(buf);
+      return e;
+    }
+    default:
+      return ESP_OK;
+  }
+}
+
+/// Moves a namespace from the default partition to touchreg: copies every key, marks
+/// the copy complete, then erases the default copy. A complete copy is never
+/// overwritten again (the default copy is then only erased).
+void move_namespace_to_touchreg_(const char *ns) {
+  static const char *const MOVED_KEY = "_moved";
+  if (!touch_registry_partition_ready_)
+    return;
+  nvs_iterator_t it = nullptr;
+  if (nvs_entry_find(NVS_DEFAULT_PART_NAME, ns, NVS_TYPE_ANY, &it) != ESP_OK)
+    return;  // nothing left on the default partition
+  nvs_handle_t src, dst;
+  if (nvs_open(ns, NVS_READWRITE, &src) != ESP_OK) {
+    nvs_release_iterator(it);
+    return;
+  }
+  if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, ns, NVS_READWRITE, &dst) != ESP_OK) {
+    nvs_release_iterator(it);
+    nvs_close(src);
+    return;
+  }
+  uint8_t moved = 0;
+  esp_err_t err = ESP_OK;
+  unsigned keys = 0;
+  if (nvs_get_u8(dst, MOVED_KEY, &moved) != ESP_OK || moved == 0) {
+    for (esp_err_t res = ESP_OK; res == ESP_OK && err == ESP_OK; res = nvs_entry_next(&it)) {
+      nvs_entry_info_t info{};
+      nvs_entry_info(it, &info);
+      err = copy_nvs_entry_(src, dst, info);
+      keys++;
+    }
+    if (err == ESP_OK)
+      err = nvs_set_u8(dst, MOVED_KEY, 1);
+    if (err == ESP_OK)
+      err = nvs_commit(dst);
+  }
+  nvs_release_iterator(it);
+  if (err == ESP_OK)
+    err = nvs_erase_all(src);
+  if (err == ESP_OK)
+    err = nvs_commit(src);
+  nvs_close(dst);
+  nvs_close(src);
+  if (err == ESP_OK)
+    ESP_LOGI(TAG, "Moved NVS namespace %s to %s (%u keys)", ns, TOUCH_REGISTRY_PARTITION, keys);
+  else
+    ESP_LOGE(TAG, "Could not move NVS namespace %s to %s: %s", ns, TOUCH_REGISTRY_PARTITION, esp_err_to_name(err));
+}
+
 struct PersistedLedgerCompact {
   uint32_t magic{::lune_touch::PERSISTED_LEDGER_MAGIC};
   uint16_t version{1};
@@ -270,6 +359,58 @@ bool load_registry_chunks_for_(nvs_handle_t handle, State *state) {
 
 bool load_registry_chunks_(nvs_handle_t handle, ::lune_touch::PersistedState *state) {
   return load_registry_chunks_for_(handle, state);
+}
+
+// Default NVS usage per namespace (keys, and entries their values take), logged when a
+// save runs out of space so the namespace that fills the partition shows in the log.
+void log_default_nvs_usage_() {
+  nvs_stats_t stats{};
+  if (nvs_get_stats(nullptr, &stats) == ESP_OK)
+    ESP_LOGE(TAG, "Default NVS: used=%u free=%u total=%u namespaces=%u", static_cast<unsigned>(stats.used_entries),
+             static_cast<unsigned>(stats.free_entries), static_cast<unsigned>(stats.total_entries),
+             static_cast<unsigned>(stats.namespace_count));
+  if (touch_registry_partition_ready_ && nvs_get_stats(TOUCH_REGISTRY_PARTITION, &stats) == ESP_OK)
+    ESP_LOGE(TAG, "%s NVS: used=%u free=%u total=%u", TOUCH_REGISTRY_PARTITION,
+             static_cast<unsigned>(stats.used_entries), static_cast<unsigned>(stats.free_entries),
+             static_cast<unsigned>(stats.total_entries));
+  struct Ns {
+    char name[16];
+    unsigned keys;
+    unsigned entries;
+  };
+  Ns seen[12]{};
+  size_t n = 0;
+  nvs_iterator_t it = nullptr;
+  esp_err_t res = nvs_entry_find(NVS_DEFAULT_PART_NAME, nullptr, NVS_TYPE_ANY, &it);
+  while (res == ESP_OK) {
+    nvs_entry_info_t info{};
+    nvs_entry_info(it, &info);
+    size_t k = 0;
+    while (k < n && std::strncmp(seen[k].name, info.namespace_name, sizeof(seen[k].name)) != 0)
+      k++;
+    if (k == n && n < sizeof(seen) / sizeof(seen[0])) {
+      std::strncpy(seen[n].name, info.namespace_name, sizeof(seen[n].name) - 1);
+      n++;
+    }
+    if (k < n) {
+      size_t len = 0;
+      nvs_handle_t h;
+      if ((info.type == NVS_TYPE_STR || info.type == NVS_TYPE_BLOB) &&
+          nvs_open(info.namespace_name, NVS_READONLY, &h) == ESP_OK) {
+        if (info.type == NVS_TYPE_STR)
+          nvs_get_str(h, info.key, nullptr, &len);
+        else
+          nvs_get_blob(h, info.key, nullptr, &len);
+        nvs_close(h);
+      }
+      seen[k].keys++;
+      seen[k].entries += 1 + static_cast<unsigned>((len + 31) / 32);
+    }
+    res = nvs_entry_next(&it);
+  }
+  nvs_release_iterator(it);
+  for (size_t k = 0; k < n; k++)
+    ESP_LOGE(TAG, "  NVS namespace %s: %u keys, ~%u entries", seen[k].name, seen[k].keys, seen[k].entries);
 }
 
 void cleanup_legacy_touch_registry_() {
@@ -1627,6 +1768,9 @@ void LuneTouchCoordinator::setup() {
   state_lock_ = xSemaphoreCreateMutex();
   heat_source_probe_done_ = xSemaphoreCreateBinary();
   init_touch_registry_partition_();
+  move_namespace_to_touchreg_(SETTINGS_NAMESPACE);
+  move_namespace_to_touchreg_(WEATHER_NAMESPACE);
+  move_namespace_to_touchreg_(LEDGER_NAMESPACE);
   boot_id_ = esp_random();
   if (boot_id_ == 0)
     boot_id_ = 1;
@@ -3707,7 +3851,7 @@ void LuneTouchCoordinator::run_odin_control_() {
 
 void LuneTouchCoordinator::load_odin_control_() {
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   uint8_t u8 = 0;
   if (nvs_get_u8(handle, "odc_en", &u8) == ESP_OK)
@@ -3813,7 +3957,7 @@ void LuneTouchCoordinator::save_odin_control_() {
                         static_cast<uint8_t>(std::clamp(std::lround(owner.lift.lift_c * 10.0f), 0L, 255L))};
   const float curve[2]{levers.curve_gain, levers.curve_max_offset_c};
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   esp_err_t err = nvs_set_u8(handle, "odc_en", control.enabled ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_maxlift", &control.max_lift_c, sizeof(float));
@@ -6080,7 +6224,7 @@ void LuneTouchCoordinator::ensure_preload_learning_defaults_() {
 bool LuneTouchCoordinator::load_preload_learning_() {
   ensure_preload_learning_defaults_();
   nvs_handle_t handle = 0;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return false;
   PersistedPreloadLearning blob{};
   size_t len = sizeof(blob);
@@ -6123,7 +6267,7 @@ bool LuneTouchCoordinator::save_preload_learning_() {
     entry.lead_bias_h = preload_lead_bias_h_[z];
   }
   nvs_handle_t handle = 0;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return false;
   const esp_err_t err = nvs_set_blob(handle, "preload_lrn", &blob, sizeof(blob));
   if (err == ESP_OK)
@@ -7675,7 +7819,7 @@ void LuneTouchCoordinator::save_registry_() {
 
 void LuneTouchCoordinator::load_ledger_() {
   nvs_handle_t handle;
-  if (nvs_open(LEDGER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(LEDGER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
 
   PersistedLedgerCompact compact{};
@@ -7735,7 +7879,7 @@ void LuneTouchCoordinator::save_ledger_() {
   }
 
   nvs_handle_t handle;
-  if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(LEDGER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   // The previous ledger was a large single blob. Clear the ledger namespace
   // only during that migration; normal saves overwrite the compact blob.
@@ -7764,7 +7908,7 @@ void LuneTouchCoordinator::save_ledger_() {
 
 void LuneTouchCoordinator::load_forecast_settings_() {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   int32_t lat_e6 = 0;
   int32_t lon_e6 = 0;
@@ -7779,7 +7923,7 @@ void LuneTouchCoordinator::load_forecast_settings_() {
 
 void LuneTouchCoordinator::save_forecast_settings_(float latitude, float longitude, const char *mode) {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   nvs_set_i32(handle, "lat_e6", static_cast<int32_t>(latitude * 1000000.0f));
   nvs_set_i32(handle, "lon_e6", static_cast<int32_t>(longitude * 1000000.0f));
@@ -7790,7 +7934,7 @@ void LuneTouchCoordinator::save_forecast_settings_(float latitude, float longitu
 
 void LuneTouchCoordinator::load_forecast_cache_() {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   static PersistedForecastCache cache;
   std::memset(&cache, 0, sizeof(cache));
@@ -7862,7 +8006,7 @@ void LuneTouchCoordinator::save_forecast_cache_() {
     return;
 
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   if (nvs_set_blob(handle, "cache", &cache, sizeof(cache)) == ESP_OK)
     nvs_commit(handle);
@@ -7871,7 +8015,7 @@ void LuneTouchCoordinator::save_forecast_cache_() {
 
 void LuneTouchCoordinator::clear_forecast_cache_() {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   nvs_erase_key(handle, "cache");
   nvs_commit(handle);
@@ -7880,7 +8024,7 @@ void LuneTouchCoordinator::clear_forecast_cache_() {
 
 void LuneTouchCoordinator::load_settings_() {
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
     size_t len = sizeof(coordinator_name_);
     nvs_get_str(handle, "name", coordinator_name_, &len);
     len = sizeof(install_id_);
@@ -8139,7 +8283,7 @@ void LuneTouchCoordinator::ensure_automatic_identity_() {
 
 void LuneTouchCoordinator::save_settings_() {
   nvs_handle_t handle;
-  const esp_err_t settings_open = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
+  const esp_err_t settings_open = open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
   if (settings_open == ESP_OK) {
     esp_err_t err = nvs_set_str(handle, "name", coordinator_name_);
     if (err == ESP_OK) err = nvs_set_str(handle, "install_id", install_id_);
@@ -8212,8 +8356,11 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK)
       err = nvs_commit(handle);
     nvs_close(handle);
-    if (err != ESP_OK)
+    if (err != ESP_OK) {
       ESP_LOGE(TAG, "Could not persist Touch settings: %s", esp_err_to_name(err));
+      if (err == ESP_ERR_NVS_NOT_ENOUGH_SPACE)
+        log_default_nvs_usage_();
+    }
   } else {
     ESP_LOGE(TAG, "Could not open Touch settings NVS: %s", esp_err_to_name(settings_open));
   }
@@ -8911,7 +9058,7 @@ bool LuneTouchCoordinator::reset_registry(const char *confirmation, char *respon
     nvs_commit(handle);
     nvs_close(handle);
   }
-  if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+  if (open_touch_nvs_(LEDGER_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
     nvs_erase_all(handle);
     nvs_commit(handle);
     nvs_close(handle);
@@ -15703,7 +15850,7 @@ void LuneTouchCoordinator::load_price_settings_() {
   price_.cfg.grid_schedule = default_grid_schedule();
   price_.cfg.model = Model::ODIN;  // fresh install: Odin keeps fetching its own price
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   Config &cfg = price_.cfg;
   uint8_t u8 = 0;
@@ -15788,7 +15935,7 @@ void LuneTouchCoordinator::save_price_settings_() {
   const float nums[4]{cfg.system_fixed, cfg.energy_tax, cfg.markup, cfg.vat_pct};
   const float nums2[3]{cfg.fx, cfg.spot_fixed_eur, cfg.odin_fixed_price};
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   esp_err_t err = nvs_set_u8(handle, "pr_en", cfg.enabled ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_u8(handle, "pr_model", static_cast<uint8_t>(cfg.model));
@@ -16566,7 +16713,7 @@ void LuneTouchCoordinator::save_exposure_learning_() {
   exposure_learn_saved_ms_ = esphome::millis();
   give_state_lock_();
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   if (nvs_set_blob(handle, "xlearn", recs, count * sizeof(Rec)) == ESP_OK)
     nvs_commit(handle);
@@ -16582,7 +16729,7 @@ void LuneTouchCoordinator::load_exposure_learning_() {
   if (recs == nullptr)
     return;
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   size_t len = ::lune_touch::MAX_HOUSE_ZONES * sizeof(Rec);
   const esp_err_t err = nvs_get_blob(handle, "xlearn", recs, &len);
@@ -17145,6 +17292,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   in.conditions_ok = ready && phase == vp_run_.phase;
   in.has_flow_sample = has_sample;
   in.flow_lmin = flow_lmin;
+  in.head_m = circulation_.has_head ? circulation_.head_m : NAN;
   action = vp::tick(vp_run_, in, just_started);
   if (vp_run_.stage == vp::Stage::Off)
     vp_last_end_ms_ = now_ms == 0 ? 1 : now_ms;
@@ -17180,11 +17328,13 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
 
   if (action == vp::Action::SendStep) {
     const float pos = run.plan[run.step];
+    // Each loop alone (valve_probe.h); while the heat source runs the others hold.
+    const float others = run.phase == 1 ? NAN : 0.0f;
     bool sent = true;
     for (size_t i = 0; i < N && sent; i++) {
       if (!host_ok[i])
         continue;
-      sent = send_v6_valve_test_(hosts[i], i == run.node ? run.zone + 1 : 0, pos, false);
+      sent = send_v6_valve_test_(hosts[i], i == run.node ? run.zone + 1 : 0, pos, false, others);
     }
     if (!sent) {
       if (take_state_lock_(100)) {
@@ -17213,38 +17363,45 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     log_event_("warn", "valve_curve", msg);
     return;
   }
+  const float head = vp::mean_head(run);
+  const float full_lmin = vp::flow_at_ref_head(fit.delta_lmin, head);
   const bool written = send_v6_valve_curve_(hosts[run.node], run.zone, fit.start_pct, fit.full_pct,
-                                            static_cast<uint32_t>(epoch), fit.delta_lmin);
-  snprintf(msg, sizeof(msg), "%s: flow from %.0f %%, full at %.0f %%, %.1f l/min",
-           written ? "written" : "not written", fit.start_pct, fit.full_pct, fit.delta_lmin);
+                                            static_cast<uint32_t>(epoch), full_lmin);
+  // Flow at REF_HEAD_M; the pump's head during the run in brackets.
+  snprintf(msg, sizeof(msg), "%s: flow from %.0f %%, full at %.0f %%, %.1f l/min (%.1f m)",
+           written ? "written" : "not written", fit.start_pct, fit.full_pct, full_lmin, head);
   record(msg, fit, !written);
   if (written && take_state_lock_(100)) {
     ValveProbeLoop &vl = vp_loops_[run.node][run.zone];
     vl.start_pct = fit.start_pct;
     vl.full_pct = fit.full_pct;
     vl.measured_epoch_s = static_cast<uint32_t>(epoch);
-    vl.full_lmin = fit.delta_lmin;
+    vl.full_lmin = full_lmin;
     vl.failed_epoch_s = 0;
     give_state_lock_();
   }
   log_event_(written ? "info" : "warn", "valve_curve", msg);
 }
 
-bool LuneTouchCoordinator::send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop) {
+bool LuneTouchCoordinator::send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop,
+                                               float others_pct) {
   if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
     return false;
   const int64_t ts = current_epoch_s_();
   char nonce[48];
   snprintf(nonce, sizeof(nonce), "vt-%lld-%lu", static_cast<long long>(ts),
            static_cast<unsigned long>(++vp_nonce_));
-  char payload[192];
+  char payload[224];
+  char others[24]{};
+  if (std::isfinite(others_pct))
+    snprintf(others, sizeof(others), ",\"others_pct\":%.1f", others_pct);
   if (stop)
     snprintf(payload, sizeof(payload), "{\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
              static_cast<long long>(ts), nonce);
   else
     snprintf(payload, sizeof(payload),
-             "{\"zone\":%d,\"position_pct\":%.1f,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
-             zone, position_pct, static_cast<unsigned long>(::lune_touch_valve_probe::HOLD_TTL_S),
+             "{\"zone\":%d,\"position_pct\":%.1f%s,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+             zone, position_pct, others, static_cast<unsigned long>(::lune_touch_valve_probe::HOLD_TTL_S),
              static_cast<long long>(ts), nonce);
   char url[160];
   snprintf(url, sizeof(url), "http://%s/api/v1/valve-test%s", host, stop ? "/stop" : "");

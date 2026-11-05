@@ -102,6 +102,7 @@ static void test_run_sequence() {
     in.has_flow_sample = true;
     const float pos = r.plan[r.step];
     in.flow_lmin = 22.0f + loop_flow(pos, 8.0f, 34.0f, 2.6f);
+    in.head_m = 3.4f;
     a = tick(r, in, false);
     if (a == Action::SendStep)
       sends++;
@@ -122,6 +123,18 @@ static void test_run_sequence() {
   std::printf("run: %u steps, %u min for one loop, start %.1f full %.0f\n",
               static_cast<unsigned>(r.n_steps), static_cast<unsigned>(total_min), f.start_pct, f.full_pct);
   assert(total_min <= 60);
+  assert(std::fabs(mean_head(r) - 3.4f) < 1e-4f);
+}
+
+static void test_flow_at_ref_head() {
+  // Stueetage Hobbyrum: 1.92 l/min at 2.8 m is 1.99 at 3 m; at 3.4 m it would read 2.13.
+  assert(std::fabs(flow_at_ref_head(1.92f, 2.8f) - 1.987f) < 0.01f);
+  assert(std::fabs(flow_at_ref_head(1.92f * std::sqrt(3.4f / 2.8f), 3.4f) - flow_at_ref_head(1.92f, 2.8f)) < 1e-3f);
+  assert(flow_at_ref_head(2.0f, REF_HEAD_M) == 2.0f);
+  assert(flow_at_ref_head(2.0f, NAN) == 2.0f);  // no head reading: as measured
+  assert(flow_at_ref_head(2.0f, 0.1f) == 2.0f);
+  Run r;
+  assert(std::isnan(mean_head(r)));
 }
 
 static void test_run_aborts() {
@@ -153,6 +166,7 @@ int main() {
   test_may_start();
   test_run_sequence();
   test_run_aborts();
+  test_flow_at_ref_head();
   std::printf("Valve probe tests passed.\n");
   return 0;
 }

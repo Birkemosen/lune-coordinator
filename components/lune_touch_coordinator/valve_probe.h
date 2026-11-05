@@ -6,7 +6,10 @@
 // valve inserts open quickly and differ per loop, so Touch measures the curve from
 // the circulation pump's flow, which only Touch sees:
 //
-//   1. every loop on every V6 holds its position (V6 /valve-test, zone 0);
+//   1. every other loop on every V6 closes (V6 /valve-test, others_pct 0), so each
+//      loop is measured alone: a loop's flow depends on what else is open (the
+//      manifold's supply pipe), and the curves must compare across loops and days.
+//      While the heat source runs (the fallback below) the others hold instead;
 //   2. the test loop steps through STEP_PCT; after each step settles, the pump's
 //      flow is averaged (MEASURE_MS);
 //   3. the coarse steps only bracket the rise, so a refine pass goes back to the
@@ -14,7 +17,9 @@
 //      to just past the fitted full point (plan_refine);
 //   4. fit flow = base + delta · ramp(opening; start, full) by least squares over
 //      every point;
-//   5. a good fit (delta and R² large enough) is written to V6 with its time.
+//   5. a good fit (delta and R² large enough) is written to V6 with its time and its
+//      full flow at REF_HEAD_M (flow ∝ √head), so a changed pump setting does not
+//      change the loop's share.
 //
 // With a constant-pressure pump the change in total flow is the loop's own flow,
 // whether the heat source runs or not. But a run holds every valve, so balancing is
@@ -56,9 +61,18 @@ constexpr uint32_t RETRY_FAILED_S = 86400UL;
 constexpr uint32_t RUNNING_FALLBACK_S = 86400UL;  ///< Running this long without a stop → measure anyway
 constexpr uint32_t REMEASURE_GAP_S = 86400UL;     ///< Between automatic remeasurements
 constexpr size_t MAX_SAMPLES = 16;
-/// Curves measured before the refine pass existed count as unmeasured, so every loop
-/// gets the finer curve once without waiting REMEASURE_S.
-constexpr uint32_t METHOD_EPOCH_S = 1793733600;  // 2026-11-03 19:20 UTC
+constexpr float REF_HEAD_M = 3.0f;  ///< Full flow is reported at this pump head
+/// Curves measured before the current method (each loop alone, flow at REF_HEAD_M)
+/// count as unmeasured, so every loop is measured again without waiting REMEASURE_S.
+constexpr uint32_t METHOD_EPOCH_S = 1793878200;  // 2026-11-05 11:30 UTC
+
+/// Loop flow at REF_HEAD_M from flow measured at `head_m` (flow ∝ √head). No head
+/// reading: the flow as measured.
+inline float flow_at_ref_head(float lmin, float head_m) {
+  if (!std::isfinite(lmin) || !std::isfinite(head_m) || head_m < 0.5f)
+    return lmin;
+  return lmin * std::sqrt(REF_HEAD_M / head_m);
+}
 
 struct Point {
   float pos_pct{NAN};
@@ -221,6 +235,8 @@ struct Run {
   uint32_t last_sample_ms{0};
   float flow_sum{0.0f};
   uint8_t flow_n{0};
+  float head_sum{0.0f};  ///< Pump head over every measuring sample of the run
+  uint16_t head_n{0};
   float plan[MAX_STEPS]{};
   Point pts[MAX_STEPS]{};
   uint8_t n_pts{0};
@@ -238,7 +254,13 @@ struct TickInput {
   bool conditions_ok{false};  ///< pump fresh, V6 boards reachable, phase unchanged
   bool has_flow_sample{false};
   float flow_lmin{NAN};
+  float head_m{NAN};  ///< Pump head with the flow sample (NaN: unknown)
 };
+
+/// Mean pump head over the run's measuring samples (NaN: none).
+inline float mean_head(const Run &r) {
+  return r.head_n > 0 ? r.head_sum / static_cast<float>(r.head_n) : NAN;
+}
 
 inline void start(Run &r, uint8_t node, uint8_t zone, uint32_t now_ms, uint8_t phase = 0) {
   r = Run{};
@@ -286,6 +308,10 @@ inline Action tick(Run &r, const TickInput &in, bool just_started) {
   if (in.has_flow_sample && std::isfinite(in.flow_lmin) && r.flow_n < MAX_SAMPLES) {
     r.flow_sum += in.flow_lmin;
     r.flow_n++;
+    if (std::isfinite(in.head_m)) {
+      r.head_sum += in.head_m;
+      r.head_n++;
+    }
   }
   if (elapsed < MEASURE_MS)
     return Action::None;
