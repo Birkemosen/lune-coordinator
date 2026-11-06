@@ -25,9 +25,13 @@
 // whether the heat source runs or not. But a run holds every valve, so balancing is
 // off while it lasts: Touch measures while the heat source is not running, and only
 // falls back to measuring during a run after RUNNING_FALLBACK_S without a pause (a
-// heat source that never stops). One loop at a time, PAUSE_MS apart, until every
-// loop has a curve; then each loop again after REMEASURE_S, at most one
-// remeasurement per REMEASURE_GAP_S so they spread out. A change of heat-source phase during a run
+// heat source that never stops). A buffer tank keeps the floors warm while the heat
+// source is off, and closing the others shuts them out of it, so an automatic run
+// also waits until no room is below its target, and at most MAX_RUNS_PER_DAY runs
+// start in 24 h. One loop at a time, PAUSE_MS apart, until every loop has a curve;
+// then each loop again after REMEASURE_S, at most one remeasurement per
+// REMEASURE_GAP_S so they spread out. A loop that fails MAX_FAILS times in a row waits
+// for a manual run (its valve may need relearning). A change of heat-source phase during a run
 // (start, stop, hot water) moves temperatures and the pump's flow estimate, so it
 // aborts the run (no result), as do a stale pump reading and a V6 that does not
 // answer; V6 releases the hold by its TTL.
@@ -60,6 +64,8 @@ constexpr uint32_t REMEASURE_S = 30UL * 86400UL;
 constexpr uint32_t RETRY_FAILED_S = 86400UL;
 constexpr uint32_t RUNNING_FALLBACK_S = 86400UL;  ///< Running this long without a stop → measure anyway
 constexpr uint32_t REMEASURE_GAP_S = 86400UL;     ///< Between automatic remeasurements
+constexpr size_t MAX_RUNS_PER_DAY = 2;            ///< Automatic runs started per 24 h
+constexpr uint8_t MAX_FAILS = 2;                  ///< Failed tries in a row before a loop waits for a manual run
 constexpr size_t MAX_SAMPLES = 16;
 constexpr float REF_HEAD_M = 3.0f;  ///< Full flow is reported at this pump head
 /// Curves measured before the current method (each loop alone, flow at REF_HEAD_M)
@@ -197,10 +203,10 @@ inline uint32_t counted_epoch(uint32_t measured_epoch_s, bool has_full_flow) {
   return has_full_flow && measured_epoch_s >= METHOD_EPOCH_S ? measured_epoch_s : 0;
 }
 
-/// Is a loop due? `measured_epoch_s` from V6 (0 = never), `failed_epoch_s` from
-/// Touch's own memory of a failed try (0 = none).
-inline bool loop_due(uint32_t measured_epoch_s, uint32_t failed_epoch_s, int64_t now_epoch_s) {
-  if (now_epoch_s <= 0)
+/// Is a loop due? `measured_epoch_s` from V6 (0 = never), `failed_epoch_s` and
+/// `fails` (tries in a row) from Touch's own memory of failed tries (0 = none).
+inline bool loop_due(uint32_t measured_epoch_s, uint32_t failed_epoch_s, uint8_t fails, int64_t now_epoch_s) {
+  if (now_epoch_s <= 0 || fails >= MAX_FAILS)
     return false;
   const int64_t now = now_epoch_s;
   if (failed_epoch_s != 0 && now - static_cast<int64_t>(failed_epoch_s) < RETRY_FAILED_S)
@@ -208,14 +214,37 @@ inline bool loop_due(uint32_t measured_epoch_s, uint32_t failed_epoch_s, int64_t
   return measured_epoch_s == 0 || now - static_cast<int64_t>(measured_epoch_s) >= REMEASURE_S;
 }
 
-/// May an automatic run start now? `idle_epoch_s`: when the heat source was last seen
-/// not running (or Touch's start); `remeasure`: the picked loop already has a curve;
-/// `last_remeasure_epoch_s`: start of the last automatic remeasurement (0 = none).
-inline bool may_start(bool hs_running, int64_t now_epoch_s, int64_t idle_epoch_s, bool remeasure,
-                      int64_t last_remeasure_epoch_s) {
-  if (now_epoch_s <= 0)
+/// Is there an automatic run left in the last 24 h? `starts`: when the latest
+/// automatic runs started (0 = free slot).
+inline bool run_left_today(const uint32_t (&starts)[MAX_RUNS_PER_DAY], int64_t now_epoch_s) {
+  for (uint32_t s : starts)
+    if (s == 0 || now_epoch_s - static_cast<int64_t>(s) >= 86400)
+      return true;
+  return false;
+}
+
+/// Record an automatic run's start in the oldest slot.
+inline void note_run(uint32_t (&starts)[MAX_RUNS_PER_DAY], int64_t now_epoch_s) {
+  size_t oldest = 0;
+  for (size_t i = 1; i < MAX_RUNS_PER_DAY; i++)
+    if (starts[i] < starts[oldest])
+      oldest = i;
+  starts[oldest] = static_cast<uint32_t>(now_epoch_s);
+}
+
+/// May an automatic run start now? `room_cold`: an enabled room is below its target
+/// (the others close, so it would wait for heat); `idle_epoch_s`: when the heat source
+/// was last seen not running (or Touch's start); `remeasure`: the picked loop already
+/// has a curve; `last_remeasure_epoch_s`: start of the last automatic remeasurement
+/// (0 = none); `run_left`: run_left_today.
+inline bool may_start(bool hs_running, bool room_cold, int64_t now_epoch_s, int64_t idle_epoch_s, bool remeasure,
+                      int64_t last_remeasure_epoch_s, bool run_left) {
+  if (now_epoch_s <= 0 || !run_left)
     return false;
   if (hs_running && now_epoch_s - idle_epoch_s < RUNNING_FALLBACK_S)
+    return false;
+  // While the heat source runs the others hold, so a cold room keeps its flow.
+  if (!hs_running && room_cold)
     return false;
   return !remeasure || last_remeasure_epoch_s <= 0 || now_epoch_s - last_remeasure_epoch_s >= REMEASURE_GAP_S;
 }

@@ -67,23 +67,40 @@ static void test_plan_refine() {
 
 static void test_schedule() {
   const int64_t now = 1800000000;
-  assert(loop_due(0, 0, now));
-  assert(!loop_due(static_cast<uint32_t>(now - 86400), 0, now));
-  assert(loop_due(static_cast<uint32_t>(now - REMEASURE_S), 0, now));
-  assert(!loop_due(0, static_cast<uint32_t>(now - 3600), now));
-  assert(loop_due(0, static_cast<uint32_t>(now - RETRY_FAILED_S), now));
-  assert(!loop_due(0, 0, 0));
+  assert(loop_due(0, 0, 0, now));
+  assert(!loop_due(static_cast<uint32_t>(now - 86400), 0, 0, now));
+  assert(loop_due(static_cast<uint32_t>(now - REMEASURE_S), 0, 0, now));
+  assert(!loop_due(0, static_cast<uint32_t>(now - 3600), 1, now));
+  assert(loop_due(0, static_cast<uint32_t>(now - RETRY_FAILED_S), 1, now));
+  assert(!loop_due(0, static_cast<uint32_t>(now - RETRY_FAILED_S), MAX_FAILS, now));  // waits for a manual run
+  assert(!loop_due(0, 0, 0, 0));
+}
+
+static void test_runs_per_day() {
+  const int64_t now = 1800000000;
+  uint32_t starts[MAX_RUNS_PER_DAY]{};
+  assert(run_left_today(starts, now));
+  note_run(starts, now - 7200);
+  assert(run_left_today(starts, now));
+  note_run(starts, now - 3600);
+  assert(!run_left_today(starts, now));
+  assert(run_left_today(starts, now + 86400 - 7200));  // the first one is a day old
+  note_run(starts, now + 86400 - 7200);
+  assert(starts[0] == static_cast<uint32_t>(now + 86400 - 7200) && starts[1] == static_cast<uint32_t>(now - 3600));
 }
 
 static void test_may_start() {
   const int64_t now = 1800000000;
-  assert(may_start(false, now, now, false, 0));                         // idle: go
-  assert(!may_start(true, now, now - 3600, false, 0));                  // running: wait for a stop
-  assert(may_start(true, now, now - RUNNING_FALLBACK_S, false, 0));     // never stops: measure anyway
-  assert(!may_start(false, now, now, true, now - 3600));                // one remeasurement per gap
-  assert(may_start(false, now, now, true, now - REMEASURE_GAP_S));
-  assert(may_start(false, now, now, false, now - 3600));                // first curves back to back
-  assert(!may_start(false, 0, 0, false, 0));
+  assert(may_start(false, false, now, now, false, 0, true));                      // idle: go
+  assert(!may_start(true, false, now, now - 3600, false, 0, true));               // running: wait for a stop
+  assert(may_start(true, false, now, now - RUNNING_FALLBACK_S, false, 0, true));  // never stops: measure anyway
+  assert(!may_start(false, false, now, now, true, now - 3600, true));             // one remeasurement per gap
+  assert(may_start(false, false, now, now, true, now - REMEASURE_GAP_S, true));
+  assert(may_start(false, false, now, now, false, now - 3600, true));             // first curves back to back
+  assert(!may_start(false, true, now, now, false, 0, true));                      // a cold room keeps its flow
+  assert(may_start(true, true, now, now - RUNNING_FALLBACK_S, false, 0, true));   // others hold while running
+  assert(!may_start(false, false, now, now, false, 0, false));                    // runs per day used
+  assert(!may_start(false, false, 0, 0, false, 0, true));
 }
 
 static void test_run_sequence() {
@@ -164,6 +181,7 @@ int main() {
   test_plan_refine();
   test_schedule();
   test_may_start();
+  test_runs_per_day();
   test_run_sequence();
   test_run_aborts();
   test_flow_at_ref_head();

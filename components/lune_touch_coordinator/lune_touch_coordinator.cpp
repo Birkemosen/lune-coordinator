@@ -1788,6 +1788,7 @@ void LuneTouchCoordinator::setup() {
   load_preload_learning_();
   load_settings_();
   load_odin_control_();
+  load_valve_probe_state_();
   model_.set_internal_gains_w(odin_control_.internal_gains_w);
   load_exposure_learning_();
   load_price_settings_();
@@ -3852,6 +3853,50 @@ void LuneTouchCoordinator::run_odin_control_() {
   }
 }
 
+// Failed valve-curve tries and the day's automatic runs survive a restart, so a
+// flash does not start the loops that just failed (valve_probe.h).
+struct ValveProbeStored {
+  uint32_t failed_epoch_s[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE];
+  uint8_t fails[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE];
+  uint32_t auto_starts[::lune_touch_valve_probe::MAX_RUNS_PER_DAY];
+};
+
+void LuneTouchCoordinator::load_valve_probe_state_() {
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  ValveProbeStored st{};
+  size_t len = sizeof(st);
+  if (nvs_get_blob(handle, "vp_state", &st, &len) == ESP_OK && len == sizeof(st)) {
+    for (size_t i = 0; i < ::lune_touch::MAX_NODES; i++)
+      for (size_t z = 0; z < ::lune_touch::ZONES_PER_NODE; z++) {
+        vp_loops_[i][z].failed_epoch_s = st.failed_epoch_s[i][z];
+        vp_loops_[i][z].fails = st.fails[i][z];
+      }
+    std::memcpy(vp_auto_starts_, st.auto_starts, sizeof(vp_auto_starts_));
+  }
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::save_valve_probe_state_() {
+  ValveProbeStored st{};
+  for (size_t i = 0; i < ::lune_touch::MAX_NODES; i++)
+    for (size_t z = 0; z < ::lune_touch::ZONES_PER_NODE; z++) {
+      st.failed_epoch_s[i][z] = vp_loops_[i][z].failed_epoch_s;
+      st.fails[i][z] = vp_loops_[i][z].fails;
+    }
+  std::memcpy(st.auto_starts, vp_auto_starts_, sizeof(st.auto_starts));
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  esp_err_t err = nvs_set_blob(handle, "vp_state", &st, sizeof(st));
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "valve probe state not saved: %s", esp_err_to_name(err));
+}
+
 void LuneTouchCoordinator::load_odin_control_() {
   nvs_handle_t handle;
   if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
@@ -5741,6 +5786,9 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     fields.has_valve = !zone["valve_pct"].isNull();
     fields.temperature_c = fields.has_temperature ? (zone["temperature_c"] | 0.0f) : 0.0f;
     fields.setpoint_c = fields.has_setpoint ? (zone["setpoint_c"] | 0.0f) : 0.0f;
+    if (node_index < ::lune_touch::MAX_NODES)
+      vp_loops_[node_index][zone_number - 1].cold =
+          fields.has_temperature && fields.has_setpoint && fields.temperature_c < fields.setpoint_c;
     fields.valve_pct = fields.has_valve ? (zone["valve_pct"] | 0.0f) : 0.0f;
     // V6 with a valve curve reports the loop's flow (% of full): Touch shows and weighs
     // flow; the pin's travel is kept for the text beside it.
@@ -17224,6 +17272,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     return;
   size_t boards = 0;
   bool boards_fresh = true;
+  bool room_cold = false;
   for (size_t i = 0; i < model_.node_count() && i < N; i++) {
     const auto *node = model_.node(i);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
@@ -17235,8 +17284,11 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     host_ok[i] = true;
     boards++;
     bool fresh = false;
-    for (size_t z = 0; z < Z; z++)
-      fresh = fresh || (vp_loops_[i][z].seen_ms != 0 && now_ms - vp_loops_[i][z].seen_ms < FRESH_MS);
+    for (size_t z = 0; z < Z; z++) {
+      const ValveProbeLoop &vl = vp_loops_[i][z];
+      fresh = fresh || (vl.seen_ms != 0 && now_ms - vl.seen_ms < FRESH_MS);
+      room_cold = room_cold || (vl.enabled && vl.cold && vl.seen_ms != 0 && now_ms - vl.seen_ms < FRESH_MS);
+    }
     boards_fresh = boards_fresh && fresh;
   }
   const float flow_lmin = circulation_.flow_m3h * (1000.0f / 60.0f);
@@ -17254,6 +17306,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     has_sample = true;
   }
   bool just_started = false;
+  bool save_state = false;  // NVS after the lock
   if (vp_run_.stage == vp::Stage::Off) {
     manual = vp_request_node_ >= 0;
     const bool rested = vp_last_end_ms_ == 0 || now_ms - vp_last_end_ms_ >= vp::PAUSE_MS;
@@ -17279,7 +17332,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
             continue;
           // A curve without its full flow, or from before the refine pass, counts as unmeasured.
           const uint32_t measured = vp::counted_epoch(vl.measured_epoch_s, std::isfinite(vl.full_lmin));
-          if (!vp::loop_due(measured, vl.failed_epoch_s, epoch))
+          if (!vp::loop_due(measured, vl.failed_epoch_s, vl.fails, epoch))
             continue;
           if (measured < oldest) {
             oldest = measured;
@@ -17296,12 +17349,17 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     // A run holds every valve: wait for the heat source to stop, spread remeasurements.
     const ValveProbeLoop &picked = vp_loops_[pick_node][pick_zone];
     const bool remeasure = vp::counted_epoch(picked.measured_epoch_s, std::isfinite(picked.full_lmin)) != 0;
-    if (!manual && !vp::may_start(phase == 1, epoch, vp_idle_epoch_s_, remeasure, vp_last_remeasure_epoch_s_)) {
+    if (!manual && !vp::may_start(phase == 1, room_cold, epoch, vp_idle_epoch_s_, remeasure,
+                                  vp_last_remeasure_epoch_s_, vp::run_left_today(vp_auto_starts_, epoch))) {
       give_state_lock_();
       return;
     }
     if (!manual && remeasure)
       vp_last_remeasure_epoch_s_ = epoch;
+    if (!manual) {
+      vp::note_run(vp_auto_starts_, epoch);
+      save_state = true;
+    }
     vp::start(vp_run_, static_cast<uint8_t>(pick_node), static_cast<uint8_t>(pick_zone), now_ms, phase);
     just_started = true;
   }
@@ -17316,6 +17374,8 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     vp_last_end_ms_ = now_ms == 0 ? 1 : now_ms;
   run = vp_run_;
   give_state_lock_();
+  if (save_state)
+    save_valve_probe_state_();
 
   if (action == vp::Action::None)
     return;
@@ -17339,9 +17399,15 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     vp_last_node_ = run.node;
     vp_last_zone_ = run.zone;
     vp_last_epoch_s_ = epoch;
-    if (failed)
-      vp_loops_[run.node][run.zone].failed_epoch_s = static_cast<uint32_t>(epoch);
+    if (failed) {
+      ValveProbeLoop &vl = vp_loops_[run.node][run.zone];
+      vl.failed_epoch_s = static_cast<uint32_t>(epoch);
+      if (vl.fails < 255)
+        vl.fails++;
+    }
     give_state_lock_();
+    if (failed)
+      save_valve_probe_state_();
   };
 
   if (action == vp::Action::SendStep) {
@@ -17396,7 +17462,9 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     vl.measured_epoch_s = static_cast<uint32_t>(epoch);
     vl.full_lmin = full_lmin;
     vl.failed_epoch_s = 0;
+    vl.fails = 0;
     give_state_lock_();
+    save_valve_probe_state_();
   }
   log_event_(written ? "info" : "warn", "valve_curve", msg);
 }
@@ -17520,10 +17588,10 @@ void LuneTouchCoordinator::append_valve_probe_json_(char *buffer, size_t capacit
       num(vl.start_pct, a, sizeof(a));
       num(vl.full_pct, b, sizeof(b));
       add("%s{\"node\":%u,\"zone\":%u,\"enabled\":%s,\"start_pct\":%s,\"full_pct\":%s,"
-          "\"measured_epoch_s\":%lu,\"failed_epoch_s\":%lu}",
+          "\"measured_epoch_s\":%lu,\"failed_epoch_s\":%lu,\"fails\":%u}",
           first ? "" : ",", static_cast<unsigned>(i + 1), static_cast<unsigned>(z + 1),
           vl.enabled ? "true" : "false", a, b, static_cast<unsigned long>(vl.measured_epoch_s),
-          static_cast<unsigned long>(vl.failed_epoch_s));
+          static_cast<unsigned long>(vl.failed_epoch_s), static_cast<unsigned>(vl.fails));
       first = false;
     }
   }

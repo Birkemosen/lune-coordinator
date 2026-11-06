@@ -880,6 +880,8 @@ class LuneTouchCoordinator : public esphome::Component {
     float pin_pct{NAN};    ///< Valve pin travel when V6 reports flow_pct (live valve_pct is then flow)
     float full_lmin{NAN};  ///< Loop's full flow as measured (V6 stores it with the curve)
     uint32_t seen_ms{0};
+    uint8_t fails{0};      ///< Failed tries in a row (reset by a written curve)
+    bool cold{false};      ///< Room below its target
   };
   ValveProbeLoop vp_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
   ::lune_touch_valve_probe::Run vp_run_{};
@@ -895,6 +897,9 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t vp_nonce_{0};
   int64_t vp_idle_epoch_s_{0};            ///< Heat source last seen not running (or start)
   int64_t vp_last_remeasure_epoch_s_{0};  ///< Last automatic remeasurement started
+  uint32_t vp_auto_starts_[::lune_touch_valve_probe::MAX_RUNS_PER_DAY]{};  ///< Latest automatic run starts
+  void load_valve_probe_state_();
+  void save_valve_probe_state_();
   void run_valve_probe_(uint32_t now_ms);
   bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop, float others_pct = NAN);
   bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,
