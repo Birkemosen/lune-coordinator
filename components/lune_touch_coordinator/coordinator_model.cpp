@@ -1185,6 +1185,43 @@ void HouseModel::accumulate_ua_day(float hours, float outdoor_c) {
   }
 }
 
+size_t HouseModel::export_ua_day(UaDayPersist *out, size_t capacity) const {
+  size_t n = 0;
+  for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS && out != nullptr && n < capacity; i++) {
+    if (rooms_[i].room_id[0] == '\0' || !(ua_day_[i].hours > 0.0f))
+      continue;
+    UaDayPersist &e = out[n++];
+    e = UaDayPersist{};
+    copy_text_(e.room_id, sizeof(e.room_id), rooms_[i].room_id);
+    e.kwh = ua_day_[i].kwh;
+    e.dt_kh = ua_day_[i].dt_kh;
+    e.hours = ua_day_[i].hours;
+    e.first_c = ua_day_[i].first_c;
+    e.last_c = ua_day_[i].last_c;
+  }
+  return n;
+}
+
+void HouseModel::import_ua_day(const UaDayPersist *in, size_t count) {
+  for (size_t k = 0; k < count && in != nullptr; k++) {
+    const UaDayPersist &e = in[k];
+    if (!(std::isfinite(e.hours) && e.hours > 0.0f && e.hours <= 24.5f) || !std::isfinite(e.kwh) ||
+        !std::isfinite(e.dt_kh))
+      continue;
+    for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
+      if (!same_text_(rooms_[i].room_id, e.room_id))
+        continue;
+      ua_day_[i].kwh = e.kwh;
+      ua_day_[i].dt_kh = e.dt_kh;
+      ua_day_[i].hours = e.hours;
+      ua_day_[i].first_c = e.first_c;
+      ua_day_[i].last_c = e.last_c;
+      rooms_[i].delivered_kwh_today = e.kwh;
+      break;
+    }
+  }
+}
+
 size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
   size_t n = 0;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
@@ -1796,11 +1833,30 @@ bool HouseModel::bump_weights_revision(uint32_t now_ms) {
   return true;
 }
 
+bool HouseModel::update_zone_heat_weight(size_t node_index, size_t zone_index, float heat_weight) {
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    live_[i].heat_weight = heat_weight;
+    return true;
+  }
+  return false;
+}
+
 bool HouseModel::allocate_delivered_kwh(float total_kwh, uint32_t now_ms) {
   if (!std::isfinite(total_kwh) || total_kwh <= 0.0f)
     return false;
   (void)now_ms;
-  // Flow share ≈ loop area × valve opening. Not UA: UA is what this energy teaches.
+  // Each loop's heat (l/min × supply − return) when every flowing loop reports it;
+  // otherwise flow share ≈ loop area × flow. Not UA: UA is what this energy teaches.
+  bool by_heat = false;
+  for (size_t z = 0; z < zone_count_; z++) {
+    if (!(live_[z].fresh && live_[z].has_valve && live_[z].valve_pct > 1.0f))
+      continue;
+    by_heat = std::isfinite(live_[z].heat_weight);
+    if (!by_heat)
+      break;
+  }
   float weight_sum = 0.0f;
   float weights[MAX_HOUSE_ROOMS]{};
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
@@ -1813,7 +1869,7 @@ bool HouseModel::allocate_delivered_kwh(float total_kwh, uint32_t now_ms) {
       if (!(live_[z].fresh && live_[z].has_valve && live_[z].valve_pct > 1.0f))
         continue;
       const float area = zones_[z].v6_area_m2 > 0.0f ? zones_[z].v6_area_m2 : 10.0f;
-      w += area * live_[z].valve_pct / 100.0f;
+      w += by_heat ? live_[z].heat_weight : area * live_[z].valve_pct / 100.0f;
     }
     weights[i] = w;
     weight_sum += w;

@@ -938,6 +938,10 @@ class LuneTouchCoordinator : public esphome::Component {
   void ensure_preload_learning_defaults_();
   bool load_preload_learning_();
   bool save_preload_learning_();
+  bool load_ua_day_();
+  bool save_ua_day_();
+  int32_t ua_day_ymd_{0};        ///< Local date of the UA day being accumulated (0: none yet)
+  uint32_t ua_day_saved_ms_{0};  ///< Last hourly store of the day's totals
   ForecastDispatchSummary dispatch_forecast_commands_();
   void append_zone_comfort_chart_json_(char *buffer, size_t capacity, size_t &off,
                                        size_t zone_index) const;

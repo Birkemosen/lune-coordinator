@@ -106,6 +106,8 @@ static constexpr uint32_t OTA_SLOT_BYTES = 0x640000;
 static constexpr uint32_t FORECAST_CACHE_MAGIC = 0x4C544657;  // LTFW
 static constexpr uint32_t PRELOAD_LEARN_MAGIC = 0x4C54504C;  // LTPL
 static constexpr uint16_t PRELOAD_LEARN_VERSION = 1;
+static constexpr uint32_t UA_DAY_MAGIC = 0x4C545544;  // LTUD
+static constexpr uint16_t UA_DAY_VERSION = 1;
 static constexpr float LOAD_THRESHOLD = 1.0f;
 static constexpr float GAIN_C_PER_LOAD = 0.5f;
 static constexpr float COMFORT_BAND_C = 0.5f;
@@ -1619,6 +1621,14 @@ struct PersistedPreloadLearning {
   } zones[::lune_touch::MAX_HOUSE_ZONES]{};
 };
 
+struct PersistedUaDay {
+  uint32_t magic{UA_DAY_MAGIC};
+  uint16_t version{UA_DAY_VERSION};
+  uint16_t count{0};
+  int32_t ymd{0};  ///< Local date the totals belong to
+  ::lune_touch::HouseModel::UaDayPersist rooms[::lune_touch::MAX_HOUSE_ROOMS]{};
+};
+
 void json_escape_(const char *src, char *out, size_t out_len) {
   if (out_len == 0)
     return;
@@ -1786,6 +1796,7 @@ void LuneTouchCoordinator::setup() {
   cleanup_legacy_touch_registry_();
   load_forecast_settings_();
   load_preload_learning_();
+  load_ua_day_();
   load_settings_();
   load_odin_control_();
   load_valve_probe_state_();
@@ -4733,16 +4744,22 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
         const time_t raw = static_cast<time_t>(epoch_now);
         struct tm local {};
         if (localtime_r(&raw, &local) != nullptr) {
-          static int ua_day_ymd = 0;
-          const int ymd = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
-          if (ua_day_ymd != ymd) {
-            const bool learn = ua_day_ymd != 0;
-            ua_day_ymd = ymd;
+          const int32_t ymd = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
+          // ua_day_ymd_ comes back from NVS with the day's totals (load_ua_day_), so a
+          // restart neither loses the day nor learns from a part of one.
+          if (ua_day_ymd_ != ymd) {
+            const bool learn = ua_day_ymd_ != 0;
+            ua_day_ymd_ = ymd;
             ::lune_touch::HouseModel::UaDayResult days[::lune_touch::MAX_HOUSE_ROOMS];
             const size_t n = model_.close_ua_day(days, learn ? ::lune_touch::MAX_HOUSE_ROOMS : 0);
             for (size_t k = 0; k < n; k++)
               queue_ua_learned_writes_(days[k].room_index, days[k].confidence, days[k].observed_days,
                                        static_cast<uint32_t>(epoch_now));
+            ua_day_saved_ms_ = 0;  // store the new day at once
+          }
+          if (ua_day_saved_ms_ == 0 || now_fetch_ms - ua_day_saved_ms_ >= 3600000UL) {
+            save_ua_day_();
+            ua_day_saved_ms_ = now_fetch_ms != 0 ? now_fetch_ms : 1;
           }
         }
       }
@@ -5755,6 +5772,7 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     if (zone_number < 1 || zone_number > static_cast<int>(::lune_touch::ZONES_PER_NODE))
       continue;
     fields.zone_number = zone_number;
+    float loop_heat_weight = NAN;
     if (node_index < ::lune_touch::MAX_NODES) {
       // Pipe data for the house balance (V6 >= 1.1.0-247); absent fields keep the loop unmodelled.
       HouseBalanceLoop &hl = hb_loops_[node_index][zone_number - 1];
@@ -5767,6 +5785,21 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
       hl.ua_w_k = zone["ua_effective_w_per_k"] | 0.0f;
       hl.full_lmin = zone["valve_curve"]["full_lmin"] | 0.0f;
       hl.seen_ms = now_ms;
+      // The loop's heat for UA learning: l/min (flow × full flow) × (supply − its
+      // return, or the manifold's ΔT without a return probe on the loop).
+      {
+        const NodeTelemetryState &tel = node_telemetry_[node_index];
+        const float flow = zone["flow_pct"].isNull() ? NAN : (zone["flow_pct"] | 0.0f);
+        const float ret = zone["return_c"].isNull() ? NAN : (zone["return_c"] | 0.0f);
+        float dt = NAN;
+        if (tel.has_flow && std::isfinite(ret))
+          dt = tel.flow_c - ret;
+        else if (tel.has_flow && tel.has_return)
+          dt = tel.flow_c - tel.return_c;
+        loop_heat_weight = hl.full_lmin > 0.0f && std::isfinite(flow) && std::isfinite(dt)
+                               ? flow / 100.0f * hl.full_lmin * std::max(dt, 0.0f)
+                               : NAN;
+      }
       // Valve curve (V6 with dynamic balancing's curve); see valve_probe.h.
       ValveProbeLoop &vl = vp_loops_[node_index][zone_number - 1];
       vl.enabled = hl.enabled;
@@ -5884,6 +5917,7 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
           fields.valve_pct, fields.has_valve);
     }
 
+    model_.update_zone_heat_weight(node_index, zone_index, loop_heat_weight);
     if (fields.has_group_info) {
       model_.update_zone_group_membership(node_index, zone_index,
                                           static_cast<uint8_t>(fields.group_primary_zone),
@@ -6302,6 +6336,38 @@ bool LuneTouchCoordinator::load_preload_learning_() {
     }
   }
   return true;
+}
+
+bool LuneTouchCoordinator::load_ua_day_() {
+  nvs_handle_t handle = 0;
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+  static PersistedUaDay blob;
+  blob = PersistedUaDay{};
+  size_t len = sizeof(blob);
+  const esp_err_t err = nvs_get_blob(handle, "ua_day", &blob, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len != sizeof(blob) || blob.magic != UA_DAY_MAGIC || blob.version != UA_DAY_VERSION ||
+      blob.count > ::lune_touch::MAX_HOUSE_ROOMS)
+    return false;
+  model_.import_ua_day(blob.rooms, blob.count);
+  ua_day_ymd_ = blob.ymd;
+  return true;
+}
+
+bool LuneTouchCoordinator::save_ua_day_() {
+  static PersistedUaDay blob;
+  blob = PersistedUaDay{};
+  blob.ymd = ua_day_ymd_;
+  blob.count = static_cast<uint16_t>(model_.export_ua_day(blob.rooms, ::lune_touch::MAX_HOUSE_ROOMS));
+  nvs_handle_t handle = 0;
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return false;
+  const esp_err_t err = nvs_set_blob(handle, "ua_day", &blob, sizeof(blob));
+  if (err == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+  return err == ESP_OK;
 }
 
 bool LuneTouchCoordinator::save_preload_learning_() {

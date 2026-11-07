@@ -2,6 +2,10 @@
 
 ## Unreleased (for v1.0.0)
 
+### Room heat loss (UA) is learned
+- A room's daily UA came from a day's totals kept only in RAM, so every restart (and Touch is flashed often) lost the day and left it short of the 20 h a day needs; no room had learned UA. The totals are stored hourly with their date and come back after a restart; a stored day from before midnight is learned when the date changes.
+- The pump's heat is shared between rooms by each loop's heat, l/min (flow × the loop's measured full flow) × (supply − the loop's return, or the manifold's ΔT), when every flowing loop reports it; before, by loop area × flow, which spreads it evenly over loops of equal area whatever they carry.
+
 ### Room heat-up timing is learned again
 - A room's heat-up and cool-down rates (which set its learned lead and size its preload) were measured between two polls, 15–60 s apart, and every such pair was rejected as shorter than the 30 min a rate needs. Only a poll gap of half an hour got through, which is exactly the probe-reconnect case the check is meant to stop. Most rooms had 0–2 samples, and the learned lead stayed 0. Rates are now measured over one-hour windows of polls with one calling state throughout; a window with a gap of more than 15 min starts over.
 - A stored model outside the plausible range (Kontor: 36.7 °C/h cooling with 65535 samples, Køkken 86.7 °C/h) is cleared and learned again.

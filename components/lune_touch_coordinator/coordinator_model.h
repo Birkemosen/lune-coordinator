@@ -234,6 +234,9 @@ struct ZoneLiveState {
   bool headroom{false};
   HeatRecommendation recommendation{HeatRecommendation::HOLD};
   bool heat_demand_fresh{false};
+  // Runtime-only: the loop's heat as l/min × K (flow × full flow × supply − return),
+  // the share of the pump's heat it gets for UA learning. NaN: not known.
+  float heat_weight{std::numeric_limits<float>::quiet_NaN()};
 };
 
 struct NodeHeatDemand {
@@ -636,6 +639,18 @@ class HouseModel {
     uint16_t observed_days{0};
   };
   size_t close_ua_day(UaDayResult *out, size_t capacity);
+  // The day's UA totals per room, kept across a restart (Touch stores them hourly):
+  // a flash mid-day otherwise left the day short of UA_DAY_MIN_HOURS.
+  struct UaDayPersist {
+    char room_id[32]{};
+    float kwh{0.0f};
+    float dt_kh{0.0f};
+    float hours{0.0f};
+    float first_c{0.0f};
+    float last_c{0.0f};
+  };
+  size_t export_ua_day(UaDayPersist *out, size_t capacity) const;
+  void import_ua_day(const UaDayPersist *in, size_t count);
   // Sum of the default-constant (uncalibrated) priors of the included rooms, so a
   // calibration does not feed back into the next one.
   float ua_default_prior_sum_included_w_per_k() const;
@@ -661,6 +676,8 @@ class HouseModel {
                         float setpoint_c, bool has_setpoint, const char *status,
                         bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
                         bool has_valve = false);
+  // The loop's heat (l/min × K) for sharing the pump's heat between rooms; NaN: unknown.
+  bool update_zone_heat_weight(size_t node_index, size_t zone_index, float heat_weight);
   bool update_zone_live_by_binding(size_t node_index, size_t zone_index,
                                    float temperature_c, bool has_temperature,
                                    float setpoint_c, bool has_setpoint, const char *status,
