@@ -1085,6 +1085,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool preload_learning_dirty_{false};
   float preload_gain_scale_[::lune_touch::MAX_HOUSE_ZONES]{};
   int8_t preload_lead_bias_h_[::lune_touch::MAX_HOUSE_ZONES]{};
+  /// A preload ran for this zone and has not been judged yet (judged once, when it ends).
+  bool preload_pending_[::lune_touch::MAX_HOUSE_ZONES]{};
   bool preload_gain_scale_init_{false};
   char last_poll_error_[80]{};
   char node_last_success_host_[::lune_touch::MAX_NODES][64]{};

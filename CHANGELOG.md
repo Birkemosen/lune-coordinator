@@ -2,6 +2,11 @@
 
 ## Unreleased (for v1.0.0)
 
+### Room heat-up timing is learned again
+- A room's heat-up and cool-down rates (which set its learned lead and size its preload) were measured between two polls, 15–60 s apart, and every such pair was rejected as shorter than the 30 min a rate needs. Only a poll gap of half an hour got through, which is exactly the probe-reconnect case the check is meant to stop. Most rooms had 0–2 samples, and the learned lead stayed 0. Rates are now measured over one-hour windows of polls with one calling state throughout; a window with a gap of more than 15 min starts over.
+- A stored model outside the plausible range (Kontor: 36.7 °C/h cooling with 65535 samples, Køkken 86.7 °C/h) is cleared and learned again.
+- A preload is judged once, when it ends, by where it left the room. Before, it was judged at every recompute, which happens on every forecast fetch and settings edit, while the room was still warming: each judgement counted as undershoot and could add an hour of lead. A clear overshoot (> 0.6 K) now also shortens the lead bias, which could only ever grow.
+
 ### Valve curves measured from the pump
 - V6's dynamic balancing turns each loop's flow into an opening through a valve curve
   (where flow starts, where it is full). With a circulation pump connected, Touch

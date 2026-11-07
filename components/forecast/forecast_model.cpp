@@ -305,6 +305,9 @@ LearningUpdate update_preload_learning(float current_gain_scale, int8_t current_
       update.lead_bias_h = static_cast<int8_t>(update.lead_bias_h + 1);
   } else if (outcome.overshoot_c > 0.35f) {
     update.gain_scale = clampf_(update.gain_scale - 0.04f, 0.5f, 1.5f);
+    // ...and shorten a lead that came too early (it could only ever grow).
+    if (outcome.overshoot_c > 0.6f && update.lead_bias_h > 0)
+      update.lead_bias_h = static_cast<int8_t>(update.lead_bias_h - 1);
   }
   return update;
 }

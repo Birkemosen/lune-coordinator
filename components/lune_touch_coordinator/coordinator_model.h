@@ -267,6 +267,12 @@ struct ZoneHistory {
   float last_delta_c_per_h{0.0f};
   bool has_temperature{false};
   bool has_delta{false};
+  // Start of the window a heat-up / cool-down rate is measured over: polls come
+  // every 15-60 s, far inside the 30 min a rate needs (thermal_rate_sample_acceptable).
+  uint32_t rate_anchor_ms{0};
+  float rate_anchor_c{0.0f};
+  bool rate_anchor_calling{false};
+  bool has_rate_anchor{false};
 };
 
 struct LearningSnapshot {

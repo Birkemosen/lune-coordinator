@@ -2434,16 +2434,45 @@ void HouseModel::record_zone_history_(size_t zone_index, float temperature_c, co
       const float delta_c = temperature_c - history.last_temperature_c;
       history.last_delta_c_per_h = delta_c / hours;
       history.has_delta = true;
-      ZoneBinding &zone = zones_[zone_index];
+    }
+  }
+
+  // A1: rates over windows of RATE_WINDOW_H with one calling state throughout,
+  // not between polls (15-60 s apart, all rejected as too short); probe jumps
+  // are still rejected against the τ prior.
+  ZoneBinding &zone = zones_[zone_index];
+  // Stored by firmware without the rate gates (Kontor: 36.7 °C/h cooling): start over.
+  if (!(zone.learned_heat_gain_c_per_h >= 0.0f && zone.learned_heat_gain_c_per_h <= 0.35f) ||
+      !(zone.learned_cool_loss_c_per_h >= 0.0f && zone.learned_cool_loss_c_per_h <= 0.40f)) {
+    zone.learned_heat_gain_c_per_h = 0.0f;
+    zone.learned_cool_loss_c_per_h = 0.0f;
+    zone.thermal_samples = 0;
+  }
+  static constexpr float RATE_WINDOW_H = 1.0f;
+  if (!history.has_rate_anchor || calling != history.rate_anchor_calling || now_ms < history.rate_anchor_ms) {
+    history.rate_anchor_ms = now_ms;
+    history.rate_anchor_c = temperature_c;
+    history.rate_anchor_calling = calling;
+    history.has_rate_anchor = true;
+  } else {
+    const float hours = static_cast<float>(now_ms - history.rate_anchor_ms) / 3600000.0f;
+    // A window with a gap in it (stale probe, Touch offline) may hide a state change.
+    const bool gap = now_ms - history.last_sample_ms > 15UL * 60UL * 1000UL;
+    if (gap) {
+      history.rate_anchor_ms = now_ms;
+      history.rate_anchor_c = temperature_c;
+    } else if (hours >= RATE_WINDOW_H) {
+      const float delta_c = temperature_c - history.rate_anchor_c;
+      history.rate_anchor_ms = now_ms;
+      history.rate_anchor_c = temperature_c;
       float tau_h = 24.0f;
       if (std::isfinite(zone.learned_heat_gain_c_per_h) && zone.learned_heat_gain_c_per_h >= 0.05f &&
           zone.learned_heat_gain_c_per_h <= 0.35f)
         tau_h = clamp_float_(1.0f / zone.learned_heat_gain_c_per_h, 8.0f, 80.0f, 24.0f);
 
-      // A1: rate learning only on 30–60+ min windows; reject probe jumps vs τ prior.
       if (thermal_rate_sample_acceptable(delta_c, hours, tau_h)) {
         const uint16_t previous_samples = zone.thermal_samples;
-        const float rate = history.last_delta_c_per_h;
+        const float rate = delta_c / hours;
         if (calling && rate > 0.02f && rate <= 0.35f) {
           zone.learned_heat_gain_c_per_h =
               rolling_average_(zone.learned_heat_gain_c_per_h, rate, previous_samples);

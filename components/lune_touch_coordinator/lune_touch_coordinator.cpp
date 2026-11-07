@@ -6333,30 +6333,36 @@ void LuneTouchCoordinator::apply_preload_outcome_learning_() {
   uint16_t minute_of_day = 0;
   const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
   bool changed = false;
-  for (size_t i = 0; i < forecast_decision_count_; i++) {
-    const ForecastDecisionState &decision = forecast_decisions_[i];
-    if (!decision.active || decision.solar_holdoff)   // preload learning only
-      continue;
-    size_t zone_index = ::lune_touch::MAX_HOUSE_ZONES;
-    for (size_t z = 0; z < model_.zone_count(); z++) {
-      const auto *zone = model_.zone(z);
-      if (zone != nullptr && std::strcmp(zone->room_id, decision.room_id) == 0) {
-        zone_index = z;
-        break;
-      }
-    }
-    if (zone_index >= ::lune_touch::MAX_HOUSE_ZONES)
-      continue;
+  // A preload is judged once, by where it left the room when it ended. Judging it
+  // at every recompute while it still ran counted a room that was still warming
+  // as undershoot each time (and recomputes come with every settings edit).
+  for (size_t zone_index = 0; zone_index < model_.zone_count() && zone_index < ::lune_touch::MAX_HOUSE_ZONES;
+       zone_index++) {
     const auto *zone = model_.zone(zone_index);
+    if (zone == nullptr)
+      continue;
+    bool active = false;
+    for (size_t i = 0; i < forecast_decision_count_; i++) {
+      const ForecastDecisionState &decision = forecast_decisions_[i];
+      if (decision.active && !decision.solar_holdoff && std::strcmp(zone->room_id, decision.room_id) == 0)
+        active = true;   // preload learning only
+    }
+    if (active) {
+      preload_pending_[zone_index] = true;
+      continue;
+    }
+    if (!preload_pending_[zone_index])
+      continue;
+    preload_pending_[zone_index] = false;
     const auto *live = model_.zone_live(zone_index);
-    if (zone == nullptr || live == nullptr || !live->fresh || !live->has_temperature)
+    if (live == nullptr || !live->fresh || !live->has_temperature)
       continue;
     const auto effective =
         ::lune_touch::HouseModel::effective_comfort(*zone, time_valid, day_index, minute_of_day);
     hv6fc::PreloadOutcome outcome{};
     outcome.preload_was_active = true;
     const float band_lo = effective.setpoint_c - COMFORT_BAND_C;
-    const float band_hi = effective.setpoint_c + COMFORT_BAND_C + decision.offset_c;
+    const float band_hi = effective.setpoint_c + COMFORT_BAND_C;
     if (live->temperature_c < band_lo)
       outcome.undershoot_c = band_lo - live->temperature_c;
     if (live->temperature_c > band_hi)

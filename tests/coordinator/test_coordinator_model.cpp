@@ -34,6 +34,18 @@ static CommandRecord command(const char *id, uint32_t now_ms, uint32_t ttl_ms) {
   return record;
 }
 
+// Polls every 10 min from t0 (exclusive) to t1 (inclusive), temperature linear between:
+// rates are measured over whole windows of polls, not between two polls an hour apart.
+static bool feed_ramp(HouseModel &model, const char *room, uint32_t t0, uint32_t t1, float c0, float c1,
+                      const char *status) {
+  bool ok = true;
+  for (uint32_t t = t0 + 600000UL; t <= t1; t += 600000UL) {
+    const float c = c0 + (c1 - c0) * static_cast<float>(t - t0) / static_cast<float>(t1 - t0);
+    ok = model.update_zone_live(room, c, true, 21.5f, true, status, true, t) && ok;
+  }
+  return ok;
+}
+
 static void test_node_staleness() {
   HouseModel model;
   model.set_node_stale_after_ms(300000);
@@ -390,7 +402,7 @@ static void test_persisted_state_roundtrip() {
   model.update_zone_comfort("living", 21.8f, 2, 0.4f);
   model.update_zone_schedule("living", true, 0x7F, 360, 1320, 21.2f);
   model.update_zone_live("living", 21.4f, true, 21.0f, true, "heat", true, 1234);
-  model.update_zone_live("living", 21.6f, true, 21.0f, true, "heat", true, 3601234);
+  feed_ramp(model, "living", 1234, 1234 + 4200000UL, 21.4f, 21.4f + 0.2f * 70.0f / 60.0f, "heat");
 
   PersistedState state{};
   expect(model.export_state(&state), "persist: export succeeds");
@@ -490,14 +502,14 @@ static void test_zone_live_state() {
   expect(living_binding != nullptr && living_binding->learned_heat_gain_c_per_h == 0.0f &&
              living_binding->learned_cool_loss_c_per_h == 0.0f,
          "thermal: ignores idle warming as passive noise");
-  expect(model.update_zone_live("living", 21.75f, true, 21.5f, true, "idle", true, 7205000),
+  expect(feed_ramp(model, "living", 3605000, 7205000, 21.9f, 21.75f, "idle"),
          "thermal: passive cooling sample update");
   living_binding = model.zone(0);
   expect(living_binding != nullptr && living_binding->thermal_samples == 1 &&
              living_binding->learned_cool_loss_c_per_h > 0.10f &&
              living_binding->learned_cool_loss_c_per_h < 0.20f,
          "thermal: learns passive cooling rate");
-  expect(model.update_zone_live("living", 21.95f, true, 21.5f, true, "heat", true, 10805000),
+  expect(feed_ramp(model, "living", 7205000, 11405000, 21.75f, 21.75f + 0.2f * 70.0f / 60.0f, "heat"),
          "thermal: warming sample update");
   living_binding = model.zone(0);
   expect(living_binding != nullptr && living_binding->thermal_samples == 2 &&
@@ -513,11 +525,8 @@ static void test_zone_live_state() {
   slow_model.upsert_node("v6-slow", "slow.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
   slow_model.bind_zone("slow", "Slow slab", 0, 0);
   slow_model.update_zone_forecast_profile("slow", 0x01, 0.8f, 0.2f, 4, 1.5f);
-  for (uint8_t i = 0; i < 7; i++) {
-    const uint32_t ts = static_cast<uint32_t>(i) * 3600000UL;
-    const float temp = 18.0f + static_cast<float>(i) * 0.12f;
-    slow_model.update_zone_live("slow", temp, true, 21.0f, true, "heat", true, ts);
-  }
+  slow_model.update_zone_live("slow", 18.0f, true, 21.0f, true, "heat", true, 0);
+  feed_ramp(slow_model, "slow", 0, 8UL * 3600000UL, 18.0f, 18.0f + 8.0f * 0.12f, "heat");
   const ZoneBinding *slow_binding = slow_model.zone(0);
   expect(slow_binding != nullptr && HouseModel::learned_thermal_lead_h(*slow_binding) >= 8,
          "thermal: slow learned heat gain extends lead");
@@ -530,14 +539,30 @@ static void test_zone_live_state() {
   fast_model.upsert_node("v6-fast", "fast.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
   fast_model.bind_zone("fast", "Fast room", 0, 0);
   fast_model.update_zone_forecast_profile("fast", 0x01, 0.8f, 0.2f, 10, 1.5f);
-  for (uint8_t i = 0; i < 7; i++) {
-    const uint32_t ts = static_cast<uint32_t>(i) * 3600000UL;
-    const float temp = 18.0f + static_cast<float>(i) * 1.2f;
-    fast_model.update_zone_live("fast", temp, true, 21.0f, true, "heat", true, ts);
-  }
+  fast_model.update_zone_live("fast", 18.0f, true, 21.0f, true, "heat", true, 0);
+  feed_ramp(fast_model, "fast", 0, 6UL * 3600000UL, 18.0f, 18.0f + 6.0f * 1.2f, "heat");
   const ZoneBinding *fast_binding = fast_model.zone(0);
   expect(fast_binding != nullptr && HouseModel::active_thermal_lead_h(*fast_binding) == 10,
          "thermal: learned lead never shortens configured lead");
+
+  HouseModel gap_model;
+  gap_model.upsert_node("v6-gap", "gap.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  gap_model.bind_zone("gap", "Gap", 0, 0);
+  for (uint8_t i = 0; i < 4; i++)
+    gap_model.update_zone_live("gap", 20.0f + 0.2f * i, true, 21.0f, true, "heat", true, i * 3600000UL);
+  expect(gap_model.zone(0) != nullptr && gap_model.zone(0)->thermal_samples == 0,
+         "thermal: polls an hour apart leave gaps, no rate");
+  static PersistedState corrupt;
+  expect(gap_model.export_state(&corrupt), "thermal: export for corrupt model");
+  corrupt.zones[0].learned_cool_loss_c_per_h = 36.72f;
+  corrupt.zones[0].thermal_samples = 65535;
+  static HouseModel restored_gap;
+  expect(restored_gap.import_state(corrupt), "thermal: import corrupt model");
+  restored_gap.update_zone_live("gap", 21.0f, true, 21.0f, true, "idle", true, 5UL * 3600000UL);
+  restored_gap.update_zone_live("gap", 21.0f, true, 21.0f, true, "idle", true, 5UL * 3600000UL + 60000UL);
+  expect(restored_gap.zone(0) != nullptr && restored_gap.zone(0)->thermal_samples == 0 &&
+             restored_gap.zone(0)->learned_cool_loss_c_per_h == 0.0f,
+         "thermal: an implausible stored model (36.7 °C/h) starts over");
 
   ResolvedZone living = model.resolve_room("living");
   expect(living.live != nullptr && living.live->has_temperature && living.live->temperature_c > 21.8f,

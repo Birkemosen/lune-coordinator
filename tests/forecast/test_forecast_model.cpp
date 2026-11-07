@@ -186,7 +186,10 @@ static void test_learning_update() {
   hot.overshoot_c = 0.5f;
   up = update_preload_learning(1.2f, 2, hot);
   expect(up.gain_scale < 1.2f, "learning: overshoot eases gain");
-  expect(up.lead_bias_h == 2, "learning: never shortens lead bias");
+  expect(up.lead_bias_h == 2, "learning: mild overshoot keeps lead bias");
+  hot.overshoot_c = 0.8f;
+  up = update_preload_learning(1.2f, 2, hot);
+  expect(up.lead_bias_h == 1, "learning: clear overshoot shortens lead bias");
 
   PreloadOutcome idle{};
   idle.preload_was_active = false;
