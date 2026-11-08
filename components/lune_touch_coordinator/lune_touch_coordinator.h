@@ -295,6 +295,8 @@ struct CirculationPumpState {
   float mix_in_kw{NAN};    // heat into the tank (Asgard output, else primary flow × THW1−THW2)
   float mix_out_kw{NAN};   // heat drawn from it (secondary flow × Zone 1 feed−return, else thermal_kw)
   uint32_t mix_ms{0};
+  // A valve-curve run holds the valves, so the live flow says nothing about the system curve.
+  bool valves_held{false};
 };
 
 struct OdinPlanState {

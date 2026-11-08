@@ -1707,10 +1707,11 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   json_float_token_(mix_primary, sizeof(mix_primary), mix_held ? source.mix_primary_lmin : NAN, 1);
   json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
   // Recommended secondary flow from the held primary sample, and the head it needs through
-  // the valves as they are now (live head and flow).
+  // the valves as they are now (live head and flow); none while a valve-curve run holds them.
   const float rec_lmin =
       mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin, source.buffer_tank) : NAN;
-  const float rec_head = circulation_pump::head_for_flow_m(source.has_head ? source.head_m : NAN, flow_lmin, rec_lmin);
+  const float rec_head = circulation_pump::head_for_flow_m(
+      source.has_head && !source.valves_held ? source.head_m : NAN, flow_lmin, rec_lmin);
   char mix_rec[16], mix_rec_head[16];
   json_float_token_(mix_rec, sizeof(mix_rec), rec_lmin, 1);
   json_float_token_(mix_rec_head, sizeof(mix_rec_head), rec_head, 1);
@@ -4713,7 +4714,8 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
       circulation_.last_error[0] = '\0';
       circulation_.consecutive_failures = 0;
       const bool any_calling = model_.calling_zone_count() > 0;
-      const uint16_t want = vp_run_.stage != ::lune_touch_valve_probe::Stage::Off
+      circulation_.valves_held = vp_run_.stage != ::lune_touch_valve_probe::Stage::Off;
+      const uint16_t want = circulation_.valves_held
                                 ? ::lune_touch_valve_probe::CIRCULATION_POLL_S
                             : any_calling ? circulation_.refresh_interval_active_s
                                           : circulation_.refresh_interval_idle_s;

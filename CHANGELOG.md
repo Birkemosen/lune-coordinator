@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### No pump-head advice while valve curves are measured
+- The recommended pump head scales the live head by (recommended flow / live flow)². While a valve-curve run holds the other loops shut, the live flow is one loop's (3.9 l/min), and the advice came out at 111 m. It is left out («—») while a run holds the valves.
+
 ### Energy prices reach Odin again
 - Energi Data Service now answers its tariff list (DatahubPricelist) once a minute per client and refuses a second call with HTTP 429. Touch fetched the grid tariff and Energinet's system tariff 1.2 s apart, so the system tariff was refused on every try and no price was pushed after a restart (`system_http_429`). With both tariffs from DataHub they now come in one call.
 
