@@ -1307,7 +1307,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void fail_price_cycle_(const char *error);
   bool local_today_(int *ymd, uint16_t *minute_of_day) const;
   bool fetch_https_(const char *url, char *body, size_t capacity, int *status, char *error, size_t error_len);
-  bool fetch_datahub_series_(const char *gln, const char *codes_json, char *body, size_t capacity,
+  bool fetch_datahub_series_(const char *glns_json, const char *codes_json, unsigned limit, char *body, size_t capacity,
                              char *error, size_t error_len);
   /// Spot for today+tomorrow into price_rt_->samples (calculation currency).
   /// Returns the sample count; *used names the source that answered.

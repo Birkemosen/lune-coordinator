@@ -15417,6 +15417,8 @@ constexpr const char *EDS_BASE = "https://api.energidataservice.dk/dataset/";
 // also publishes PT60M), Energy-Charts ~4 KB; DataHub answers stay under 5 KB.
 constexpr size_t PRICE_BODY_CAP = 49152;
 constexpr uint32_t EDS_CALL_GAP_MS = 1200;  // the public API rate-limits bursts
+// DatahubPricelist answers one call a minute per client (HTTP 429, Retry-After
+// ~55 s): the grid and system tariffs come in one call when both are DataHub.
 
 struct PsramBody {
   char *ptr;
@@ -15493,10 +15495,10 @@ bool LuneTouchCoordinator::fetch_https_(const char *url, char *body, size_t capa
   return ok;
 }
 
-bool LuneTouchCoordinator::fetch_datahub_series_(const char *gln, const char *codes_json, char *body,
-                                                 size_t capacity, char *error, size_t error_len) {
-  char filter[128];
-  std::snprintf(filter, sizeof(filter), "{\"GLN_Number\":[\"%s\"],\"ChargeTypeCode\":[%s]}", gln, codes_json);
+bool LuneTouchCoordinator::fetch_datahub_series_(const char *glns_json, const char *codes_json, unsigned limit,
+                                                 char *body, size_t capacity, char *error, size_t error_len) {
+  char filter[160];
+  std::snprintf(filter, sizeof(filter), "{\"GLN_Number\":[%s],\"ChargeTypeCode\":[%s]}", glns_json, codes_json);
   char encoded[256];
   url_encode_(filter, encoded, sizeof(encoded));
   char url[640];
@@ -15505,8 +15507,7 @@ bool LuneTouchCoordinator::fetch_datahub_series_(const char *gln, const char *co
            EDS_BASE, encoded);
   for (unsigned h = 1; h <= lune_touch_price::HOURS; h++)
     appendf_(url, sizeof(url), off, ",Price%u", h);
-  if (!appendf_(url, sizeof(url), off, "&sort=ValidFrom%%20desc&limit=%u",
-                static_cast<unsigned>(lune_touch_price::MAX_TARIFF_RECORDS))) {
+  if (!appendf_(url, sizeof(url), off, "&sort=ValidFrom%%20desc&limit=%u", limit)) {
     std::snprintf(error, error_len, "url_too_long");
     return false;
   }
@@ -15843,6 +15844,21 @@ void LuneTouchCoordinator::run_price_cycle_() {
   }
 
   // 3) Grid tariff: DataHub price list (DK), the user's schedule, or none.
+  // With the system tariff also from DataHub, one call carries both.
+  const bool shared_datahub =
+      dk && cfg.grid_source == GridSource::DATAHUB && cfg.system_source != SystemSource::FIXED;
+  bool shared_fetched = false;
+  char shared_err[40] = "";
+  if (shared_datahub) {
+    char glns[48];
+    std::snprintf(glns, sizeof(glns), "\"%s\",\"%s\"", cfg.grid_gln, ENERGINET_GLN);
+    char codes[48];
+    std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\",\"%s\"", cfg.grid_code, ENERGINET_TRANSMISSION_CODE,
+                  ENERGINET_SYSTEM_CODE);
+    vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+    shared_fetched = fetch_datahub_series_(glns, codes, 3 * MAX_TARIFF_RECORDS, body.ptr, PRICE_BODY_CAP,
+                                           shared_err, sizeof(shared_err));
+  }
   float grid0[HOURS]{};
   float grid1[HOURS]{};
   bool grid1_ok = true;
@@ -15860,10 +15876,16 @@ void LuneTouchCoordinator::run_price_cycle_() {
     }
     char key[48];
     std::snprintf(key, sizeof(key), "%s/%s", cfg.grid_gln, cfg.grid_code);
-    char codes[32];
-    std::snprintf(codes, sizeof(codes), "\"%s\"", cfg.grid_code);
-    vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
-    const bool fetched = fetch_datahub_series_(cfg.grid_gln, codes, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    bool fetched = shared_fetched;
+    copy_str_(err, sizeof(err), shared_err);
+    if (!shared_datahub) {
+      char glns[24];
+      std::snprintf(glns, sizeof(glns), "\"%s\"", cfg.grid_gln);
+      char codes[32];
+      std::snprintf(codes, sizeof(codes), "\"%s\"", cfg.grid_code);
+      vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+      fetched = fetch_datahub_series_(glns, codes, MAX_TARIFF_RECORDS, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    }
     if (fetched && parse_tariff_records(body.ptr, std::strlen(body.ptr), cfg.grid_code, &rt.scratch) > 0) {
       rt.grid = rt.scratch;
       rt.have_grid = true;
@@ -15898,10 +15920,16 @@ void LuneTouchCoordinator::run_price_cycle_() {
       fail_price_cycle_("system_datahub_dk_only");
       return;
     }
-    char codes[32];
-    std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\"", ENERGINET_TRANSMISSION_CODE, ENERGINET_SYSTEM_CODE);
-    vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
-    const bool fetched = fetch_datahub_series_(ENERGINET_GLN, codes, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    bool fetched = shared_fetched;
+    copy_str_(err, sizeof(err), shared_err);
+    if (!shared_datahub) {
+      char glns[24];
+      std::snprintf(glns, sizeof(glns), "\"%s\"", ENERGINET_GLN);
+      char codes[32];
+      std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\"", ENERGINET_TRANSMISSION_CODE, ENERGINET_SYSTEM_CODE);
+      vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+      fetched = fetch_datahub_series_(glns, codes, MAX_TARIFF_RECORDS, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    }
     const size_t len = fetched ? std::strlen(body.ptr) : 0;
     if (fetched && parse_tariff_records(body.ptr, len, ENERGINET_TRANSMISSION_CODE, &rt.scratch) > 0 &&
         parse_tariff_records(body.ptr, len, ENERGINET_SYSTEM_CODE, &rt.scratch2) > 0) {

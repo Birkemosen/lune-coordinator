@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### Energy prices reach Odin again
+- Energi Data Service now answers its tariff list (DatahubPricelist) once a minute per client and refuses a second call with HTTP 429. Touch fetched the grid tariff and Energinet's system tariff 1.2 s apart, so the system tariff was refused on every try and no price was pushed after a restart (`system_http_429`). With both tariffs from DataHub they now come in one call.
+
 ### Room heat loss (UA) is learned
 - A room's daily UA came from a day's totals kept only in RAM, so every restart (and Touch is flashed often) lost the day and left it short of the 20 h a day needs; no room had learned UA. The totals are stored hourly with their date and come back after a restart; a stored day from before midnight is learned when the date changes.
 - The pump's heat is shared between rooms by each loop's heat, l/min (flow × the loop's measured full flow) × (supply − the loop's return, or the manifold's ΔT), when every flowing loop reports it; before, by loop area × flow, which spreads it evenly over loops of equal area whatever they carry.
