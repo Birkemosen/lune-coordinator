@@ -436,7 +436,24 @@
   }
 
   /* Værktøjer i headerens højre side: sprog + tema */
-  .tools { display: flex; align-items: center; gap: var(--space-1); }
+  .tools { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+
+  /* Aktivitet (Touch): hvad enheden gør nu, som .badge først i værktøjerne (DESIGN.md 5.1).
+     Afkortes med ellipse frem for at skubbe sprog og tema ud; detaljen kun fra 1200 px. */
+  .tools .activity { min-width: 0; max-width: 24em; margin-right: var(--space-1); }
+  .activity > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .activity small { font: inherit; opacity: .8; }
+  @media (max-width: 1199.98px) { .activity small { display: none; } }
+  @media (max-width: 767.98px) {
+    .header:has(.activity) { grid-template-columns: auto minmax(0, 1fr); }
+    .header > .tools { justify-self: stretch; justify-content: flex-end; }
+  }
+  /* Smal mobil: logoet alene står for enheden, så aktiviteten kan stå læseligt. */
+  @media (max-width: 599.98px) {
+    .header:has(.activity) .device .name { display: none; }
+    .tools .activity { padding-inline: var(--space-2); margin-right: 0; }
+    .tools .activity::before { display: none; }
+  }
 
   /* Sprogvælger — almindelige links til /en/ og /da/ (ingen JS).
      Kun renderet når buildet indeholder mere end ét sprog. */
@@ -1651,7 +1668,7 @@
 
   /* Varmekort: rum grupperet pr. manifold. Rumfelterne fylder efter rummets areal (--area),
      har afvigelses-chip (5 trin, forklaret i .heatmap-legend), temperatur og en 5-trins
-     ventilbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
+     flowbjælke med «x % flow» under. Gruppeoverskriften åbner manifoldens ark. */
   .heatmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
   .heatmap-head > div:first-child { display: grid; gap: var(--space-1); flex: 1 0 auto; }
   .heatmap-head small { font-size: var(--fs-sm); color: var(--muted); }

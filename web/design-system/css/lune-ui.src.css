@@ -493,7 +493,24 @@
   }
 
   /* Værktøjer i headerens højre side: sprog + tema */
-  .tools { display: flex; align-items: center; gap: var(--space-1); }
+  .tools { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+
+  /* Aktivitet (Touch): hvad enheden gør nu, som .badge først i værktøjerne (DESIGN.md 5.1).
+     Afkortes med ellipse frem for at skubbe sprog og tema ud; detaljen kun fra 1200 px. */
+  .tools .activity { min-width: 0; max-width: 24em; margin-right: var(--space-1); }
+  .activity > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .activity small { font: inherit; opacity: .8; }
+  @media (max-width: 1199.98px) { .activity small { display: none; } }
+  @media (max-width: 767.98px) {
+    .header:has(.activity) { grid-template-columns: auto minmax(0, 1fr); }
+    .header > .tools { justify-self: stretch; justify-content: flex-end; }
+  }
+  /* Smal mobil: logoet alene står for enheden, så aktiviteten kan stå læseligt. */
+  @media (max-width: 599.98px) {
+    .header:has(.activity) .device .name { display: none; }
+    .tools .activity { padding-inline: var(--space-2); margin-right: 0; }
+    .tools .activity::before { display: none; }
+  }
 
   /* Sprogvælger — almindelige links til /en/ og /da/ (ingen JS).
      Kun renderet når buildet indeholder mere end ét sprog. */
@@ -1766,7 +1783,7 @@
 
   /* Varmekort: rum grupperet pr. manifold. Rumfelterne fylder efter rummets areal (--area),
      har afvigelses-chip (5 trin, forklaret i .heatmap-legend), temperatur og en 5-trins
-     ventilbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
+     flowbjælke med «x % flow» under. Gruppeoverskriften åbner manifoldens ark. */
   .heatmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
   .heatmap-head > div:first-child { display: grid; gap: var(--space-1); flex: 1 0 auto; }
   .heatmap-head small { font-size: var(--fs-sm); color: var(--muted); }
@@ -2035,10 +2052,72 @@
   /* @only v6 */
   /* V6: varmepumpe-grænser gælder kun i varmepumpe-tilstand (seg-radioer i formularen). */
   form:has(input[name="heat_mode"]):not(:has(input[name="heat_mode"][value="heat_pump"]:checked)) .hp-limits { opacity: .4; pointer-events: none; }
+  /* …og omvendt: indstillinger, der kun gælder i normal tilstand. */
+  form:has(input[name="heat_mode"][value="heat_pump"]:checked) .normal-only { opacity: .4; pointer-events: none; }
 
   /* V6 med 2 prober: kun manifold frem/retur — skjul zone-returfelter og ekstra prober. */
   .app[data-probe-layout="2"] .zone-ret { display: none; }
   .app[data-probe-layout="2"] .metric[data-probe]:not([data-probe="1"]):not([data-probe="2"]) { display: none; }
+
+  /* Motorlab (V6, kun dev-builds): ét slag på én motor. .mtrace stabler rækker med hver sin skala
+     (y-labels i HTML, kurven i SVG) over én fælles tidsakse: strøm altid, kadence og hældning som lag,
+     der slås til/fra med .layers (checkbokse, ingen JS). Under kurverne viser .phase-strip slagets
+     faser som én neutral tone i trin (fri vandring → pin-kontakt → under belastning → stopper),
+     med navnet i HTML. Strømmen er hovedkurven (--fg); kadence er en sensor (--info); hældning er
+     afledt og stiplet. */
+  .sys-cat .lab { display: grid; gap: var(--space-5); min-width: 0; }
+  .lab > *, .mtrace > * { min-width: 0; }
+  .lab .actions { flex-wrap: wrap; }
+  .lab .actions .hint { align-self: center; font-size: var(--fs-sm); color: var(--muted); }
+  .mtrace { display: grid; gap: var(--space-2); }
+  .mtrace-row { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: var(--space-3); }
+  .mtrace-row .trend { height: 180px; }
+  .mtrace-row[data-layer] .trend { height: 90px; }
+  .mtrace-y { display: flex; flex-direction: column; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+  .mtrace-y small { color: var(--faint); }
+  .mtrace .axis, .mtrace .phase-strip { margin-left: calc(3.5em + var(--space-3)); }
+  .trend .mc  { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .cad { fill: none; stroke: var(--info); stroke-width: 1.4; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .slp { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .trend .zero { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+  .phase-strip { display: flex; height: 22px; border-radius: var(--r-field); overflow: hidden; background: var(--raised); }
+  .phase-strip span { display: block; min-width: 0; padding: 0 var(--space-1); overflow: hidden; line-height: 22px; text-align: center; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; text-overflow: ellipsis;
+    flex: var(--w, 1) 1 0; border-right: 1px solid var(--card); }
+  .phase-strip span:last-child { border-right: 0; }
+  .phase-strip [data-phase="contact"]  { background: color-mix(in srgb, var(--fg) 14%, var(--raised)); color: var(--fg); }
+  .phase-strip [data-phase="load"]     { background: color-mix(in srgb, var(--fg) 26%, var(--raised)); color: var(--fg); }
+  .phase-strip [data-phase="stopping"] { background: color-mix(in srgb, var(--fg) 40%, var(--raised)); color: var(--fg); }
+  .layers { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .layers label { display: inline-flex; align-items: center; gap: var(--space-2); min-height: calc(var(--hit) - 8px); padding: 0 var(--space-3);
+    border-radius: var(--r-pill); background: var(--raised); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
+  .layers label:has(input:checked) { background: var(--inv-bg); color: var(--inv-fg); }
+  .layers label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .layers i { display: inline-block; width: 14px; border-top: 2px solid; border-radius: 2px; }
+  .layers .lcad { border-color: var(--info); }
+  .layers .lslp { border-top-style: dashed; border-color: currentColor; }
+  .mtrace:has(.layers input[value="cadence"]:not(:checked)) .mtrace-row[data-layer="cadence"],
+  .mtrace:has(.layers input[value="slope"]:not(:checked)) .mtrace-row[data-layer="slope"],
+  .mtrace:has(.layers input[value="phase"]:not(:checked)) .phase-strip { display: none; }
+  .mtrace[data-empty] :is(.layers, .mtrace-row, .phase-strip, .actions, .note, .table-wrap) { display: none; }
+  /* Endestop-explorer: tærskler som linjer over strømmen — den dynamiske tærskel stiplet, de absolutte
+     grænser prikket — og en lodret streg, hvor hver vej ville stoppe motoren; den, der stopper først, er fuldt optrukket.
+     Navne og tider står i tabellen under (HTML). Ventilkurven er flow mod åbning i vandets farve. */
+  .trend .thr  { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+  .trend .cap  { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; }
+  .trend .trip { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+  .trend .trip.first { stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: none; }
+  .trend .vc   { fill: none; stroke: var(--data-pump); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .vpos { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .mtrace-row.square .trend { height: 160px; }
+  .table tr.first td:first-child { font-weight: 600; }
+  /* Motorlabbets forløb: handlinger efter tilstand (DESIGN.md 6.1b) med labbets egne tilstande. */
+  [data-state="setup"]   [data-show-when~="setup"],
+  [data-state="armed"]   [data-show-when~="armed"],
+  [data-state="seated"]  [data-show-when~="seated"],
+  [data-state="opened"]  [data-show-when~="opened"],
+  [data-state="closed"]  [data-show-when~="closed"],
+  [data-state="running"] [data-show-when~="running"],
+  [data-state="halted"]  [data-show-when~="halted"] { display: var(--show-display, block); }
   /* @end */
 
   /* Segmenteret valg — pille, aktiv inverteret */

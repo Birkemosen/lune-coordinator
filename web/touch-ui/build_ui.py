@@ -1008,6 +1008,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.valvePin", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria", "room.histChartAria",
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRowModel", "heat.houseBalanceRowMeasured", "heat.houseBalanceSub", "heat.houseBalanceSubMeasured", "heat.houseBalanceWeight", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior",
+        "activity.probe", "activity.offline", "activity.dhw", "activity.legionella", "activity.heating", "activity.prestart", "activity.idle", "activity.step",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.chargingVal", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
     )
     rt = {k: T(k) for k in rt_keys}
@@ -1071,6 +1072,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <label for="m-sys">{I_SYS}{T("nav.system")}</label>
       </nav>
       <div class="tools">
+        <span class="badge activity" role="status" data-bind-activity hidden><span></span></span>
         {langnav}
         <label class="icon-btn theme-btn" for="theme" title="{T("theme.toggle")}">
           <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>

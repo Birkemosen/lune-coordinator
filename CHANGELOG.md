@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### The navbar says what Touch is doing
+- Next to language and theme, a badge shows Touch's current activity: testing valves (with the loop and step on wide screens), heat source offline, hot water / legionella / heating, starting soon (Odin plans heat within 10 min) or idle. Hidden without heat-source data (LDS 2.3.31).
+
 ### No pump-head advice while valve curves are measured
 - The recommended pump head scales the live head by (recommended flow / live flow)². While a valve-curve run holds the other loops shut, the live flow is one loop's (3.9 l/min), and the advice came out at 111 m. It is left out («—») while a run holds the valves.
 

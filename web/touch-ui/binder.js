@@ -1824,6 +1824,42 @@
     if (alert) alert.hidden = !(hs.enabled !== false && st === 'unreachable');
   }
 
+  // Navbar: what Touch is doing now, one state in priority order (LDS 5.1 .badge.activity).
+  function applyActivity(hs) {
+    var b = qs('[data-bind-activity]');
+    if (!b) return;
+    var vp = (hs && hs.valve_probe) || {};
+    var hp = (hs && hs.heat_pump) || {};
+    var phase = hs && hs.valves_follow_hp ? hs.valves_follow_hp.phase : '';
+    var opm = hp.available ? Number(hp.operation_mode) : 0;
+    var key = '', cls = '', detail = '';
+    if (vp.stage === 'settling' || vp.stage === 'measuring') {
+      key = 'probe'; cls = 'violet';
+      var z = (state.zones || []).filter(function (x) { return x && x.node_index === vp.node - 1 && x.zone_index === vp.zone - 1; })[0];
+      detail = (z && z.name ? z.name + ' · ' : '') + t('activity.step', { s: vp.step, n: vp.steps });
+    } else if (hs && hs.enabled !== false && hs.push && hs.push.status === 'unreachable') {
+      key = 'offline'; cls = 'bad';
+    } else if (hp.available && hp.compressor_on && (opm === 1 || opm === 6)) {
+      key = opm === 6 ? 'legionella' : 'dhw'; cls = 'hot';
+    } else if ((hp.available && hp.compressor_on) || phase === 'running') {
+      key = 'heating'; cls = 'hot';
+    } else if (phase === 'prestart') {
+      key = 'prestart';
+    } else if (hp.available || phase === 'idle') {
+      key = 'idle';
+    }
+    b.hidden = !key;
+    if (!key) return;
+    b.className = 'badge activity' + (cls ? ' ' + cls : '');
+    var s = b.firstElementChild;
+    s.textContent = t('activity.' + key);
+    if (detail) {
+      var sm = document.createElement('small');
+      sm.textContent = ' · ' + detail;
+      s.appendChild(sm);
+    }
+  }
+
   function renderHeatDelivery(hs) {
     if (!hs) return;
     var push = hs.push || {};
@@ -3318,6 +3354,7 @@
       applyHierarchy(map['/zones'] || {}, nodes);
       applyForecast(map['/forecast']);
       applyHeat(map['/heat-source']);
+      applyActivity(map['/heat-source']);
       applyHeatPlan(map['/plan']);
       applyHeatControl(map['/heat-source/control']);
       applyOdinMqtt(map['/odin/mqtt']);

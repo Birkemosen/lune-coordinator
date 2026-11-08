@@ -1,5 +1,17 @@
 # Changelog — Lune Design System
 
+## 2.3.31
+
+- Navbaren i Touch viser, hvad enheden er i gang med (`.badge.activity` først i `.tools`): måler ventiler (violet, med zone og trin fra 1200 px), varmekilde offline (rød), varmt vand / legionella / opvarmer (varme), starter snart og hviler (neutral). Under 600 px viser enhedsvælgeren kun logoet, og aktiviteten afkortes med ellipse, så sprog og tema bliver stående. DESIGN.md 5.1.
+
+- Ventiler vises som **flow** (% af sløjfens fulde flow), ikke som pinnens åbning: ventilindsatser åbner hurtigt, så 20 % åbning kan være 80 % flow. Bjælker, felter og statuslinjer bruger flow; pinnens position står som sekundær tekst («62 % flow · ventil 22 %»), hvor der er plads (rummets/zonens ark), ikke i små felter. Heatmappens nøgle hedder «flow».
+- Motorlabbets endestop-explorer (V6): strømmen med tærskler (`.trend .thr` stiplet for den dynamiske, `.cap` prikket for de absolutte), en lodret `.trip` hvor hver vej ville stoppe motoren (`.trip.first` fuldt optrukket) og en `.table` med vej, tærskel, tid og tællinger (`tr.first`). Ventilkurven (`.trend .vc` i vandets farve, `.vpos` for ventilens stilling) i `.mtrace-row.square`. Tærsklerne redigeres som grupperet liste med gem-bjælke under grafen.
+- V6' zoneark viser rummets fysik under Overblik: varmetab (UA, W/K) og tidskonstant (τ = C/UA, timer) som beregnet / lært / brugt i en `.table` (tal højrestillet, manglende lærte værdier som «—»), med termisk masse og hvor længe varmetabet er lært i en `.note`.
+- V6' zoneark viser den lærte ventilkurve under Overblik (`.sub.mtrace` med `.mtrace-row.square`), når Touch har målt den; uden målt kurve vises intet.
+- `.mtrace` (V6, Motorlab i dev-builds): et motorslag som rækker med hver sin skala (`.mtrace-row`, y-labels i `.mtrace-y`) over én tidsakse — strøm (`.trend .mc`) altid, kadence (`.cad`, sensor-blå) og hældning (`.slp`, stiplet) som lag, der slås til/fra med `.layers` (checkbokse som piller, ingen JS). `.phase-strip` viser slagets faser i én neutral tone i trin. Labbets forløb bruger handlinger efter tilstand med tilstandene `setup`, `armed`, `seated`, `opened`, `closed`, `running`, `halted`. V6-eksemplet (`--dev`) viser et optaget åbneslag.
+- V6-eksemplet: manifoldens indstillinger (ventiltype, prober, følerlayout) er flyttet fra System › «Manifold og motorer» til manifold-arket › Indstillinger; System-kategorien hedder «Motorer». «Live værdier» i arket viser, hvad hver probe er tildelt, som en neutral `.badge` ved probens navn, og zonekortet viser med 8 prober zonens retur («flow 62 % · retur 29,1°»). DESIGN.md 15 er opdateret.
+- `.normal-only` (V6): modstykket til `.hp-limits`; en indstilling, der kun gælder i normal tilstand (fx «Min. samlet åbning»), er dæmpet i varmepumpetilstand og siger det i sin hint-tekst.
+
 ## 2.3.30
 
 - `.dist`: fordelingen pr. manifold er i pumpens kulør (`--data-pump`) i nuancer pr. manifold som `.ht-dist`, i stedet for hvid/grå, og trinene er spredt mere (100/58/32/18 %, også i `.ht-dist`). Nøgle og zonebjælke følger manifoldens nuance.
