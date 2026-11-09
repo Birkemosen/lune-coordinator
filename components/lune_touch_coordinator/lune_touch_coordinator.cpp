@@ -17656,6 +17656,9 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     }
     vp::start(vp_run_, static_cast<uint8_t>(pick_node), static_cast<uint8_t>(pick_zone), now_ms, phase);
     just_started = true;
+    // The idle poll (120 s) is longer than SAMPLE_STALE_MS: poll fast from the start,
+    // not only after the next fetch, or the first step aborts.
+    circulation_.refresh_interval_s = vp::CIRCULATION_POLL_S;
   }
   vp::TickInput in;
   in.now_ms = now_ms;
