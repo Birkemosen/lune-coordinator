@@ -1706,15 +1706,21 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   json_float_token_(mix_ratio, sizeof(mix_ratio), mix_held ? source.mix_ratio : NAN, 2);
   json_float_token_(mix_primary, sizeof(mix_primary), mix_held ? source.mix_primary_lmin : NAN, 1);
   json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
-  // Recommended secondary flow from the held primary sample, and the head it needs through
-  // the valves as they are now (live head and flow); none while a valve-curve run holds them.
+  // Recommended secondary flow from the held primary sample, and the head that gives it
+  // with every room calling, on the learned system curve (system_curve.h); none until the
+  // house has run near full load.
   const float rec_lmin =
       mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin, source.buffer_tank) : NAN;
-  const float rec_head = circulation_pump::head_for_flow_m(
-      source.has_head && !source.valves_held ? source.head_m : NAN, flow_lmin, rec_lmin);
-  char mix_rec[16], mix_rec_head[16];
+  const float rec_head = lune_touch_system_curve::head_for(source.full_ref_lmin, rec_lmin);
+  const float full_lmin = lune_touch_system_curve::flow_at_head(source.full_ref_lmin,
+                                                                source.has_head ? source.head_m : NAN);
+  char mix_rec[16], mix_rec_head[16], full_tok[16], full_ref_tok[16], curve_x_tok[16], full_x_tok[16];
   json_float_token_(mix_rec, sizeof(mix_rec), rec_lmin, 1);
   json_float_token_(mix_rec_head, sizeof(mix_rec_head), rec_head, 1);
+  json_float_token_(full_tok, sizeof(full_tok), full_lmin, 1);
+  json_float_token_(full_ref_tok, sizeof(full_ref_tok), source.full_ref_lmin, 1);
+  json_float_token_(curve_x_tok, sizeof(curve_x_tok), source.curve_x, 1);
+  json_float_token_(full_x_tok, sizeof(full_x_tok), source.full_x, 1);
   if (mix_held)
     snprintf(mix_age, sizeof(mix_age), "%lu", static_cast<unsigned long>((now_ms - source.mix_ms) / 1000UL));
   else
@@ -1728,7 +1734,8 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            "\"thermal_kw\":%s,\"thermal_kw_source\":\"%s\","
            "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\","
            "\"buffer_tank\":\"%s\",\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
-           "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s,\"in_kw\":%s,\"out_kw\":%s}}",
+           "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s,\"in_kw\":%s,\"out_kw\":%s},"
+           "\"full_load\":{\"l_min\":%s,\"ref_l_min\":%s,\"x_l_min\":%s,\"x_now_l_min\":%s}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port),
            static_cast<unsigned>(source.refresh_interval_s),
            static_cast<unsigned>(source.refresh_interval_idle_s),
@@ -1737,7 +1744,7 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            status, source.last_http_status, age_s, flow, flow_lmin_tok, head, power, thermal,
            thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error,
            circulation_pump::buffer_tank_name(source.buffer_tank), circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
-           mix_rec_head, mix_in, mix_out);
+           mix_rec_head, mix_in, mix_out, full_tok, full_ref_tok, full_x_tok, curve_x_tok);
 }
 
 enum class CirculationUiStatus : uint8_t { Hidden, Waiting, Ok, Stale, Offline };
@@ -1801,6 +1808,7 @@ void LuneTouchCoordinator::setup() {
   load_settings_();
   load_odin_control_();
   load_valve_probe_state_();
+  load_system_curve_();
   model_.set_internal_gains_w(odin_control_.internal_gains_w);
   load_exposure_learning_();
   load_price_settings_();
@@ -3909,6 +3917,84 @@ void LuneTouchCoordinator::save_valve_probe_state_() {
     ESP_LOGW(TAG, "valve probe state not saved: %s", esp_err_to_name(err));
 }
 
+// -----------------------------------------------------------------------------
+// System curve (system_curve.h): the pump's flow against the loops' summed flow,
+// learned on every pump poll while the valves are free, and the house at full load
+// on it. Called under the state lock.
+// -----------------------------------------------------------------------------
+namespace {
+constexpr uint32_t SYSTEM_CURVE_LOOP_STALE_MS = 5UL * 60UL * 1000UL;
+constexpr uint32_t SYSTEM_CURVE_SAVE_MS = 6UL * 3600UL * 1000UL;
+struct SystemCurveStored {
+  uint8_t version{1};
+  lune_touch_system_curve::Curve curve{};
+};
+}  // namespace
+
+void LuneTouchCoordinator::update_system_curve_(uint32_t now_ms) {
+  namespace sc = lune_touch_system_curve;
+  constexpr size_t N = ::lune_touch::MAX_NODES, Z = ::lune_touch::ZONES_PER_NODE;
+  sc::Loop loops[N * Z]{};
+  size_t boards = 0;
+  bool fresh = true;
+  for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+      continue;
+    boards = i + 1;
+    for (size_t z = 0; z < Z; z++) {
+      const HouseBalanceLoop &src = hb_loops_[i][z];
+      if (src.seen_ms == 0 || now_ms - src.seen_ms > SYSTEM_CURVE_LOOP_STALE_MS) {
+        fresh = false;
+        continue;
+      }
+      loops[i * Z + z] = sc::Loop{src.enabled, src.full_lmin, src.ua_w_k, src.applied, src.flow_frac};
+    }
+  }
+  CirculationPumpState &c = circulation_;
+  c.curve_x = fresh && boards > 0 ? sc::live_x(loops, boards * Z) : NAN;
+  c.full_x = fresh && boards > 0 ? sc::full_load_x(loops, boards, Z) : NAN;
+  const float flow_lmin = c.has_flow ? c.flow_m3h * (1000.0f / 60.0f) : NAN;
+  const float dt_h = c.curve_sample_ms != 0 && now_ms > c.curve_sample_ms
+                         ? static_cast<float>(now_ms - c.curve_sample_ms) / 3600000.0f
+                         : 0.0f;
+  c.curve_sample_ms = now_ms == 0 ? 1 : now_ms;
+  if (!c.valves_held && c.has_head)
+    sc::add(c.curve, c.curve_x, flow_lmin, c.head_m, dt_h);
+  c.full_ref_lmin = sc::flow_at(c.curve, c.full_x);
+  if (c.curve_saved_ms == 0)
+    c.curve_saved_ms = c.curve_sample_ms;
+  else if (now_ms - c.curve_saved_ms >= SYSTEM_CURVE_SAVE_MS) {
+    c.curve_saved_ms = c.curve_sample_ms;
+    save_system_curve_();
+  }
+}
+
+void LuneTouchCoordinator::load_system_curve_() {
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  SystemCurveStored st{};
+  size_t len = sizeof(st);
+  if (nvs_get_blob(handle, "sys_curve", &st, &len) == ESP_OK && len == sizeof(st) && st.version == 1)
+    circulation_.curve = st.curve;
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::save_system_curve_() {
+  SystemCurveStored st{};
+  st.curve = circulation_.curve;
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  esp_err_t err = nvs_set_blob(handle, "sys_curve", &st, sizeof(st));
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "system curve not saved: %s", esp_err_to_name(err));
+}
+
 void LuneTouchCoordinator::load_odin_control_() {
   nvs_handle_t handle;
   if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
@@ -4715,6 +4801,7 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
       circulation_.consecutive_failures = 0;
       const bool any_calling = model_.calling_zone_count() > 0;
       circulation_.valves_held = vp_run_.stage != ::lune_touch_valve_probe::Stage::Off;
+      update_system_curve_(circulation_.last_fetch_ms);
       const uint16_t want = circulation_.valves_held
                                 ? ::lune_touch_valve_probe::CIRCULATION_POLL_S
                             : any_calling ? circulation_.refresh_interval_active_s
@@ -5792,6 +5879,7 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
       {
         const NodeTelemetryState &tel = node_telemetry_[node_index];
         const float flow = zone["flow_pct"].isNull() ? NAN : (zone["flow_pct"] | 0.0f);
+        hl.flow_frac = std::isfinite(flow) ? flow / 100.0f : NAN;
         const float ret = zone["return_c"].isNull() ? NAN : (zone["return_c"] | 0.0f);
         float dt = NAN;
         if (tel.has_flow && std::isfinite(ret))

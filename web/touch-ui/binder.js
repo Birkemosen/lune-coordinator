@@ -162,7 +162,8 @@
       host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38, buffer_tank: 'four_port',
       flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
       mixing: { state: 'short', ratio: 0.92, primary_l_min: 19.0, secondary_l_min: 17.5, age_s: 120,
-        recommended_l_min: 20.0, recommended_head_m: 5.5, in_kw: 5.3, out_kw: 4.9 }
+        recommended_l_min: 20.0, recommended_head_m: 5.2, in_kw: 5.3, out_kw: 4.9 },
+        full_load: { l_min: 18.6, ref_l_min: 15.2, x_l_min: 12.8, x_now_l_min: 9.4 }
     }
   };
 
@@ -2096,9 +2097,18 @@
       pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
       rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1),
       in: num(mx.in_kw, 1), out: num(mx.out_kw, 1) };
-    // Advice: the head to set (constant pressure) when the pump reports one, else the flow.
+    // Advice: the head that gives the recommended flow with every room calling, on the
+    // learned system curve (system_curve.h). The live flow follows the rooms' load, so it
+    // is no yardstick; while the curve has no data near full load, Touch says so.
+    var fl = circ.full_load || {};
+    mxVars.full = num(fl.l_min, 1);
+    mxVars.head = num(circ.head_m, 1);
+    var headOk = finite(mx.recommended_head_m) && finite(circ.head_m) &&
+      Math.abs(Number(mx.recommended_head_m) - Number(circ.head_m)) < 0.3;
     var advice = !finite(mx.recommended_l_min) ? ''
-      : t(finite(mx.recommended_head_m) ? 'pump.mixAdviceHead' : shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
+      : finite(mx.recommended_head_m) ? t(headOk ? 'pump.fullLoadOk' : 'pump.fullLoadHead', mxVars)
+      : finite(fl.x_l_min) ? t('pump.fullLoadLearning', mxVars)
+      : t(shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
       if (risk || shortFlow) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');

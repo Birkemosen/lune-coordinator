@@ -2,6 +2,7 @@
 
 #include "hp_phase.h"
 #include "valve_probe.h"
+#include "system_curve.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
 #include "room_reached.h"
@@ -297,6 +298,14 @@ struct CirculationPumpState {
   uint32_t mix_ms{0};
   // A valve-curve run holds the valves, so the live flow says nothing about the system curve.
   bool valves_held{false};
+  // Flow against the valves' summed flow, learned in operation, and the house at full
+  // load on it (system_curve.h); persisted every few hours.
+  lune_touch_system_curve::Curve curve{};
+  float curve_x{NAN};         // Σ live loop flow × full flow (l/min at the reference head)
+  float full_x{NAN};          // the same with every room calling
+  float full_ref_lmin{NAN};   // pump flow at full load, at the reference head
+  uint32_t curve_sample_ms{0};
+  uint32_t curve_saved_ms{0};
 };
 
 struct OdinPlanState {
@@ -852,6 +861,7 @@ class LuneTouchCoordinator : public esphome::Component {
     bool enabled{false};
     float ua_w_k{0.0f};
     float full_lmin{0.0f};
+    float flow_frac{NAN};  // V6's live loop flow (flow_pct / 100)
     uint32_t seen_ms{0};
   };
   struct HouseBalanceWeight {
@@ -902,6 +912,9 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t vp_auto_starts_[::lune_touch_valve_probe::MAX_RUNS_PER_DAY]{};  ///< Latest automatic run starts
   void load_valve_probe_state_();
   void save_valve_probe_state_();
+  void load_system_curve_();
+  void save_system_curve_();
+  void update_system_curve_(uint32_t now_ms);
   void run_valve_probe_(uint32_t now_ms);
   bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop, float others_pct = NAN);
   bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,

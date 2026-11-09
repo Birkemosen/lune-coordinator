@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### Pump head advice is for full load, on a learned system curve
+- The advice scaled the live operating point (head × (recommended / live flow)²), so it answered for the valves as they were: with warm rooms nearly closed it asked for 7.3 m at 15.7 l/min. Touch now learns how the pump's flow (at 3 m) follows Σ loop flow × the loop's measured full flow (`system_curve.h`, time-weighted means per 2 l/min bin, fading over three days, stored every 6 h), takes the house at full load (every loop at its design share × house balance), and gives the head for the recommended flow there: about 5 m in the author's house. The advice says what the pump gives at full load, that the live flow is no yardstick, and while the curve has no data near full load that Touch is still learning. `/heat-source` → `circulation.full_load` (`l_min`, `ref_l_min`, `x_l_min`, `x_now_l_min`).
+
 ### The navbar says what Touch is doing
 - Next to language and theme, a badge shows Touch's current activity: testing valves (with the loop and step on wide screens), heat source offline, hot water / legionella / heating, starting soon (Odin plans heat within 10 min) or idle. Hidden without heat-source data (LDS 2.3.31).
 

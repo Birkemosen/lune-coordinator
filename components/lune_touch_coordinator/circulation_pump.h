@@ -164,16 +164,6 @@ inline float water_kw(float flow_lmin, float feed_c, float return_c) {
   return flow_lmin / 60.0f * 4.186f * dt;
 }
 
-/// Head the pump would need for target_lmin through the same open valves: the system
-/// curve is quadratic (H ∝ Q²). This is the constant-pressure setting to start from.
-inline float head_for_flow_m(float head_m, float flow_lmin, float target_lmin) {
-  if (!std::isfinite(head_m) || !std::isfinite(flow_lmin) || !std::isfinite(target_lmin) ||
-      head_m <= 0.0f || flow_lmin < 1.0f || target_lmin <= 0.0f)
-    return NAN;
-  const float r = target_lmin / flow_lmin;
-  return std::round(head_m * r * r * 10.0f) / 10.0f;
-}
-
 inline const char *mixing_name(Mixing m) {
   switch (m) {
     case Mixing::Ok: return "ok";
