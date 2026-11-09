@@ -25,6 +25,37 @@ static void test_fit_recovers_curve() {
   assert(std::fabs(f.delta_lmin - 2.6f) <= 0.3f);
 }
 
+static void test_full_from_points() {
+  // Stue (board 2 loop 5) at 6 m, 2026-11-09: coarse pass, then the refine pass.
+  const Point pts[] = {{0, 4.37f},  {5, 4.40f},  {10, 4.88f}, {15, 4.85f}, {20, 6.87f}, {25, 6.87f},
+                       {30, 7.52f}, {40, 7.72f}, {60, 7.81f}, {100, 7.82f}, {5, 4.57f},  {10, 4.69f},
+                       {15, 4.75f}, {20, 6.95f}, {25, 6.98f}, {30, 7.53f}, {35, 7.56f}};
+  const size_t n = sizeof(pts) / sizeof(pts[0]);
+  Fit f = fit(pts, n);
+  assert(f.ok);
+  const float knee = f.full_pct, knee_delta = f.delta_lmin;
+  full_from_points(f, pts, n);
+  std::printf("full from points: knee %.0f %% (%.2f l/min) -> %.1f %% (%.2f l/min)\n", knee, knee_delta,
+              f.full_pct, f.delta_lmin);
+  assert(knee < 30.0f);
+  assert(f.full_pct > 34.0f && f.full_pct < 40.0f);
+  assert(f.delta_lmin > knee_delta && std::fabs(f.delta_lmin - (7.815f - f.base_lmin)) < 0.01f);
+
+  // A curve that is really flat above its knee keeps the fit.
+  Point flat[STEPS];
+  for (size_t k = 0; k < STEPS; k++)
+    flat[k] = {STEP_PCT[k], 20.0f + loop_flow(STEP_PCT[k], 10.0f, 30.0f, 2.5f)};
+  Fit g = fit(flat, STEPS);
+  const float g_full = g.full_pct;
+  full_from_points(g, flat, STEPS);
+  assert(std::fabs(g.full_pct - g_full) < 0.01f);
+
+  // A failed fit is left alone.
+  Fit bad{};
+  full_from_points(bad, pts, n);
+  assert(std::isnan(bad.full_pct));
+}
+
 static void test_fit_rejects_flat_or_noisy() {
   Point pts[STEPS];
   for (size_t k = 0; k < STEPS; k++)
@@ -178,6 +209,7 @@ static void test_run_aborts() {
 int main() {
   test_fit_recovers_curve();
   test_fit_rejects_flat_or_noisy();
+  test_full_from_points();
   test_plan_refine();
   test_schedule();
   test_may_start();

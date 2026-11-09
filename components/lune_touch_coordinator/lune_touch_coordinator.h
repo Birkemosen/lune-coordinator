@@ -2,6 +2,7 @@
 
 #include "hp_phase.h"
 #include "valve_probe.h"
+#include "valve_flush.h"
 #include "system_curve.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
@@ -793,6 +794,10 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Measure this loop's valve curve next (after the run in progress).
   /// node 1-based index of an approved V6, zone 1..6.
   bool request_valve_probe(int node, int zone, char *response, size_t capacity);
+  /// Flush one loop (valve_flush.h): fully open, every other loop closed, for
+  /// `minutes` (0 = default). node 1-based index of an approved V6, zone 1..6.
+  bool request_valve_flush(int node, int zone, uint32_t minutes, char *response, size_t capacity);
+  bool stop_valve_flush(char *response, size_t capacity);
   bool consume_display_wake_request();
   /// Display idle diagnostics: called from the LVGL 50 ms interval.
   void note_display_state(bool awake, bool paused, uint32_t inactive_ms);
@@ -916,6 +921,8 @@ class LuneTouchCoordinator : public esphome::Component {
   void save_system_curve_();
   void update_system_curve_(uint32_t now_ms);
   void run_valve_probe_(uint32_t now_ms);
+  ::lune_touch_valve_flush::Run vf_run_{};
+  void run_valve_flush_(uint32_t now_ms);
   bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop, float others_pct = NAN);
   bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,
                             uint32_t measured_epoch_s, float full_lmin);

@@ -41,6 +41,8 @@
   "mode.dash": "Dashboard",
   "mode.conf": "Konfiguration",
   "activity.probe": "Måler ventiler",
+  "activity.flush": "Udlufter kreds",
+  "activity.minutesLeft": "{m} min tilbage",
   "activity.offline": "Varmekilde offline",
   "activity.dhw": "Varmt vand",
   "activity.legionella": "Legionella",

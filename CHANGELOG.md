@@ -2,6 +2,12 @@
 
 ## Unreleased (for v1.0.0)
 
+### A valve curve's full point is where the loop has 95 % of its flow
+- The fitted ramp bends where most of a loop's flow has arrived, but the insert keeps adding flow above the bend while the loop's own pipe takes over, and V6 opened a loop asked for full flow to 110 % of the bend. Stue at 6 m: fitted full at 23 %, so V6 opened it to 25 % and it passed 75 % of what it passes fully open; 95 % comes at 37 %. The full flow is now the mean of the points near the highest opening (less the fitted base), and the full point is where the measured points first reach 95 % of it (`full_from_points`, never below the fit's own). Curves from before 2026-11-09 23:00 UTC count as unmeasured, so every loop is measured again.
+
+### A loop can be flushed to clear trapped air
+- The manifold's automatic air vents only take air that reaches the manifold; a pocket out in a long 12 mm loop needs about 0.3 m/s or more to move, which a throttled loop sharing the pump with eleven others does not get. `POST /valve-curves/flush` (`node`, `zone`, `minutes` 5–30, default 15) opens that loop fully and closes every other loop on every V6 through V6's valve test, renewing the hold every minute; `POST /valve-curves/flush/stop` ends it early. Never automatic, never during a valve-curve run (and no run starts during a flush); pump-head advice and the system curve pause while it holds the valves. `/heat-source` → `valve_probe.flush` (`active`, `node`, `zone`, `left_s`); the navbar badge says «Udlufter kreds» with the loop and minutes left.
+
 ### Pump head advice is for full load, on a learned system curve
 - The advice scaled the live operating point (head × (recommended / live flow)²), so it answered for the valves as they were: with warm rooms nearly closed it asked for 7.3 m at 15.7 l/min. Touch now learns how the pump's flow (at 3 m) follows Σ loop flow × the loop's measured full flow (`system_curve.h`, time-weighted means per 2 l/min bin, fading over three days, stored every 6 h), takes the house at full load (every loop at its design share × house balance), and gives the head for the recommended flow there: about 5 m in the author's house. The advice says what the pump gives at full load, that the live flow is no yardstick, and while the curve has no data near full load that Touch is still learning. `/heat-source` → `circulation.full_load` (`l_min`, `ref_l_min`, `x_l_min`, `x_now_l_min`).
 

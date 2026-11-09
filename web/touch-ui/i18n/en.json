@@ -41,6 +41,8 @@
   "mode.dash": "Dashboard",
   "mode.conf": "Configuration",
   "activity.probe": "Testing valves",
+  "activity.flush": "Flushing loop",
+  "activity.minutesLeft": "{m} min left",
   "activity.offline": "Heat source offline",
   "activity.dhw": "Hot water",
   "activity.legionella": "Legionella",

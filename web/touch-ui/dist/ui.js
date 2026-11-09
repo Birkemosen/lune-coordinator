@@ -2062,10 +2062,17 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var phase = hs && hs.valves_follow_hp ? hs.valves_follow_hp.phase : '';
     var opm = hp.available ? Number(hp.operation_mode) : 0;
     var key = '', cls = '', detail = '';
+    var fl = vp.flush || {};
+    var loopName = function (node, zone) {
+      var z = (state.zones || []).filter(function (x) { return x && x.node_index === node - 1 && x.zone_index === zone - 1; })[0];
+      return z && z.name ? z.name + ' · ' : '';
+    };
     if (vp.stage === 'settling' || vp.stage === 'measuring') {
       key = 'probe'; cls = 'violet';
-      var z = (state.zones || []).filter(function (x) { return x && x.node_index === vp.node - 1 && x.zone_index === vp.zone - 1; })[0];
-      detail = (z && z.name ? z.name + ' · ' : '') + t('activity.step', { s: vp.step, n: vp.steps });
+      detail = loopName(vp.node, vp.zone) + t('activity.step', { s: vp.step, n: vp.steps });
+    } else if (fl.active) {
+      key = 'flush';
+      detail = loopName(fl.node, fl.zone) + t('activity.minutesLeft', { m: Math.max(1, Math.ceil((fl.left_s || 0) / 60)) });
     } else if (hs && hs.enabled !== false && hs.push && hs.push.status === 'unreachable') {
       key = 'offline'; cls = 'bad';
     } else if (hp.available && hp.compressor_on && (opm === 1 || opm === 6)) {

@@ -2307,6 +2307,7 @@ void LuneTouchCoordinator::poll_task_() {
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
       run_hp_phase_(esphome::millis());
+      run_valve_flush_(esphome::millis());
       run_valve_probe_(esphome::millis());
       run_hp_diagnostics_(esphome::millis());
       run_problems_(esphome::millis());
@@ -4800,7 +4801,7 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
       circulation_.last_error[0] = '\0';
       circulation_.consecutive_failures = 0;
       const bool any_calling = model_.calling_zone_count() > 0;
-      circulation_.valves_held = vp_run_.stage != ::lune_touch_valve_probe::Stage::Off;
+      circulation_.valves_held = vp_run_.stage != ::lune_touch_valve_probe::Stage::Off || vf_run_.active;
       update_system_curve_(circulation_.last_fetch_ms);
       const uint16_t want = circulation_.valves_held
                                 ? ::lune_touch_valve_probe::CIRCULATION_POLL_S
@@ -17429,6 +17430,11 @@ bool LuneTouchCoordinator::request_valve_probe(int node, int zone, char *respons
     snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"busy\"}");
     return false;
   }
+  if (vf_run_.active) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"a loop is being flushed\"}");
+    return false;
+  }
   const ValveProbeLoop &vl = vp_loops_[node - 1][zone - 1];
   const bool ok = vl.reported && vl.enabled;
   if (ok) {
@@ -17444,6 +17450,100 @@ bool LuneTouchCoordinator::request_valve_probe(int node, int zone, char *respons
   snprintf(response, capacity, "{\"result\":\"accepted\",\"node\":%d,\"zone\":%d}", node, zone);
   log_event_("info", "valve_curve", "measurement requested");
   return true;
+}
+
+bool LuneTouchCoordinator::request_valve_flush(int node, int zone, uint32_t minutes, char *response,
+                                               size_t capacity) {
+  if (node < 1 || node > static_cast<int>(::lune_touch::MAX_NODES) || zone < 1 ||
+      zone > static_cast<int>(::lune_touch::ZONES_PER_NODE)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"invalid node or zone\"}");
+    return false;
+  }
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"busy\"}");
+    return false;
+  }
+  const char *reason = nullptr;
+  const ValveProbeLoop &vl = vp_loops_[node - 1][zone - 1];
+  if (vp_run_.stage != ::lune_touch_valve_probe::Stage::Off || vp_request_node_ >= 0)
+    reason = "a valve curve is being measured";
+  else if (vf_run_.active)
+    reason = "a loop is being flushed";
+  else if (!vl.reported || !vl.enabled)
+    reason = "loop off or V6 without valve curve";
+  else if (authority_shared_key_[0] == '\0')
+    reason = "no authority key";
+  const uint32_t mins = ::lune_touch_valve_flush::minutes(minutes);
+  if (reason == nullptr)
+    ::lune_touch_valve_flush::start(vf_run_, static_cast<uint8_t>(node - 1), static_cast<uint8_t>(zone - 1),
+                                    esphome::millis(), mins);
+  give_state_lock_();
+  if (reason != nullptr) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"%s\"}", reason);
+    return false;
+  }
+  snprintf(response, capacity, "{\"result\":\"accepted\",\"node\":%d,\"zone\":%d,\"minutes\":%lu}", node, zone,
+           static_cast<unsigned long>(mins));
+  char msg[64];
+  snprintf(msg, sizeof(msg), "flushing board %d loop %d for %lu min", node, zone, static_cast<unsigned long>(mins));
+  log_event_("info", "valve_flush", msg);
+  return true;
+}
+
+bool LuneTouchCoordinator::stop_valve_flush(char *response, size_t capacity) {
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"busy\"}");
+    return false;
+  }
+  const bool active = vf_run_.active;
+  vf_run_.stop_requested = active;
+  give_state_lock_();
+  snprintf(response, capacity, "{\"result\":\"%s\"}", active ? "accepted" : "not running");
+  return active;
+}
+
+void LuneTouchCoordinator::run_valve_flush_(uint32_t now_ms) {
+  namespace vf = ::lune_touch_valve_flush;
+  constexpr size_t N = ::lune_touch::MAX_NODES;
+  char hosts[N][64]{};
+  bool host_ok[N]{};
+  if (!take_state_lock_(100))
+    return;
+  for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+      continue;
+    const char *h = node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
+    if (h[0] == '\0')
+      continue;
+    std::strncpy(hosts[i], h, sizeof(hosts[i]) - 1);
+    host_ok[i] = true;
+  }
+  const vf::Action action = vf::tick(vf_run_, now_ms);
+  const vf::Run run = vf_run_;
+  give_state_lock_();
+  if (action == vf::Action::None)
+    return;
+  bool sent = action == vf::Action::Send && host_ok[run.node];
+  if (sent) {
+    // The loop fully open, every other loop on every V6 closed.
+    for (size_t i = 0; i < N && sent; i++)
+      if (host_ok[i])
+        sent = send_v6_valve_test_(hosts[i], i == run.node ? run.zone + 1 : 0, 100.0f, false, 0.0f);
+    if (sent)
+      return;
+    if (take_state_lock_(100)) {
+      vf_run_.active = false;
+      give_state_lock_();
+    }
+  }
+  for (size_t i = 0; i < N; i++)
+    if (host_ok[i])
+      send_v6_valve_test_(hosts[i], 0, 0.0f, true);
+  if (action == vf::Action::Stop)
+    log_event_("info", "valve_flush", "done");
+  else
+    log_event_("warn", "valve_flush", "stopped: V6 did not accept the hold");
 }
 
 void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
@@ -17497,6 +17597,10 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   }
   bool just_started = false;
   bool save_state = false;  // NVS after the lock
+  if (vp_run_.stage == vp::Stage::Off && vf_run_.active) {
+    give_state_lock_();  // a flush holds the valves (valve_flush.h)
+    return;
+  }
   if (vp_run_.stage == vp::Stage::Off) {
     manual = vp_request_node_ >= 0;
     const bool rested = vp_last_end_ms_ == 0 || now_ms - vp_last_end_ms_ >= vp::PAUSE_MS;
@@ -17629,7 +17733,8 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     return;
   }
   // Finish
-  const vp::Fit fit = vp::fit(run.pts, run.n_pts);
+  vp::Fit fit = vp::fit(run.pts, run.n_pts);
+  vp::full_from_points(fit, run.pts, run.n_pts);
   char msg[96];
   if (!fit.ok) {
     snprintf(msg, sizeof(msg), "no clear curve (loop %.1f l/min, R2 %.2f)", fit.delta_lmin, fit.r2);
@@ -17745,6 +17850,9 @@ void LuneTouchCoordinator::append_valve_probe_json_(char *buffer, size_t capacit
       stage, static_cast<unsigned>(vp_run_.node + 1), static_cast<unsigned>(vp_run_.zone + 1),
       static_cast<unsigned>(vp_run_.step + 1), static_cast<unsigned>(vp_run_.n_steps),
       static_cast<unsigned long>(vp::PAUSE_MS / 1000UL));
+  add("\"flush\":{\"active\":%s,\"node\":%u,\"zone\":%u,\"left_s\":%lu},", vf_run_.active ? "true" : "false",
+      static_cast<unsigned>(vf_run_.node + 1), static_cast<unsigned>(vf_run_.zone + 1),
+      static_cast<unsigned long>(::lune_touch_valve_flush::left_s(vf_run_, esphome::millis())));
   char a[16], b[16], c[16], d[16];
   num(vp_last_fit_.start_pct, a, sizeof(a));
   num(vp_last_fit_.full_pct, b, sizeof(b));

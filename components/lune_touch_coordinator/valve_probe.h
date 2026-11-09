@@ -17,7 +17,12 @@
 //      to just past the fitted full point (plan_refine);
 //   4. fit flow = base + delta · ramp(opening; start, full) by least squares over
 //      every point;
-//   5. a good fit (delta and R² large enough) is written to V6 with its time and its
+//   5. the ramp bends where most of the flow has arrived, but the insert keeps adding
+//      flow above the bend: the loop's own pipe takes over as the insert opens, so
+//      flow nears its maximum slowly (Stue at 6 m: 75 % of its flow at the fitted
+//      23 %, 95 % at 37 %). So the full flow is what the loop passes fully open, and
+//      the full point is where the points reach FULL_SHARE of it (full_from_points);
+//   6. a good fit (delta and R² large enough) is written to V6 with its time and its
 //      full flow at REF_HEAD_M (flow ∝ √head), so a changed pump setting does not
 //      change the loop's share.
 //
@@ -43,6 +48,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace lune_touch_valve_probe {
 
@@ -70,7 +76,10 @@ constexpr size_t MAX_SAMPLES = 16;
 constexpr float REF_HEAD_M = 3.0f;  ///< Full flow is reported at this pump head
 /// Curves measured before the current method (each loop alone, flow at REF_HEAD_M)
 /// count as unmeasured, so every loop is measured again without waiting REMEASURE_S.
-constexpr uint32_t METHOD_EPOCH_S = 1793878200;  // 2026-11-05 11:30 UTC
+/// Bumped when full points moved to FULL_SHARE of the flow fully open.
+constexpr uint32_t METHOD_EPOCH_S = 1794265200;  // 2026-11-09 23:00 UTC
+constexpr float FULL_SHARE = 0.95f;   ///< The full point: this share of the flow fully open
+constexpr float TOP_SPAN_PCT = 40.0f;  ///< Points this close to the highest opening give the flow fully open
 
 /// Loop flow at REF_HEAD_M from flow measured at `head_m` (flow ∝ √head). No head
 /// reading: the flow as measured.
@@ -164,6 +173,73 @@ inline Fit fit(const Point *pts, size_t n) {
   best.r2 = sst > 1e-6f ? 1.0f - best_sse / sst : 0.0f;
   best.ok = best.delta_lmin >= MIN_DELTA_LMIN && best.r2 >= MIN_R2;
   return best;
+}
+
+/// Moves a good fit's full point and flow to the points (step 5 above): the flow fully
+/// open is the mean of the points within TOP_SPAN_PCT of the highest opening, less the
+/// fitted base; the full point is where the mean flow per opening first reaches
+/// FULL_SHARE of it, linear between points. Never below the fit's own full point or
+/// flow.
+inline void full_from_points(Fit &f, const Point *pts, size_t n) {
+  if (!f.ok || pts == nullptr)
+    return;
+  float top = -1.0f;
+  for (size_t k = 0; k < n; k++)
+    if (std::isfinite(pts[k].pos_pct) && std::isfinite(pts[k].flow_lmin))
+      top = std::max(top, pts[k].pos_pct);
+  if (top <= f.full_pct)
+    return;
+  float sum = 0.0f;
+  size_t m = 0;
+  for (size_t k = 0; k < n; k++)
+    if (std::isfinite(pts[k].pos_pct) && std::isfinite(pts[k].flow_lmin) && pts[k].pos_pct >= top - TOP_SPAN_PCT) {
+      sum += pts[k].flow_lmin;
+      m++;
+    }
+  const float open_delta = sum / static_cast<float>(m) - f.base_lmin;
+  if (!(open_delta > f.delta_lmin))
+    return;
+  // Mean flow per opening, in rising order.
+  float pos[MAX_STEPS], flow[MAX_STEPS];
+  size_t u = 0;
+  for (size_t k = 0; k < n; k++) {
+    if (!std::isfinite(pts[k].pos_pct) || !std::isfinite(pts[k].flow_lmin))
+      continue;
+    size_t j = 0;
+    while (j < u && std::fabs(pos[j] - pts[k].pos_pct) > 0.01f)
+      j++;
+    if (j == u) {
+      if (u == MAX_STEPS)
+        continue;
+      pos[u] = pts[k].pos_pct;
+      flow[u] = 0.0f;
+      u++;
+    }
+    flow[j] += pts[k].flow_lmin;
+  }
+  for (size_t j = 0; j < u; j++) {
+    size_t c = 0;
+    for (size_t k = 0; k < n; k++)
+      if (std::isfinite(pts[k].flow_lmin) && std::fabs(pts[k].pos_pct - pos[j]) <= 0.01f)
+        c++;
+    flow[j] /= static_cast<float>(c);
+  }
+  for (size_t a = 1; a < u; a++)
+    for (size_t b = a; b > 0 && pos[b - 1] > pos[b]; b--) {
+      std::swap(pos[b - 1], pos[b]);
+      std::swap(flow[b - 1], flow[b]);
+    }
+  const float want = f.base_lmin + FULL_SHARE * open_delta;
+  for (size_t j = 0; j < u; j++) {
+    if (flow[j] < want)
+      continue;
+    float at = pos[j];
+    if (j > 0 && flow[j] > flow[j - 1])
+      at = pos[j - 1] + (want - flow[j - 1]) / (flow[j] - flow[j - 1]) * (pos[j] - pos[j - 1]);
+    f.full_pct = std::min(100.0f, std::max(f.full_pct, at));
+    f.delta_lmin = open_delta;
+    return;
+  }
 }
 
 /// Refine plan after the coarse pass: the last coarse step at or below the fitted
