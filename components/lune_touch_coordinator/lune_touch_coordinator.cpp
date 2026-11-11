@@ -17582,12 +17582,15 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
     boards_fresh = boards_fresh && fresh;
   }
   const float flow_lmin = circulation_.flow_m3h * (1000.0f / 60.0f);
-  const bool circ_ok = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
-                       now_ms - circulation_.last_success_ms < FRESH_MS && std::isfinite(flow_lmin) &&
-                       flow_lmin > 3.0f;
+  const bool circ_fresh = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
+                          now_ms - circulation_.last_success_ms < FRESH_MS && std::isfinite(flow_lmin);
   // Only running vs. not matters: Prestart/Idle follow Odin's plan without moving water.
   const uint8_t phase = hp_phase_ == ::lune_touch_hp_phase::Phase::Running ? 1 : 0;
-  const bool ready = circ_ok && boards > 0 && boards_fresh && epoch > 0 && authority_shared_key_[0] != '\0';
+  const bool boards_ok = boards > 0 && boards_fresh && epoch > 0 && authority_shared_key_[0] != '\0';
+  // A run starts only with the pump visibly moving water. Once it runs, a fresh reading is
+  // enough: with every loop closed and nothing else on the circuit the flow is near zero.
+  const bool ready = circ_fresh && flow_lmin > 3.0f && boards_ok;
+  const bool run_ok = circ_fresh && boards_ok;
   if (epoch > 0 && (phase == 0 || vp_idle_epoch_s_ == 0))
     vp_idle_epoch_s_ = epoch;
   bool has_sample = false;
@@ -17662,7 +17665,7 @@ void LuneTouchCoordinator::run_valve_probe_(uint32_t now_ms) {
   }
   vp::TickInput in;
   in.now_ms = now_ms;
-  in.conditions_ok = ready && phase == vp_run_.phase;
+  in.conditions_ok = run_ok && phase == vp_run_.phase;
   in.has_flow_sample = has_sample;
   in.flow_lmin = flow_lmin;
   in.head_m = circulation_.has_head ? circulation_.head_m : NAN;
