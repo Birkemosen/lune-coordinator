@@ -3426,7 +3426,30 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   int start = INT16_MAX;
   int end = -1;
   uint8_t lag_floor_h = 0;
+  float lagging_share = NAN;
+  // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
+  float price_rel[24];
+  std::fill(std::begin(price_rel), std::end(price_rel), NAN);
+  int today = 0;
+  uint16_t minute = 0;
+  const bool clock_ok = local_today_(&today, &minute);
   if (take_state_lock_(100)) {
+    if (price_rt_ != nullptr && clock_ok) {
+      const lune_touch_price::DayPrices *d0 = nullptr;
+      const lune_touch_price::DayPrices *d1 = nullptr;
+      if (price_rt_->today.valid && price_rt_->today.ymd == today) {
+        d0 = &price_rt_->today;
+        d1 = price_rt_->tomorrow.valid ? &price_rt_->tomorrow : nullptr;
+      } else if (price_rt_->tomorrow.valid && price_rt_->tomorrow.ymd == today) {
+        d0 = &price_rt_->tomorrow;
+      }
+      for (size_t k = 0; k < 24 && d0 != nullptr; k++) {
+        const size_t h = now_hour + k;
+        const lune_touch_price::DayPrices *d = h < 24 ? d0 : d1;
+        if (d != nullptr)
+          price_rel[k] = d->total[h % 24];
+      }
+    }
     // One setting for "how far Touch may raise ahead": Weather › Preload › Max.
     // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
     params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
@@ -3435,6 +3458,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
+    lagging_share = strategy.lagging_share;
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
       const auto rz = model_.resolve_room(strategy.driver_room_id);
@@ -3465,31 +3489,37 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // A room that lags (held demand): shift the band from the next hour for the
   // room's floor lag + 2 h (odin_comfort.h lag_lift), so Odin has at least an hour
   // to plan heat that reaches the room. Re-evaluated every cycle.
+  // One or two lagging rooms open only the band's top over a wider window, so Odin
+  // chooses the hours (odin_comfort.h floor_share_for); a slab charge moves it all.
+  const float floor_share = lune_touch_odin::floor_share_for(lagging_share);
   lune_touch_odin::Lift lag{};
   if (held > 0.0f)
-    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params);
+    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
   if (energy_kwh != nullptr)
     *energy_kwh = charge.active() ? energy : 0.0f;
+  lune_touch_odin::Lift out{};
+  const char *why = "none";
   if (charge.active() && lag.active()) {
-    if (reason != nullptr)
-      *reason = "slab_charge+room_lag";
+    why = "slab_charge+room_lag";
     // Merge both windows (relative to now) into one lift.
     const int charge_start_rel = static_cast<int>((charge.start_hour + 24 - now_hour) % 24);
     const int charge_end_rel = charge_start_rel + charge.hours;
-    return lune_touch_odin::make_lift(
+    out = lune_touch_odin::make_lift(
         now_hour, std::min(charge_start_rel, lune_touch_odin::LAG_LEAD_IN_H),
         std::max(charge_end_rel, lune_touch_odin::lag_end_in_h(lag_floor_h)),
         std::max(charge.lift_c, lag.lift_c), params);
+  } else if (charge.active()) {
+    why = "slab_charge";
+    out = charge;
+  } else if (lag.active()) {
+    why = "room_lag";
+    out = lag;
   }
-  if (charge.active()) {
+  if (out.active()) {
+    lune_touch_odin::skip_dearest(out, now_hour, price_rel, 24);
     if (reason != nullptr)
-      *reason = "slab_charge";
-    return charge;
-  }
-  if (lag.active()) {
-    if (reason != nullptr)
-      *reason = "room_lag";
-    return lag;
+      *reason = why;
+    return out;
   }
   if (reason != nullptr)
     *reason = "none";
@@ -4024,12 +4054,17 @@ void LuneTouchCoordinator::load_odin_control_() {
     if (nvs_get_u8(handle, "odc_applied", &applied) == ESP_OK)
       odin_owner_.applied = applied != 0;
   }
-  uint8_t lift[3]{};
+  // start hour, hours, lift ×10, floor share ×100, skip mask (3 bytes LE); older
+  // firmware stored the first three only.
+  uint8_t lift[7]{0, 0, 0, 100, 0, 0, 0};
   len = sizeof(lift);
-  if (nvs_get_blob(handle, "odc_lift", lift, &len) == ESP_OK && len == sizeof(lift)) {
+  if (nvs_get_blob(handle, "odc_lift", lift, &len) == ESP_OK && (len == 3 || len == sizeof(lift))) {
     odin_owner_.lift.start_hour = lift[0] % 24;
     odin_owner_.lift.hours = lift[1];
     odin_owner_.lift.lift_c = static_cast<float>(lift[2]) / 10.0f;
+    odin_owner_.lift.floor_share = std::min(1.0f, static_cast<float>(lift[3]) / 100.0f);
+    odin_owner_.lift.skip_mask = static_cast<uint32_t>(lift[4]) | (static_cast<uint32_t>(lift[5]) << 8) |
+                                 (static_cast<uint32_t>(lift[6]) << 16);
   }
   if (nvs_get_u8(handle, "odc_yield", &u8) == ESP_OK)
     odin_owner_.yielded = u8 != 0;
@@ -4100,8 +4135,12 @@ void LuneTouchCoordinator::save_odin_control_() {
     lune_touch_odin::format_profile(owner.user, user, 640);
   if (owner.applied)
     lune_touch_odin::format_profile(owner.written, written, 640);
-  const uint8_t lift[3]{owner.lift.start_hour, owner.lift.hours,
-                        static_cast<uint8_t>(std::clamp(std::lround(owner.lift.lift_c * 10.0f), 0L, 255L))};
+  const uint32_t skip = owner.lift.skip_mask;
+  const uint8_t lift[7]{owner.lift.start_hour, owner.lift.hours,
+                        static_cast<uint8_t>(std::clamp(std::lround(owner.lift.lift_c * 10.0f), 0L, 255L)),
+                        static_cast<uint8_t>(std::clamp(std::lround(owner.lift.floor_share * 100.0f), 0L, 100L)),
+                        static_cast<uint8_t>(skip & 0xFF), static_cast<uint8_t>((skip >> 8) & 0xFF),
+                        static_cast<uint8_t>((skip >> 16) & 0xFF)};
   const float curve[2]{levers.curve_gain, levers.curve_max_offset_c};
   nvs_handle_t handle;
   if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
@@ -15299,8 +15338,10 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
       "\"reason\":\"%s\",\"last_action\":\"%s\",\"user_schedule_known\":%s,\"yielded\":%s,"
-      "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"energy_kwh\":%.2f},"
-      "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f},"
+      "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"floor_share\":%.2f,"
+      "\"skip_mask\":%lu,\"energy_kwh\":%.2f},"
+      "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"floor_share\":%.2f,"
+      "\"skip_mask\":%lu},"
       "\"thermal_mass_kwh_per_k\":%s,\"heat_loss_kw_per_k\":%s,\"internal_gains_w\":%.0f,\"hp_max_kw\":%s,"
       "\"hp_max_kw_source\":\"%s\",\"hp_max_kw_user\":%s,"
       "\"last_write_age_s\":%u,\"last_http_status\":%d,\"last_error\":\"%s\"},"
@@ -15319,9 +15360,11 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       c.last_action, has_user ? "true" : "false", yielded ? "true" : "false",
       c.wanted.active() ? "true" : "false", static_cast<unsigned>(c.wanted.start_hour),
       static_cast<unsigned>(c.wanted.hours), static_cast<double>(c.wanted.lift_c),
+      static_cast<double>(c.wanted.floor_share), static_cast<unsigned long>(c.wanted.skip_mask),
       static_cast<double>(c.wanted_energy_kwh),
       c.applied.active() ? "true" : "false", static_cast<unsigned>(c.applied.start_hour),
-      static_cast<unsigned>(c.applied.hours), static_cast<double>(c.applied.lift_c), tm, hl,
+      static_cast<unsigned>(c.applied.hours), static_cast<double>(c.applied.lift_c),
+      static_cast<double>(c.applied.floor_share), static_cast<unsigned long>(c.applied.skip_mask), tm, hl,
       static_cast<double>(c.internal_gains_w), hpmax, hpmax_src, hpmax_user,
       static_cast<unsigned>(write_age_s), c.last_http_status, err,
       c.link_status, c.link_alarm ? "true" : "false", static_cast<unsigned>(bad_s),

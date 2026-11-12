@@ -231,8 +231,18 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
   cycle. Odin always has at least an hour to plan, and a floor that answers 1–3 h after heat
   goes in can actually reach the raised band. Capped at `max_lift_c`
   (default 1.5 °C); below 0.3 °C nothing is written.
+- **How much of the band.** A room lag lifts the band's top by the lift but its floor (the
+  setpoint) only by `floor_share` of it: twice the share of the house (by weight) in rooms
+  that lag more than 0.3 °C and may drive, between 0.2 and 1. One or two lagging rooms
+  thus let Odin heat more where it is cheap without forcing it to, and V6 sends that heat
+  to them; half the house or more moves the whole band. With `floor_share` < 1 the window
+  is 8 h from the next hour (at least the 3–6 h above), so Odin can choose across a price
+  swing. A slab charge (whole house) moves the whole band.
 - **When.** Slab charge: from the charge start to the end of the episode (local wall-clock
-  hours). Odin is free to heat earlier if that is cheaper.
+  hours). Odin is free to heat earlier if that is cheaper. In every lift the dearest hours
+  of the window stay unlifted (`skip_mask`): up to a third of its hours, only those dearer
+  than halfway between its cheapest and dearest hour, and only when that spread is at
+  least 10 % (Touch's all-in prices; none skipped without prices for the whole window).
 - **How.** Odin has no dated exceptions. Touch keeps the user's profile, writes a lifted
   copy (`POST /dashboard/set {"key":"sched_ui","value":"<json string>"}`), triggers
   `POST /api/solve`, and writes the user's profile back when the lift ends. At most one

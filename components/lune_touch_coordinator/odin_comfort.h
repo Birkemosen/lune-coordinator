@@ -50,6 +50,13 @@ struct Lift {
   uint8_t start_hour = 0;  ///< Local hour the lift begins (0–23)
   uint8_t hours = 0;       ///< Number of hours lifted (0 = none, max 23)
   float lift_c = 0.0f;     ///< Band shift (°C)
+  /// Share of the lift that moves the setpoint, and so the band's floor; the rest
+  /// only raises the band's top. 1 = the whole band moves (Odin must heat); less lets
+  /// Odin heat more but choose when (floor_share_for).
+  float floor_share = 1.0f;
+  /// Wall-clock hours inside the window left as they are (bit h = hour h): the
+  /// dearest ones, so Odin is not asked to heat then (skip_dearest).
+  uint32_t skip_mask = 0;
   bool active() const { return hours > 0 && lift_c > 0.0f; }
 };
 
@@ -209,21 +216,25 @@ inline bool equivalent(const Profile &a, const Profile &b, float tol = 0.02f) {
 }
 
 inline bool hour_in_lift(const Lift &lift, uint8_t hour) {
-  if (!lift.active())
+  if (!lift.active() || ((lift.skip_mask >> (hour % 24)) & 1U) != 0)
     return false;
   const uint8_t rel = static_cast<uint8_t>((hour + 24 - lift.start_hour) % 24);
   return rel < lift.hours;
 }
 
-/// The user's profile with the band shifted up by `lift.lift_c` in the lifted
-/// hours. Expanded per hour and re-compacted, so it always has a block at h=0.
+/// The user's profile with the band's top raised by `lift.lift_c` in the lifted
+/// hours and its floor (the setpoint) by `floor_share` of that. Expanded per hour and
+/// re-compacted, so it always has a block at h=0.
 inline Profile apply_lift(const Profile &user, const Lift &lift) {
+  const float floor_c = lift.lift_c * std::clamp(lift.floor_share, 0.0f, 1.0f);
   Block hourly[24];
   for (uint8_t h = 0; h < 24; h++) {
     hourly[h] = block_at(user, h);
     hourly[h].h = h;
-    if (hour_in_lift(lift, h))
-      hourly[h].sp = std::round((hourly[h].sp + lift.lift_c) * 10.0f) / 10.0f;
+    if (hour_in_lift(lift, h)) {
+      hourly[h].sp = std::round((hourly[h].sp + floor_c) * 10.0f) / 10.0f;
+      hourly[h].max = std::round((hourly[h].max + lift.lift_c - floor_c) * 10.0f) / 10.0f;
+    }
   }
   Profile out{};
   for (uint8_t h = 0; h < 24; h++) {
@@ -313,14 +324,70 @@ inline Lift make_lift(uint8_t now_hour, int start_in_h, int end_in_h, float lift
 /// may heat in the cheapest hour that still reaches the room; a floor answers 1–3 h
 /// after heat goes in, so a band raised only for now and the next hour was too
 /// late to reach and left Odin no choice of hour.
+//
+/// When only part of the house lags (floor_share < 1) the band's top opens for
+/// LAG_CHOICE_H hours instead, so Odin can pick cheap hours across a price swing.
 static constexpr int LAG_LEAD_IN_H = 1;
 static constexpr int LAG_EXTRA_H = 2;
-inline int lag_end_in_h(uint8_t floor_lag_h) {
+static constexpr int LAG_CHOICE_H = 8;
+inline int lag_end_in_h(uint8_t floor_lag_h, float floor_share = 1.0f) {
   const int lag = floor_lag_h == 0 ? 2 : std::min<int>(std::max<int>(floor_lag_h, 1), 4);
-  return LAG_LEAD_IN_H + lag + LAG_EXTRA_H;
+  const int end = LAG_LEAD_IN_H + lag + LAG_EXTRA_H;
+  return floor_share < 1.0f ? std::max(end, LAG_LEAD_IN_H + LAG_CHOICE_H) : end;
 }
-inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const LiftParams &p) {
-  return make_lift(now_hour, LAG_LEAD_IN_H, lag_end_in_h(floor_lag_h), lift_c, p);
+inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const LiftParams &p,
+                     float floor_share = 1.0f) {
+  Lift l = make_lift(now_hour, LAG_LEAD_IN_H, lag_end_in_h(floor_lag_h, floor_share), lift_c, p);
+  if (l.active())
+    l.floor_share = floor_share;
+  return l;
+}
+
+/// Share of a lag lift that moves the band's floor, from the share of the house (by
+/// weight) whose rooms lag: one or two rooms open only the band's top, so Odin heats
+/// more where it is cheap and V6 sends that heat to the lagging rooms; half the house
+/// or more lagging moves the whole band.
+static constexpr float FLOOR_SHARE_MIN = 0.2f;
+inline float floor_share_for(float lagging_share) {
+  if (!std::isfinite(lagging_share))
+    return 1.0f;
+  return std::clamp(2.0f * lagging_share, FLOOR_SHARE_MIN, 1.0f);
+}
+
+/// Leaves the dearest hours of the window unlifted, so a lift does not ask Odin to
+/// heat at the day's peak: up to a third of the window's hours (rounded down), and
+/// only hours dearer than halfway between the window's cheapest and dearest when
+/// that spread is at least SKIP_MIN_SPREAD of the dearest. `price_rel[k]` is the price
+/// k hours from now (k < n); any unknown price in the window leaves it whole.
+static constexpr float SKIP_MIN_SPREAD = 0.1f;
+inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size_t n) {
+  l.skip_mask = 0;
+  if (!l.active() || price_rel == nullptr)
+    return;
+  const size_t start = (l.start_hour + 24U - now_hour) % 24U;
+  if (start + l.hours > n)
+    return;
+  float lo = INFINITY, hi = -INFINITY;
+  for (size_t k = start; k < start + l.hours; k++) {
+    if (!std::isfinite(price_rel[k]))
+      return;
+    lo = std::min(lo, price_rel[k]);
+    hi = std::max(hi, price_rel[k]);
+  }
+  if (!(hi > 0.0f) || hi - lo < SKIP_MIN_SPREAD * hi)
+    return;
+  const float mid = 0.5f * (lo + hi);
+  for (size_t left = l.hours / 3U; left > 0; left--) {
+    size_t pick = n;
+    for (size_t k = start; k < start + l.hours; k++) {
+      const uint8_t h = static_cast<uint8_t>((now_hour + k) % 24U);
+      if (((l.skip_mask >> h) & 1U) == 0 && price_rel[k] > mid && (pick == n || price_rel[k] > price_rel[pick]))
+        pick = k;
+    }
+    if (pick == n)
+      break;
+    l.skip_mask |= 1UL << ((now_hour + pick) % 24U);
+  }
 }
 
 /// True when two lifts differ enough to justify rewriting Odin's schedule.
@@ -329,7 +396,8 @@ inline bool lift_changed(const Lift &a, const Lift &b, float tol_c = 0.25f) {
     return true;
   if (!a.active())
     return false;
-  return a.start_hour != b.start_hour || a.hours != b.hours || std::fabs(a.lift_c - b.lift_c) > tol_c;
+  return a.start_hour != b.start_hour || a.hours != b.hours || std::fabs(a.lift_c - b.lift_c) > tol_c ||
+         a.skip_mask != b.skip_mask || std::fabs(a.floor_share - b.floor_share) > 0.15f;
 }
 
 // ---------------------------------------------------------------------------

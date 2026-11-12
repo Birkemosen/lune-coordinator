@@ -1985,6 +1985,7 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
   float preview_setpoint_sum = 0.0f;
   size_t preview_setpoint_count = 0;
   float best_weighted_deficit = 0.0f;
+  float lagging_weight = 0.0f;
   float comfort_sum = 0.0f;
   size_t comfort_count = 0;
   float temp_min = 0.0f;
@@ -2226,6 +2227,8 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
           may_drive = nd.recommendation == HeatRecommendation::RAISE && critical_is_ours;
         }
       }
+      if (may_drive && deficit > LAGGING_DEFICIT_C)
+        lagging_weight += room_weight;
       if (may_drive && weighted_deficit > best_weighted_deficit) {
         best_weighted_deficit = weighted_deficit;
         snapshot.driver_deficit_c = deficit;
@@ -2269,6 +2272,8 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
     snapshot.has_house_target = true;
     snapshot.house_target_c = weighted_target_sum / target_weight_sum;
   }
+  if (weight_sum > 0.0f)
+    snapshot.lagging_share = std::min(1.0f, lagging_weight / weight_sum);
   if (weight_sum > 0.0f) {
     snapshot.physical_temperature_c = weighted_temp_sum / weight_sum;
     snapshot.comfort_demand_c = weighted_demand_sum / weight_sum;

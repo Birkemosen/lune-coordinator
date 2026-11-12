@@ -94,6 +94,64 @@ int main() {
   assert(lift_changed(w, Lift{16, 3, 0.5f}));
   assert(lift_changed(w, Lift{}));
 
+  // --- one or two lagging rooms open only the band's top -------------------
+  {
+    assert(near(floor_share_for(1.0f / 12.0f), FLOOR_SHARE_MIN));  // Laura alone
+    assert(near(floor_share_for(0.25f), 0.5f));
+    assert(near(floor_share_for(0.6f), 1.0f));
+    assert(near(floor_share_for(NAN), 1.0f));
+    // 2026-11-12: Laura 1.6 K behind lifted the whole band 1.5 °C for 6 h.
+    const Lift l = lag_lift(19, 1.5f, 2, p, floor_share_for(1.0f / 12.0f));
+    assert(l.start_hour == 20 && l.hours == LAG_CHOICE_H && near(l.floor_share, 0.2f));
+    assert(lag_lift(19, 1.5f, 2, p).hours == 4);  // whole house lagging: as before
+    const Profile one = apply_lift(user, Lift{15, 3, 1.5f, 0.2f});
+    assert(near(block_at(one, 15).sp, 22.3f));                       // floor up 0.3
+    assert(near(block_at(one, 15).sp + block_at(one, 15).max, 22.0f + 1.5f + 1.5f));  // top up 1.5
+    assert(near(block_at(one, 14).sp, 22.0f) && near(block_at(one, 14).max, 1.5f));
+    assert(lift_changed(Lift{15, 3, 1.5f, 0.2f}, Lift{15, 3, 1.5f, 1.0f}));
+  }
+
+  // --- the dearest hours are left alone ------------------------------------
+  {
+    // Tariff peak 17–21 with now = 13: window 14–21 (8 h), up to 2 h skipped.
+    float price[24];
+    for (int k = 0; k < 24; k++) {
+      const int h = (13 + k) % 24;
+      price[k] = (h >= 17 && h < 21) ? 2.6f : 1.8f;
+    }
+    price[(18 + 24 - 13) % 24] = 2.9f;  // 18:00 dearest
+    price[(19 + 24 - 13) % 24] = 2.8f;
+    Lift l{14, 8, 1.0f};
+    skip_dearest(l, 13, price, 24);
+    assert(l.skip_mask == ((1UL << 18) | (1UL << 19)));
+    assert(!hour_in_lift(l, 18) && hour_in_lift(l, 17) && hour_in_lift(l, 14));
+    const Profile lifted2 = apply_lift(user, l);
+    assert(near(block_at(lifted2, 18).sp, 22.0f) && near(block_at(lifted2, 17).sp, 23.0f));
+    // Flat prices: nothing skipped.
+    float flat[24];
+    for (float &f : flat) f = 1.8f;
+    Lift f2{14, 8, 1.0f};
+    skip_dearest(f2, 13, flat, 24);
+    assert(f2.skip_mask == 0);
+    // An unknown price in the window: nothing skipped.
+    price[3] = NAN;
+    Lift u{14, 8, 1.0f};
+    skip_dearest(u, 13, price, 24);
+    assert(u.skip_mask == 0);
+    // Short window: a third of 2 h is 0 h.
+    Lift s2{18, 2, 1.0f};
+    price[3] = 1.8f;
+    skip_dearest(s2, 13, price, 24);
+    assert(s2.skip_mask == 0);
+    // Across midnight: hour 23 → bit 23, hour 0 → bit 0.
+    float night[24];
+    for (int k = 0; k < 24; k++) night[k] = 1.0f;
+    night[1] = 3.0f;  // 23:00 with now = 22
+    Lift m{23, 3, 1.0f};
+    skip_dearest(m, 22, night, 24);
+    assert(m.skip_mask == (1UL << 23));
+  }
+
   // --- ownership state machine --------------------------------------------
   {
     OwnerState s{};

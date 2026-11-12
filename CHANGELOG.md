@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### A lagging room opens Odin's band instead of forcing it, and a lift skips the dearest hours
+- Laura 1.6 K behind (2026-11-12) lifted the whole Odin band by 1.5 °C for the next 6 h, right across the evening tariff peak, and warmed the rest of the house with it. A room-lag lift now raises the band's top by the lift but its floor only by `floor_share` (2 × the share of the house in lagging rooms, 0.2–1), over 8 h when that share is below 1, so Odin may heat more where it is cheap and V6 sends the heat to the room. Every lift leaves the dearest third of its window unlifted when prices swing by 10 % or more (`skip_dearest`). `/heat-source/control` → `odin.wanted` / `odin.applied` add `floor_share` and `skip_mask` (bit h = wall-clock hour h); the strategy has `lagging_share`.
+
 ### A valve curve's full point is where the loop has 95 % of its flow
 - The fitted ramp bends where most of a loop's flow has arrived, but the insert keeps adding flow above the bend while the loop's own pipe takes over, and V6 opened a loop asked for full flow to 110 % of the bend. Stue at 6 m: fitted full at 23 %, so V6 opened it to 25 % and it passed 75 % of what it passes fully open; 95 % comes at 37 %. The full flow is now the mean of the points near the highest opening (less the fitted base), and the full point is where the measured points first reach 95 % of it (`full_from_points`, never below the fit's own). Curves from before 2026-11-09 23:00 UTC count as unmeasured, so every loop is measured again.
 - A run started while the heat source rested aborted on its first step: the pump was polled every 120 s then, longer than the 90 s a run waits for a reading, and the fast poll began only after the next fetch. It begins when the run starts.

@@ -379,6 +379,9 @@ struct StrategySnapshot {
   char driver_room_name[48]{};
   float driver_deficit_c{0.0f};
   uint8_t driver_priority{0};
+  /// Share of the house (by weight) in rooms that lag beyond the band and may drive:
+  /// one or two such rooms only open the top of Odin's band (odin_comfort.h).
+  float lagging_share{0.0f};
   // T2: Odin UA-prior calibration status.
   char ua_calibration_status[16]{"uncalibrated"};  // calibrated | uncalibrated | blocked
   char ua_calibration_reason[32]{"unknown"};
@@ -745,6 +748,8 @@ class HouseModel {
   /// A room this far from the median is treated as a sensor fault.
   float outlier_from_median_c_{8.0f};
   static constexpr float PLAUSIBLE_MIN_C = 5.0f;
+  /// A room this far below its target counts as lagging (house_demand.h band_c).
+  static constexpr float LAGGING_DEFICIT_C = 0.3f;
   static constexpr float PLAUSIBLE_MAX_C = 35.0f;
   bool allow_spread_override_{false};
   uint32_t weights_revision_{1};
