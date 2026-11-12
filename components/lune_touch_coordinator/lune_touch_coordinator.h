@@ -251,7 +251,7 @@ struct OdinControlState {
   lune_touch_odin::Lift wanted{};
   lune_touch_odin::Lift applied{};
   float wanted_energy_kwh{0.0f};
-  char reason[24]{"none"};
+  char reason[32]{"none"};
   char last_action[16]{"none"};
   char status[24]{"disabled"};
   uint32_t last_cycle_ms{0};
@@ -574,6 +574,10 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Problems for the "Active problems" / "Problems" entities (main loop).
   /// False when the state is busy; the caller then skips this publish.
   bool problems_summary(float *count, std::string *titles) const;
+  /// Weather preload and what the heat source is asked for, for Home Assistant's
+  /// history (packages/system/weather.yaml). False when the state is busy.
+  bool weather_summary(float *rooms, float *offset_c, float *lift_c, std::string *text,
+                       std::string *reason) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
   std::string zone_line_meta_text(uint8_t row) const;
@@ -1157,6 +1161,12 @@ class LuneTouchCoordinator : public esphome::Component {
   bool odin_in_control_() const;
   float update_demand_hold_(const ::lune_touch::StrategySnapshot &strategy, float charge_store_c);
   lune_touch_odin::Lift compute_odin_lift_(uint8_t now_hour, float *energy_kwh, const char **reason);
+  /// Caller holds the state lock. Rooms V6 preloads ahead of wind or cold (not slab
+  /// charge, not solar hold-off): largest offset, latest peak, share of the rooms.
+  bool weather_preload_(float *offset_c, int *peak_in_h, float *share) const;
+  /// Caller holds the state lock. What a heat source without Odin must keep above the
+  /// house temperature for the weather: an open slab charge or a preload (°C).
+  float weather_store_c_() const;
   bool post_odin_json_(const char *path, const char *body, int *status);
   void load_odin_control_();
   // Exposure learning (exposure_learning.h): per room, hourly samples teach the

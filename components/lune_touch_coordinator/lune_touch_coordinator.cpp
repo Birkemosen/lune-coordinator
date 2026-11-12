@@ -71,6 +71,14 @@ static bool heat_source_type_is_asgard_(const char *type) {
   return type != nullptr && std::strcmp(type, "asgard") == 0;
 }
 
+/// Why the heat source is asked for more: `odin.reason` in /api/v1 and the HA entity.
+static const char *lift_reason_(bool charge, bool lag, bool preload) {
+  static const char *const WHY[8] = {"none",    "slab_charge",         "room_lag",
+                                     "slab_charge+room_lag", "preload", "slab_charge+preload",
+                                     "room_lag+preload",     "slab_charge+room_lag+preload"};
+  return WHY[(charge ? 1U : 0U) | (lag ? 2U : 0U) | (preload ? 4U : 0U)];
+}
+
 static void normalize_heat_source_type_(char *type, size_t capacity) {
   if (type == nullptr || capacity == 0)
     return;
@@ -3243,11 +3251,8 @@ bool LuneTouchCoordinator::sync_comfort_target_() {
       strategy = model_.strategy_snapshot(true, day, minute);
     }
   }
-  // Largest slab charge among rooms whose charge window is open now.
-  float charge_store_c = 0.0f;
-  for (size_t i = 0; i < forecast_decision_count_; i++)
-    if (forecast_decisions_[i].charge_now)
-      charge_store_c = std::max(charge_store_c, forecast_decisions_[i].charge_store_c);
+  // Largest slab charge whose window is open now, or room preload ahead of wind/cold.
+  const float charge_store_c = weather_store_c_();
   give_state_lock_();
 
   // The route does not depend on target sync: with Odin in control, demand
@@ -3273,8 +3278,9 @@ bool LuneTouchCoordinator::sync_comfort_target_() {
   }
 
   // Demand-led target: keep the virtual thermostat calling while the room that
-  // lags most is behind, or a slab-charge window is open — even when a warm
-  // floor has pulled the weighted average to target (house_demand.h).
+  // lags most is behind, a slab-charge window is open, or rooms are preloaded
+  // ahead of wind or cold — even when a warm floor has pulled the weighted
+  // average to target (house_demand.h).
   // With Odin in control the VT target does not drive heating (Odin plans from
   // its own comfort schedule), so the real target is written unlifted and the
   // demand goes to Odin's schedule instead (run_odin_control_).
@@ -3417,6 +3423,52 @@ bool LuneTouchCoordinator::odin_in_control_() const {
   return odin_control_.enabled || (odin_control_.forwarder_known && odin_control_.forwarder_active);
 }
 
+bool LuneTouchCoordinator::weather_preload_(float *offset_c, int *peak_in_h, float *share) const {
+  float offset = 0.0f;
+  int peak = -1;
+  unsigned rooms = 0, preloading = 0;
+  for (size_t i = 0; i < forecast_decision_count_; i++) {
+    const auto &d = forecast_decisions_[i];
+    // A room may span zones: count it once, preloading if any of its zones does.
+    bool seen = false;
+    for (size_t j = 0; j < i && !seen; j++)
+      seen = std::strcmp(forecast_decisions_[j].room_id, d.room_id) == 0;
+    const bool pre = d.active && !d.solar_holdoff && !d.charge_episode && d.offset_c > 0.01f &&
+                     d.peak_in_h >= 0;
+    if (!seen)
+      rooms++;
+    if (!pre)
+      continue;
+    offset = std::max(offset, d.offset_c);
+    peak = std::max<int>(peak, d.peak_in_h);
+    bool counted = false;
+    for (size_t j = 0; j < i && !counted; j++) {
+      const auto &e = forecast_decisions_[j];
+      counted = std::strcmp(e.room_id, d.room_id) == 0 && e.active && !e.solar_holdoff && !e.charge_episode &&
+                e.offset_c > 0.01f && e.peak_in_h >= 0;
+    }
+    if (!counted)
+      preloading++;
+  }
+  if (offset_c != nullptr)
+    *offset_c = offset;
+  if (peak_in_h != nullptr)
+    *peak_in_h = peak;
+  if (share != nullptr)
+    *share = rooms > 0 ? static_cast<float>(preloading) / static_cast<float>(rooms) : NAN;
+  return preloading > 0;
+}
+
+float LuneTouchCoordinator::weather_store_c_() const {
+  float store = 0.0f;
+  for (size_t i = 0; i < forecast_decision_count_; i++)
+    if (forecast_decisions_[i].charge_now)
+      store = std::max(store, forecast_decisions_[i].charge_store_c);
+  float preload = 0.0f;
+  weather_preload_(&preload, nullptr, nullptr);
+  return std::max(store, preload);
+}
+
 lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour, float *energy_kwh,
                                                                const char **reason) {
   lune_touch_odin::LiftParams params{};
@@ -3427,6 +3479,9 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   int end = -1;
   uint8_t lag_floor_h = 0;
   float lagging_share = NAN;
+  float pre_lift_c = 0.0f;
+  int pre_peak_in_h = -1;
+  float pre_share = NAN;
   // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
   float price_rel[24];
   std::fill(std::begin(price_rel), std::end(price_rel), NAN);
@@ -3479,6 +3534,8 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       start = std::min<int>(start, d.charge_start_in_h);
       end = std::max<int>(end, d.charge_end_in_h);
     }
+    // Weather preload: rooms V6 raises ahead of wind or cold (a charge covers its own room).
+    weather_preload_(&pre_lift_c, &pre_peak_in_h, &pre_share);
     give_state_lock_();
   }
   lune_touch_odin::Lift charge{};
@@ -3491,35 +3548,27 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // to plan heat that reaches the room. Re-evaluated every cycle.
   // One or two lagging rooms open only the band's top over a wider window, so Odin
   // chooses the hours (odin_comfort.h floor_share_for); a slab charge moves it all.
-  const float floor_share = lune_touch_odin::floor_share_for(lagging_share);
+  const float floor_share = charge.active() ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
   lune_touch_odin::Lift lag{};
   if (held > 0.0f)
     lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
+  // only what the house would have had anyway. The band opens from now through the
+  // peak, by the largest room offset, its floor by the preloading share of the house.
+  lune_touch_odin::Lift pre{};
+  if (pre_lift_c > 0.0f)
+    pre = lune_touch_odin::preload_lift(now_hour, pre_lift_c, pre_peak_in_h, params,
+                                        lune_touch_odin::floor_share_for(pre_share));
   if (energy_kwh != nullptr)
     *energy_kwh = charge.active() ? energy : 0.0f;
-  lune_touch_odin::Lift out{};
-  const char *why = "none";
-  if (charge.active() && lag.active()) {
-    why = "slab_charge+room_lag";
-    // Merge both windows (relative to now) into one lift.
-    const int charge_start_rel = static_cast<int>((charge.start_hour + 24 - now_hour) % 24);
-    const int charge_end_rel = charge_start_rel + charge.hours;
-    out = lune_touch_odin::make_lift(
-        now_hour, std::min(charge_start_rel, lune_touch_odin::LAG_LEAD_IN_H),
-        std::max(charge_end_rel, lune_touch_odin::lag_end_in_h(lag_floor_h)),
-        std::max(charge.lift_c, lag.lift_c), params);
-  } else if (charge.active()) {
-    why = "slab_charge";
-    out = charge;
-  } else if (lag.active()) {
-    why = "room_lag";
-    out = lag;
-  }
+  const lune_touch_odin::Lift out = lune_touch_odin::merge_lifts(
+      now_hour, lune_touch_odin::merge_lifts(now_hour, charge, lag, params), pre, params);
   if (out.active()) {
-    lune_touch_odin::skip_dearest(out, now_hour, price_rel, 24);
+    lune_touch_odin::Lift lifted = out;
+    lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24);
     if (reason != nullptr)
-      *reason = why;
-    return out;
+      *reason = lift_reason_(charge.active(), lag.active(), pre.active());
+    return lifted;
   }
   if (reason != nullptr)
     *reason = "none";
@@ -4183,9 +4232,7 @@ bool LuneTouchCoordinator::push_generic_levers_() {
   source = heat_source_;
   levers = generic_levers_;
   strategy = model_.strategy_snapshot();
-  for (size_t i = 0; i < forecast_decision_count_; i++)
-    if (forecast_decisions_[i].charge_now)
-      charge_store_c = std::max(charge_store_c, forecast_decisions_[i].charge_store_c);
+  charge_store_c = weather_store_c_();
   give_state_lock_();
   const float held = update_demand_hold_(strategy, charge_store_c);
   if (!source.enabled || source.host[0] == '\0')
@@ -4204,7 +4251,7 @@ bool LuneTouchCoordinator::push_generic_levers_() {
   lune_touch_house::LeverParams lp{};
   lp.curve_gain = levers.curve_gain;
   lp.curve_max_offset_c = levers.curve_max_offset_c;
-  // Charge windows count as demand too (max with the held lag).
+  // Slab charge and weather preload count as demand too (max with the held lag).
   const float demand = std::max(held, charge_store_c);
   const auto out = lune_touch_house::generic_levers(strategy.house_target_c, strategy.physical_temperature_c,
                                                      demand, lp);
@@ -17408,6 +17455,58 @@ void LuneTouchCoordinator::flush_problem_events_() {
 #else
   (void) n;
 #endif
+}
+
+bool LuneTouchCoordinator::weather_summary(float *rooms, float *offset_c, float *lift_c, std::string *text,
+                                           std::string *reason) const {
+  if (!take_state_lock_(20))
+    return false;
+  // Rooms V6 preloads now, each once (a room may span zones).
+  char list[160] = "";
+  size_t off = 0;
+  unsigned count = 0;
+  for (size_t i = 0; i < forecast_decision_count_; i++) {
+    const auto &d = forecast_decisions_[i];
+    if (!d.active || d.solar_holdoff || d.charge_episode || !(d.offset_c > 0.01f) || d.peak_in_h < 0)
+      continue;
+    bool seen = false;
+    for (size_t j = 0; j < i && !seen; j++)
+      seen = std::strcmp(forecast_decisions_[j].room_id, d.room_id) == 0;
+    if (seen)
+      continue;
+    count++;
+    const char *name = d.room_name[0] != '\0' ? d.room_name : d.room_id;
+    if (off < sizeof(list)) {
+      const int n = std::snprintf(list + off, sizeof(list) - off, "%s%s +%.1f C, peak in %d h",
+                                  off ? "; " : "", name, d.offset_c, static_cast<int>(d.peak_in_h));
+      if (n > 0)
+        off += static_cast<size_t>(n);
+    }
+  }
+  float preload = 0.0f;
+  weather_preload_(&preload, nullptr, nullptr);
+  // What the heat source is asked for: Odin's band lift, or the virtual thermostat's uplift.
+  const bool odin = odin_in_control_();
+  float lift = 0.0f;
+  const char *why = "none";
+  if (odin) {
+    lift = odin_control_.wanted.active() ? odin_control_.wanted.lift_c : 0.0f;
+    why = odin_control_.reason;
+  } else {
+    lift = std::isfinite(demand_target_uplift_c_) ? demand_target_uplift_c_ : 0.0f;
+    bool charge = false;
+    for (size_t i = 0; i < forecast_decision_count_; i++)
+      charge = charge || forecast_decisions_[i].charge_now;
+    if (lift > 0.0f)
+      why = lift_reason_(charge, demand_held_c_ > 0.0f, preload > 0.0f);
+  }
+  *rooms = static_cast<float>(count);
+  *offset_c = preload;
+  *lift_c = lift;
+  text->assign(count > 0 ? list : "none");
+  reason->assign(why);
+  give_state_lock_();
+  return true;
 }
 
 bool LuneTouchCoordinator::problems_summary(float *count, std::string *titles) const {

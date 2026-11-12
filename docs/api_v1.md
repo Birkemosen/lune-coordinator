@@ -1283,7 +1283,8 @@ heat-source levers. See [`house_balancing_and_weather.md`](house_balancing_and_w
 - `odin.status`: `disabled` | `idle` | `watching` | `lifted` | `yielded` (user edited the
   schedule in Odin; Touch waits until the need has passed) | `rate_limited` |
   `write_failed` | `odin_unreachable` | `schedule_unreadable` | `clock_invalid`.
-- `odin.reason`: `none` | `slab_charge` | `room_lag` | `slab_charge+room_lag`.
+- `odin.reason`: `none`, or the reasons joined by `+` in this order: `slab_charge`, `room_lag`,
+  `preload` (weather preload, fx `room_lag+preload`).
 - `link.status`: `ok` | `forwarder_off` | `telemetry_stale` | `no_room_temperature` |
   `odin_unreachable` | `unknown`. `alarm` turns true after 10 min in a bad state.
 - `link.telemetry_age_s` is the fresher of Odin's own `telemetry_ts` and, when MQTT is

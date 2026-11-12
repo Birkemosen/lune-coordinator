@@ -343,6 +343,37 @@ inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const 
   return l;
 }
 
+/// Lift window for a weather preload (wind or cold ahead): from now through the hour
+/// after the forecast peak, at least PRELOAD_MIN_H hours. V6 raises the room's
+/// setpoint ahead of the peak; without this the heat source never hears of it and
+/// the room only gets what the house would have had anyway.
+static constexpr int PRELOAD_MIN_H = 3;
+inline Lift preload_lift(uint8_t now_hour, float lift_c, int peak_in_h, const LiftParams &p,
+                         float floor_share = 1.0f) {
+  if (peak_in_h < 0)
+    return Lift{};
+  Lift l = make_lift(now_hour, 0, std::max(peak_in_h + 2, PRELOAD_MIN_H), lift_c, p);
+  if (l.active())
+    l.floor_share = floor_share;
+  return l;
+}
+
+/// One lift covering both: the union of the windows (relative to now), the larger
+/// lift and the larger floor share.
+inline Lift merge_lifts(uint8_t now_hour, const Lift &a, const Lift &b, const LiftParams &p) {
+  if (!a.active())
+    return b;
+  if (!b.active())
+    return a;
+  const int sa = static_cast<int>((a.start_hour + 24 - now_hour) % 24);
+  const int sb = static_cast<int>((b.start_hour + 24 - now_hour) % 24);
+  Lift l = make_lift(now_hour, std::min(sa, sb), std::max(sa + a.hours, sb + b.hours),
+                     std::max(a.lift_c, b.lift_c), p);
+  if (l.active())
+    l.floor_share = std::max(a.floor_share, b.floor_share);
+  return l;
+}
+
 /// Share of a lag lift that moves the band's floor, from the share of the house (by
 /// weight) whose rooms lag: one or two rooms open only the band's top, so Odin heats
 /// more where it is cheap and V6 sends that heat to the lagging rooms; half the house

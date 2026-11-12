@@ -293,6 +293,36 @@ int main() {
            std::fabs(r2.profile.blocks[0].min + 0.5f) < 0.01f);
   }
 
+  // ---- Weather preload: now through the hour after the peak, at least 3 h ----
+  {
+    LiftParams p{};
+    Lift l = preload_lift(14, 1.5f, 3, p, 0.2f);
+    assert(l.active() && l.start_hour == 14 && l.hours == 5 && std::fabs(l.lift_c - 1.5f) < 0.01f);
+    assert(std::fabs(l.floor_share - 0.2f) < 0.01f);
+    Lift soon = preload_lift(23, 0.8f, 0, p);
+    assert(soon.active() && soon.start_hour == 23 && soon.hours == 3 && std::fabs(soon.floor_share - 1.0f) < 0.01f);
+    assert(!preload_lift(14, 1.5f, -1, p).active());   // no peak in the forecast
+    assert(!preload_lift(14, 0.2f, 3, p).active());    // below the write threshold
+  }
+
+  // ---- Merge: union of windows, larger lift, larger floor share ----
+  {
+    LiftParams p{};
+    Lift lag = lag_lift(14, 0.6f, 2, p, 0.2f);       // 15:00 for 8 h
+    Lift pre = preload_lift(14, 1.2f, 3, p, 0.4f);   // 14:00 for 5 h
+    Lift m = merge_lifts(14, lag, pre, p);
+    assert(m.active() && m.start_hour == 14 && m.hours == 9);
+    assert(std::fabs(m.lift_c - 1.2f) < 0.01f && std::fabs(m.floor_share - 0.4f) < 0.01f);
+    Lift only = merge_lifts(14, Lift{}, pre, p);
+    assert(only.start_hour == pre.start_hour && only.hours == pre.hours);
+    assert(!merge_lifts(14, Lift{}, Lift{}, p).active());
+    // Across midnight.
+    Lift a = make_lift(22, 0, 3, 0.5f, p);   // 22–01
+    Lift b = make_lift(22, 2, 6, 0.5f, p);   // 00–04
+    Lift w = merge_lifts(22, a, b, p);
+    assert(w.start_hour == 22 && w.hours == 6);
+  }
+
   std::puts("odin_comfort: all assertions passed");
   return 0;
 }

@@ -195,8 +195,16 @@ the source accepts:
 | Asgard + Odin, control off | `none` | Honest temperature only. Odin follows its own schedule. |
 | Asgard without Odin (Auto-Adaptive) | `virtual_thermostat` | Honest temperature + demand-led VT target (section 4) + flow trim. |
 | Generic, room-thermostat input | `generic` | `target_url_template`, `{value}` = demand-led target (°C). |
-| Generic, return-temperature / weather curve | `generic` | `curve_offset_url_template`, `{value}` = parallel curve shift (°C) = `curve_gain × need`, capped at `curve_max_offset_c` (defaults 2.0 °C/°C, 5 °C). `need` = max(held lag, charge store, house below target). |
+| Generic, return-temperature / weather curve | `generic` | `curve_offset_url_template`, `{value}` = parallel curve shift (°C) = `curve_gain × need`, capped at `curve_max_offset_c` (defaults 2.0 °C/°C, 5 °C). `need` = max(held lag, charge store or weather preload, house below target). |
 | Generic, on/off input (relay, OpenTherm CH enable) | `generic` | `heat_request_url_template`, `{value}` = 1/0. On while demand is held or the house is > 0.2 °C below target. |
+
+**Weather preload reaches every heat source.** V6 raises a room's setpoint ahead of wind
+or cold (`forecast_model`), but a floor only answers 1–4 h after heat goes in, and a heat
+source that is not told runs as if nothing were coming: the room then falls behind once
+the wind arrives. So the preload is part of the house demand on every route: with Odin
+it lifts the comfort band (below); without Odin the largest room preload counts like an
+open slab charge in the demand-led target, the curve shift and the heat request
+(`weather_store_c_`).
 
 Most boilers and many heat pumps without a central room sensor regulate on measured
 return temperature or a weather-compensation curve; they cannot use a room target, which
@@ -238,6 +246,12 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
   to them; half the house or more moves the whole band. With `floor_share` < 1 the window
   is 8 h from the next hour (at least the 3–6 h above), so Odin can choose across a price
   swing. A slab charge (whole house) moves the whole band.
+- **Weather preload.** While V6 preloads rooms ahead of wind or cold, the band's top rises
+  by the largest room offset from now through the hour after the forecast peak (at least
+  3 h, `preload_lift`), its floor by `floor_share` of the share of rooms preloading (same
+  rule as for a lag). Odin then stores the heat in the cheapest hours before the wind.
+  Lifts from several reasons merge (`merge_lifts`): the union of their windows, the larger
+  lift and the larger floor share.
 - **When.** Slab charge: from the charge start to the end of the episode (local wall-clock
   hours). Odin is free to heat earlier if that is cheaper. In every lift the dearest hours
   of the window stay unlifted (`skip_mask`): up to a third of its hours, only those dearer
@@ -256,6 +270,14 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
 - **Caveat.** Because the profile repeats daily, the lifted hours also apply to the same
   hours tomorrow until Touch restores the profile; Odin may plan a little for that
   phantom block. It is gone at the next restore.
+
+### History in Home Assistant
+
+Touch's forecast decisions live in RAM and start over at every restart. So Home Assistant
+keeps them (`packages/system/weather.yaml`, every minute): *Weather preload rooms* and
+*Weather preload offset* (largest, °C), *Weather preload* (each room with its offset and
+hours to the peak), *Heat source lift* (Odin's band lift, or the virtual thermostat's
+uplift without Odin, °C) and *Heat source lift reason* (as `odin.reason`).
 
 ### Asgard ↔ Odin link health
 
