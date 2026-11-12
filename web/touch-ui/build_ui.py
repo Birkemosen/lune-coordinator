@@ -484,7 +484,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <p class="fc-legend" aria-hidden="true">
             <span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lbar"></i>{T("planG.lHeat")}</span>
             <span><i class="ldhw"></i>{T("planG.lDhw")}</span><span><i class="lleg"></i>{T("planG.lLeg")}</span>
-            <span><i class="lband"></i>{T("planG.lBand")}</span><span><i class="lbandlift"></i>{T("planG.lLift")}</span>
+            <span><i class="lband"></i>{T("planG.lBand")}</span><span><i class="lbandpre"></i>{T("planG.lBandPre")}</span>
+            <span><i class="lbandlift"></i>{T("planG.lLift")}</span>
             <span><i class="lskip"></i>{T("planG.lSkip")}</span><span><i class="lwind"></i>{T("planG.lWind")}</span>
             <span><i class="lpre"></i>{T("planG.lPre")}</span><span><i class="lch"></i>{T("planG.lCharge")}</span>
             <span><i class="lins"></i>{T("planG.lInsufficient")}</span>
@@ -978,7 +979,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "role.reserve", "role.reserveNow", "role.asgardNow", "role.offOdin", "role.drives", "role.off",
         "driver.odin", "driver.asgard", "now.heat", "now.off", "now.dhw", "planG.odin", "planG.noOdin",
         "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient",
-        "planG.lanePrice", "planG.laneBand", "planG.laneWind", "planG.roBand", "planG.roLift", "planG.roSkip",
+        "planG.lanePrice", "planG.laneBand", "planG.laneWind", "planG.roBand", "planG.roLift", "planG.roSkip", "planG.srcPre", "planG.srcLag", "planG.srcCharge",
         "hs.mqttPasswordSet", "hs.mqttState", "hs.mqttConnected", "hs.mqttDisconnected", "hs.mqttOff", "common.on", "common.off",
         "wifi.connectedTo", "wifi.notConnected", "wifi.apActive", "wifi.sent", "wifi.needSsid",
         "wifi.switch.pending", "wifi.switch.connected", "wifi.switch.reverted", "wifi.switch.failed",

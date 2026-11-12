@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### The plan tells a weather preload from other lifts
+- Every lifted hour in the plan's band lane was violet, so a preload ahead of wind or cold looked like a lift for a lagging room or a slab charge. Hours lifted only for the weather are now blue (the weather's colour); an hour shared with a room or a charge stays violet, and the readout says why («før vind/kulde + rum halter»). LDS 2.3.33. `GET /plan` → `odin` adds `lift_src` (per hour: 1 = slab charge, 2 = room lag, 4 = weather preload).
+
 ### The heating plan hour by hour, and on Home as a wide tile
 - The plan graph labelled every third hour and showed Touch's lift as a thin line, so it was hard to tell which hour Odin heats, why, and what Touch asked for. It now has a mark per hour, a price lane (the price per hour on the cheap → dear scale), Odin's comfort band per hour with the expected temperature (hours Touch lifts in violet, a dear hour Touch skips dashed) and a wind lane above the rooms. Hover, touch or the arrow keys show an hour's figures: price, planned heat, band, lift and wind. On Home, «Næste varme» is a wide tile with a compact plan (price, heat, band); the other tiles stand three in a row. LDS 2.3.32. `GET /plan` → `odin` adds `lift_floor_c`, `lift_skip` and `lift_reason`.
 

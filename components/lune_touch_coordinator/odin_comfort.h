@@ -222,6 +222,27 @@ inline bool hour_in_lift(const Lift &lift, uint8_t hour) {
   return rel < lift.hours;
 }
 
+/// Wall-clock hours a lift covers (bit h = hour h), skipped hours excluded.
+inline uint32_t lift_hours_mask(const Lift &lift) {
+  uint32_t m = 0;
+  for (uint8_t h = 0; h < 24; h++)
+    if (hour_in_lift(lift, h))
+      m |= 1UL << h;
+  return m;
+}
+
+/// Why an hour is lifted, per wall-clock hour (bit h): one mask per source, so the
+/// plan can tell a weather preload from a slab charge or a lagging room hour by hour.
+struct LiftSources {
+  uint32_t charge = 0;
+  uint32_t lag = 0;
+  uint32_t preload = 0;
+  /// Bits for hour h: 1 = slab charge, 2 = room lag, 4 = weather preload.
+  uint8_t at(uint8_t h) const {
+    return static_cast<uint8_t>(((charge >> h) & 1U) | (((lag >> h) & 1U) << 1) | (((preload >> h) & 1U) << 2));
+  }
+};
+
 /// The user's profile with the band's top raised by `lift.lift_c` in the lifted
 /// hours and its floor (the setpoint) by `floor_share` of that. Expanded per hour and
 /// re-compacted, so it always has a block at h=0.

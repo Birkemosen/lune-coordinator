@@ -647,12 +647,13 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           mode: hk.map(function (v, i) { return i === 14 ? 1 : (i >= 18 && i <= 20 ? 6 : (v > 0 ? 2 : 0)); }),
           today_kwh: Array.from({ length: 24 }, function (_, h) { return (h >= 2 && h <= 5) || (h >= 13 && h <= 15) ? 1.1 : (h === 7 ? 1.6 : 0.05); }),
           today_actual: Array.from({ length: 24 }, function (_, h) { return h < new Date().getHours() ? 1 : 0; }),
-          band_min_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 21.8 : 21.5; }),
-          band_max_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 24 : 22.5; }),
+          band_min_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 21.8 : 21.5; }),
+          band_max_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 24 : 22.5; }),
           expected_c: Array.from({ length: 24 }, function (_, i) { return +(21.9 + 0.4 * Math.sin((i - 3) / 4)).toFixed(2); }),
-          lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 1.5 : 0; }),
-          lift_floor_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 0.3 : 0; }),
-          lift_skip: Array.from({ length: 24 }, function (_, i) { return i === 4 ? 1 : 0; }), lift_reason: 'room_lag' },
+          lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 1.5 : 0; }),
+          lift_floor_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 0.3 : 0; }),
+          lift_skip: Array.from({ length: 24 }, function (_, i) { return i === 4 ? 1 : 0; }), lift_src: Array.from({ length: 24 }, function (_, i) { return i <= 1 ? 4 : (i <= 3 ? 6 : (i <= 9 && i !== 4 ? 2 : 0)); }),
+          lift_reason: 'room_lag+preload' },
         rooms: [
           { room_id: 'room-09', name: 'Gang', preload: null, charge: { from: 1, to: 8, store_c: 1.5, insufficient: true } },
           { room_id: 'room-01', name: 'Kontor', preload: { from: 0, to: 4, offset_c: 0.4 }, charge: null },
@@ -2985,6 +2986,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         lift: Number((odin.lift_c || [])[k]) || 0,
         floor: Number((odin.lift_floor_c || [])[k]) || 0,
         skip: Number((odin.lift_skip || [])[k]) === 1,
+        src: Number((odin.lift_src || [])[k]) || 0,
         wind: finite(f.wind_ms) ? Number(f.wind_ms) : null,
         temp: finite(f.temp_c) ? Number(f.temp_c) : null
       });
@@ -3041,7 +3043,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         var rects = '', pts = [];
         rows.forEach(function (r, k) {
           if (r.lo != null && r.hi != null) {
-            rects += '<rect class="bd' + (r.lift > 0 ? ' lift' : (r.skip ? ' skip' : '')) + '" x="' + (k + 0.06).toFixed(2) +
+            rects += '<rect class="bd' + (r.lift > 0 ? (r.src === 4 ? ' pre' : ' lift') : (r.skip ? ' skip' : '')) + '" x="' + (k + 0.06).toFixed(2) +
               '" y="' + y(r.hi) + '" width=".88" height="' + (y(r.lo) - y(r.hi)).toFixed(1) + '"/>';
           }
           if (r.exp != null) pts.push(k + ',' + y(r.exp), (k + 1) + ',' + y(r.exp));
@@ -3132,7 +3134,14 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (ph.odin.available) a.push(t('planG.tip.' + r.kind, { h: '', kwh: num(r.kwh) }).replace(/^\s*·\s*/, ''));
     var b = [];
     if (r.lo != null && r.hi != null) b.push(t('planG.roBand', { lo: num(r.lo), hi: num(r.hi) }));
-    if (r.lift > 0) b.push(t('planG.roLift', { c: num(r.lift), f: num(r.floor) }));
+    if (r.lift > 0) {
+      // Why: bits 1 = slab charge, 2 = room lag, 4 = weather preload (/plan lift_src).
+      var why = [];
+      if (r.src & 4) why.push(t('planG.srcPre'));
+      if (r.src & 2) why.push(t('planG.srcLag'));
+      if (r.src & 1) why.push(t('planG.srcCharge'));
+      b.push(t('planG.roLift', { c: num(r.lift), f: num(r.floor) }) + (why.length ? ' · ' + why.join(' + ') : ''));
+    }
     else if (r.skip) b.push(t('planG.roSkip'));
     if (r.wind != null) b.push(num(r.wind, 0) + ' m/s' + (r.temp != null ? ' · ' + num(r.temp) + ' °C' : ''));
     return '<span><b>' + esc(a[0]) + '</b>' + (a.length > 1 ? ' · ' + esc(a.slice(1).join(' · ')) : '') + '</span>' +

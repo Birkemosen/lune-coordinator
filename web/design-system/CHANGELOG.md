@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.3.33
+
+- `.plan` båndspor: timer Touch kun løfter for vejret (forvarmning før vind eller kulde) er blå (`.bd.pre`, `--info`); løft for et rum, der halter, eller en opladning er fortsat violet (`.bd.lift`), også når forvarmning gælder samme time. Forklaringen har `.lbandpre`, og aflæsningen nævner årsagen. DESIGN.md 8.
+
 ## 2.3.32
 
 - `.plan` time for time: en streg pr. time i alle spor og et mærke pr. time på x-aksen, som planen viser efter sin bredde (container: hver 6./3./2./time). Nye spor over og under Odins varme: **Pris** (`.plan-lane--price`, søjle pr. time i prisskalaen), **Bånd** (`.plan-lane--band`: Odins komfortbånd pr. time med forventet temperatur som trappekurve; timer Touch løfter i violet, en dyr time Touch springer over stiplet) og **Vind** (`.plan-lane--wind`). Den tynde løftestreg (`.plan-lift`) er afløst af båndsporet. Aflæsning pr. time (`.plan[data-readout]`, `--hi`, `.bars-readout`). DESIGN.md 8.

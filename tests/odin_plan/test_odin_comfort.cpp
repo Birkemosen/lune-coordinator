@@ -345,6 +345,25 @@ int main() {
     assert(w.start_hour == 22 && w.hours == 6);
   }
 
+  // ---- Sources per hour: preload alone vs shared with a lagging room ----
+  {
+    LiftParams p{};
+    Lift lag = lag_lift(14, 0.6f, 2, p, 0.2f);       // 15–22
+    Lift pre = preload_lift(14, 1.2f, 3, p, 0.4f);   // 14–18
+    Lift m = merge_lifts(14, lag, pre, p);
+    m.skip_mask = 1UL << 16;
+    const uint32_t keep = lift_hours_mask(m);
+    assert(keep == (((1UL << 23) - 1) & ~((1UL << 14) - 1) & ~(1UL << 16)));
+    LiftSources s{lift_hours_mask(Lift{}) & keep, lift_hours_mask(lag) & keep, lift_hours_mask(pre) & keep};
+    assert(s.at(14) == 4);   // preload only
+    assert(s.at(15) == 6);   // lag + preload
+    assert(s.at(16) == 0);   // skipped
+    assert(s.at(20) == 2);   // lag only
+    assert(s.at(23) == 0);
+    Lift w = make_lift(22, 0, 4, 0.5f, p);           // 22–01 across midnight
+    assert(lift_hours_mask(w) == ((1UL << 22) | (1UL << 23) | 1UL | 2UL));
+  }
+
   std::puts("odin_comfort: all assertions passed");
   return 0;
 }

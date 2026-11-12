@@ -1315,7 +1315,7 @@ hour.
            "expected_c": [23.8, …], "energy_kwh": [0, 0, 1.1, …],
            "today_kwh": [0.05, …, 1.1, …], "today_actual": [1, 1, …, 0, …], "mode": [0, 0, 2, …],
            "lift_applied": false, "lift_c": [0, 0, 1.5, …], "lift_floor_c": [0, 0, 0.3, …],
-           "lift_skip": [0, 0, 0, 1, …], "lift_reason": "room_lag"},
+           "lift_skip": [0, 0, 0, 1, …], "lift_src": [4, 4, 6, 0, …], "lift_reason": "room_lag+preload"},
   "rooms": [
     {"room_id": "v62-z1", "name": "Josephine",
      "preload": {"from": 0, "to": 4, "offset_c": 0.4},
@@ -1328,7 +1328,9 @@ hour.
 Odin comfort lift (applied, else wanted): how far the band's top rises that hour;
 `lift_floor_c` is how far its floor (the setpoint) rises (`floor_share` × lift);
 `lift_skip` = 1 for an hour inside the lift's window left unlifted because heating earlier
-is cheaper, heat loss included; `lift_reason` as `odin.reason` in `/heat-source/control`. `energy_kwh` is Odin's planned electricity per
+is cheaper, heat loss included; `lift_src` says why each lifted hour is lifted, as bits
+(1 = slab charge, 2 = room lag, 4 = weather preload; 0 when not lifted), so the plan shows
+hours lifted only for the weather apart from the rest; `lift_reason` as `odin.reason` in `/heat-source/control`. `energy_kwh` is Odin's planned electricity per
 hour from now. `today_kwh` is today's electricity per wall-clock hour 0–23: Odin's
 `actual_cons` for the hours gone (`today_actual` = 1), its plan for the current hour and the
 rest; the dashboard multiplies it by today's prices (`GET /prices`) for the day's expected cost.

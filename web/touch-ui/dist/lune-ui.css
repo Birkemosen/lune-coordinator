@@ -1143,6 +1143,9 @@
   .plan-lane--band svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .plan-lane--band .bd { fill: var(--seg-off); }
   .plan-lane--band .bd.lift { fill: color-mix(in srgb, var(--violet) 45%, transparent); }
+  /* Timer Touch kun løfter for vejret (forvarmning før vind/kulde) er blå (vejr); fælles
+     timer med et rum, der halter, eller en opladning er violette. Aldrig begge i én time. */
+  .plan-lane--band .bd.pre { fill: color-mix(in srgb, var(--info) 65%, transparent); }
   .plan-lane--band .bd.skip { fill: var(--seg-off); stroke: var(--violet); stroke-width: 1.2; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
   .plan-lane--band .exp { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .plan-lab--y.plan-lab--band { height: 56px; margin-bottom: 0; }
@@ -1165,6 +1168,7 @@
   .fc-legend .lprice { height: 10px; border-radius: 2px 2px 0 0; background: var(--scale-good-bad-1); box-shadow: 6px 0 0 var(--scale-good-bad-3), 12px 0 0 var(--scale-good-bad-5); width: 4px; margin-right: 12px; }
   .fc-legend .lband { height: 10px; border-radius: 2px; background: var(--seg-off); border-top: 2px solid var(--fg); }
   .fc-legend .lbandlift { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--violet) 45%, transparent); }
+  .fc-legend .lbandpre { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--info) 65%, transparent); }
   .fc-legend .lskip { height: 10px; border-radius: 2px; background: var(--seg-off); outline: 1.2px dashed var(--violet); outline-offset: -1px; }
   .fc-legend .lwind { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--data-return) 70%, transparent); }
   /* Bredt felt på Hjem (.home-tile.wide): fylder hele rækken, og de andre felter står tre i

@@ -252,6 +252,7 @@ struct OdinControlState {
   lune_touch_odin::Lift applied{};
   float wanted_energy_kwh{0.0f};
   char reason[32]{"none"};
+  lune_touch_odin::LiftSources sources{};
   char last_action[16]{"none"};
   char status[24]{"disabled"};
   uint32_t last_cycle_ms{0};
@@ -1160,7 +1161,8 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_odin_control_();
   bool odin_in_control_() const;
   float update_demand_hold_(const ::lune_touch::StrategySnapshot &strategy, float charge_store_c);
-  lune_touch_odin::Lift compute_odin_lift_(uint8_t now_hour, float *energy_kwh, const char **reason);
+  lune_touch_odin::Lift compute_odin_lift_(uint8_t now_hour, float *energy_kwh, const char **reason,
+                                          lune_touch_odin::LiftSources *sources = nullptr);
   /// Caller holds the state lock. Rooms V6 preloads ahead of wind or cold (not slab
   /// charge, not solar hold-off): largest offset, latest peak, share of the rooms.
   bool weather_preload_(float *offset_c, int *peak_in_h, float *share) const;

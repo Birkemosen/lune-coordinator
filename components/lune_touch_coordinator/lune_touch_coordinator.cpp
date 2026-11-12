@@ -3470,7 +3470,8 @@ float LuneTouchCoordinator::weather_store_c_() const {
 }
 
 lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour, float *energy_kwh,
-                                                               const char **reason) {
+                                                               const char **reason,
+                                                               lune_touch_odin::LiftSources *sources) {
   lune_touch_odin::LiftParams params{};
   float thermal_mass = NAN;
   float heat_loss = NAN;
@@ -3572,10 +3573,19 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
                                   lune_touch_odin::house_tau_h(thermal_mass, heat_loss));
     if (reason != nullptr)
       *reason = lift_reason_(charge.active(), lag.active(), pre.active());
+    // Which source wants each lifted hour (a skipped hour has none).
+    if (sources != nullptr) {
+      const uint32_t keep = lune_touch_odin::lift_hours_mask(lifted);
+      sources->charge = lune_touch_odin::lift_hours_mask(charge) & keep;
+      sources->lag = lune_touch_odin::lift_hours_mask(lag) & keep;
+      sources->preload = lune_touch_odin::lift_hours_mask(pre) & keep;
+    }
     return lifted;
   }
   if (reason != nullptr)
     *reason = "none";
+  if (sources != nullptr)
+    *sources = lune_touch_odin::LiftSources{};
   return lune_touch_odin::Lift{};
 }
 
@@ -3848,9 +3858,10 @@ void LuneTouchCoordinator::run_odin_control_() {
   }
   float energy = 0.0f;
   const char *reason = "none";
+  lune_touch_odin::LiftSources sources{};
   lune_touch_odin::Lift want{};
   if (enabled && clock_ok)
-    want = compute_odin_lift_(now_hour, &energy, &reason);
+    want = compute_odin_lift_(now_hour, &energy, &reason, &sources);
 
   lune_touch_odin::OwnerState owner{};
   if (!take_state_lock_(100))
@@ -3859,6 +3870,7 @@ void LuneTouchCoordinator::run_odin_control_() {
   odin_control_.wanted = want;
   odin_control_.wanted_energy_kwh = energy;
   std::strncpy(odin_control_.reason, reason, sizeof(odin_control_.reason) - 1);
+  odin_control_.sources = sources;
   give_state_lock_();
 
   const char *control_status = "idle";
@@ -15214,6 +15226,7 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   lune_touch_odin::Lift applied{};
   lune_touch_odin::Lift wanted{};
   char lift_reason[32] = "none";
+  lune_touch_odin::LiftSources lift_sources{};
   bool control_enabled = false;
   ::lune_touch::StrategySnapshot strategy{};
   if (!take_state_lock_(50)) {
@@ -15224,6 +15237,7 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   applied = odin_control_.applied;
   wanted = odin_control_.wanted;
   std::strncpy(lift_reason, odin_control_.reason, sizeof(lift_reason) - 1);
+  lift_sources = odin_control_.sources;
   control_enabled = odin_control_.enabled;
   strategy = model_.strategy_snapshot();
   for (size_t i = 0; i < forecast_decision_count_ && room_count < ::lune_touch::MAX_HOUSE_ZONES; i++) {
@@ -15322,6 +15336,13 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
     const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
     const bool skip = clock_ok && lift.active() && ((lift.skip_mask >> wall) & 1U) != 0;
     appendf_(buffer, capacity, off, "%s%d", h ? "," : "", skip ? 1 : 0);
+  }
+  // Why each hour is lifted: 1 = slab charge, 2 = room lag, 4 = weather preload (bits).
+  appendf_(buffer, capacity, off, "],\"lift_src\":[");
+  for (size_t h = 0; h < H; h++) {
+    const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
+    const unsigned src = clock_ok && lune_touch_odin::hour_in_lift(lift, wall) ? lift_sources.at(wall) : 0U;
+    appendf_(buffer, capacity, off, "%s%u", h ? "," : "", src);
   }
   char reason_esc[48];
   json_escape_(lift.active() ? lift_reason : "none", reason_esc, sizeof(reason_esc));
