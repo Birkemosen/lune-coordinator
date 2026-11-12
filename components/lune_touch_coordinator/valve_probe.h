@@ -39,7 +39,8 @@
 // for a manual run (its valve may need relearning). A change of heat-source phase during a run
 // (start, stop, hot water) moves temperatures and the pump's flow estimate, so it
 // aborts the run (no result), as do a stale pump reading and a V6 that does not
-// answer; V6 releases the hold by its TTL.
+// answer; V6 releases the hold by its TTL. In the refine pass the coarse points are
+// all there, so such an interruption fits the curve from the points so far.
 // =============================================================================
 
 #pragma once
@@ -385,9 +386,12 @@ inline void start(Run &r, uint8_t node, uint8_t zone, uint32_t now_ms, uint8_t p
 inline Action tick(Run &r, const TickInput &in, bool just_started) {
   if (r.stage == Stage::Off)
     return Action::None;
+  // Once the coarse pass is measured the curve can be fitted: an interruption in the
+  // refine pass keeps the points so far instead of throwing the run away.
+  const Action interrupted = r.refine_from != 0 ? Action::Finish : Action::Abort;
   if (!in.conditions_ok) {
     r.stage = Stage::Off;
-    return Action::Abort;
+    return interrupted;
   }
   if (just_started)
     return Action::SendStep;
@@ -395,7 +399,7 @@ inline Action tick(Run &r, const TickInput &in, bool just_started) {
     r.last_sample_ms = in.now_ms;
   if (in.now_ms - r.last_sample_ms > SAMPLE_STALE_MS) {
     r.stage = Stage::Off;
-    return Action::Abort;
+    return interrupted;
   }
   const uint32_t elapsed = in.now_ms - r.stage_start_ms;
   if (r.stage == Stage::Settling) {
@@ -422,7 +426,7 @@ inline Action tick(Run &r, const TickInput &in, bool just_started) {
     return Action::None;
   if (r.flow_n == 0) {
     r.stage = Stage::Off;
-    return Action::Abort;
+    return interrupted;
   }
   Point &p = r.pts[r.n_pts++];
   p.flow_lmin = r.flow_sum / static_cast<float>(r.flow_n);

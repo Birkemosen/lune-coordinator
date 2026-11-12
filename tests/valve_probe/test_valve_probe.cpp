@@ -206,6 +206,30 @@ static void test_run_aborts() {
   assert(tick(r, in, false) == Action::Abort);  // pump reading stale
 }
 
+static void test_run_interrupted_in_refine() {
+  // Josephine 2026-11-12: the heat pump stopped at step 16 of 17 and the run was lost.
+  Run r;
+  start(r, 1, 0, 1000);
+  TickInput in;
+  in.conditions_ok = true;
+  in.now_ms = 1000;
+  tick(r, in, true);
+  uint32_t t = 1000;
+  Action a = Action::None;
+  for (int guard = 0; guard < 10000 && !(r.refine_from != 0 && r.step == r.refine_from + 2); guard++) {
+    t += 15000;
+    in.now_ms = t;
+    in.has_flow_sample = true;
+    in.flow_lmin = 22.0f + loop_flow(r.plan[r.step], 8.0f, 34.0f, 2.6f);
+    a = tick(r, in, false);
+    assert(a != Action::Finish && a != Action::Abort);
+  }
+  in.conditions_ok = false;  // heat pump stops
+  assert(tick(r, in, false) == Action::Finish && r.stage == Stage::Off);
+  const Fit f = fit(r.pts, r.n_pts);
+  assert(f.ok && std::fabs(f.start_pct - 8.0f) <= 2.0f);
+}
+
 int main() {
   test_fit_recovers_curve();
   test_fit_rejects_flat_or_noisy();
@@ -216,6 +240,7 @@ int main() {
   test_runs_per_day();
   test_run_sequence();
   test_run_aborts();
+  test_run_interrupted_in_refine();
   test_flow_at_ref_head();
   std::printf("Valve probe tests passed.\n");
   return 0;
