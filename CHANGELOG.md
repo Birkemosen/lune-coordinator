@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### A lift may cover dear hours; it skips one only when heating earlier is cheaper, heat loss included
+- Every lift left the dearest third of its window unlifted whenever prices swung by 10 %, whether or not the house could ride through on heat stored earlier. Now an hour is skipped only when its price is above that of an earlier lifted hour of the window plus the heat lost while the house holds that heat (`(k − i) / τ`, τ = Odin's thermal mass / heat loss, about 167 h here). The window's first hour always stays lifted.
+
 ### Weather preload tells the heat source too
 - V6 preloaded rooms ahead of wind or cold, but the heat source never heard of it: Odin's band moved only for a slab charge or a room that already lagged, and a heat source without Odin got nothing. On 2026-11-12 V6 preloaded Laura by +1.5 °C while Odin heard only of her 1.6 K lag. Now a preload lifts Odin's band from now through the hour after the forecast peak by the largest room offset (its floor by the preloading share of the rooms, as for a lag, and the dearest hours skipped), and on the other routes it counts like an open slab charge in the demand-led target, the curve shift and the heat request. `odin.reason` can include `preload`.
 - Touch's preload decisions started over at every restart and were not in Home Assistant. Five entities keep the history: *Weather preload rooms*, *Weather preload offset*, *Weather preload* (rooms, offsets, hours to the peak), *Heat source lift* and *Heat source lift reason*.

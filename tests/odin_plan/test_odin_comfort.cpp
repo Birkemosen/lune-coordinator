@@ -111,9 +111,10 @@ int main() {
     assert(lift_changed(Lift{15, 3, 1.5f, 0.2f}, Lift{15, 3, 1.5f, 1.0f}));
   }
 
-  // --- the dearest hours are left alone ------------------------------------
+  // --- a dear hour is skipped only when heating earlier is cheaper -----------
   {
-    // Tariff peak 17–21 with now = 13: window 14–21 (8 h), up to 2 h skipped.
+    // Tariff peak 17–21 with now = 13: window 14–21 (8 h), up to 2 h skipped: the
+    // two with the largest saving over 14–16, heat loss included.
     float price[24];
     for (int k = 0; k < 24; k++) {
       const int h = (13 + k) % 24;
@@ -143,13 +144,34 @@ int main() {
     price[3] = 1.8f;
     skip_dearest(s2, 13, price, 24);
     assert(s2.skip_mask == 0);
-    // Across midnight: hour 23 → bit 23, hour 0 → bit 0.
+    // Across midnight: 00:00 with now = 22 → bit 0.
     float night[24];
     for (int k = 0; k < 24; k++) night[k] = 1.0f;
-    night[1] = 3.0f;  // 23:00 with now = 22
+    night[2] = 3.0f;
     Lift m{23, 3, 1.0f};
     skip_dearest(m, 22, night, 24);
-    assert(m.skip_mask == (1UL << 23));
+    assert(m.skip_mask == 1UL);
+    // The window's first hour has nothing earlier to heat in: it stays lifted.
+    float first[24];
+    for (int k = 0; k < 24; k++) first[k] = 1.0f;
+    first[1] = 3.0f;
+    Lift fl{23, 6, 1.0f};
+    skip_dearest(fl, 22, first, 24);
+    assert(fl.skip_mask == 0);
+    // Heat loss against price: 5 % dearer 3 h later is worth storing for in a house
+    // with a 167 h time constant (3/167 ≈ 2 % loss), not in one with 10 h (30 %).
+    float small[24];
+    for (int k = 0; k < 24; k++) small[k] = 1.0f;
+    small[4] = 1.05f;
+    Lift slow{14, 6, 1.0f};
+    skip_dearest(slow, 13, small, 24, 167.0f);
+    assert(slow.skip_mask == (1UL << 17));
+    Lift fast{14, 6, 1.0f};
+    skip_dearest(fast, 13, small, 24, 10.0f);
+    assert(fast.skip_mask == 0);
+    // Time constant from Odin's thermal mass and heat loss; a default without them.
+    assert(std::fabs(house_tau_h(21.76f, 0.13f) - 167.4f) < 0.1f);
+    assert(house_tau_h(NAN, 0.13f) == TAU_DEFAULT_H && house_tau_h(21.76f, 0.0f) == TAU_DEFAULT_H);
   }
 
   // --- ownership state machine --------------------------------------------

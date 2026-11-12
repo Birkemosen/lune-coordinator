@@ -385,35 +385,48 @@ inline float floor_share_for(float lagging_share) {
   return std::clamp(2.0f * lagging_share, FLOOR_SHARE_MIN, 1.0f);
 }
 
-/// Leaves the dearest hours of the window unlifted, so a lift does not ask Odin to
-/// heat at the day's peak: up to a third of the window's hours (rounded down), and
-/// only hours dearer than halfway between the window's cheapest and dearest when
-/// that spread is at least SKIP_MIN_SPREAD of the dearest. `price_rel[k]` is the price
-/// k hours from now (k < n); any unknown price in the window leaves it whole.
-static constexpr float SKIP_MIN_SPREAD = 0.1f;
-inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size_t n) {
+/// Leaves a dear hour of the window unlifted only when heating earlier costs less,
+/// heat loss included. Heat stored j hours before it is needed loses about j / tau of
+/// itself (tau = the house's time constant, C / UA), so hour k is skipped when
+///   price[k] > min over earlier lifted hours i of price[i] × (1 + (k − i) / tau).
+/// A dear hour with no cheaper earlier hour in the window (the first, or one after
+/// dearer hours) stays lifted: not heating then would let the room fall behind.
+/// The largest saving goes first, up to a third of the window's hours (rounded down),
+/// since the lift stores only so much. `price_rel[k]` is the price k hours from now
+/// (k < n); any unknown price in the window, or no tau, leaves it whole.
+static constexpr float TAU_DEFAULT_H = 48.0f;
+inline float house_tau_h(float thermal_mass_kwh_per_k, float heat_loss_kw_per_k) {
+  if (thermal_mass_kwh_per_k > 0.5f && heat_loss_kw_per_k > 0.01f)
+    return thermal_mass_kwh_per_k / heat_loss_kw_per_k;
+  return TAU_DEFAULT_H;
+}
+inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size_t n,
+                         float tau_h = TAU_DEFAULT_H) {
   l.skip_mask = 0;
-  if (!l.active() || price_rel == nullptr)
+  if (!l.active() || price_rel == nullptr || !(tau_h > 0.0f))
     return;
   const size_t start = (l.start_hour + 24U - now_hour) % 24U;
   if (start + l.hours > n)
     return;
-  float lo = INFINITY, hi = -INFINITY;
-  for (size_t k = start; k < start + l.hours; k++) {
+  for (size_t k = start; k < start + l.hours; k++)
     if (!std::isfinite(price_rel[k]))
       return;
-    lo = std::min(lo, price_rel[k]);
-    hi = std::max(hi, price_rel[k]);
-  }
-  if (!(hi > 0.0f) || hi - lo < SKIP_MIN_SPREAD * hi)
-    return;
-  const float mid = 0.5f * (lo + hi);
+  auto skipped = [&](size_t k) { return ((l.skip_mask >> ((now_hour + k) % 24U)) & 1U) != 0; };
   for (size_t left = l.hours / 3U; left > 0; left--) {
     size_t pick = n;
-    for (size_t k = start; k < start + l.hours; k++) {
-      const uint8_t h = static_cast<uint8_t>((now_hour + k) % 24U);
-      if (((l.skip_mask >> h) & 1U) == 0 && price_rel[k] > mid && (pick == n || price_rel[k] > price_rel[pick]))
+    float best = 0.0f;
+    for (size_t k = start + 1; k < start + l.hours; k++) {
+      if (skipped(k))
+        continue;
+      float earlier = INFINITY;
+      for (size_t i = start; i < k; i++)
+        if (!skipped(i))
+          earlier = std::min(earlier, price_rel[i] * (1.0f + static_cast<float>(k - i) / tau_h));
+      const float saving = price_rel[k] - earlier;
+      if (saving > best) {
+        best = saving;
         pick = k;
+      }
     }
     if (pick == n)
       break;

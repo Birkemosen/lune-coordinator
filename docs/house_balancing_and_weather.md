@@ -253,10 +253,15 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
   Lifts from several reasons merge (`merge_lifts`): the union of their windows, the larger
   lift and the larger floor share.
 - **When.** Slab charge: from the charge start to the end of the episode (local wall-clock
-  hours). Odin is free to heat earlier if that is cheaper. In every lift the dearest hours
-  of the window stay unlifted (`skip_mask`): up to a third of its hours, only those dearer
-  than halfway between its cheapest and dearest hour, and only when that spread is at
-  least 10 % (Touch's all-in prices; none skipped without prices for the whole window).
+  hours). Odin is free to heat earlier if that is cheaper. A dear hour may be lifted too,
+  but it is weighed against heating earlier: heat stored `j` hours before it is needed
+  loses about `j / τ` of itself (τ = Odin's thermal mass / heat loss, about 167 h here;
+  48 h without them), so hour `k` is left unlifted (`skip_mask`) only when its price is
+  above `price[i] × (1 + (k − i) / τ)` for some earlier lifted hour `i` of the window. The
+  window's first hour, or a dear hour with nothing cheaper before it, stays lifted: not
+  heating then lets the room fall behind. Largest saving first, at most a third of the
+  window's hours (the lift stores only so much). Touch's all-in prices; nothing is skipped
+  without prices for the whole window.
 - **How.** Odin has no dated exceptions. Touch keeps the user's profile, writes a lifted
   copy (`POST /dashboard/set {"key":"sched_ui","value":"<json string>"}`), triggers
   `POST /api/solve`, and writes the user's profile back when the lift ends. At most one

@@ -3473,6 +3473,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
                                                                const char **reason) {
   lune_touch_odin::LiftParams params{};
   float thermal_mass = NAN;
+  float heat_loss = NAN;
   float held = 0.0f;
   float energy = 0.0f;
   int start = INT16_MAX;
@@ -3509,6 +3510,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
     params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
     thermal_mass = odin_control_.thermal_mass_kwh_per_k;
+    heat_loss = odin_control_.heat_loss_kw_per_k;
     const auto strategy = model_.strategy_snapshot();
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
@@ -3565,7 +3567,9 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       now_hour, lune_touch_odin::merge_lifts(now_hour, charge, lag, params), pre, params);
   if (out.active()) {
     lune_touch_odin::Lift lifted = out;
-    lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24);
+    // A dear hour stays lifted unless heating earlier is cheaper, heat loss included.
+    lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
+                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss));
     if (reason != nullptr)
       *reason = lift_reason_(charge.active(), lag.active(), pre.active());
     return lifted;
