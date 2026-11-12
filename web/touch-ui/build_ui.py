@@ -303,12 +303,12 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><g class="marks"></g><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>'''
     tile_plan = f'''
-          <button class="home-tile" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
+          <button class="home-tile wide" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
             <span class="chip-icon" data-tone="violet" aria-hidden="true">{I["plan"]}</span><b>{T("tile.plan")}</b>
             <span class="ht-status" data-bind="tile.planStatus">{T("tile.planNone")}</span>
             <span class="ht-val"><span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span> <span data-bind="tile.todayCost"></span></span>
-            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="plan"></svg>
+            <span class="plan plan--mini ht-plan" aria-hidden="true" data-bind-plan-mini></span>
           </button>'''
     tile_wx = f'''
           <button class="home-tile" type="button" popovertarget="sheet-weather" data-empty data-tile="weather">
@@ -372,7 +372,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </form>
         </section>
         <header class="home-head"><small>{T("home.nowEyebrow")}</small><h3>{T("home.nowTitle")}</h3></header>
-        <div class="home-tiles">{tile_heat}{tile_plan}{tile_wx}{tile_pump}</div>
+        <div class="home-tiles">{tile_heat}{tile_wx}{tile_pump}{tile_plan}</div>
         {heatmap}
       </section>'''
 
@@ -482,8 +482,10 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <p class="note" data-bind-show="planG.empty">{T("planG.empty")}</p>
           <div class="plan" data-bind-plan role="img" aria-label="{T("planG.aria")}"></div>
           <p class="fc-legend" aria-hidden="true">
-            <span><i class="lbar"></i>{T("planG.lHeat")}</span><span><i class="ldhw"></i>{T("planG.lDhw")}</span>
-            <span><i class="lleg"></i>{T("planG.lLeg")}</span><span><i class="llift"></i>{T("planG.lLift")}</span>
+            <span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lbar"></i>{T("planG.lHeat")}</span>
+            <span><i class="ldhw"></i>{T("planG.lDhw")}</span><span><i class="lleg"></i>{T("planG.lLeg")}</span>
+            <span><i class="lband"></i>{T("planG.lBand")}</span><span><i class="lbandlift"></i>{T("planG.lLift")}</span>
+            <span><i class="lskip"></i>{T("planG.lSkip")}</span><span><i class="lwind"></i>{T("planG.lWind")}</span>
             <span><i class="lpre"></i>{T("planG.lPre")}</span><span><i class="lch"></i>{T("planG.lCharge")}</span>
             <span><i class="lins"></i>{T("planG.lInsufficient")}</span>
           </p>
@@ -975,7 +977,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "hp.compOn", "hp.compOff", "flow.none", "flow.note", "flow.noteMeasured", "flow.noteLpm", "flow.zoneTip",
         "role.reserve", "role.reserveNow", "role.asgardNow", "role.offOdin", "role.drives", "role.off",
         "driver.odin", "driver.asgard", "now.heat", "now.off", "now.dhw", "planG.odin", "planG.noOdin",
-        "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient", "planG.tipLift",
+        "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient",
+        "planG.lanePrice", "planG.laneBand", "planG.laneWind", "planG.roBand", "planG.roLift", "planG.roSkip",
         "hs.mqttPasswordSet", "hs.mqttState", "hs.mqttConnected", "hs.mqttDisconnected", "hs.mqttOff", "common.on", "common.off",
         "wifi.connectedTo", "wifi.notConnected", "wifi.apActive", "wifi.sent", "wifi.needSsid",
         "wifi.switch.pending", "wifi.switch.connected", "wifi.switch.reverted", "wifi.switch.failed",

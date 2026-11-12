@@ -15213,6 +15213,7 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   odin = OdinPlanState{};
   lune_touch_odin::Lift applied{};
   lune_touch_odin::Lift wanted{};
+  char lift_reason[32] = "none";
   bool control_enabled = false;
   ::lune_touch::StrategySnapshot strategy{};
   if (!take_state_lock_(50)) {
@@ -15222,6 +15223,7 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   odin = odin_plan_;
   applied = odin_control_.applied;
   wanted = odin_control_.wanted;
+  std::strncpy(lift_reason, odin_control_.reason, sizeof(lift_reason) - 1);
   control_enabled = odin_control_.enabled;
   strategy = model_.strategy_snapshot();
   for (size_t i = 0; i < forecast_decision_count_ && room_count < ::lune_touch::MAX_HOUSE_ZONES; i++) {
@@ -15305,7 +15307,25 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
     const float v = clock_ok && lune_touch_odin::hour_in_lift(lift, wall) ? lift.lift_c : 0.0f;
     appendf_(buffer, capacity, off, "%s%.1f", h ? "," : "", static_cast<double>(v));
   }
-  appendf_(buffer, capacity, off, "]},\"rooms\":[");
+  // The part of the lift that moves the band's floor (the rest raises only its top).
+  appendf_(buffer, capacity, off, "],\"lift_floor_c\":[");
+  for (size_t h = 0; h < H; h++) {
+    const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
+    const float v = clock_ok && lune_touch_odin::hour_in_lift(lift, wall)
+                        ? std::round(lift.lift_c * std::clamp(lift.floor_share, 0.0f, 1.0f) * 10.0f) / 10.0f
+                        : 0.0f;
+    appendf_(buffer, capacity, off, "%s%.1f", h ? "," : "", static_cast<double>(v));
+  }
+  // Hours inside the lift's window left unlifted because heating earlier is cheaper.
+  appendf_(buffer, capacity, off, "],\"lift_skip\":[");
+  for (size_t h = 0; h < H; h++) {
+    const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
+    const bool skip = clock_ok && lift.active() && ((lift.skip_mask >> wall) & 1U) != 0;
+    appendf_(buffer, capacity, off, "%s%d", h ? "," : "", skip ? 1 : 0);
+  }
+  char reason_esc[48];
+  json_escape_(lift.active() ? lift_reason : "none", reason_esc, sizeof(reason_esc));
+  appendf_(buffer, capacity, off, "],\"lift_reason\":\"%s\"},\"rooms\":[", reason_esc);
   for (size_t i = 0; i < room_count && off + 256 < capacity; i++) {
     const RoomPlan &r = rooms[i];
     char id[64], name[96];

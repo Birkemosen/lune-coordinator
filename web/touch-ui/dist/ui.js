@@ -488,7 +488,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         spot_used: 'eds', spot_fallback: false, grid_from_cache: false, system_from_cache: false, last_error: '' },
       today: { date: d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()),
         spot: spot, grid: grid, system: sys, total: total },
-      tomorrow: null
+      tomorrow: { total: total.slice() }
     };
   })();
 
@@ -647,7 +647,12 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           mode: hk.map(function (v, i) { return i === 14 ? 1 : (i >= 18 && i <= 20 ? 6 : (v > 0 ? 2 : 0)); }),
           today_kwh: Array.from({ length: 24 }, function (_, h) { return (h >= 2 && h <= 5) || (h >= 13 && h <= 15) ? 1.1 : (h === 7 ? 1.6 : 0.05); }),
           today_actual: Array.from({ length: 24 }, function (_, h) { return h < new Date().getHours() ? 1 : 0; }),
-          lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 6) ? 0.5 : 0; }) },
+          band_min_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 21.8 : 21.5; }),
+          band_max_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 24 : 22.5; }),
+          expected_c: Array.from({ length: 24 }, function (_, i) { return +(21.9 + 0.4 * Math.sin((i - 3) / 4)).toFixed(2); }),
+          lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 1.5 : 0; }),
+          lift_floor_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 9 && i !== 4) ? 0.3 : 0; }),
+          lift_skip: Array.from({ length: 24 }, function (_, i) { return i === 4 ? 1 : 0; }), lift_reason: 'room_lag' },
         rooms: [
           { room_id: 'room-09', name: 'Gang', preload: null, charge: { from: 1, to: 8, store_c: 1.5, insufficient: true } },
           { room_id: 'room-01', name: 'Kontor', preload: { from: 0, to: 4, offset_c: 0.4 }, charge: null },
@@ -2677,6 +2682,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var today = qs('[data-bind-price-today]');
     if (today) today.hidden = !total.length;
     setText('price.inclAll', t('price.inclAll', { cur: cur }));
+    renderPlan();   // the plan's price lane
     var unit = ' <small>' + esc(cur) + '/kWh</small>';
     var showTile = false;
     if (total.length === 24) {
@@ -2901,7 +2907,6 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
   }
 
   function applyHeatPlan(p) {
-    var host = qs('[data-bind-plan]');
     if (!p) return;
     state.plan = p;
     var odin = p.odin || {};
@@ -2928,7 +2933,6 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (a >= 0 && b < 0) blockKwh += v;
     }
     if (a >= 0 && b < 0) b = Math.min(H, heat.length);
-    var tile = qs('[data-tile="plan"]');
     if (odin.available && a >= 0) {
       setText('tile.planVal', a === 0 ? t('tile.planNow') : t('tile.planVal', { a: hh(a), b: hh(b) }));
       setText('tile.planKwh', t('tile.planKwh', { v: num(blockKwh) }));
@@ -2944,97 +2948,247 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var elKwh = 0;
     (odin.energy_kwh || []).slice(0, H).forEach(function (x) { if (finite(x)) elKwh += Number(x); });
     setBind('plan.energyElKwh', odin.available ? esc(num(elKwh)) + ' <small>kWh</small>' : '—');
-    var viz = qs('[data-bind-viz="plan"]');
-    if (viz) {
-      var max = 0;
-      heat.forEach(function (x) { if (Number(x) > max) max = Number(x); });
-      viz.innerHTML = odin.available && max > 0 ? '<line class="base" x1="0" y1="63.5" x2="240" y2="63.5"/>' + heat.slice(0, 24).map(function (x, k) {
-        if (!(Number(x) > 0.05)) return '';
-        var h2 = Math.max(4, Number(x) / max * 60);
-        return '<rect class="col on" x="' + (k * 10 + 2) + '" y="' + (64 - h2).toFixed(1) + '" width="6" height="' + h2.toFixed(1) + '" rx="3"/>';
-      }).join('') : '';
-      if (tile) tile.toggleAttribute('data-empty', !(odin.available && max > 0));
+    renderPlan();
+  }
+
+  // The plan hour by hour (LDS 2.3.32 .plan): price, Odin's heat, Odin's comfort band
+  // with Touch's lift, wind and a lane per room, on one hour axis from now. The same
+  // builder draws the compact plan in Home's wide tile (mini: price, Odin, band; spans,
+  // because the tile is a button). Price and wind come from /prices and /forecast, so
+  // this runs again when either arrives.
+  function planHours() {
+    var p = state.plan || {};
+    var odin = p.odin || {};
+    var H = Math.min(24, Number(p.hours) || 24);
+    var start = Number(p.start_hour) || 0;
+    var pr = state.prices || {};
+    var today = (pr.today && pr.today.total) || [];
+    var tomorrow = (pr.tomorrow && pr.tomorrow.total) || [];
+    var fc = state.forecast || {};
+    var fh = fc.hours || [];
+    var f0 = (fc.cache && fc.cache.decision_start_index >= 0) ? fc.cache.decision_start_index : 0;
+    var mode = odin.mode || [], heat = odin.heat_kw || [], energy = odin.energy_kwh || [];
+    var rows = [];
+    for (var k = 0; k < H; k++) {
+      var wall = start + k;
+      var m = Number(mode[k]);
+      var kind = m === 1 ? 'dhw' : (m === 6 ? 'legionella' : 'heat');
+      var price = wall < 24 ? today[wall] : tomorrow[wall - 24];
+      var f = fh[f0 + k] || {};
+      rows.push({
+        hour: wall % 24, kind: kind,
+        kwh: kind === 'heat' ? (Number(heat[k]) || 0) : (Number(energy[k]) || 0),
+        price: finite(price) ? Number(price) : null,
+        lo: finite((odin.band_min_c || [])[k]) ? Number(odin.band_min_c[k]) : null,
+        hi: finite((odin.band_max_c || [])[k]) ? Number(odin.band_max_c[k]) : null,
+        exp: finite((odin.expected_c || [])[k]) ? Number(odin.expected_c[k]) : null,
+        lift: Number((odin.lift_c || [])[k]) || 0,
+        floor: Number((odin.lift_floor_c || [])[k]) || 0,
+        skip: Number((odin.lift_skip || [])[k]) === 1,
+        wind: finite(f.wind_ms) ? Number(f.wind_ms) : null,
+        temp: finite(f.temp_c) ? Number(f.temp_c) : null
+      });
     }
-    if (!host) return;
+    return { rows: rows, H: H, start: start, odin: odin, cur: pr.currency || 'DKK' };
+  }
+
+  // Round an axis up to 1 / 2 / 2.5 / 5 × 10^n.
+  function niceTop(v) {
+    if (!(v > 0)) return 1;
+    var mag = Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 2, 2.5, 5, 10].map(function (f) { return f * mag; }).filter(function (x) { return x >= v; })[0];
+  }
+
+  function planTimeline(ph, rooms, mini) {
+    var tag = mini ? 'span' : 'div';
+    var rows = ph.rows, H = ph.H, odin = ph.odin;
+    var el = function (cls, inner) { return '<' + tag + ' class="' + cls + '">' + inner + '</' + tag + '>'; };
+    var lab = function (cls, name, ticks) {
+      return el('plan-lab plan-lab--y' + cls, '<b>' + esc(name) + '</b><span class="plan-y">' +
+        ticks.map(function (x) { return '<i>' + esc(x) + '</i>'; }).join('') + '</span>');
+    };
+    var html = '';
+    // Price: height = price, colour = rank among these hours (cheap → dear, 5 steps).
+    var prices = rows.map(function (r) { return r.price; }).filter(function (v) { return v != null; });
+    if (prices.length) {
+      var ptop = niceTop(Math.max.apply(null, prices));
+      var cells = rows.map(function (r) {
+        if (r.price == null) return '<i class="plan-cell"></i>';
+        var below = prices.filter(function (v) { return v < r.price; }).length;
+        var sc = Math.max(1, Math.min(5, 1 + Math.floor(below / prices.length * 5)));
+        return '<i class="plan-cell" data-scale="' + sc + '" style="--v:' + Math.max(4, Math.round(Math.max(0, r.price) / ptop * 100)) + '"></i>';
+      }).join('');
+      html += lab(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, ptop < 10 ? 1 : 0), '0']) + el('plan-lane plan-lane--price', cells);
+    }
+    // Odin: planned heat (space heat kWh heat; hot water / legionella kWh el).
+    if (odin.available) {
+      var vmax = 0;
+      rows.forEach(function (r) { if (r.kwh > vmax) vmax = r.kwh; });
+      var top = niceTop(vmax);
+      var bars = rows.map(function (r) {
+        return '<i class="plan-bar"' + (r.kind !== 'heat' ? ' data-mode="' + r.kind + '"' : '') +
+          ' style="--v:' + Math.round(r.kwh / top * 100) + '"></i>';
+      }).join('');
+      html += lab('', t('planG.odin'), [num(top) + ' kWh', num(top / 2), '0']) + el('plan-lane plan-lane--odin', bars);
+      // Comfort band: Odin's floor → top per hour, lifted hours violet, skipped dear hours
+      // dashed, expected temperature as a step line. Axis at least 3 °C.
+      var temps = [];
+      rows.forEach(function (r) { [r.lo, r.hi, r.exp].forEach(function (v) { if (v != null) temps.push(v); }); });
+      if (temps.length) {
+        var lo = Math.floor(Math.min.apply(null, temps) - 0.3), hi = Math.ceil(Math.max.apply(null, temps) + 0.3);
+        if (hi - lo < 3) { var mid = (hi + lo) / 2; lo = Math.floor(mid - 1.5); hi = lo + 3; }
+        var y = function (v) { return ((hi - v) / (hi - lo) * 100).toFixed(1); };
+        var rects = '', pts = [];
+        rows.forEach(function (r, k) {
+          if (r.lo != null && r.hi != null) {
+            rects += '<rect class="bd' + (r.lift > 0 ? ' lift' : (r.skip ? ' skip' : '')) + '" x="' + (k + 0.06).toFixed(2) +
+              '" y="' + y(r.hi) + '" width=".88" height="' + (y(r.lo) - y(r.hi)).toFixed(1) + '"/>';
+          }
+          if (r.exp != null) pts.push(k + ',' + y(r.exp), (k + 1) + ',' + y(r.exp));
+        });
+        var svg = '<svg viewBox="0 0 ' + H + ' 100" preserveAspectRatio="none" aria-hidden="true">' + rects +
+          (pts.length ? '<polyline class="exp" points="' + pts.join(' ') + '"/>' : '') + '</svg>';
+        html += lab(' plan-lab--band', t('planG.laneBand'), [hi + '°', lo + '°']) + el('plan-lane plan-lane--band', svg);
+      }
+    } else {
+      html += el('plan-lab', esc(t('planG.odin'))) + '<span class="plan-empty-lane">' + esc(t('planG.noOdin')) + '</span>';
+    }
+    if (!mini) {
+      var winds = rows.map(function (r) { return r.wind; }).filter(function (v) { return v != null; });
+      if (winds.length) {
+        var wtop = niceTop(Math.max(5, Math.max.apply(null, winds)));
+        html += lab(' plan-lab--sm', t('planG.laneWind'), [num(wtop, 0), '0']) + el('plan-lane plan-lane--wind', rows.map(function (r) {
+          return '<i class="plan-cell" style="--v:' + (r.wind == null ? 0 : Math.round(r.wind / wtop * 100)) + '"></i>';
+        }).join(''));
+      }
+      var clamp = function (v) { return Math.max(0, Math.min(H, Number(v) || 0)); };
+      var span = function (x0, x1, extra, tip) {
+        x0 = clamp(x0); x1 = clamp(x1);
+        if (x1 <= x0) return '';
+        return '<span class="plan-seg" style="--a:' + x0 + ';--b:' + x1 + '"' + extra + ' title="' + esc(tip) + '"></span>';
+      };
+      rooms.forEach(function (r) {
+        var segs = '';
+        if (r.preload) segs += span(r.preload.from, r.preload.to, ' data-kind="preload"', t('planG.tipPre', { c: num(r.preload.offset_c) }));
+        if (r.charge) {
+          var ins = !!r.charge.insufficient;
+          segs += span(r.charge.from, r.charge.to, ' data-kind="charge"' + (ins ? ' data-insufficient' : ''),
+            t(ins ? 'planG.tipInsufficient' : 'planG.tipCharge', { c: num(r.charge.store_c) }));
+        }
+        html += '<span class="plan-lab" title="' + esc(r.name) + '">' + esc(r.name) + '</span><div class="plan-lane">' + segs + '</div>';
+      });
+    }
+    // Hour axis: a mark per hour; the plan shows every 6th, 3rd, 2nd or every hour by its
+    // width (LDS .h3/.h2/.h1). The hour right after «Now» only on wide plans.
+    var lang = (i18n._lang || document.documentElement.lang || 'en');
+    var x = '';
+    for (var k = 0; k < H; k++) {
+      var hr = rows[k].hour;
+      var left = (k / H * 100).toFixed(2) + '%';
+      if (k === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
+      var cls = k === 1 ? 'h1' : hr % 6 === 0 ? '' : hr % 3 === 0 ? 'h3' : hr % 2 === 0 ? 'h2' : 'h1';
+      x += hr === 0
+        ? '<span class="d' + (cls ? ' ' + cls : '') + '" style="left:' + left + '">' + esc(new Date(Date.now() + k * 3600000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
+        : '<span' + (cls ? ' class="' + cls + '"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
+    }
+    html += '<span></span>' + el('plan-x', x);
+    return html;
+  }
+
+  function renderPlan() {
+    var p = state.plan;
+    if (!p) return;
+    var ph = planHours();
+    var odin = ph.odin;
     var rooms = (p.rooms || []).filter(function (r) { return r && (r.preload || r.charge); });
+    // Home › wide tile: the compact plan.
+    var mini = qs('[data-bind-plan-mini]');
+    var tile = qs('[data-tile="plan"]');
+    if (mini) {
+      var any = odin.available && ph.rows.some(function (r) { return r.kwh > 0.05 || r.price != null; });
+      mini.innerHTML = any ? planTimeline(ph, [], true) : '';
+      if (tile) tile.toggleAttribute('data-empty', !any);
+    }
+    var host = qs('[data-bind-plan]');
+    if (!host) return;
     var empty = !odin.available && !rooms.length;
     setShow('planG.empty', empty);
     host.hidden = empty;
     qsa('[data-panel="plan"] .fc-legend').forEach(function (l) { l.hidden = empty; });
     if (empty) { host.innerHTML = ''; return; }
-    var clamp = function (v) { return Math.max(0, Math.min(H, Number(v) || 0)); };
-    var span = function (cls, x0, x1, extra, tip) {
-      x0 = clamp(x0); x1 = clamp(x1);
-      if (x1 <= x0) return '';
-      return '<span class="' + cls + '" style="--a:' + x0 + ';--b:' + x1 + '"' + (extra || '') +
-        (tip ? ' title="' + esc(tip) + '"' : '') + '></span>';
+    host.innerHTML = planTimeline(ph, rooms, false) + '<div class="bars-readout" aria-live="polite" hidden></div>';
+    state.planHours = ph;
+    bindPlanReadout(host);
+  }
+
+  // Readout per hour: hover, touch or arrow keys mark the hour in every lane (--hi) and
+  // show its figures above the plan in two lines (LDS .plan[data-readout]).
+  function planReadoutText(ph, k) {
+    var r = ph.rows[k];
+    if (!r) return '';
+    var hh = String(r.hour).padStart(2, '0') + ':00';
+    var a = [hh];
+    if (r.price != null) a.push(num(r.price, 2) + ' ' + ph.cur + '/kWh');
+    if (ph.odin.available) a.push(t('planG.tip.' + r.kind, { h: '', kwh: num(r.kwh) }).replace(/^\s*·\s*/, ''));
+    var b = [];
+    if (r.lo != null && r.hi != null) b.push(t('planG.roBand', { lo: num(r.lo), hi: num(r.hi) }));
+    if (r.lift > 0) b.push(t('planG.roLift', { c: num(r.lift), f: num(r.floor) }));
+    else if (r.skip) b.push(t('planG.roSkip'));
+    if (r.wind != null) b.push(num(r.wind, 0) + ' m/s' + (r.temp != null ? ' · ' + num(r.temp) + ' °C' : ''));
+    return '<span><b>' + esc(a[0]) + '</b>' + (a.length > 1 ? ' · ' + esc(a.slice(1).join(' · ')) : '') + '</span>' +
+      (b.length ? '<span>' + esc(b.join(' · ')) + '</span>' : '');
+  }
+
+  function bindPlanReadout(host) {
+    host.setAttribute('data-readout', '');
+    host.tabIndex = 0;
+    if (host.dataset.readoutBound) return;
+    host.dataset.readoutBound = '1';
+    // The plan is redrawn when prices or the forecast arrive: look its parts up each time.
+    var axis = function () { return qs('.plan-x', host); };
+    var clear = function () {
+      host.removeAttribute('data-hi');
+      var box = qs('.bars-readout', host);
+      if (box) box.hidden = true;
     };
-    var lang = (i18n._lang || document.documentElement.lang || 'en');
-    var x = '';
-    for (var j = 0; j <= H; j++) {
-      var hr = (start + j) % 24;
-      if (j === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
-      if (hr % 3 !== 0 || j < 2 || j > H - 2) continue;  // keep clear of the "Now" label
-      var left = (j / H * 100).toFixed(2) + '%';
-      x += hr === 0
-        ? '<span class="d" style="left:' + left + '">' + esc(new Date(Date.now() + j * 3600000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
-        : '<span' + (hr % 6 ? ' class="m"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
-    }
-    var html = '<span></span><div class="plan-x">' + x + '</div>';
-    // Odin lane: planned energy per hour + Touch's lift of Odin's comfort band.
-    // Space heat = kWh heat (heat_kw); DHW / legionella hours carry no space
-    // heat, so their bar is Odin's planned electricity (kWh el).
-    if (odin.available) {
-      var energy = odin.energy_kwh || [];
-      var vals = [];
-      var kinds = [];
-      for (var q = 0; q < H; q++) {
-        var m = Number(mode[q]);
-        var kind = m === 1 ? 'dhw' : (m === 6 ? 'legionella' : 'heat');
-        kinds.push(kind);
-        vals.push(kind === 'heat' ? (Number(heat[q]) || 0) : (Number(energy[q]) || 0));
-      }
-      var vmax = 0;
-      vals.forEach(function (v2) { if (v2 > vmax) vmax = v2; });
-      // Round the axis up to 1 / 2 / 2.5 / 5 × 10^n.
-      var top = 1;
-      if (vmax > 0) {
-        var mag = Math.pow(10, Math.floor(Math.log10(vmax)));
-        top = [1, 2, 2.5, 5, 10].map(function (f) { return f * mag; }).filter(function (v3) { return v3 >= vmax; })[0];
-      }
-      var bars = '';
-      for (var h = 0; h < H; h++) {
-        var pct = Math.round(vals[h] / top * 100);
-        var label = String((start + h) % 24).padStart(2, '0') + ':00';
-        bars += '<i class="plan-bar"' + (kinds[h] !== 'heat' ? ' data-mode="' + kinds[h] + '"' : '') + ' style="--v:' + pct + '" title="' +
-          esc(t('planG.tip.' + kinds[h], { h: label, kwh: num(vals[h]) })) + '"></i>';
-      }
-      var lifts = '';
-      var lc = odin.lift_c || [];
-      for (var a2 = 0; a2 < H; a2++) {
-        if (!(Number(lc[a2]) > 0)) continue;
-        var b2 = a2;
-        while (b2 < H && Number(lc[b2]) > 0) b2++;
-        lifts += span('plan-lift', a2, b2, '', t('planG.tipLift', { c: num(lc[a2]) }));
-        a2 = b2;
-      }
-      var ticks = '<span class="plan-y"><i>' + esc(num(top)) + ' kWh</i><i>' + esc(num(top / 2)) + '</i><i>0</i></span>';
-      html += '<span class="plan-lab plan-lab--y"><b>' + esc(t('planG.odin')) + '</b>' + ticks + '</span>' +
-        '<div class="plan-lane plan-lane--odin">' + bars + lifts + '</div>';
-    } else {
-      html += '<span class="plan-lab">' + esc(t('planG.odin')) + '</span><span class="plan-empty-lane">' + esc(t('planG.noOdin')) + '</span>';
-    }
-    rooms.forEach(function (r) {
-      var segs = '';
-      if (r.preload) segs += span('plan-seg', r.preload.from, r.preload.to, ' data-kind="preload"', t('planG.tipPre', { c: num(r.preload.offset_c) }));
-      if (r.charge) {
-        var ins = !!r.charge.insufficient;
-        segs += span('plan-seg', r.charge.from, r.charge.to, ' data-kind="charge"' + (ins ? ' data-insufficient' : ''),
-          t(ins ? 'planG.tipInsufficient' : 'planG.tipCharge', { c: num(r.charge.store_c) }));
-      }
-      html += '<span class="plan-lab" title="' + esc(r.name) + '">' + esc(r.name) + '</span><div class="plan-lane">' + segs + '</div>';
+    var at = function (k) {
+      var ph = state.planHours;
+      var ax = axis();
+      var box = qs('.bars-readout', host);
+      if (!ph || !ax || !box) return;
+      k = Math.max(0, Math.min(ph.H - 1, k));
+      host.style.setProperty('--hi', k);
+      host.setAttribute('data-hi', k);
+      box.innerHTML = planReadoutText(ph, k);
+      box.hidden = false;
+      var hr = host.getBoundingClientRect(), ar = ax.getBoundingClientRect();
+      var x = ar.left - hr.left + (k + 0.5) / ph.H * ar.width;
+      var half = box.offsetWidth / 2;
+      box.style.left = Math.max(half, Math.min(hr.width - half, x)) + 'px';
+    };
+    var fromPointer = function (ev) {
+      var ph = state.planHours, ax = axis();
+      if (!ph || !ax) return;
+      var ar = ax.getBoundingClientRect();
+      var frac = (ev.clientX - ar.left) / ar.width;
+      if (!(frac >= 0 && frac < 1)) { clear(); return; }
+      at(Math.floor(frac * ph.H));
+    };
+    host.addEventListener('pointermove', fromPointer);
+    host.addEventListener('pointerdown', fromPointer);
+    host.addEventListener('pointerleave', clear);
+    host.addEventListener('blur', clear);
+    host.addEventListener('keydown', function (ev) {
+      var cur = Number(host.getAttribute('data-hi'));
+      if (!isFinite(cur) || !host.hasAttribute('data-hi')) cur = -1;
+      if (ev.key === 'ArrowRight') at(cur + 1);
+      else if (ev.key === 'ArrowLeft') at(Math.max(0, cur - 1));
+      else if (ev.key === 'Home') at(0);
+      else if (ev.key === 'End') at(23);
+      else if (ev.key === 'Escape') clear();
+      else return;
+      ev.preventDefault();
     });
-    host.innerHTML = html;
   }
 
   // Split of the pump flow per manifold (LDS .dist). Each loop passes its flow
@@ -3402,6 +3556,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (!fc) return;
     state.forecast = fc;
     renderHeatmap();  // charge badges follow the forecast
+    renderPlan();     // the plan's wind lane
     var hours = fc.hours || [];
     var start = (fc.cache && fc.cache.decision_start_index >= 0) ? fc.cache.decision_start_index : 0;
     var nowHour = hours[start] || hours[0];

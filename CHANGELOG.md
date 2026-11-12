@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### The heating plan hour by hour, and on Home as a wide tile
+- The plan graph labelled every third hour and showed Touch's lift as a thin line, so it was hard to tell which hour Odin heats, why, and what Touch asked for. It now has a mark per hour, a price lane (the price per hour on the cheap → dear scale), Odin's comfort band per hour with the expected temperature (hours Touch lifts in violet, a dear hour Touch skips dashed) and a wind lane above the rooms. Hover, touch or the arrow keys show an hour's figures: price, planned heat, band, lift and wind. On Home, «Næste varme» is a wide tile with a compact plan (price, heat, band); the other tiles stand three in a row. LDS 2.3.32. `GET /plan` → `odin` adds `lift_floor_c`, `lift_skip` and `lift_reason`.
+
 ### A lift may cover dear hours; it skips one only when heating earlier is cheaper, heat loss included
 - Every lift left the dearest third of its window unlifted whenever prices swung by 10 %, whether or not the house could ride through on heat stored earlier. Now an hour is skipped only when its price is above that of an earlier lifted hour of the window plus the heat lost while the house holds that heat (`(k − i) / τ`, τ = Odin's thermal mass / heat loss, about 167 h here). The window's first hour always stays lifted.
 
