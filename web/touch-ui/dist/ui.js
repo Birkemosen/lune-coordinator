@@ -1633,6 +1633,31 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     });
   }
 
+  // Hour axis under a Home tile's chart (.ht-x): every 6th clock hour and "now" at the end
+  // that is now. from/span in epoch seconds; labels within 3 h of either end are left out.
+  function tileAxis(key, from, span, nowAtEnd) {
+    var ax = qs('[data-bind-tilex="' + key + '"]');
+    if (!ax || !(span > 0)) return;
+    var out = '';
+    for (var s = Math.ceil(from / 3600) * 3600; s <= from + span; s += 3600) {
+      var f = (s - from) / span, hr = new Date(s * 1000).getHours();
+      if (hr % 6 || f < .125 || f > .875) continue;
+      out += '<span style="left:' + (f * 100).toFixed(1) + '%">' + String(hr).padStart(2, '0') + '</span>';
+    }
+    var now = '<span class="' + (nowAtEnd ? 'end' : 'start') + '">' + esc(t('fc.now')) + '</span>';
+    ax.innerHTML = nowAtEnd ? out + now : now + out;
+  }
+
+  // Y-axis beside a Home tile's chart (.ht-y): its top and bottom with the unit.
+  // Rounds the range out to whole degrees (in place) so the labels are exact.
+  function tileYAxis(key, r) {
+    r.lo = Math.floor(r.lo); r.hi = Math.ceil(r.hi);
+    var ys = qsa('[data-bind-tiley="' + key + '"] i');
+    if (ys.length < 2) return;
+    ys[0].textContent = num(r.hi, 0) + '°';
+    ys[1].textContent = num(r.lo, 0) + '°';
+  }
+
   // Home's Heat tile: the same 24 h, drawn small. Page samples are only the fallback.
   function drawHeatTile(h) {
     var fs = (h && h.feed_c) || [], rs = (h && h.return_c) || [];
@@ -1642,6 +1667,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (tile) tile.removeAttribute('data-empty');
     if (!viz) return;
     var r = axisRange([fs, rs], 3), n = fs.length;
+    tileYAxis('heat', r);
     var pts = function (arr) {
       return arr.map(function (v, i) { return finite(v) ? (i * 240 / (n - 1)).toFixed(1) + ',' + (64 - (Number(v) - r.lo) / (r.hi - r.lo) * 64).toFixed(1) : null; })
         .filter(Boolean);
@@ -1662,6 +1688,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       }
       mg.innerHTML = mh;
     }
+    var step = Number(h.step_s) || 0;
+    if (Number(h.from_ts) && step) tileAxis('heat', Number(h.from_ts), (n - 1) * step, true);
   }
 
   function drawHeatHistory(panel, rng, h) {
@@ -3612,7 +3640,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var active = (fc.decisions || []).filter(function (d) { return d && d.active && d.offset_c > 0; });
     var sunny = (fc.decisions || []).filter(function (d) { return d && d.active && d.solar && d.solar.holdoff; });
     setShow('fc.preload', active.length > 0);
-    setText('tile.weatherStatus', active.length ? t('tile.weatherStatus', { n: active.length })
+    setText('tile.weatherStatus', active.length ? t(active.length === 1 ? 'tile.weatherStatus1' : 'tile.weatherStatus', { n: active.length })
       : sunny.length ? t('tile.weatherSolar', { n: sunny.length }) : t('tile.weatherStatusNone'));
     if (active.length) {
       var maxOff = active.reduce(function (m, d) { return Math.max(m, Number(d.offset_c) || 0); }, 0);
@@ -3627,6 +3655,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (tile) tile.toggleAttribute('data-empty', !ok);
     if (viz && ok) {
       var r = axisRange([next], 3);
+      tileYAxis('weather', r);
       var pl = viz.querySelector('polyline.t');
       var wp = seriesPoints(next, 240, 64, r.lo, r.hi);
       if (pl) pl.setAttribute('points', wp);
@@ -3640,6 +3669,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         rect.setAttribute('x', String(x0 / n2 * 240));
         rect.setAttribute('width', String(Math.max(0, (x1 - x0) / n2 * 240)));
       }
+      tileAxis('weather', Date.now() / 1000, (next.length - 1) * 3600, false);
     }
     // Weather › History: the hours before now that the forecast still carries.
     var pastBox = qs('[data-f="wxpast"]');

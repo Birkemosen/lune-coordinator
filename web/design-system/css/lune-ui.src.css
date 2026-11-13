@@ -1239,8 +1239,13 @@
      husvarme solid, varmt vand skraveret, legionella krydsskraveret, alle med varmens kant), så båndet kan være højere, og prisen
      fylder mere. Forklaringen (.ht-legend) står under planen. */
   .plan--mini { row-gap: 4px; }
-  .plan--mini .plan-lane--price, .plan--mini .plan-lab--sm { height: 32px; }
-  .plan--mini .plan-lane--band, .plan--mini .plan-lab--band { height: 64px; }
+  .plan--mini .plan-lane--price, .plan--mini .plan-lab--sm { height: 40px; }
+  .plan--mini .plan-lane--band, .plan--mini .plan-lab--band { height: 88px; }
+  /* Det brede felt fra 768 px har bredden; giv sporene højden, så pris og bånd kan aflæses. */
+  @media (min-width: 768px) {
+    .plan--mini .plan-lane--price, .plan--mini .plan-lab--sm { height: 48px; }
+    .plan--mini .plan-lane--band, .plan--mini .plan-lab--band { height: 112px; }
+  }
   .plan-marks { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; display: grid; grid-template-columns: repeat(24, 1fr); }
   .plan-marks i { margin-inline: 6%; border-radius: 1px; }
   .plan-marks i[data-mode="heat"] { background: var(--heat-fill); }
@@ -1780,8 +1785,8 @@
   @media (max-width: 599.98px)  { .home-tiles { grid-template-columns: minmax(0, 1fr); } }
   .home-tile {
     display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: "icon title go" "icon status go" "val val val" "price price price" "viz viz viz";
-    grid-template-rows: auto auto auto auto 1fr;
+    grid-template-areas: "icon title go" "icon status go" "val val val" "price price price" "viz viz viz" "axis axis axis";
+    grid-template-rows: auto auto auto auto 1fr auto;
     align-items: center; gap: 0 var(--space-3);
     width: 100%; padding: var(--space-5);
     border: 0; border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
@@ -1817,6 +1822,23 @@
   .fr-dt b { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
   .home-tile > .ht-viz { grid-area: viz; align-self: end; display: block; width: 100%; height: 64px; margin-top: var(--space-4); overflow: visible; }
   .home-tile[data-empty] > .ht-viz { display: none; }
+  /* Timeakse under feltets graf (.ht-x), som planens: klokkeslæt hver 6. time og «Nu» i den
+     ende, der er nu (højre for de seneste 24 t, venstre for de næste 24 t). Mærker tættere end
+     3 timer på enderne udelades, så de ikke rammer «Nu». */
+  .home-tile > .ht-x { grid-area: axis; position: relative; height: 1.4em; margin-top: var(--space-1); font-size: var(--fs-xs); color: var(--faint); }
+  .ht-x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .ht-x .start { left: 0; transform: none; }
+  .ht-x .end { right: 0; transform: none; }
+  .home-tile[data-empty] > .ht-x { display: none; }
+  /* Y-akse (.ht-y): grafens top og bund med enhed (fx «9°» / «4°»), så man kan se, hvad
+     kurven er. Står i en smal rende til højre for grafen; graf og timeakse gøres tilsvarende
+     smallere, så timerne stadig flugter med kurven. */
+  .home-tile:has(> .ht-y) { --ht-gutter: var(--space-6); }
+  .home-tile:has(> .ht-y) > :is(.ht-viz, .ht-x) { width: calc(100% - var(--ht-gutter)); }
+  .home-tile > .ht-y { grid-area: viz; justify-self: end; align-self: end; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
+    height: 64px; margin-top: var(--space-4); font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
+  .ht-y i { font-style: normal; }
+  .home-tile[data-empty] > .ht-y { display: none; }
   .home-tile.wide { grid-column: 1 / -1; }
   /* Bredt felt fra 768 px: hovedtal og prislinje står til højre i hovedet (før ›), så
      planen får højden. */

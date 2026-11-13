@@ -1087,6 +1087,7 @@
   "plan.todaySplit": "{spent} {cur} brugt indtil nu · {rest} {cur} resten af dagen · {kwh} kWh strøm",
   "tile.price": "Elpris nu {p} {cur}/kWh",
   "tile.weatherStatus": "Forvarmer {n} rum",
+  "tile.weatherStatus1": "Forvarmer 1 rum",
   "tile.weatherStatusNone": "Ingen forvarmning",
   "tile.weatherSolar": "Solpause i {n} rum",
   "tile.pumpNone": "Ingen data fra pumpen",
