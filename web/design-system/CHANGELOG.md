@@ -4,6 +4,7 @@
 
 - Hjem-felternes grafer (`.ht-viz`) har en timeakse (`.ht-x`) som den kompakte plan: klokkeslæt hver 6. time og «Nu» i den ende, der er nu (Opvarmning: de seneste 24 t, Vejr: de næste 24 t). DESIGN.md 15.10.
 - Hjem-felternes grafer kan have en y-akse (`.ht-y`): top og bund med enhed (fx «16°» / «4°») til højre for grafen, så det er tydeligt, at Vejr-kurven er temperatur. DESIGN.md 15.10.
+- Den kompakte plan (`.plan--mini`) er højere: pris 40 px og bånd 88 px, fra 768 px 48 og 112 px.
 
 ## 2.4.0
 
