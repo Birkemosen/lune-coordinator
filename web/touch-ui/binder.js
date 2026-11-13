@@ -2811,7 +2811,8 @@
         return '<i class="plan-bar"' + (r.kind !== 'heat' ? ' data-mode="' + r.kind + '"' : '') +
           ' style="--v:' + Math.round(r.kwh / top * 100) + '"></i>';
       }).join('');
-      html += lab('', t('planG.odin'), [num(top) + ' kWh', num(top / 2), '0']) + el('plan-lane plan-lane--odin', bars);
+      // Mini (Home): no Odin lane; its planned heat is a mark at the foot of the band lane.
+      if (!mini) html += lab('', t('planG.odin'), [num(top) + ' kWh', num(top / 2), '0']) + el('plan-lane plan-lane--odin', bars);
       // Comfort band: Odin's floor → top per hour, lifted hours violet, skipped dear hours
       // dashed, expected temperature as a step line. Axis at least 3 °C.
       var temps = [];
@@ -2819,7 +2820,8 @@
       if (temps.length) {
         var lo = Math.floor(Math.min.apply(null, temps) - 0.3), hi = Math.ceil(Math.max.apply(null, temps) + 0.3);
         if (hi - lo < 3) { var mid = (hi + lo) / 2; lo = Math.floor(mid - 1.5); hi = lo + 3; }
-        var y = function (v) { return ((hi - v) / (hi - lo) * 100).toFixed(1); };
+        var span_ = mini ? 88 : 100;   // mini: the bottom 12 % holds Odin's heat mark
+        var y = function (v) { return ((hi - v) / (hi - lo) * span_).toFixed(1); };
         var rects = '', pts = [];
         rows.forEach(function (r, k) {
           if (r.lo != null && r.hi != null) {
@@ -2827,6 +2829,7 @@
               '" y="' + y(r.hi) + '" width=".88" height="' + (y(r.lo) - y(r.hi)).toFixed(1) + '"/>';
           }
           if (r.exp != null) pts.push(k + ',' + y(r.exp), (k + 1) + ',' + y(r.exp));
+          if (mini && r.kwh > 0.05) rects += '<rect class="ht' + (r.kind !== 'heat' ? ' dhw' : '') + '" x="' + (k + 0.06).toFixed(2) + '" y="92" width=".88" height="8"/>';
         });
         var svg = '<svg viewBox="0 0 ' + H + ' 100" preserveAspectRatio="none" aria-hidden="true">' + rects +
           (pts.length ? '<polyline class="exp" points="' + pts.join(' ') + '"/>' : '') + '</svg>';
