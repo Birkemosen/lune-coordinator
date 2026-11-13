@@ -1084,11 +1084,11 @@
      gulvet kan ikke dække hele underskuddet). Ingen jævne orange flader under 30 %
      (3.2.1) — derfor skravering. Farve er aldrig eneste signal: hvert segment har
      title-tekst, og forklaringen står under grafen. */
-  .plan { display: grid; grid-template-columns: minmax(4.5rem, 8rem) minmax(0, 1fr); column-gap: var(--space-3); row-gap: 6px; align-items: center; }
+  .plan { display: grid; grid-template-columns: fit-content(6.5rem) minmax(0, 1fr); column-gap: var(--space-2); row-gap: 6px; align-items: center; }
   .plan-lab { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .plan-lane { position: relative; height: 18px; border-radius: 4px; background: var(--seg-off); }
   .plan-lane--odin {
-    height: 64px; margin-bottom: 6px;
+    height: 88px; margin-bottom: 6px;
     display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 1px;
     border-radius: 0; background: none; border-bottom: 1px solid var(--border);
   }
@@ -1106,7 +1106,7 @@
     box-shadow: inset 0 0 0 1px var(--heat-fill);
   }
   /* Y-akse for Odin-sporet: navn til venstre, kWh-mærker højrestillet ved sporet. */
-  .plan-lab--y { display: flex; align-items: stretch; justify-content: space-between; gap: var(--space-2); height: 64px; margin-bottom: 6px; }
+  .plan-lab--y { display: flex; align-items: stretch; justify-content: space-between; gap: var(--space-2); height: 88px; margin-bottom: 6px; }
   .plan-lab--y > b { font-weight: inherit; align-self: center; }
   .plan-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: 10px; color: var(--faint); line-height: 1; }
   .plan-y i { font-style: normal; }
@@ -1131,7 +1131,7 @@
   .plan-lane--odin { position: relative; }
   .plan-lane--price, .plan-lane--wind {
     display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 1px;
-    height: 24px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border);
+    height: 36px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border);
   }
   .plan-cell { height: calc(var(--v, 0) * 1%); min-height: 2px; border-radius: 2px 2px 0 0; background: var(--seg-off); }
   .plan-cell[data-scale="1"] { background: var(--scale-good-bad-1); }
@@ -1140,7 +1140,7 @@
   .plan-cell[data-scale="4"] { background: var(--scale-good-bad-4); }
   .plan-cell[data-scale="5"] { background: var(--scale-good-bad-5); }
   .plan-lane--wind .plan-cell { background: color-mix(in srgb, var(--data-return) 70%, transparent); }
-  .plan-lane--band { height: 56px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
+  .plan-lane--band { height: 80px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
   .plan-lane--band svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .plan-lane--band .bd { fill: var(--seg-off); }
   .plan-lane--band .bd.lift { fill: color-mix(in srgb, var(--violet) 45%, transparent); }
@@ -1149,8 +1149,8 @@
   .plan-lane--band .bd.pre { fill: color-mix(in srgb, var(--info) 65%, transparent); }
   .plan-lane--band .bd.skip { fill: var(--seg-off); stroke: var(--violet); stroke-width: 1.2; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
   .plan-lane--band .exp { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .plan-lab--y.plan-lab--band { height: 56px; margin-bottom: 0; }
-  .plan-lab--y.plan-lab--sm { height: 24px; margin-bottom: 0; }
+  .plan-lab--y.plan-lab--band { height: 80px; margin-bottom: 0; }
+  .plan-lab--y.plan-lab--sm { height: 36px; margin-bottom: 0; }
   /* x-akse: binderen skriver et mærke pr. time; smalle planer viser hver 2., 3. eller 6. time. */
   .plan-x span.h1 { visibility: hidden; }
   .plan-x span.h2, .plan-x span.h3 { visibility: hidden; }
@@ -1166,6 +1166,12 @@
     background: color-mix(in srgb, var(--fg) 14%, transparent);
   }
   .plan .bars-readout { left: 0; flex-direction: column; gap: 0; }
+  /* Nu: en stiplet lodret linje gennem alle spor ved --now (timer fra planens start, fx 0.4
+     = 24 minutter inde i første time), som .nowl i graferne. */
+  .plan[style*="--now"] .plan-lane::before {
+    content: ""; position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
+    left: calc(var(--now) * 100% / 24); border-left: 1px dashed var(--muted);
+  }
   .fc-legend .lprice { height: 10px; border-radius: 2px 2px 0 0; background: var(--scale-good-bad-1); box-shadow: 6px 0 0 var(--scale-good-bad-3), 12px 0 0 var(--scale-good-bad-5); width: 4px; margin-right: 12px; }
   .fc-legend .lband { height: 10px; border-radius: 2px; background: var(--seg-off); border-top: 2px solid var(--fg); }
   .fc-legend .lbandlift { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--violet) 45%, transparent); }

@@ -3108,6 +3108,11 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return html;
   }
 
+  // Where now is in the plan's first hour (LDS .plan --now: hours from the plan's start).
+  function nowInHour() {
+    return (new Date().getMinutes() / 60).toFixed(2);
+  }
+
   function renderPlan() {
     var p = state.plan;
     if (!p) return;
@@ -3120,6 +3125,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (mini) {
       var any = odin.available && ph.rows.some(function (r) { return r.kwh > 0.05 || r.price != null; });
       mini.innerHTML = any ? planTimeline(ph, [], true) : '';
+      mini.style.setProperty('--now', nowInHour());
       if (tile) tile.toggleAttribute('data-empty', !any);
     }
     var host = qs('[data-bind-plan]');
@@ -3130,6 +3136,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     qsa('[data-panel="plan"] .fc-legend').forEach(function (l) { l.hidden = empty; });
     if (empty) { host.innerHTML = ''; return; }
     host.innerHTML = planTimeline(ph, rooms, false) + '<div class="bars-readout" aria-live="polite" hidden></div>';
+    host.style.setProperty('--now', nowInHour());
     state.planHours = ph;
     bindPlanReadout(host);
   }
