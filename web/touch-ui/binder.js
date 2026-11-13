@@ -1171,7 +1171,9 @@
       // Learned solar / wind factors (Touch's hourly fit), shown under the steppers.
       var ln = room.learned || {};
       var lv = function (v) { return v != null ? num(v, 2) : t('room.learning'); };
-      fText(sh, 'learned', t('room.learned', { sol: lv(ln.solar), sh: ln.solar_hours || 0, wind: lv(ln.wind), wh: ln.wind_hours || 0 }));
+      // Wind: the extra loss at 10 m/s head-on (1.0 = +100 %), not the preset's 0–1 scale.
+      var lw = function (v) { return v != null ? t('room.learnedWindPct', { p: Math.round(Number(v) * 100) }) : t('room.learning'); };
+      fText(sh, 'learned', t('room.learned', { sol: lv(ln.solar), sh: ln.solar_hours || 0, wind: lw(ln.wind), wh: ln.wind_hours || 0 }));
       // Settings (rooms, PATCH): never overwrite unsaved edits.
       var f = qs('form[data-save="rooms"]', sh);
       if (f && !formBusy(f)) {

@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### Learned wind loss is no longer held at a doubling, and counts in full
+- Touch's learned wind factor (the extra heat loss at 10 m/s head-on) was clamped to 1.0, a doubling, and then put in as the room's wind exposure, whose loss model multiplies it by 0.6: a learned doubling counted as +60 %. Laura (1. sal), with a terrace door in the north gable and a roof window in the west roof, cooled 0.23 °C/h in 8 m/s from the west-northwest on 2026-11-13 against the 0.12 °C/h its UA predicts, with the floor still giving heat; five rooms sat at the clamp. The factor now goes to 3.0 (×4 at 10 m/s), and the learned value becomes exposure = factor / 0.6, so preload and slab charging use the loss it was learned as. Manual presets (0–1) are unchanged. The room sheet shows the learned wind as «+x % loss at 10 m/s».
+
 ### Home tiles show the hours under their charts
 - The Heating and Weather tiles' small charts had no time axis, unlike the Plan tile. Both now carry the same hour labels (LDS 2.4.1 `.ht-x`): every 6th clock hour, with «Nu» at the right end of Heating's last 24 h and at the left end of Weather's next 24 h.
 - Both charts also carry their top and bottom in degrees on the right (LDS `.ht-y`, rounded out to whole degrees so the labels are exact), so the Weather curve reads as temperature, not wind. The Weather tile says «Preheating 1 room» in the singular.

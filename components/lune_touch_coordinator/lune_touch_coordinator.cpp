@@ -16856,8 +16856,11 @@ void LuneTouchCoordinator::effective_exposure_(const char *room_id, float *solar
   const auto learned = lune_touch_learn::result(slot->state);
   if (solar_gain != nullptr && learned.solar_valid && std::fabs(*solar_gain - 0.3f) < 0.005f)
     *solar_gain = learned.solar;
+  // The learned factor is the extra loss at 10 m/s head-on; exposure is on the presets'
+  // scale (exposure × WIND_LOSS_FACTOR = extra loss), so 1.0 learned → 1.67, not 1.0.
   if (wind_exposure != nullptr && learned.wind_valid && std::fabs(*wind_exposure - 0.5f) < 0.005f)
-    *wind_exposure = learned.wind;
+    *wind_exposure = std::min(learned.wind / ::lune_touch_charge::WIND_LOSS_FACTOR,
+                              ::lune_touch_charge::WIND_EXPOSURE_MAX);
 }
 
 void LuneTouchCoordinator::run_exposure_learning_() {

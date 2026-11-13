@@ -31,6 +31,11 @@
 
 namespace lune_touch_charge {
 
+/// Extra loss per unit wind exposure at 10 m/s head-on (exposure 1 → +60 %).
+static constexpr float WIND_LOSS_FACTOR = 0.6f;
+/// A learned exposure may exceed the presets' 0..1: 5 × 0.6 = ×4 at 10 m/s.
+static constexpr float WIND_EXPOSURE_MAX = 5.0f;
+
 struct Hour {
   float temp_c = 0.0f;         ///< Outdoor temperature
   float wind_ms = 0.0f;        ///< Wind speed
@@ -44,7 +49,7 @@ struct Room {
   float floor_r_m2k_per_w = 0.0f; ///< Covering + slab resistance above the pipes (0 → default)
   float c_slab_kwh_per_k = 0.0f;  ///< Storage mass of slab + room (0 → area default)
   uint8_t exterior_walls = 0;     ///< N=1|E=2|S=4|W=8
-  float wind_exposure = 0.5f;     ///< 0..1 facade exposure (shelter, terrain)
+  float wind_exposure = 0.5f;     ///< Facade exposure: presets 0..1, learned up to WIND_EXPOSURE_MAX
   float solar_gain = 0.3f;        ///< 0..1 passive solar gain through glazing
   float setpoint_c = 21.0f;
   float temp_c = NAN;             ///< Current room temperature (NaN = unknown)
@@ -59,7 +64,7 @@ struct Params {
   float default_floor_r_m2k_per_w = 0.10f;
   /// Extra infiltration/convection loss per unit exposure at 10 m/s head-on
   /// (0.6 → +60 % for a fully exposed facade). Calibration constant.
-  float wind_loss_factor = 0.6f;
+  float wind_loss_factor = WIND_LOSS_FACTOR;
   /// Share of horizontal irradiance on the floor area that reaches the room.
   float solar_aperture = 0.10f;
   /// Storage when V6 reports no slab mass: kWh/K per m² (≈ 60 mm screed + room).
@@ -116,7 +121,8 @@ inline float hour_loss_w(const Hour &h, const Room &room, const Params &p) {
   if (!(dt > 0.0f) || !(room.ua_w_per_k > 0.0f))
     return 0.0f;
   const float wind = std::max(0.0f, h.wind_ms) / 10.0f;
-  const float wind_mult = 1.0f + p.wind_loss_factor * std::clamp(room.wind_exposure, 0.0f, 1.0f) *
+  // Manual presets are 0..1; a learned exposure (exposure_learning.h) may go to WIND_EXPOSURE_MAX.
+  const float wind_mult = 1.0f + p.wind_loss_factor * std::clamp(room.wind_exposure, 0.0f, WIND_EXPOSURE_MAX) *
                                      wind_alignment(room.exterior_walls, h.wind_dir_deg) * wind;
   const float solar = std::clamp(room.solar_gain, 0.0f, 1.0f) * std::max(0.0f, h.shortwave_wm2) *
                       room.area_m2 * p.solar_aperture;
