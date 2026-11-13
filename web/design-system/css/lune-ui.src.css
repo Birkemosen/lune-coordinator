@@ -1245,14 +1245,18 @@
   /* Bredt felt på Hjem (.home-tile.wide): fylder hele rækken, og de andre felter står tre i
      rækken. Visualiseringen er en kompakt plan (.ht-plan.plan--mini: pris, varme, løft; ingen
      rumspor og ingen aflæsning — feltet er én knap, der åbner arket). */
-  /* Mini: intet Odin-spor; Odins planlagte varme er en orange markering i båndsporets bund
-     (rect.ht, varmt vand/legionella kun kant: .ht.dhw), så båndet kan være højere, og prisen
+  /* Mini: intet Odin-spor; Odins planlagte varme er mærker i båndsporets bund (.plan-marks:
+     husvarme solid, varmt vand skraveret, legionella krydsskraveret, alle med varmens kant), så båndet kan være højere, og prisen
      fylder mere. Forklaringen (.ht-legend) står under planen. */
   .plan--mini { row-gap: 4px; }
   .plan--mini .plan-lane--price, .plan--mini .plan-lab--sm { height: 32px; }
   .plan--mini .plan-lane--band, .plan--mini .plan-lab--band { height: 64px; }
-  .plan-lane--band .ht { fill: var(--heat-fill); }
-  .plan-lane--band .ht.dhw { fill: none; stroke: var(--heat-fill); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+  .plan-marks { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; display: grid; grid-template-columns: repeat(24, 1fr); }
+  .plan-marks i { margin-inline: 6%; border-radius: 1px; }
+  .plan-marks i[data-mode="heat"] { background: var(--heat-fill); }
+  .plan-marks i[data-mode="dhw"] { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
+  .plan-marks i[data-mode="legionella"] { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1px, transparent 1px 3px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
   .fc-legend .lheatmark { height: 4px; border-radius: 1px; background: var(--heat-fill); }
   .home-tile > .ht-legend { grid-column: 1 / -1; margin-top: var(--space-3); }
 

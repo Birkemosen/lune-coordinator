@@ -2771,6 +2771,14 @@
         temp: finite(f.temp_c) ? Number(f.temp_c) : null
       });
     }
+    // Now: what the heat pump does this hour, not only Odin's plan (it makes hot water on
+    // its own schedule too).
+    var hpNow = (state.heat && state.heat.heat_pump) || {};
+    if (rows[0] && hpNow.available && hpNow.compressor_on) {
+      var om = Number(hpNow.operation_mode);
+      rows[0].kind = om === 1 ? 'dhw' : (om === 6 ? 'legionella' : 'heat');
+      rows[0].running = true;
+    }
     return { rows: rows, H: H, start: start, odin: odin, cur: pr.currency || 'DKK' };
   }
 
@@ -2829,10 +2837,14 @@
               '" y="' + y(r.hi) + '" width=".88" height="' + (y(r.lo) - y(r.hi)).toFixed(1) + '"/>';
           }
           if (r.exp != null) pts.push(k + ',' + y(r.exp), (k + 1) + ',' + y(r.exp));
-          if (mini && r.kwh > 0.05) rects += '<rect class="ht' + (r.kind !== 'heat' ? ' dhw' : '') + '" x="' + (k + 0.06).toFixed(2) + '" y="92" width=".88" height="8"/>';
         });
         var svg = '<svg viewBox="0 0 ' + H + ' 100" preserveAspectRatio="none" aria-hidden="true">' + rects +
           (pts.length ? '<polyline class="exp" points="' + pts.join(' ') + '"/>' : '') + '</svg>';
+        // Mini: Odin's heat per hour as marks at the foot of the lane (space heat solid, hot
+        // water hatched, legionella cross-hatched; LDS .plan-marks).
+        if (mini) svg += '<span class="plan-marks">' + rows.map(function (r) {
+          return r.kwh > 0.05 || r.running ? '<i data-mode="' + r.kind + '"></i>' : '<i></i>';
+        }).join('') + '</span>';
         html += lab(' plan-lab--band', t('planG.laneBand'), [hi + '°', lo + '°']) + el('plan-lane plan-lane--band', svg);
       }
     } else {
