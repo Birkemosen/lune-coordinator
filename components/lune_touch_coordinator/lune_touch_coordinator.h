@@ -605,6 +605,9 @@ class LuneTouchCoordinator : public esphome::Component {
   /// "Asgard" for the Asgard adapter, otherwise the generic heat-source name.
   std::string display_heat_source_name() const;
   std::string display_heat_source_status_text(uint8_t *severity) const;
+  std::string display_next_heat_text() const;
+  std::string display_price_now_text(uint8_t *tone) const;
+  std::string display_coldest_room_text() const;
   std::string display_circulation_flow_text() const;
   std::string display_circulation_head_text() const;
   std::string display_circulation_power_text() const;

@@ -17590,5 +17590,120 @@ void LuneTouchCoordinator::append_valve_flush_json_(char *buffer, size_t capacit
     std::snprintf(buffer + len - 1, capacity - (len - 1), "}");  // did not fit: leave it out
 }
 
+
+// ---------------------------------------------------------------------------
+// Wall display, house row «Nu» field (LDS DESIGN.md 13.3): status here and now in place of
+// a 24 h chart — Odin's next heat, the price now in words, and the coldest room.
+// ---------------------------------------------------------------------------
+namespace {
+std::string display_decimal_(float v, int decimals) {
+  char b[16];
+  std::snprintf(b, sizeof(b), "%.*f", decimals, static_cast<double>(v));
+  for (char *p = b; *p != '\0'; ++p)
+    if (*p == '.')
+      *p = ',';
+  return b;
+}
+}  // namespace
+
+std::string LuneTouchCoordinator::display_next_heat_text() const {
+  int ymd = 0;
+  uint16_t minute = 0;
+  if (!local_today_(&ymd, &minute))
+    return "—";
+  const int hour = minute / 60;
+  if (!take_state_lock_(50))
+    return "—";
+  const OdinPlanState &o = odin_plan_;
+  std::string out = "Ingen plan fra Odin";
+  if (o.available && o.heat_production_count > 0) {
+    const int n = std::min<int>(o.heat_production_count, 24);
+    auto heats = [&](int k) { return o.heat_production_horizon[k] > 0.05f || o.energy_horizon[k] > 0.05f; };
+    int a = 0;
+    while (a < n && !heats(a))
+      a++;
+    if (a >= n) {
+      out = "Ingen varme de næste 24 t";
+    } else {
+      int b = a;
+      float heat = 0.0f, el = 0.0f;
+      while (b < n && heats(b)) {
+        heat += std::max(0.0f, o.heat_production_horizon[b]);
+        el += std::max(0.0f, o.energy_horizon[b]);
+        b++;
+      }
+      char span[40];
+      if (a == 0)
+        std::snprintf(span, sizeof(span), "varmer nu til kl. %02d", (hour + b) % 24);
+      else
+        std::snprintf(span, sizeof(span), "kl. %02d–%02d", (hour + a) % 24, (hour + b) % 24);
+      out = std::string(span) + " · " + (heat > 0.05f ? display_decimal_(heat, 1) + " kWh" : display_decimal_(el, 1) + " kWh el");
+    }
+  }
+  give_state_lock_();
+  return out;
+}
+
+std::string LuneTouchCoordinator::display_price_now_text(uint8_t *tone) const {
+  if (tone != nullptr)
+    *tone = 0;
+  int ymd = 0;
+  uint16_t minute = 0;
+  if (price_rt_ == nullptr || !local_today_(&ymd, &minute))
+    return "";
+  if (!take_state_lock_(50))
+    return "";
+  std::string out;
+  const lune_touch_price::DayPrices &d = price_rt_->today;
+  const int hour = minute / 60;
+  if (d.valid && d.ymd == ymd && hour < 24 && std::isfinite(d.total[hour])) {
+    // Scale as on the web: rank among today's hours, cheap → expensive in 5 steps.
+    int below = 0, count = 0;
+    for (int h = 0; h < 24; h++) {
+      if (!std::isfinite(d.total[h]))
+        continue;
+      count++;
+      if (d.total[h] < d.total[hour])
+        below++;
+    }
+    const int step = count > 0 ? std::clamp(1 + below * 5 / count, 1, 5) : 3;
+    static const char *const WORDS[6] = {"", "meget billig", "billig", "middel", "dyr", "meget dyr"};
+    out = "Elpris nu " + display_decimal_(d.total[hour], 2) + " kr · " + WORDS[step];
+    if (tone != nullptr)
+      *tone = step <= 2 ? 1 : (step == 4 ? 2 : (step == 5 ? 3 : 0));
+  }
+  give_state_lock_();
+  return out;
+}
+
+std::string LuneTouchCoordinator::display_coldest_room_text() const {
+  if (!take_state_lock_(50))
+    return "";
+  const ::lune_touch::ZoneBinding *pick = nullptr;
+  const ::lune_touch::ZoneLiveState *pick_live = nullptr;
+  float worst = -0.3f;
+  for (size_t i = 0; i < model_.zone_count(); i++) {
+    const auto *zone = model_.zone(i);
+    const auto *live = model_.zone_live(i);
+    if (zone == nullptr || live == nullptr || !zone->enabled || !live->fresh || !live->is_group_primary ||
+        !live->has_temperature || !live->has_setpoint)
+      continue;
+    const float d = live->temperature_c - live->setpoint_c;
+    if (d < worst) {
+      worst = d;
+      pick = zone;
+      pick_live = live;
+    }
+  }
+  std::string out = "Alle rum ved målet";
+  if (pick != nullptr) {
+    const char *name = display_binding_room_label_(model_, pick, pick_live);
+    out = std::string("Koldest: ") + (name != nullptr ? name : "rum") + " " +
+          display_decimal_(pick_live->temperature_c, 1) + "° · −" + display_decimal_(-worst, 1) + "°";
+  }
+  give_state_lock_();
+  return out;
+}
+
 }  // namespace lune_touch_coordinator
 }  // namespace esphome

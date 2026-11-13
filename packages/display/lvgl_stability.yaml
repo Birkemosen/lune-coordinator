@@ -386,14 +386,15 @@ text_sensor:
             if (active_page == 0) {
               lv_obj_set_style_bg_color(id(page_home), lv_color_hex(c_bg), LV_PART_MAIN);
               lv_obj_set_style_bg_color(id(page_home_house), lv_color_hex(c_card), LV_PART_MAIN);
-              lv_obj_set_style_bg_color(id(page_home_house_chart), lv_color_hex(c_field), LV_PART_MAIN);
               lv_obj_set_style_bg_color(id(page_home_house_sep), lv_color_hex(c_line), LV_PART_MAIN);
               lv_obj_set_style_bg_color(id(page_home_house_msg), lv_color_hex(c_info_bg), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_house_label), lv_color_hex(c_muted), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_house_calling), lv_color_hex(c_accent_ink), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_house_temp), lv_color_hex(c_fg), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_house_target), lv_color_hex(c_muted), LV_PART_MAIN);
-              lv_obj_set_style_text_color(id(page_home_house_chart_hint), lv_color_hex(c_faint), LV_PART_MAIN);
+              lv_obj_set_style_text_color(id(page_home_now_label), lv_color_hex(c_muted), LV_PART_MAIN);
+              lv_obj_set_style_text_color(id(page_home_now_value), lv_color_hex(c_fg), LV_PART_MAIN);
+              lv_obj_set_style_text_color(id(page_home_now_cold), lv_color_hex(c_muted), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_house_hs_label), lv_color_hex(c_muted), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_hs_flow_cap), lv_color_hex(c_muted), LV_PART_MAIN);
               lv_obj_set_style_text_color(id(page_home_hs_ret_cap), lv_color_hex(c_muted), LV_PART_MAIN);
@@ -489,8 +490,16 @@ text_sensor:
                 set_label(id(page_home_house_target),
                           std::isfinite(house_sp) ? ("mål " + fmt_c(house_sp, false)) : "");
               }
-              // TODO(trin2): 48-point house chart — no history ring buffer yet.
-              set_label(id(page_home_house_chart_hint), "−24 t                        nu");
+              // Nu: Odin's next heat, the price now in words, the coldest room.
+              set_label(id(page_home_now_value), id(lune_touch_app).display_next_heat_text());
+              {
+                uint8_t tone = 0;
+                set_label(id(page_home_now_price), id(lune_touch_app).display_price_now_text(&tone));
+                const uint32_t c_ok_p = light ? ${lds_light_ok} : ${lds_ok};
+                lv_obj_set_style_text_color(id(page_home_now_price),
+                                            lv_color_hex(tone == 1 ? c_ok_p : (tone == 2 ? c_warn : (tone == 3 ? c_danger : c_muted))), LV_PART_MAIN);
+              }
+              set_label(id(page_home_now_cold), id(lune_touch_app).display_coldest_room_text());
 
               // Heat source / pump from primary manifold + circulation
               const uint8_t node_count = id(lune_touch_app).display_visible_node_count();
@@ -518,8 +527,20 @@ text_sensor:
               } else {
                 set_label(id(page_home_house_hs_pump), "");
               }
-              // Heat source: what it does, or what is wrong with the link, in words.
+              // Heat source: what it does, or what is wrong with the link, in words; the links
+              // as name + dot in their own column (0 = not set up, 1 ok, 2 warn, 3 fault).
               {
+                const uint32_t c_ok = light ? ${lds_light_ok} : ${lds_ok};
+                auto status_color = [&](uint8_t st) -> uint32_t {
+                  return st == 1 ? c_ok : (st == 2 ? c_warn : (st == 3 ? c_danger : c_faint));
+                };
+                const uint8_t asgard_st = id(lune_touch_app).display_asgard_status();
+                const uint8_t odin_st = id(lune_touch_app).display_odin_status();
+                lv_obj_set_style_bg_color(id(page_home_hs_asgard_dot), lv_color_hex(status_color(asgard_st)), LV_PART_MAIN);
+                lv_obj_set_style_bg_color(id(page_home_hs_odin_dot), lv_color_hex(status_color(odin_st)), LV_PART_MAIN);
+                set_label(id(page_home_hs_src_label), id(lune_touch_app).display_heat_source_name());
+                lv_obj_set_style_text_color(id(page_home_hs_src_label), lv_color_hex(asgard_st == 0 ? c_faint : c_muted), LV_PART_MAIN);
+                lv_obj_set_style_text_color(id(page_home_hs_odin_label), lv_color_hex(odin_st == 0 ? c_faint : c_muted), LV_PART_MAIN);
                 uint8_t sev = 0;
                 set_label(id(page_home_house_hs_label), id(lune_touch_app).display_heat_source_status_text(&sev));
                 lv_obj_set_style_text_color(id(page_home_house_hs_label),
