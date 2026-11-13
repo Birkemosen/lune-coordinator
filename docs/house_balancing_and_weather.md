@@ -245,7 +245,10 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
   setpoint) only by `floor_share` of it: twice the share of the house (by weight) in rooms
   that lag more than 0.3 °C and may drive, between 0.2 and 1. One or two lagging rooms
   thus let Odin heat more where it is cheap without forcing it to, and V6 sends that heat
-  to them; half the house or more moves the whole band. With `floor_share` < 1 the window
+  to them; half the house or more moves the whole band. A room well behind moves the floor
+  however small its share: from 2 °C behind its share rises to 1 at 3 °C (the larger of the
+  two counts), so Odin must heat in the lag window instead of waiting for cheap hours
+  while the room keeps falling. With `floor_share` < 1 the window
   is 8 h from the next hour (at least the 3–6 h above), so Odin can choose across a price
   swing. A slab charge (whole house) moves the whole band.
 - **Weather preload.** While V6 preloads rooms ahead of wind or cold, the band's top rises

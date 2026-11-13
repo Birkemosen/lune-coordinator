@@ -110,6 +110,16 @@ int main() {
     assert(near(block_at(one, 14).sp, 22.0f) && near(block_at(one, 14).max, 1.5f));
     assert(lift_changed(Lift{15, 3, 1.5f, 0.2f}, Lift{15, 3, 1.5f, 1.0f}));
   }
+  // --- a room well behind moves the floor, however small its share ---------
+  {
+    assert(floor_share_for_deficit(1.6f) == 0.0f);                 // 2026-11-12: as before
+    assert(near(floor_share_for_deficit(2.5f), 0.5f));
+    assert(floor_share_for_deficit(3.2f) == 1.0f);                 // 2026-11-13: Odin must heat
+    assert(floor_share_for_deficit(NAN) == 0.0f);
+    const float share = std::max(floor_share_for(1.0f / 12.0f), floor_share_for_deficit(3.2f));
+    const Lift l = lag_lift(15, 1.5f, 4, p, share);
+    assert(near(l.floor_share, 1.0f) && l.hours == 1 + 4 + 2 - 1);  // floor lag window, not the 8 h choice
+  }
 
   // --- a dear hour is skipped only when heating earlier is cheaper -----------
   {

@@ -3536,8 +3536,12 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // room's floor lag + 2 h (odin_comfort.h lag_lift), so Odin has at least an hour
   // to plan heat that reaches the room. Re-evaluated every cycle.
   // One or two lagging rooms open only the band's top over a wider window, so Odin
-  // chooses the hours (odin_comfort.h floor_share_for); a slab charge moves it all.
-  const float floor_share = charge.active() ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
+  // chooses the hours (odin_comfort.h floor_share_for), unless the room is well behind
+  // (floor_share_for_deficit); a slab charge moves it all.
+  const float floor_share =
+      charge.active() ? 1.0f
+                      : std::max(lune_touch_odin::floor_share_for(lagging_share),
+                                 lune_touch_odin::floor_share_for_deficit(held));
   lune_touch_odin::Lift lag{};
   if (held > 0.0f)
     lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);

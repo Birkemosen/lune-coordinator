@@ -406,6 +406,21 @@ inline float floor_share_for(float lagging_share) {
   return std::clamp(2.0f * lagging_share, FLOOR_SHARE_MIN, 1.0f);
 }
 
+/// Share of a lag lift that moves the band's floor, from how far the room is behind:
+/// a small deficit leaves Odin the choice of hours (floor_share_for), but a room well
+/// behind needs heat now, not in tonight's cheap hours. 0 up to 2 °C (Laura 1.6 °C
+/// behind on 2026-11-12 must not lift the whole band again), rising to 1 at 3 °C
+/// (2026-11-13: 3 °C behind and falling 0.2 °C/h in wind, alone on 11 % of the house →
+/// floor share 0.2; the house was 0.2 °C above target and Odin waited for the night).
+/// The lift uses the larger of the two.
+static constexpr float LAG_FLOOR_FROM_C = 2.0f;
+static constexpr float LAG_FLOOR_FULL_C = 3.0f;
+inline float floor_share_for_deficit(float deficit_c) {
+  if (!std::isfinite(deficit_c))
+    return 0.0f;
+  return std::clamp((deficit_c - LAG_FLOOR_FROM_C) / (LAG_FLOOR_FULL_C - LAG_FLOOR_FROM_C), 0.0f, 1.0f);
+}
+
 /// Leaves a dear hour of the window unlifted only when heating earlier costs less,
 /// heat loss included. Heat stored j hours before it is needed loses about j / tau of
 /// itself (tau = the house's time constant, C / UA), so hour k is skipped when
