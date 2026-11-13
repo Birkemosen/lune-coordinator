@@ -8,7 +8,7 @@
 - Det brede felt (`.home-tile.wide`) har fra 768 px hovedtal og prislinje til højre i hovedet, så planen får højden.
 - Planens båndspor hedder «Komfort» / «Comfort» i stedet for «Bånd» / «Band».
 - Touch' Hjem har ikke længere overskriften «Lige nu / Varme, plan og vejr» (`.home-head`). Feltet og arket «Næste varme» hedder «Plan»; hovedtallet har etiketten «Næste opvarmning» foran tidsrummet.
-- Den kompakte plans varme-markering skelner husvarme (solid) fra varmt vand (skraveret) og legionella (krydsskraveret) med HTML-mærker (`.plan-marks`) i stedet for SVG (`rect.ht`), og forklaringen har varmt vand.
+- Den kompakte plans varme-markering skelner husvarme (solid) fra varmt vand (skraveret) og legionella (krydsskraveret) med HTML-mærker (`.plan-marks`) i stedet for SVG (`rect.ht`), og forklaringen har varmt vand og dyr time sprunget over.
 - Navbaren bliver ikke længere smallere, når den klæber ved scroll (fjernet `scroll-state`-containeren): aktiviteten til højre skifter tekst, så en indholdsbred pille skiftede bredde af sig selv.
 - Vægskærmen: `display.dev-3` (på målet) er dæmpet grøn som på web (mørk #42614a / 0x4309, lys #bdd3ad / 0xBE95). Varmekilde-blokken i husrækken siger med ord, hvad den viser: status som tekst, frem og retur med labels og forbindelserne som navn + prik i en højrejusteret kolonne. Husrækkens 24-t graf er afløst af et Nu-felt: næste opvarmning, elpris nu med prisskalaens ord og dagens opvarmning (kr, kWh el, kWh varme); varmekilde-blokken fylder rækken uden vejrbesked. DESIGN.md 13.3.
 - Styringskortenes søjler (`.scope .mini i`) er farvet efter rummets afvigelse fra mål (`data-dev="1–5"`, `scale-cold-warm`); højden er fortsat ventilåbningen.

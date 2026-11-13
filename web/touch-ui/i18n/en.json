@@ -466,6 +466,7 @@
   "planG.lBandShort": "Comfort band",
   "planG.lLiftShort": "Lift",
   "planG.lPreShort": "Preload",
+  "planG.lSkipShort": "Expensive hour skipped",
   "planG.lWind": "Wind (m/s)",
   "planG.roBand": "comfort {lo}–{hi} °C",
   "planG.roLift": "lifted +{c} °C (floor +{f})",

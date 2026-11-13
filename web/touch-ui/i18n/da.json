@@ -466,6 +466,7 @@
   "planG.lBandShort": "Komfortbånd",
   "planG.lLiftShort": "Løft",
   "planG.lPreShort": "Forvarmning",
+  "planG.lSkipShort": "Dyr time sprunget over",
   "planG.lWind": "Vind (m/s)",
   "planG.roBand": "komfort {lo}–{hi} °C",
   "planG.roLift": "løftet +{c} °C (bund +{f})",

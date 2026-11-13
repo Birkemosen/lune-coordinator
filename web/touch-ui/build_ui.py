@@ -309,7 +309,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <span class="ht-val"><small>{T("tile.planNext")}</small> <span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span> <span data-bind="tile.todayCost"></span></span>
             <span class="plan plan--mini ht-plan" aria-hidden="true" data-bind-plan-mini></span>
-            <span class="fc-legend ht-legend" aria-hidden="true"><span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lheatmark"></i>{T("planG.lHeatMark")}</span><span><i class="ldhw"></i>{T("planG.lDhwShort")}</span><span><i class="lband"></i>{T("planG.lBandShort")}</span><span><i class="lbandlift"></i>{T("planG.lLiftShort")}</span><span><i class="lbandpre"></i>{T("planG.lPreShort")}</span></span>
+            <span class="fc-legend ht-legend" aria-hidden="true"><span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lheatmark"></i>{T("planG.lHeatMark")}</span><span><i class="ldhw"></i>{T("planG.lDhwShort")}</span><span><i class="lband"></i>{T("planG.lBandShort")}</span><span><i class="lbandlift"></i>{T("planG.lLiftShort")}</span><span><i class="lbandpre"></i>{T("planG.lPreShort")}</span><span><i class="lskip"></i>{T("planG.lSkipShort")}</span></span>
           </button>'''
     tile_wx = f'''
           <button class="home-tile" type="button" popovertarget="sheet-weather" data-empty data-tile="weather">
