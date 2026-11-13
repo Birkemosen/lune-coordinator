@@ -358,7 +358,7 @@ expected next 24 hours. **History** — recent readings.
   warms or cools with outdoor temperature, wind on its facades, sun and the heat from its
   loops. The sheet shows the learned values and how many sunny and windy hours they rest on.
   The learned wind is the extra heat loss with 10 m/s straight onto the room's exterior walls
-  («+100 % loss at 10 m/s» doubles it), up to +300 %; a room with a door or a roof window on
+  («+100 % loss at 10 m/s» doubles it), up to +200 %; a room with a door or a roof window on
   the windward side can lose well over twice as much.
   Touch uses them only after enough hours (20 sunny, 30 windy) and only while the field is at
   its default (sun 0.30, wind 0.50); a value you set yourself always comes first.

@@ -16820,7 +16820,7 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
 // Exposure learning: solar and wind factors per room (exposure_learning.h)
 // -----------------------------------------------------------------------------
 namespace {
-constexpr uint32_t EXPOSURE_SAVE_MS = 6UL * 60UL * 60UL * 1000UL;
+constexpr uint32_t EXPOSURE_SAVE_MS = 60UL * 60UL * 1000UL;  // a restart loses at most an hour of fitting
 }  // namespace
 
 LuneTouchCoordinator::ExposureLearnSlot *LuneTouchCoordinator::exposure_slot_(const char *room_id, bool create) {

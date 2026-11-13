@@ -33,8 +33,8 @@ namespace lune_touch_charge {
 
 /// Extra loss per unit wind exposure at 10 m/s head-on (exposure 1 → +60 %).
 static constexpr float WIND_LOSS_FACTOR = 0.6f;
-/// A learned exposure may exceed the presets' 0..1: 5 × 0.6 = ×4 at 10 m/s.
-static constexpr float WIND_EXPOSURE_MAX = 5.0f;
+/// A learned exposure may exceed the presets' 0..1: 2.0 / 0.6 ≈ 3.33 → ×3 at 10 m/s.
+static constexpr float WIND_EXPOSURE_MAX = 2.0f / WIND_LOSS_FACTOR;
 
 struct Hour {
   float temp_c = 0.0f;         ///< Outdoor temperature

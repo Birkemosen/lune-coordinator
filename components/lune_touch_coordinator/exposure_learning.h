@@ -42,7 +42,7 @@ static constexpr uint16_t SOLAR_MIN_SAMPLES = 20;   // hours with G >= 200 W/m²
 static constexpr uint16_t WIND_MIN_SAMPLES = 30;    // hours with w >= 0.3
 static constexpr float SOLAR_SAMPLE_WM2 = 200.0f;
 static constexpr float WIND_SAMPLE = 0.3f;
-static constexpr float WIND_MAX = 3.0f;        // extra loss at 10 m/s head-on: at most ×4
+static constexpr float WIND_MAX = 2.0f;        // extra loss at 10 m/s head-on: at most ×3 (the fit is noisy)
 
 struct Sample {
   float dtdt_c_per_h = 0.0f;
