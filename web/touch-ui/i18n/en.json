@@ -1087,6 +1087,7 @@
   "plan.todaySplit": "{spent} {cur} used so far · {rest} {cur} rest of the day · {kwh} kWh electricity",
   "tile.price": "Power price now {p} {cur}/kWh",
   "tile.weatherStatus": "Preheating {n} rooms",
+  "tile.weatherStatus1": "Preheating 1 room",
   "tile.weatherStatusNone": "No preheating",
   "tile.weatherSolar": "Solar hold-off in {n} rooms",
   "tile.pumpNone": "No data from the pump",

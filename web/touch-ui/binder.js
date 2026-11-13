@@ -1420,6 +1420,16 @@
     ax.innerHTML = nowAtEnd ? out + now : now + out;
   }
 
+  // Y-axis beside a Home tile's chart (.ht-y): its top and bottom with the unit.
+  // Rounds the range out to whole degrees (in place) so the labels are exact.
+  function tileYAxis(key, r) {
+    r.lo = Math.floor(r.lo); r.hi = Math.ceil(r.hi);
+    var ys = qsa('[data-bind-tiley="' + key + '"] i');
+    if (ys.length < 2) return;
+    ys[0].textContent = num(r.hi, 0) + '°';
+    ys[1].textContent = num(r.lo, 0) + '°';
+  }
+
   // Home's Heat tile: the same 24 h, drawn small. Page samples are only the fallback.
   function drawHeatTile(h) {
     var fs = (h && h.feed_c) || [], rs = (h && h.return_c) || [];
@@ -1429,6 +1439,7 @@
     if (tile) tile.removeAttribute('data-empty');
     if (!viz) return;
     var r = axisRange([fs, rs], 3), n = fs.length;
+    tileYAxis('heat', r);
     var pts = function (arr) {
       return arr.map(function (v, i) { return finite(v) ? (i * 240 / (n - 1)).toFixed(1) + ',' + (64 - (Number(v) - r.lo) / (r.hi - r.lo) * 64).toFixed(1) : null; })
         .filter(Boolean);
@@ -3401,7 +3412,7 @@
     var active = (fc.decisions || []).filter(function (d) { return d && d.active && d.offset_c > 0; });
     var sunny = (fc.decisions || []).filter(function (d) { return d && d.active && d.solar && d.solar.holdoff; });
     setShow('fc.preload', active.length > 0);
-    setText('tile.weatherStatus', active.length ? t('tile.weatherStatus', { n: active.length })
+    setText('tile.weatherStatus', active.length ? t(active.length === 1 ? 'tile.weatherStatus1' : 'tile.weatherStatus', { n: active.length })
       : sunny.length ? t('tile.weatherSolar', { n: sunny.length }) : t('tile.weatherStatusNone'));
     if (active.length) {
       var maxOff = active.reduce(function (m, d) { return Math.max(m, Number(d.offset_c) || 0); }, 0);
@@ -3416,6 +3427,7 @@
     if (tile) tile.toggleAttribute('data-empty', !ok);
     if (viz && ok) {
       var r = axisRange([next], 3);
+      tileYAxis('weather', r);
       var pl = viz.querySelector('polyline.t');
       var wp = seriesPoints(next, 240, 64, r.lo, r.hi);
       if (pl) pl.setAttribute('points', wp);

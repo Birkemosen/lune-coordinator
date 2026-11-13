@@ -1710,6 +1710,15 @@
   .ht-x .start { left: 0; transform: none; }
   .ht-x .end { right: 0; transform: none; }
   .home-tile[data-empty] > .ht-x { display: none; }
+  /* Y-akse (.ht-y): grafens top og bund med enhed (fx «9°» / «4°»), så man kan se, hvad
+     kurven er. Står i en smal rende til højre for grafen; graf og timeakse gøres tilsvarende
+     smallere, så timerne stadig flugter med kurven. */
+  .home-tile:has(> .ht-y) { --ht-gutter: var(--space-6); }
+  .home-tile:has(> .ht-y) > :is(.ht-viz, .ht-x) { width: calc(100% - var(--ht-gutter)); }
+  .home-tile > .ht-y { grid-area: viz; justify-self: end; align-self: end; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end;
+    height: 64px; margin-top: var(--space-4); font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
+  .ht-y i { font-style: normal; }
+  .home-tile[data-empty] > .ht-y { display: none; }
   .home-tile.wide { grid-column: 1 / -1; }
   /* Bredt felt fra 768 px: hovedtal og prislinje står til højre i hovedet (før ›), så
      planen får højden. */
