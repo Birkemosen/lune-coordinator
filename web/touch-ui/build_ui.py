@@ -303,12 +303,13 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="heat"><g class="marks"></g><path class="a" d=""/><polyline class="f" points=""/><polyline class="r" points=""/></svg>
           </button>'''
     tile_plan = f'''
-          <button class="home-tile" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
+          <button class="home-tile wide" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
             <span class="chip-icon" data-tone="violet" aria-hidden="true">{I["plan"]}</span><b>{T("tile.plan")}</b>
             <span class="ht-status" data-bind="tile.planStatus">{T("tile.planNone")}</span>
-            <span class="ht-val"><span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
+            <span class="ht-val"><small>{T("tile.planNext")}</small> <span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span> <span data-bind="tile.todayCost"></span></span>
-            <svg class="ht-viz" viewBox="0 0 240 64" preserveAspectRatio="none" aria-hidden="true" data-bind-viz="plan"></svg>
+            <span class="plan plan--mini ht-plan" aria-hidden="true" data-bind-plan-mini></span>
+            <span class="fc-legend ht-legend" aria-hidden="true"><span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lheatmark"></i>{T("planG.lHeatMark")}</span><span><i class="ldhw"></i>{T("planG.lDhwShort")}</span><span><i class="lband"></i>{T("planG.lBandShort")}</span><span><i class="lbandlift"></i>{T("planG.lLiftShort")}</span><span><i class="lbandpre"></i>{T("planG.lPreShort")}</span><span><i class="lskip"></i>{T("planG.lSkipShort")}</span></span>
           </button>'''
     tile_wx = f'''
           <button class="home-tile" type="button" popovertarget="sheet-weather" data-empty data-tile="weather">
@@ -343,7 +344,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       <section class="view" id="v-home-house" aria-labelledby="h-home">
         {alerts}
         <div class="home-scopes" role="group" aria-label="{T("scopes.aria")}" data-bind-scopes>
-          <div class="scope" aria-current="page"><small>{T("scope.house")}</small><b data-bind="scope.house">{DASH}</b></div>
+          <button class="scope scope--house" type="button" popovertarget="sheet-house" aria-current="page"><small>{T("scope.house")}</small><b><span data-bind="scope.house">{DASH}</span> <span class="scope-tgt" data-bind="scope.target"></span></b><span class="tile-dev" data-bind-housedev hidden></span></button>
+          <div class="scope scope--fact"><small>{T("thermo.outsideLabel")}</small><b data-bind="house.outdoor">{DASH}</b><span class="chip-icon" data-tone="info" aria-hidden="true">{I["outside"]}</span></div>
         </div>
         <section class="home-hero">
           {hero_waves()}
@@ -352,27 +354,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <h2 id="h-home"><span data-bind="home.headline">{T("home.headline.none")}</span> <span class="sub" data-bind="home.headline2"></span></h2>
             <p data-bind="home.sentence">{T("home.sentence.none")}</p>
           </div>
-          <form class="thermo" data-save="house-target">
-            <dl class="thermo-facts">
-              <div><dt><span class="chip-icon" aria-hidden="true">{I["house"]}</span><span>{T("thermo.house")}</span></dt><dd data-bind="house.now"></dd></div>
-              <div><dt><span class="chip-icon" data-tone="info" aria-hidden="true">{I["outside"]}</span><span>{T("thermo.outsideLabel")}</span></dt><dd data-bind="house.outdoor"></dd></div>
-            </dl>
-            <div class="thermo-ring" style="--v:60" data-min="15" data-max="25" data-bind-thermo>
-              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="42" pathLength="100"/><circle class="arc" cx="50" cy="50" r="42" pathLength="100"/><line class="now" x1="84" y1="50" x2="99.4" y2="50"/><circle class="knob" cx="50" cy="50" r="42" pathLength="100"/></svg>
-              <div class="thermo-val">
-                <small>{T("climate.target")}</small>
-                <label class="thermo-target"><input type="text" inputmode="decimal" id="house_target" name="house_target" value="{T.num(21.0)}" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off" aria-label="{ta}"><span class="unit" aria-hidden="true">°</span></label>
-              </div>
-              <div class="thermo-steps">
-                <button type="button" data-step="-1" aria-label="{T("common.decrease", x=ta)}">−</button>
-                <button type="button" data-step="1" aria-label="{T("common.increase", x=ta)}">+</button>
-              </div>
-            </div>
-            <p class="autosave" aria-live="polite"></p>
-          </form>
         </section>
-        <header class="home-head"><small>{T("home.nowEyebrow")}</small><h3>{T("home.nowTitle")}</h3></header>
-        <div class="home-tiles">{tile_heat}{tile_plan}{tile_wx}{tile_pump}</div>
+        <div class="home-tiles">{tile_heat}{tile_wx}{tile_pump}{tile_plan}</div>
         {heatmap}
       </section>'''
 
@@ -482,8 +465,11 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <p class="note" data-bind-show="planG.empty">{T("planG.empty")}</p>
           <div class="plan" data-bind-plan role="img" aria-label="{T("planG.aria")}"></div>
           <p class="fc-legend" aria-hidden="true">
-            <span><i class="lbar"></i>{T("planG.lHeat")}</span><span><i class="ldhw"></i>{T("planG.lDhw")}</span>
-            <span><i class="lleg"></i>{T("planG.lLeg")}</span><span><i class="llift"></i>{T("planG.lLift")}</span>
+            <span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lbar"></i>{T("planG.lHeat")}</span>
+            <span><i class="ldhw"></i>{T("planG.lDhw")}</span><span><i class="lleg"></i>{T("planG.lLeg")}</span>
+            <span><i class="lband"></i>{T("planG.lBand")}</span><span><i class="lbandpre"></i>{T("planG.lBandPre")}</span>
+            <span><i class="lbandlift"></i>{T("planG.lLift")}</span>
+            <span><i class="lskip"></i>{T("planG.lSkip")}</span><span><i class="lwind"></i>{T("planG.lWind")}</span>
             <span><i class="lpre"></i>{T("planG.lPre")}</span><span><i class="lch"></i>{T("planG.lCharge")}</span>
             <span><i class="lins"></i>{T("planG.lInsufficient")}</span>
           </p>
@@ -576,7 +562,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {metric(T("pump.head"), "m", "pump.head")}
           {metric(T("pump.power"), "W", "pump.power")}
         </dl>
-        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.balance"), "pump.balance"), (T("pump.recommended"), "pump.recommended"), (T("heat.valvesNow"), "heat.valvesNow"), (T("pump.host"), "pump.host")])}
+        {kv([(T("pump.flowM3h"), "pump.flowM3h"), (T("pump.mixRatio"), "pump.mixRatio"), (T("pump.balance"), "pump.balance"), (T("pump.recommended"), "pump.recommended"), (T("pump.host"), "pump.host")])}
         <div class="sub"><h4>{T("pump.dist")}</h4>
           <div class="dist" data-bind-dist><p class="dist-note">{DASH}</p></div></div>
         <div class="sub"><h4>{T("pump.need")}</h4>
@@ -833,16 +819,20 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     # Cirkulation: pumpens forbindelse og husbalancering (fordelingen mellem styringer)
     pump_form = f'''
       <form data-save="circulation" data-patch>
-        {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), T("heat.houseBalanceSub"), False),
+        {ggroup(T("heat.houseBalance"), sswitch("house_balance_enabled", T("heat.houseBalanceSw"), f'<span data-bind="heat.houseBalanceBasis">{T("heat.houseBalanceSub")}</span>', False),
                 "", extra=note(T("heat.houseBalanceHint")))}
-        {group(T("heat.valves"), sswitch("valves_follow_hp_enabled", T("heat.valvesSw"), T("heat.valvesSub"), False), extra=note(T("heat.valvesHint")))}
         {group(T("heat.gains"), sstep("internal_gains_w", T("heat.gainsLabel"), 650, 0, 2000, 50, "W", dec=0, hint=T("heat.gainsHint")),
                extra=note(T("heat.gainsGuide")))}
         {group(T("pump.hpGroup"),
                srow(f"<span>{T('pump.hpMax')}</span>", f'<span class="setting-value" data-bind="pump.hpMaxOdin">{DASH}</span>',
                     T("pump.hpMaxOdinHint"), attrs=' data-bind-show="pump.hpMaxOdin" hidden') +
                srow(lab("hp_max_kw", T("pump.hpMax")), stepper("hp_max_kw", 0, 0, 40, 0.5, "kW", T("pump.hpMax")),
-                    T("pump.hpMaxHint"), attrs=' data-bind-show="pump.hpMaxEdit"'))}
+                    T("pump.hpMaxHint"), attrs=' data-bind-show="pump.hpMaxEdit"') +
+               srow(lab("buffer_tank", T("pump.tank")),
+                    '<select class="select" id="buffer_tank" name="buffer_tank">' + "".join(
+                        f'<option value="{v}"{" selected" if v == "four_port" else ""}>{T("pump.tank." + v)}</option>'
+                        for v in ("none", "series", "three_port", "four_port")) + '</select>',
+                    T("pump.tankHint")))}
         {group(T("pump.connection"), sinput("host", T("pumpCfg.host"), "", id_="pump_host", extra=' placeholder="alpha2go.local"') +
                sport("pump_port", T("pumpCfg.port")) +
                # Entitetsnavnene ændres sjældent: underside i samme gruppe (maks. 5 grupper pr. side).
@@ -911,13 +901,38 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           </div>
           {savebar("heat", T("hs.save"))}
         </form>'''
+    # ---- Huset: målet indstilles her (ringen, autogem); Hjem viser det i Hus-kortet.
+    house_over = f'''
+        <div style="display:grid;gap:var(--space-5);justify-items:start">
+          <form class="thermo" data-save="house-target">
+            <dl class="thermo-facts">
+              <div><dt><span class="chip-icon" aria-hidden="true">{I["house"]}</span><span>{T("thermo.house")}</span></dt><dd data-bind="house.now"></dd></div>
+              <div><dt><span class="chip-icon" data-tone="info" aria-hidden="true">{I["outside"]}</span><span>{T("thermo.outsideLabel")}</span></dt><dd data-bind="house.outdoor"></dd></div>
+            </dl>
+            <div class="thermo-ring" style="--v:60" data-min="15" data-max="25" data-bind-thermo>
+              <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="42" pathLength="100"/><circle class="arc" cx="50" cy="50" r="42" pathLength="100"/><line class="now" x1="84" y1="50" x2="99.4" y2="50"/><circle class="knob" cx="50" cy="50" r="42" pathLength="100"/></svg>
+              <div class="thermo-val">
+                <small>{T("climate.target")}</small>
+                <label class="thermo-target"><input type="text" inputmode="decimal" id="house_target" name="house_target" value="{T.num(21.0)}" data-min="5" data-max="30" data-step-size="0.5" autocomplete="off" aria-label="{ta}"><span class="unit" aria-hidden="true">°</span></label>
+              </div>
+              <div class="thermo-steps">
+                <button type="button" data-step="-1" aria-label="{T("common.decrease", x=ta)}">−</button>
+                <button type="button" data-step="1" aria-label="{T("common.increase", x=ta)}">+</button>
+              </div>
+            </div>
+            <p class="autosave" aria-live="polite"></p>
+          </form>
+          <dl class="kv"><div><dt>{T("house.calling")}</dt><dd data-bind="house.calling">{DASH}</dd></div></dl>
+        </div>'''
+    sheet_house = sheet("house", T("hash.house"), I["house"], "", T("scope.house"), None,
+                        [("overview", house_over)], status_attrs=' data-bind="house.status"')
     sheet_heat = sheet("heat", T("hash.heat"), I["heat"], "", T("tile.heat"), None,
                        [("overview", heat_over), ("settings", heat_set)], status_attrs=' data-bind="heat.badgeText"')
     sheet_plan = sheet("plan", T("hash.plan"), I["plan"], "violet", T("tile.plan"), None,
                        [("overview", plan_over), ("history", plan_hist), ("settings", price_form)], status_attrs=' data-bind="tile.planStatus"')
     sheet_pump = sheet("pump", T("hash.pump"), I["pump"], "water", T("tile.pump"), None,
                        [("overview", pump_over), ("settings", pump_form)], status_attrs=' data-bind="tile.pumpStatus"')
-    sheets = (sheet_heat + sheet_plan + sheet_wx + sheet_pump
+    sheets = (sheet_house + sheet_heat + sheet_plan + sheet_wx + sheet_pump
               + f'\n  <template id="tpl-mani">{manifold_sheet(SLOT)}</template>'
               + f'\n  <template id="tpl-room">{room_sheet(SLOT)}</template>')
 
@@ -971,7 +986,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "hp.compOn", "hp.compOff", "flow.none", "flow.note", "flow.noteLpm", "flow.zoneTip",
         "role.reserve", "role.reserveNow", "role.asgardNow", "role.offOdin", "role.drives", "role.off",
         "driver.odin", "driver.asgard", "now.heat", "now.off", "now.dhw", "planG.odin", "planG.noOdin",
-        "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient", "planG.tipLift",
+        "planG.tip.heat", "planG.tip.dhw", "planG.tip.legionella", "planG.tipPre", "planG.tipCharge", "planG.tipInsufficient",
+        "planG.lanePrice", "planG.laneBand", "planG.laneWind", "planG.roBand", "planG.roLift", "planG.roSkip", "planG.srcPre", "planG.srcLag", "planG.srcCharge",
         "hs.mqttPasswordSet", "hs.mqttState", "hs.mqttConnected", "hs.mqttDisconnected", "hs.mqttOff", "common.on", "common.off",
         "wifi.connectedTo", "wifi.notConnected", "wifi.apActive", "wifi.sent", "wifi.needSsid",
         "wifi.switch.pending", "wifi.switch.connected", "wifi.switch.reverted", "wifi.switch.failed",
@@ -998,13 +1014,14 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.forenoon", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "common.open", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "scope.target", "sheet.houseStatus", "house.callingVal", "room.valveMm", "common.open", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",
         "tile.todayCost", "heat.driveNow", "hs.odinLiftedShort", "plan.energyEl", "plan.today", "plan.todaySplit", "heat.dhwNow", "heat.legionellaNow", "heat.dhwBadge", "heat.legionellaBadge", "room.loops", "room.valveShort", "room.fromV6", "room.merged", "room.areaParts", "room.wallsNone", "room.floorUnset", "room.histCallingVal", "room.next24Aria", "room.histChartAria",
-        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRow", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdviceHead", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior", "heat.phase.running", "heat.phase.prestart", "heat.phase.idle", "heat.phase.unknown", "heat.phase.off",
-        "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
+        "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRowModel", "heat.houseBalanceSub", "heat.houseBalanceWeight", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior",
+        "activity.flush", "activity.minutesLeft", "activity.offline", "activity.dhw", "activity.legionella", "activity.heating", "activity.prestart", "activity.idle", "activity.step",
+        "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.chargingVal", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
@@ -1067,6 +1084,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <label for="m-sys">{I_SYS}{T("nav.system")}</label>
       </nav>
       <div class="tools">
+        <span class="badge activity" role="status" data-bind-activity hidden><span></span></span>
         {langnav}
         <label class="icon-btn theme-btn" for="theme" title="{T("theme.toggle")}">
           <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>

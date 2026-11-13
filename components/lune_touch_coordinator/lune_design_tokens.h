@@ -43,7 +43,7 @@ constexpr uint32_t kInfoFill = 0x31719C;
 constexpr uint32_t kDev1 = 0x318ECE;
 constexpr uint32_t kOnDev1 = 0x101010;
 constexpr uint32_t kDev2 = 0x73A2CE;
-constexpr uint32_t kDev3 = 0x42494A;
+constexpr uint32_t kDev3 = 0x42614A;
 constexpr uint32_t kDev4 = 0xF7AA63;
 constexpr uint32_t kDev5 = 0xF77500;
 

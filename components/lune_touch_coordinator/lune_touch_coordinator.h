@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hp_phase.h"
+#include "valve_flush.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
 #include "room_reached.h"
@@ -248,7 +249,8 @@ struct OdinControlState {
   lune_touch_odin::Lift wanted{};
   lune_touch_odin::Lift applied{};
   float wanted_energy_kwh{0.0f};
-  char reason[24]{"none"};
+  char reason[32]{"none"};
+  lune_touch_odin::LiftSources sources{};
   char last_action[16]{"none"};
   char status[24]{"disabled"};
   uint32_t last_cycle_ms{0};
@@ -268,6 +270,8 @@ struct CirculationPumpState {
   char flow_entity[48]{"pump_flow"};
   char head_entity[48]{"pump_head_pressure"};
   char power_entity[48]{"pump_power"};
+  // How the buffer tank is piped; decides what the flow ratio means (circulation_pump.h).
+  circulation_pump::BufferTank buffer_tank{circulation_pump::BufferTank::FourPort};
   bool reachable{false};
   bool has_flow{false};
   bool has_head{false};
@@ -292,6 +296,8 @@ struct CirculationPumpState {
   float mix_in_kw{NAN};    // heat into the tank (Asgard output, else primary flow × THW1−THW2)
   float mix_out_kw{NAN};   // heat drawn from it (secondary flow × Zone 1 feed−return, else thermal_kw)
   uint32_t mix_ms{0};
+  // A loop flush holds the valves (valve_flush.h); the pump is polled fast meanwhile.
+  bool valves_held{false};
 };
 
 struct OdinPlanState {
@@ -349,6 +355,8 @@ struct OdinPlanState {
   // Today's electricity per wall-clock hour 0–23 (kWh): Odin's actual_cons for the
   // hours gone, its plan for the rest. Bit h of today_actual_mask = hour h is actual.
   float today_energy_kwh[24]{};
+  // Today's space heat per wall-clock hour (kWh): actual for the hours gone, plan for the rest.
+  float today_heat_kwh[24]{};
   uint32_t today_actual_mask{0};
   bool has_today_energy{false};
   float last_run_execution_ms{NAN};
@@ -559,6 +567,10 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Problems for the "Active problems" / "Problems" entities (main loop).
   /// False when the state is busy; the caller then skips this publish.
   bool problems_summary(float *count, std::string *titles) const;
+  /// Weather preload and what the heat source is asked for, for Home Assistant's
+  /// history (packages/system/weather.yaml). False when the state is busy.
+  bool weather_summary(float *rooms, float *offset_c, float *lift_c, std::string *text,
+                       std::string *reason) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
   std::string zone_line_meta_text(uint8_t row) const;
@@ -594,6 +606,10 @@ class LuneTouchCoordinator : public esphome::Component {
   std::string display_heat_pump_temps_text() const;
   /// "Asgard" for the Asgard adapter, otherwise the generic heat-source name.
   std::string display_heat_source_name() const;
+  std::string display_heat_source_status_text(uint8_t *severity) const;
+  std::string display_next_heat_text() const;
+  std::string display_price_now_text(uint8_t *tone) const;
+  std::string display_today_text() const;
   std::string display_circulation_flow_text() const;
   std::string display_circulation_head_text() const;
   std::string display_circulation_power_text() const;
@@ -713,6 +729,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_hp_max_kw_user(float kw);
   bool set_solar_holdoff_enabled(bool enabled);
   bool set_house_balance_enabled(bool enabled);
+  /// Weight (house_balance.h WEIGHT_MIN..MAX %) of one V6 board in the house balance.
+  bool set_house_balance_weight(const char *node_id, int weight_pct);
   bool set_valves_follow_hp_enabled(bool enabled);
   bool request_forecast_fetch(char *response, size_t capacity);
   bool estimate_forecast_location(char *response, size_t capacity);
@@ -763,7 +781,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool request_heat_source_test_push(char *response, size_t capacity);
   bool set_circulation_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
                                 const char *flow_entity, const char *head_entity,
-                                const char *power_entity, char *response, size_t capacity);
+                                const char *power_entity, char *response, size_t capacity,
+                                const char *buffer_tank = nullptr);
   bool request_circulation_refresh(char *response, size_t capacity);
   bool set_settings(const char *coordinator_name, const char *install_id,
                     const char *site_label, const char *install_mode,
@@ -773,6 +792,10 @@ class LuneTouchCoordinator : public esphome::Component {
                     bool has_display_idle_timeout, uint32_t display_idle_timeout_s,
                     char *response, size_t capacity, const char *language = nullptr);
   bool request_display_wake(char *response, size_t capacity);
+  /// Flush one loop (valve_flush.h): fully open, every other loop closed, for
+  /// `minutes` (0 = default). node 1-based index of an approved V6, zone 1..6.
+  bool request_valve_flush(int node, int zone, uint32_t minutes, char *response, size_t capacity);
+  bool stop_valve_flush(char *response, size_t capacity);
   bool consume_display_wake_request();
   /// Display idle diagnostics: called from the LVGL 50 ms interval.
   void note_display_state(bool awake, bool paused, uint32_t inactive_ms);
@@ -841,6 +864,13 @@ class LuneTouchCoordinator : public esphome::Component {
     bool enabled{false};
     uint32_t seen_ms{0};
   };
+  struct HouseBalanceWeight {
+    char node_id[24]{};
+    int16_t pct{100};
+  };
+  HouseBalanceWeight hb_weights_[::lune_touch::MAX_NODES]{};
+  uint8_t hb_basis_{0};  ///< lune_touch_house_balance::Basis
+  int house_balance_weight_(const char *node_id) const;
   HouseBalanceLoop hb_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
   float hb_worst_pa_[::lune_touch::MAX_NODES]{};
   float hb_scale_[::lune_touch::MAX_NODES]{1.0f, 1.0f, 1.0f, 1.0f};
@@ -850,6 +880,16 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_house_balance_(uint32_t now_ms);
   bool send_v6_house_balance_(const char *host, uint8_t zone_index, float factor, uint32_t ttl_s);
   void append_house_balance_json_(char *buffer, size_t capacity) const;
+  // V6's valve pin travel per loop (opening_mm in /zones); NAN when V6 does not report it.
+  struct V6Opening {
+    float mm{NAN};
+  };
+  V6Opening v6_opening_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
+  uint32_t vt_nonce_{0};
+  ::lune_touch_valve_flush::Run vf_run_{};
+  void run_valve_flush_(uint32_t now_ms);
+  bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop, float others_pct = NAN);
+  void append_valve_flush_json_(char *buffer, size_t capacity) const;
   // Valves follow the heat pump: phase pushed to every approved V6.
   ::lune_touch_hp_phase::State hp_phase_state_{};
   ::lune_touch_hp_phase::Phase hp_phase_{::lune_touch_hp_phase::Phase::Unknown};
@@ -883,6 +923,10 @@ class LuneTouchCoordinator : public esphome::Component {
   void ensure_preload_learning_defaults_();
   bool load_preload_learning_();
   bool save_preload_learning_();
+  bool load_ua_day_();
+  bool save_ua_day_();
+  int32_t ua_day_ymd_{0};        ///< Local date of the UA day being accumulated (0: none yet)
+  uint32_t ua_day_saved_ms_{0};  ///< Last hourly store of the day's totals
   ForecastDispatchSummary dispatch_forecast_commands_();
   void append_zone_comfort_chart_json_(char *buffer, size_t capacity, size_t &off,
                                        size_t zone_index) const;
@@ -1030,6 +1074,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool preload_learning_dirty_{false};
   float preload_gain_scale_[::lune_touch::MAX_HOUSE_ZONES]{};
   int8_t preload_lead_bias_h_[::lune_touch::MAX_HOUSE_ZONES]{};
+  /// A preload ran for this zone and has not been judged yet (judged once, when it ends).
+  bool preload_pending_[::lune_touch::MAX_HOUSE_ZONES]{};
   bool preload_gain_scale_init_{false};
   char last_poll_error_[80]{};
   char node_last_success_host_[::lune_touch::MAX_NODES][64]{};
@@ -1073,7 +1119,14 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_odin_control_();
   bool odin_in_control_() const;
   float update_demand_hold_(const ::lune_touch::StrategySnapshot &strategy, float charge_store_c);
-  lune_touch_odin::Lift compute_odin_lift_(uint8_t now_hour, float *energy_kwh, const char **reason);
+  lune_touch_odin::Lift compute_odin_lift_(uint8_t now_hour, float *energy_kwh, const char **reason,
+                                          lune_touch_odin::LiftSources *sources = nullptr);
+  /// Caller holds the state lock. Rooms V6 preloads ahead of wind or cold (not slab
+  /// charge, not solar hold-off): largest offset, latest peak, share of the rooms.
+  bool weather_preload_(float *offset_c, int *peak_in_h, float *share) const;
+  /// Caller holds the state lock. What a heat source without Odin must keep above the
+  /// house temperature for the weather: an open slab charge or a preload (°C).
+  float weather_store_c_() const;
   bool post_odin_json_(const char *path, const char *body, int *status);
   void load_odin_control_();
   // Exposure learning (exposure_learning.h): per room, hourly samples teach the
@@ -1246,7 +1299,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void fail_price_cycle_(const char *error);
   bool local_today_(int *ymd, uint16_t *minute_of_day) const;
   bool fetch_https_(const char *url, char *body, size_t capacity, int *status, char *error, size_t error_len);
-  bool fetch_datahub_series_(const char *gln, const char *codes_json, char *body, size_t capacity,
+  bool fetch_datahub_series_(const char *glns_json, const char *codes_json, unsigned limit, char *body, size_t capacity,
                              char *error, size_t error_len);
   /// Spot for today+tomorrow into price_rt_->samples (calculation currency).
   /// Returns the sample count; *used names the source that answered.

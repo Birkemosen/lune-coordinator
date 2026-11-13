@@ -292,6 +292,20 @@ within ±1.0 °C and freezes on DHW, Legionella, defrost, Odin heat-off, degrade
 house quality, forecast offset on the critical zone, or unconfigured freeze inputs.
 Bias writes are lease-gated and reseed from Asgard read-back after lease recovery.
 
+`flush` is the loop flush (`POST /valve-curves/flush` with `node`, `zone`, `minutes` 5–30,
+default 15; `POST /valve-curves/flush/stop` ends it early): one loop fully open and every
+other loop on every V6 closed through V6's `/api/v1/valve-test`, renewed every minute:
+
+```json
+"flush": { "active": true, "node": 1, "zone": 3, "left_s": 540 }
+```
+
+`node` and `zone` are 1-based; `left_s` is 0 when no flush runs. The valve-curve measurement
+(`valve_probe`, `POST /valve-curves/measure`) was removed on 2026-11-13: the circulation pump's
+computed flow could not resolve the valve pin's lift (every curve put full flow at about 1 mm),
+and V6 no longer keeps curves. `house_balance.basis` is `model` or `none` (the `measured`
+basis and `boards[].need` went with it).
+
 `heat_pump` is the live Asgard `/dashboard/state` snapshot; `heat_pump.output_kw` is
 Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
 
@@ -579,6 +593,7 @@ registry import/export:
   "temperature_c": 21.3,
   "setpoint_c": 21.0,
   "valve_pct": 47.0,
+  "opening_mm": 0.94,
   "status": "heat",
   "fresh": true,
   "comfort": {
@@ -630,6 +645,11 @@ registry import/export:
   }
 }
 ```
+
+`valve_pct` is V6's valve opening: the pin's position in % of its learned travel. `opening_mm`
+is the same position in mm, passed through from V6's `/api/v1/zones` (`null` when V6 does not
+report it). The fields `pin_pct` and `full_lmin` were removed with the valve-curve measurement
+(2026-11-13).
 
 `comfort_chart` is **not** embedded in `GET /zones` (payload size). Fetch one zone:
 
@@ -1211,16 +1231,16 @@ head/flow. Delivered energy is integrated into per-room
   "hydraulic_authority": 0.72,
   "last_error": "",
   "mixing": { "state": "ok", "ratio": 1.2, "primary_l_min": 19.0, "secondary_l_min": 22.7,
-              "age_s": 600, "recommended_l_min": 20.0, "recommended_head_m": 3.9,
-              "in_kw": 5.3, "out_kw": 5.1 }
+              "age_s": 600, "recommended_l_min": 20.0, "in_kw": 5.3, "out_kw": 5.1 }
 }
 ```
 
 `mixing` is the last sample taken while Asgard reports space heating with its pump on,
 held for 6 h (all values `null` and `state` `unknown` without one). `state` is `short`
 (ratio < 0.97), `ok` or `risk` (ratio > 1.25). `recommended_l_min` is 5 % above the primary
-flow, rounded up to 0.5 l/min; `recommended_head_m` the constant pressure for it through the
-valves as they are now. `in_kw` is Asgard's `computed_output_power` (else primary flow ×
+flow, rounded up to 0.5 l/min. `recommended_head_m` and `full_load` (the head for that flow on
+a system curve learned from the loops' measured full flows) were removed with the valve-curve
+measurement (2026-11-13). `in_kw` is Asgard's `computed_output_power` (else primary flow ×
 `hp_feed_temp − hp_return_temp`); `out_kw` is the secondary flow × Asgard's 1-wire Zone 1
 feed − return (`ow_role_z1_feed/return`), else `thermal_kw`; `null` when unknown.
 
@@ -1283,7 +1303,8 @@ heat-source levers. See [`house_balancing_and_weather.md`](house_balancing_and_w
 - `odin.status`: `disabled` | `idle` | `watching` | `lifted` | `yielded` (user edited the
   schedule in Odin; Touch waits until the need has passed) | `rate_limited` |
   `write_failed` | `odin_unreachable` | `schedule_unreadable` | `clock_invalid`.
-- `odin.reason`: `none` | `slab_charge` | `room_lag` | `slab_charge+room_lag`.
+- `odin.reason`: `none`, or the reasons joined by `+` in this order: `slab_charge`, `room_lag`,
+  `preload` (weather preload, fx `room_lag+preload`).
 - `link.status`: `ok` | `forwarder_off` | `telemetry_stale` | `no_room_temperature` |
   `odin_unreachable` | `unknown`. `alarm` turns true after 10 min in a bad state.
 - `link.telemetry_age_s` is the fresher of Odin's own `telemetry_ts` and, when MQTT is
@@ -1313,7 +1334,8 @@ hour.
            "heat_kw": [0, 0, 4.81, …], "band_min_c": [21.5, …], "band_max_c": [23.5, …],
            "expected_c": [23.8, …], "energy_kwh": [0, 0, 1.1, …],
            "today_kwh": [0.05, …, 1.1, …], "today_actual": [1, 1, …, 0, …], "mode": [0, 0, 2, …],
-           "lift_applied": false, "lift_c": [0, 0, 0.5, …]},
+           "lift_applied": false, "lift_c": [0, 0, 1.5, …], "lift_floor_c": [0, 0, 0.3, …],
+           "lift_skip": [0, 0, 0, 1, …], "lift_src": [4, 4, 6, 0, …], "lift_reason": "room_lag+preload"},
   "rooms": [
     {"room_id": "v62-z1", "name": "Josephine",
      "preload": {"from": 0, "to": 4, "offset_c": 0.4},
@@ -1323,7 +1345,12 @@ hour.
 ```
 
 `odin.*` comes from the ingested Odin plan (`/forecast → odin_plan`), `lift_c` from the
-Odin comfort lift (applied, else wanted). `energy_kwh` is Odin's planned electricity per
+Odin comfort lift (applied, else wanted): how far the band's top rises that hour;
+`lift_floor_c` is how far its floor (the setpoint) rises (`floor_share` × lift);
+`lift_skip` = 1 for an hour inside the lift's window left unlifted because heating earlier
+is cheaper, heat loss included; `lift_src` says why each lifted hour is lifted, as bits
+(1 = slab charge, 2 = room lag, 4 = weather preload; 0 when not lifted), so the plan shows
+hours lifted only for the weather apart from the rest; `lift_reason` as `odin.reason` in `/heat-source/control`. `energy_kwh` is Odin's planned electricity per
 hour from now. `today_kwh` is today's electricity per wall-clock hour 0–23: Odin's
 `actual_cons` for the hours gone (`today_actual` = 1), its plan for the current hour and the
 rest; the dashboard multiplies it by today's prices (`GET /prices`) for the day's expected cost.

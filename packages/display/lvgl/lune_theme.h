@@ -41,7 +41,7 @@
 #define LDS_DARK_DEV_1         lv_color_hex(0x318ece)   /* 565: 0x3479 */
 #define LDS_DARK_ON_DEV_1      lv_color_hex(0x101010)   /* 565: 0x1082 */
 #define LDS_DARK_DEV_2         lv_color_hex(0x73a2ce)   /* 565: 0x7519 */
-#define LDS_DARK_DEV_3         lv_color_hex(0x42494a)   /* 565: 0x4249 */
+#define LDS_DARK_DEV_3         lv_color_hex(0x42614a)   /* 565: 0x4309 */
 #define LDS_DARK_DEV_4         lv_color_hex(0xf7aa63)   /* 565: 0xF54C */
 #define LDS_DARK_DEV_5         lv_color_hex(0xf77500)   /* 565: 0xF3A0 */
 
@@ -83,7 +83,7 @@
 #define LDS_LIGHT_DEV_1        lv_color_hex(0x196da5)   /* 565: 0x1B74 */
 #define LDS_LIGHT_ON_DEV_1     lv_color_hex(0xffffff)   /* 565: 0xFFFF */
 #define LDS_LIGHT_DEV_2        lv_color_hex(0x7ba2c5)   /* 565: 0x7D18 */
-#define LDS_LIGHT_DEV_3        lv_color_hex(0xcecece)   /* 565: 0xCE79 */
+#define LDS_LIGHT_DEV_3        lv_color_hex(0xbdd2ad)   /* 565: 0xBE95 */
 #define LDS_LIGHT_DEV_4        lv_color_hex(0xde9a73)   /* 565: 0xDCCE */
 #define LDS_LIGHT_DEV_5        lv_color_hex(0xde5500)   /* 565: 0xDAA0 */
 

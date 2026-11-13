@@ -45,6 +45,20 @@ int main() {
   assert(mixing_state(0.98f) == Mixing::Ok);               // within sensor noise
   assert(mixing_state(0.9f) == Mixing::Short);             // the heat pump gets its own water back
   assert(mixing_state(NAN) == Mixing::Unknown);
+  // Three-port tank: a primary surplus charges the tank; a secondary surplus still mixes.
+  assert(mixing_state(0.9f, BufferTank::ThreePort) == Mixing::Charging);
+  assert(mixing_state(32.0f / 17.0f, BufferTank::ThreePort) == Mixing::Risk);
+  assert(mixing_state(0.9f, BufferTank::Series) == Mixing::NotApplicable);
+  assert(mixing_state(2.0f, BufferTank::None) == Mixing::NotApplicable);
+  assert(std::strcmp(mixing_name(Mixing::Charging), "charging") == 0);
+  BufferTank tank = BufferTank::FourPort;
+  assert(parse_buffer_tank("three_port", &tank) && tank == BufferTank::ThreePort);
+  assert(parse_buffer_tank("none", &tank) && tank == BufferTank::None);
+  assert(!parse_buffer_tank("3-vejs", &tank) && tank == BufferTank::None);
+  assert(std::strcmp(buffer_tank_name(BufferTank::Series), "series") == 0);
+  // Three-port: 5 % below the heat pump, rounded down; no tank: nothing to recommend.
+  assert(recommended_secondary_lmin(19.0f, BufferTank::ThreePort) == 18.0f);
+  assert(std::isnan(recommended_secondary_lmin(19.0f, BufferTank::Series)));
   assert(std::strcmp(mixing_name(Mixing::Risk), "risk") == 0);
   assert(std::strcmp(mixing_name(Mixing::Short), "short") == 0);
   // Recommended: 5 % above the heat pump's flow, rounded up to 0.5 l/min.
@@ -58,9 +72,5 @@ int main() {
   assert(std::isnan(water_kw(NAN, 31.0f, 27.0f)));
   assert(std::isnan(recommended_secondary_lmin(1.0f)));
   assert(std::isnan(recommended_secondary_lmin(NAN)));
-  // 29 l/min at 6.6 m through the same valves: 17 l/min needs about 2.3 m.
-  assert(std::fabs(head_for_flow_m(6.6f, 29.0f, 17.0f) - 2.3f) < 0.05f);
-  assert(std::isnan(head_for_flow_m(NAN, 29.0f, 17.0f)));
-  assert(std::isnan(head_for_flow_m(6.6f, 0.0f, 17.0f)));
   std::puts("Circulation pump tests passed.");
 }

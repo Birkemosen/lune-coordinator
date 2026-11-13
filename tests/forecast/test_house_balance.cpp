@@ -54,6 +54,28 @@ int main() {
   board_scales(extreme, 2, 1, p, worst, scale);
   assert(scale[0] == p.min_scale && scale[1] == 1.0f);
 
+  // The basis is the pipe model (the measured basis went with the valve-curve measurement).
+  Basis basis = Basis::None;
+  board_scales(loops, 2, 6, p, worst, scale, nullptr, &basis);
+  assert(basis == Basis::Model);
+  const float easy = scale[0];
+  board_scales(blank, 2, 6, p, worst, scale, nullptr, &basis);
+  assert(basis == Basis::None);
+  // Weights: the ground floor at 80 % gets 80 % of its share; raising the other board does the same.
+  int weight[2] = {80, 100};
+  board_scales(loops, 2, 6, p, worst, scale, weight);
+  assert(near(scale[0], 0.8f * easy, 0.01f) && scale[1] == 1.0f);
+  weight[0] = 100;
+  weight[1] = 125;
+  board_scales(loops, 2, 6, p, worst, scale, weight);
+  assert(near(scale[0], 0.8f * easy, 0.01f) && scale[1] == 1.0f);
+  // A weight that makes the easy board the more demanding one moves the 1.0 there.
+  weight[0] = 150;
+  weight[1] = 100;
+  board_scales(loops, 2, 6, p, worst, scale, weight);
+  assert(scale[0] == 1.0f && scale[1] < 1.0f);
+  assert(clamp_weight(10) == WEIGHT_MIN && clamp_weight(999) == WEIGHT_MAX && clamp_weight(83) == 85);
+
   std::puts("house_balance: ok");
   return 0;
 }

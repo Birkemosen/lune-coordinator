@@ -365,9 +365,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     climate_entity: 'Virtual Thermostat z1',
     target_sync_enabled: true,
     valves_follow_hp: { enabled: true, phase: 'idle' },
-    house_balance: { enabled: false, boards: [
-      { node_id: 'lune-v6-cbe680', name: 'Stue', worst_kpa: 17.6, scale: 0.74, applied: 1 },
-      { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: 32.1, scale: 1, applied: 1 }] },
+    house_balance: { enabled: true, basis: 'model', weight_min: 50, weight_max: 150, weight_step: 5, boards: [
+      { node_id: 'lune-v6-cbe680', name: 'Stueetage', worst_kpa: null, need: 11.7, weight_pct: 100, scale: 0.70, applied: 0.70 },
+      { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: null, need: 16.7, weight_pct: 100, scale: 1, applied: 1 }] },
     odin_plan_enabled: true,
     absorb_arm_enabled: true,
     odin_host: 'odin.local',
@@ -387,10 +387,10 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       mixing: { state: 'short', primary_l_min: 19.0, secondary_l_min: 17.5 }
     },
     circulation: {
-      host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38,
+      host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38, buffer_tank: 'four_port',
       flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
       mixing: { state: 'short', ratio: 0.92, primary_l_min: 19.0, secondary_l_min: 17.5, age_s: 120,
-        recommended_l_min: 20.0, recommended_head_m: 5.5, in_kw: 5.3, out_kw: 4.9 }
+        recommended_l_min: 20.0, in_kw: 5.3, out_kw: 4.9 }
     }
   };
 
@@ -438,7 +438,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       return {
         room_id: secondary ? '' : rid, name: r[1], node_index: r[2], zone_index: r[3],
         loop_area_m2: members.length ? 24.5 : (r[8] || null),
-        temperature_c: r[4], setpoint_c: r[5], status: r[6], valve_pct: r[7], fresh: hasT && r[2] !== 2,
+        temperature_c: r[4], setpoint_c: r[5], status: r[6], valve_pct: r[7], opening_mm: r[7] == null ? null : r[7] / 100 * 2, fresh: hasT && r[2] !== 2,
         is_group_secondary: secondary, unassigned: secondary, group_members: members,
         room: { revision: st.revision, total_area_m2: r[8] || 48, physical_weight: st.weight, ua_w_per_k: 0,
           include_in_house_temperature: st.include, wind_exposure: st.wind, solar_gain: st.solar, floor_unset: false },
@@ -487,7 +487,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         spot_used: 'eds', spot_fallback: false, grid_from_cache: false, system_from_cache: false, last_error: '' },
       today: { date: d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()),
         spot: spot, grid: grid, system: sys, total: total },
-      tomorrow: null
+      tomorrow: { total: total.slice() }
     };
   })();
 
@@ -646,7 +646,13 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           mode: hk.map(function (v, i) { return i === 14 ? 1 : (i >= 18 && i <= 20 ? 6 : (v > 0 ? 2 : 0)); }),
           today_kwh: Array.from({ length: 24 }, function (_, h) { return (h >= 2 && h <= 5) || (h >= 13 && h <= 15) ? 1.1 : (h === 7 ? 1.6 : 0.05); }),
           today_actual: Array.from({ length: 24 }, function (_, h) { return h < new Date().getHours() ? 1 : 0; }),
-          lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i >= 2 && i <= 6) ? 0.5 : 0; }) },
+          band_min_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 21.8 : 21.5; }),
+          band_max_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 24 : 22.5; }),
+          expected_c: Array.from({ length: 24 }, function (_, i) { return +(21.9 + 0.4 * Math.sin((i - 3) / 4)).toFixed(2); }),
+          lift_applied: true, lift_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 1.5 : 0; }),
+          lift_floor_c: Array.from({ length: 24 }, function (_, i) { return (i <= 9 && i !== 4) ? 0.3 : 0; }),
+          lift_skip: Array.from({ length: 24 }, function (_, i) { return i === 4 ? 1 : 0; }), lift_src: Array.from({ length: 24 }, function (_, i) { return i <= 1 ? 4 : (i <= 3 ? 6 : (i <= 9 && i !== 4 ? 2 : 0)); }),
+          lift_reason: 'room_lag+preload' },
         rooms: [
           { room_id: 'room-09', name: 'Gang', preload: null, charge: { from: 1, to: 8, store_c: 1.5, insufficient: true } },
           { room_id: 'room-01', name: 'Kontor', preload: { from: 0, to: 4, offset_c: 0.4 }, charge: null },
@@ -738,7 +744,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       return { result: 'stored' };
     }
     if (path === '/circulation/settings') {
-      ['host', 'flow_entity', 'head_entity', 'power_entity'].forEach(function (k) { if (body[k] != null) mockHeat.circulation[k] = body[k]; });
+      ['host', 'flow_entity', 'head_entity', 'power_entity', 'buffer_tank'].forEach(function (k) { if (body[k]) mockHeat.circulation[k] = body[k]; });
       if (body.port) mockHeat.circulation.port = Number(body.port);
       return { result: 'stored' };
     }
@@ -803,6 +809,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (body.odin_plan_enabled != null) mockHeat.odin_plan_enabled = bool(body.odin_plan_enabled);
       if (body.absorb_arm_enabled != null) mockHeat.absorb_arm_enabled = bool(body.absorb_arm_enabled);
       if (body.house_balance_enabled != null) mockHeat.house_balance.enabled = bool(body.house_balance_enabled);
+      if (body.house_balance_weight_node) mockHeat.house_balance.boards.forEach(function (b) {
+        if (b.node_id === body.house_balance_weight_node) b.weight_pct = Number(body.house_balance_weight_pct);
+      });
       if (body.valves_follow_hp_enabled != null) mockHeat.valves_follow_hp.enabled = bool(body.valves_follow_hp_enabled);
       if (body.climate_entity) mockHeat.climate_entity = body.climate_entity;
       if (body.write_url_template) mockHeat.write_url_template = body.write_url_template;
@@ -1112,16 +1121,24 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return sp;
   }
 
-  // Deviation from target as a 5-step chip (DESIGN.md 15.8).
-  function devChip(z) {
-    if (!zoneHasData(z)) return '';
+  // Deviation from target in 5 steps (DESIGN.md 15.8, scale-cold-warm); ±0,3 is step 3.
+  function devStep(d) {
+    return d <= -1 ? 1 : d <= -0.3 ? 2 : d < 0.3 ? 3 : d < 1 ? 4 : 5;
+  }
+  function devText(d) {
+    return (d > 0.05 ? '+' : (d < -0.05 ? '−' : '±')) + num(Math.abs(d)) + '°';
+  }
+  // The room's deviation, or null (no reading, fault, off, no setpoint).
+  function zoneDev(z) {
+    if (!zoneHasData(z)) return null;
     var st = mapStatus(z.status);
     var sp = roomSetpoint(z);
-    if (st === 'fault' || st === 'off' || !finite(sp)) return '';
-    var d = Number(z.temperature_c) - Number(sp);
-    var k = d <= -1 ? 1 : d <= -0.3 ? 2 : d < 0.3 ? 3 : d < 1 ? 4 : 5;
-    var sign = d > 0.05 ? '+' : (d < -0.05 ? '−' : '±');
-    return '<span class="tile-dev" data-dev="' + k + '">' + sign + num(Math.abs(d)) + '°</span>';
+    if (st === 'fault' || st === 'off' || !finite(sp)) return null;
+    return Number(z.temperature_c) - Number(sp);
+  }
+  function devChip(z) {
+    var d = zoneDev(z);
+    return d == null ? '' : '<span class="tile-dev" data-dev="' + devStep(d) + '">' + devText(d) + '</span>';
   }
 
   function tileLevel(z, valve) {
@@ -1161,11 +1178,12 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
 
   // Varmekort (DESIGN.md 15.10): rooms per controller; the head opens the
   // controller's sheet, each tile the room's sheet.
-  // Hjem: huset + ét kort pr. styring med én søjle pr. zone (ventil i 5 trin).
+  // Hjem: huset, ude + ét kort pr. styring med én søjle pr. zone: højden er ventilens
+  // åbning i 5 trin, farven rummets afvigelse fra mål (som varmekortet).
   function renderScopes(list) {
     var host = qs('[data-bind-scopes]');
     if (!host) return;
-    qsa('button.scope', host).forEach(function (b) { b.remove(); });
+    qsa('button.scope:not(.scope--house)', host).forEach(function (b) { b.remove(); });
     host.insertAdjacentHTML('beforeend', list.map(function (m) {
       var node = state.nodes[m - 1];
       var name = nodeLabel(node) || (t('common.unnamed') + ' M' + m);
@@ -1174,7 +1192,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       var bars = zones.map(function (z) {
         if (mapStatus(z.status) === 'fault') return '<i data-state="fault"></i>';
         var lvl = tileLevel(z, z.valve_pct);
-        return '<i data-level="' + (lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(z.valve_pct) / 20)))) + '"></i>';
+        var d = zoneDev(z);
+        return '<i data-level="' + (lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(z.valve_pct) / 20)))) + '"' +
+          (d == null ? '' : ' data-dev="' + devStep(d) + '"') + '></i>';
       }).join('');
       var isOff = node && node.reachable === false;
       var off = isOff ? ' data-offline' : '';
@@ -1336,7 +1356,10 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       fHtml(sh, 'loops', r.loops.map(function (c) {
         var cz = mzOf(c);
         var lbl = (cz.m !== mz.m ? 'M' + cz.m + ' ' : '') + 'Z' + cz.z + (r.merged && c.name ? ' · ' + c.name : '');
-        var v = finite(c.valve_pct) && zoneHasData(c) ? t('room.valveShort', { v: num(c.valve_pct, 0) }) : '—';
+        // valve_pct is the opening (pin position over its learned travel); opening_mm the lift.
+        var v = !(finite(c.valve_pct) && zoneHasData(c)) ? '—'
+          : finite(c.opening_mm) ? t('room.valveMm', { v: num(c.valve_pct, 0), mm: num(c.opening_mm, 1) })
+          : t('room.valveShort', { v: num(c.valve_pct, 0) });
         if (r.merged && zoneHasData(c)) v = deg(c.temperature_c) + ' · ' + v;
         return '<div><dt>' + esc(lbl) + '</dt><dd>' + esc(v) + '</dd></div>';
       }).join(''));
@@ -1789,6 +1812,15 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
     setText('house.now', ht == null ? '' : deg(ht));
     setText('scope.house', deg(ht));
+    // Hus-kortet: temperatur, mål og afvigelsen som varmekortets chip; husets ark har målet.
+    setText('scope.target', tg == null ? '' : t('scope.target', { t: num(tg) }));
+    setText('house.status', ht == null || tg == null ? '—' : t('sheet.houseStatus', { t: num(ht), g: num(tg) }));
+    setText('house.calling', t('house.callingVal', { n: calling }));
+    var hd = qs('[data-bind-housedev]');
+    if (hd) {
+      hd.hidden = ht == null || tg == null;
+      if (!hd.hidden) { hd.setAttribute('data-dev', devStep(ht - tg)); hd.textContent = devText(ht - tg); }
+    }
     var ring = qs('[data-bind-thermo]');
     if (ring) {
       var pct = function (v) { return Math.max(0, Math.min(100, Math.round((v - THERMO_MIN) / (THERMO_MAX - THERMO_MIN) * 100))); };
@@ -2046,6 +2078,45 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (alert) alert.hidden = !(hs.enabled !== false && st === 'unreachable');
   }
 
+  // Navbar: what Touch is doing now, one state in priority order (LDS 5.1 .badge.activity).
+  function applyActivity(hs) {
+    var b = qs('[data-bind-activity]');
+    if (!b) return;
+    var hp = (hs && hs.heat_pump) || {};
+    var phase = hs && hs.valves_follow_hp ? hs.valves_follow_hp.phase : '';
+    var opm = hp.available ? Number(hp.operation_mode) : 0;
+    var key = '', cls = '', detail = '';
+    var fl = (hs && hs.flush) || {};
+    var loopName = function (node, zone) {
+      var z = (state.zones || []).filter(function (x) { return x && x.node_index === node - 1 && x.zone_index === zone - 1; })[0];
+      return z && z.name ? z.name + ' · ' : '';
+    };
+    if (fl.active) {
+      key = 'flush';
+      detail = loopName(fl.node, fl.zone) + t('activity.minutesLeft', { m: Math.max(1, Math.ceil((fl.left_s || 0) / 60)) });
+    } else if (hs && hs.enabled !== false && hs.push && hs.push.status === 'unreachable') {
+      key = 'offline'; cls = 'bad';
+    } else if (hp.available && hp.compressor_on && (opm === 1 || opm === 6)) {
+      key = opm === 6 ? 'legionella' : 'dhw'; cls = 'hot';
+    } else if ((hp.available && hp.compressor_on) || phase === 'running') {
+      key = 'heating'; cls = 'hot';
+    } else if (phase === 'prestart') {
+      key = 'prestart';
+    } else if (hp.available || phase === 'idle') {
+      key = 'idle';
+    }
+    b.hidden = !key;
+    if (!key) return;
+    b.className = 'badge activity' + (cls ? ' ' + cls : '');
+    var s = b.firstElementChild;
+    s.textContent = t('activity.' + key);
+    if (detail) {
+      var sm = document.createElement('small');
+      sm.textContent = ' · ' + detail;
+      s.appendChild(sm);
+    }
+  }
+
   function renderHeatDelivery(hs) {
     if (!hs) return;
     var push = hs.push || {};
@@ -2257,16 +2328,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       putVal(bf.querySelector('[name="absorb_arm_enabled"]'), !!hs.absorb_arm_enabled);
       if (bf.luneResnap) bf.luneResnap();
     }
-    // Valves follow the heat pump: what Touch tells the V6s now.
-    var vf = hs.valves_follow_hp || {};
-    if (hs.valves_follow_hp) {
-      var ph = ['running', 'prestart', 'idle'].indexOf(vf.phase) >= 0 ? vf.phase : 'unknown';
-      setText('heat.valvesNow', t('heat.phase.' + (vf.enabled ? ph : 'off')));
-    }
     var hbf = qs('form[data-save="circulation"]');
     if (hbf && !formBusy(hbf)) {
       putVal(hbf.querySelector('[name="house_balance_enabled"]'), !!(hs.house_balance || {}).enabled);
-      putVal(hbf.querySelector('[name="valves_follow_hp_enabled"]'), !!(hs.valves_follow_hp || {}).enabled);
       if (hbf.luneResnap) hbf.luneResnap();
     }
     drawHouseBalance(hs.house_balance);
@@ -2287,11 +2351,13 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var shortFlow = mx.state === 'short';
     var mxVars = { sec: num(mx.secondary_l_min, 1), pri: num(mx.primary_l_min, 1),
       pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
-      rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1),
+      rec: num(mx.recommended_l_min, 1),
       in: num(mx.in_kw, 1), out: num(mx.out_kw, 1) };
-    // Advice: the head to set (constant pressure) when the pump reports one, else the flow.
+    // Advice: the recommended flow. The head for it at full load came from a system curve
+    // built on the valve-curve measurement, which is gone (2026-11-13).
+    mxVars.head = num(circ.head_m, 1);
     var advice = !finite(mx.recommended_l_min) ? ''
-      : t(finite(mx.recommended_head_m) ? 'pump.mixAdviceHead' : shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
+      : t(shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
       if (risk || shortFlow) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');
@@ -2303,7 +2369,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('pump.mixBody', risk ? (t('pump.mixBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.shortBody', shortFlow ? (t('pump.shortBody', mxVars) + (advice ? ' ' + advice : '')) : '');
     setText('pump.recommended', finite(mx.recommended_l_min) ? t('pump.recommendedVal', mxVars) : '—');
-    setText('pump.mixRatio', finite(mx.ratio) ? t('pump.mixRatioVal', mxVars) : '—');
+    // Three-port tank: a primary surplus charges the tank, which is fine (circulation_pump.h).
+    setText('pump.mixRatio', finite(mx.ratio) ? t(mx.state === 'charging' ? 'pump.chargingVal' : 'pump.mixRatioVal', mxVars) : '—');
     setText('pump.balance', !finite(mx.in_kw) ? '—'
       : t(finite(mx.out_kw) ? 'pump.balanceVal' : 'pump.balanceInOnly', mxVars));
     renderFlowNeed(mx.primary_l_min, lpm);
@@ -2624,6 +2691,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var today = qs('[data-bind-price-today]');
     if (today) today.hidden = !total.length;
     setText('price.inclAll', t('price.inclAll', { cur: cur }));
+    renderPlan();   // the plan's price lane
     var unit = ' <small>' + esc(cur) + '/kWh</small>';
     var showTile = false;
     if (total.length === 24) {
@@ -2848,7 +2916,6 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
   }
 
   function applyHeatPlan(p) {
-    var host = qs('[data-bind-plan]');
     if (!p) return;
     state.plan = p;
     var odin = p.odin || {};
@@ -2875,7 +2942,6 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (a >= 0 && b < 0) blockKwh += v;
     }
     if (a >= 0 && b < 0) b = Math.min(H, heat.length);
-    var tile = qs('[data-tile="plan"]');
     if (odin.available && a >= 0) {
       setText('tile.planVal', a === 0 ? t('tile.planNow') : t('tile.planVal', { a: hh(a), b: hh(b) }));
       setText('tile.planKwh', t('tile.planKwh', { v: num(blockKwh) }));
@@ -2891,102 +2957,281 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var elKwh = 0;
     (odin.energy_kwh || []).slice(0, H).forEach(function (x) { if (finite(x)) elKwh += Number(x); });
     setBind('plan.energyElKwh', odin.available ? esc(num(elKwh)) + ' <small>kWh</small>' : '—');
-    var viz = qs('[data-bind-viz="plan"]');
-    if (viz) {
-      var max = 0;
-      heat.forEach(function (x) { if (Number(x) > max) max = Number(x); });
-      viz.innerHTML = odin.available && max > 0 ? '<line class="base" x1="0" y1="63.5" x2="240" y2="63.5"/>' + heat.slice(0, 24).map(function (x, k) {
-        if (!(Number(x) > 0.05)) return '';
-        var h2 = Math.max(4, Number(x) / max * 60);
-        return '<rect class="col on" x="' + (k * 10 + 2) + '" y="' + (64 - h2).toFixed(1) + '" width="6" height="' + h2.toFixed(1) + '" rx="3"/>';
-      }).join('') : '';
-      if (tile) tile.toggleAttribute('data-empty', !(odin.available && max > 0));
+    renderPlan();
+  }
+
+  // The plan hour by hour (LDS 2.3.32 .plan): price, Odin's heat, Odin's comfort band
+  // with Touch's lift, wind and a lane per room, on one hour axis from now. The same
+  // builder draws the compact plan in Home's wide tile (mini: price, Odin, band; spans,
+  // because the tile is a button). Price and wind come from /prices and /forecast, so
+  // this runs again when either arrives.
+  function planHours() {
+    var p = state.plan || {};
+    var odin = p.odin || {};
+    var H = Math.min(24, Number(p.hours) || 24);
+    var start = Number(p.start_hour) || 0;
+    var pr = state.prices || {};
+    var today = (pr.today && pr.today.total) || [];
+    var tomorrow = (pr.tomorrow && pr.tomorrow.total) || [];
+    var fc = state.forecast || {};
+    var fh = fc.hours || [];
+    var f0 = (fc.cache && fc.cache.decision_start_index >= 0) ? fc.cache.decision_start_index : 0;
+    var mode = odin.mode || [], heat = odin.heat_kw || [], energy = odin.energy_kwh || [];
+    var rows = [];
+    for (var k = 0; k < H; k++) {
+      var wall = start + k;
+      var m = Number(mode[k]);
+      var kind = m === 1 ? 'dhw' : (m === 6 ? 'legionella' : 'heat');
+      var price = wall < 24 ? today[wall] : tomorrow[wall - 24];
+      var f = fh[f0 + k] || {};
+      rows.push({
+        hour: wall % 24, kind: kind,
+        kwh: kind === 'heat' ? (Number(heat[k]) || 0) : (Number(energy[k]) || 0),
+        price: finite(price) ? Number(price) : null,
+        lo: finite((odin.band_min_c || [])[k]) ? Number(odin.band_min_c[k]) : null,
+        hi: finite((odin.band_max_c || [])[k]) ? Number(odin.band_max_c[k]) : null,
+        exp: finite((odin.expected_c || [])[k]) ? Number(odin.expected_c[k]) : null,
+        lift: Number((odin.lift_c || [])[k]) || 0,
+        floor: Number((odin.lift_floor_c || [])[k]) || 0,
+        skip: Number((odin.lift_skip || [])[k]) === 1,
+        src: Number((odin.lift_src || [])[k]) || 0,
+        wind: finite(f.wind_ms) ? Number(f.wind_ms) : null,
+        temp: finite(f.temp_c) ? Number(f.temp_c) : null
+      });
     }
-    if (!host) return;
+    // Now: what the heat pump does this hour, not only Odin's plan (it makes hot water on
+    // its own schedule too).
+    var hpNow = (state.heat && state.heat.heat_pump) || {};
+    if (rows[0] && hpNow.available && hpNow.compressor_on) {
+      var om = Number(hpNow.operation_mode);
+      rows[0].kind = om === 1 ? 'dhw' : (om === 6 ? 'legionella' : 'heat');
+      rows[0].running = true;
+    }
+    return { rows: rows, H: H, start: start, odin: odin, cur: pr.currency || 'DKK' };
+  }
+
+  // Round an axis up to 1 / 2 / 2.5 / 5 × 10^n.
+  function niceTop(v) {
+    if (!(v > 0)) return 1;
+    var mag = Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 2, 2.5, 5, 10].map(function (f) { return f * mag; }).filter(function (x) { return x >= v; })[0];
+  }
+
+  function planTimeline(ph, rooms, mini) {
+    var tag = mini ? 'span' : 'div';
+    var rows = ph.rows, H = ph.H, odin = ph.odin;
+    var el = function (cls, inner) { return '<' + tag + ' class="' + cls + '">' + inner + '</' + tag + '>'; };
+    var lab = function (cls, name, ticks) {
+      return el('plan-lab plan-lab--y' + cls, '<b>' + esc(name) + '</b><span class="plan-y">' +
+        ticks.map(function (x) { return '<i>' + esc(x) + '</i>'; }).join('') + '</span>');
+    };
+    var html = '';
+    // Price: height = price, colour = rank among these hours (cheap → dear, 5 steps).
+    var prices = rows.map(function (r) { return r.price; }).filter(function (v) { return v != null; });
+    if (prices.length) {
+      var ptop = niceTop(Math.max.apply(null, prices));
+      var cells = rows.map(function (r) {
+        if (r.price == null) return '<i class="plan-cell"></i>';
+        var below = prices.filter(function (v) { return v < r.price; }).length;
+        var sc = Math.max(1, Math.min(5, 1 + Math.floor(below / prices.length * 5)));
+        return '<i class="plan-cell" data-scale="' + sc + '" style="--v:' + Math.max(4, Math.round(Math.max(0, r.price) / ptop * 100)) + '"></i>';
+      }).join('');
+      html += lab(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, ptop < 10 ? 1 : 0), '0']) + el('plan-lane plan-lane--price', cells);
+    }
+    // Odin: planned heat (space heat kWh heat; hot water / legionella kWh el).
+    if (odin.available) {
+      var vmax = 0;
+      rows.forEach(function (r) { if (r.kwh > vmax) vmax = r.kwh; });
+      var top = niceTop(vmax);
+      var bars = rows.map(function (r) {
+        return '<i class="plan-bar"' + (r.kind !== 'heat' ? ' data-mode="' + r.kind + '"' : '') +
+          ' style="--v:' + Math.round(r.kwh / top * 100) + '"></i>';
+      }).join('');
+      // Mini (Home): no Odin lane; its planned heat is a mark at the foot of the band lane.
+      if (!mini) html += lab('', t('planG.odin'), [num(top) + ' kWh', num(top / 2), '0']) + el('plan-lane plan-lane--odin', bars);
+      // Comfort band: Odin's floor → top per hour, lifted hours violet, skipped dear hours
+      // dashed, expected temperature as a step line. Axis at least 3 °C.
+      var temps = [];
+      rows.forEach(function (r) { [r.lo, r.hi, r.exp].forEach(function (v) { if (v != null) temps.push(v); }); });
+      if (temps.length) {
+        var lo = Math.floor(Math.min.apply(null, temps) - 0.3), hi = Math.ceil(Math.max.apply(null, temps) + 0.3);
+        if (hi - lo < 3) { var mid = (hi + lo) / 2; lo = Math.floor(mid - 1.5); hi = lo + 3; }
+        var span_ = mini ? 88 : 100;   // mini: the bottom 12 % holds Odin's heat mark
+        var y = function (v) { return ((hi - v) / (hi - lo) * span_).toFixed(1); };
+        var rects = '', pts = [];
+        rows.forEach(function (r, k) {
+          if (r.lo != null && r.hi != null) {
+            rects += '<rect class="bd' + (r.lift > 0 ? (r.src === 4 ? ' pre' : ' lift') : (r.skip ? ' skip' : '')) + '" x="' + (k + 0.06).toFixed(2) +
+              '" y="' + y(r.hi) + '" width=".88" height="' + (y(r.lo) - y(r.hi)).toFixed(1) + '"/>';
+          }
+          if (r.exp != null) pts.push(k + ',' + y(r.exp), (k + 1) + ',' + y(r.exp));
+        });
+        var svg = '<svg viewBox="0 0 ' + H + ' 100" preserveAspectRatio="none" aria-hidden="true">' + rects +
+          (pts.length ? '<polyline class="exp" points="' + pts.join(' ') + '"/>' : '') + '</svg>';
+        // Mini: Odin's heat per hour as marks at the foot of the lane (space heat solid, hot
+        // water hatched, legionella cross-hatched; LDS .plan-marks).
+        if (mini) svg += '<span class="plan-marks">' + rows.map(function (r) {
+          return r.kwh > 0.05 || r.running ? '<i data-mode="' + r.kind + '"></i>' : '<i></i>';
+        }).join('') + '</span>';
+        html += lab(' plan-lab--band', t('planG.laneBand'), [hi + '°', lo + '°']) + el('plan-lane plan-lane--band', svg);
+      }
+    } else {
+      html += el('plan-lab', esc(t('planG.odin'))) + '<span class="plan-empty-lane">' + esc(t('planG.noOdin')) + '</span>';
+    }
+    if (!mini) {
+      var winds = rows.map(function (r) { return r.wind; }).filter(function (v) { return v != null; });
+      if (winds.length) {
+        var wtop = niceTop(Math.max(5, Math.max.apply(null, winds)));
+        html += lab(' plan-lab--sm', t('planG.laneWind'), [num(wtop, 0), '0']) + el('plan-lane plan-lane--wind', rows.map(function (r) {
+          return '<i class="plan-cell" style="--v:' + (r.wind == null ? 0 : Math.round(r.wind / wtop * 100)) + '"></i>';
+        }).join(''));
+      }
+      var clamp = function (v) { return Math.max(0, Math.min(H, Number(v) || 0)); };
+      var span = function (x0, x1, extra, tip) {
+        x0 = clamp(x0); x1 = clamp(x1);
+        if (x1 <= x0) return '';
+        return '<span class="plan-seg" style="--a:' + x0 + ';--b:' + x1 + '"' + extra + ' title="' + esc(tip) + '"></span>';
+      };
+      rooms.forEach(function (r) {
+        var segs = '';
+        if (r.preload) segs += span(r.preload.from, r.preload.to, ' data-kind="preload"', t('planG.tipPre', { c: num(r.preload.offset_c) }));
+        if (r.charge) {
+          var ins = !!r.charge.insufficient;
+          segs += span(r.charge.from, r.charge.to, ' data-kind="charge"' + (ins ? ' data-insufficient' : ''),
+            t(ins ? 'planG.tipInsufficient' : 'planG.tipCharge', { c: num(r.charge.store_c) }));
+        }
+        html += '<span class="plan-lab" title="' + esc(r.name) + '">' + esc(r.name) + '</span><div class="plan-lane">' + segs + '</div>';
+      });
+    }
+    // Hour axis: a mark per hour; the plan shows every 6th, 3rd, 2nd or every hour by its
+    // width (LDS .h3/.h2/.h1). The hour right after «Now» only on wide plans.
+    var lang = (i18n._lang || document.documentElement.lang || 'en');
+    var x = '';
+    for (var k = 0; k < H; k++) {
+      var hr = rows[k].hour;
+      var left = (k / H * 100).toFixed(2) + '%';
+      if (k === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
+      var cls = k === 1 ? 'h1' : hr % 6 === 0 ? '' : hr % 3 === 0 ? 'h3' : hr % 2 === 0 ? 'h2' : 'h1';
+      x += hr === 0
+        ? '<span class="d' + (cls ? ' ' + cls : '') + '" style="left:' + left + '">' + esc(new Date(Date.now() + k * 3600000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
+        : '<span' + (cls ? ' class="' + cls + '"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
+    }
+    html += '<span></span>' + el('plan-x', x);
+    return html;
+  }
+
+  // Where now is in the plan's first hour (LDS .plan --now: hours from the plan's start).
+  function nowInHour() {
+    return (new Date().getMinutes() / 60).toFixed(2);
+  }
+
+  function renderPlan() {
+    var p = state.plan;
+    if (!p) return;
+    var ph = planHours();
+    var odin = ph.odin;
     var rooms = (p.rooms || []).filter(function (r) { return r && (r.preload || r.charge); });
+    // Home › wide tile: the compact plan.
+    var mini = qs('[data-bind-plan-mini]');
+    var tile = qs('[data-tile="plan"]');
+    if (mini) {
+      var any = odin.available && ph.rows.some(function (r) { return r.kwh > 0.05 || r.price != null; });
+      mini.innerHTML = any ? planTimeline(ph, [], true) : '';
+      mini.style.setProperty('--now', nowInHour());
+      if (tile) tile.toggleAttribute('data-empty', !any);
+    }
+    var host = qs('[data-bind-plan]');
+    if (!host) return;
     var empty = !odin.available && !rooms.length;
     setShow('planG.empty', empty);
     host.hidden = empty;
     qsa('[data-panel="plan"] .fc-legend').forEach(function (l) { l.hidden = empty; });
     if (empty) { host.innerHTML = ''; return; }
-    var clamp = function (v) { return Math.max(0, Math.min(H, Number(v) || 0)); };
-    var span = function (cls, x0, x1, extra, tip) {
-      x0 = clamp(x0); x1 = clamp(x1);
-      if (x1 <= x0) return '';
-      return '<span class="' + cls + '" style="--a:' + x0 + ';--b:' + x1 + '"' + (extra || '') +
-        (tip ? ' title="' + esc(tip) + '"' : '') + '></span>';
-    };
-    var lang = (i18n._lang || document.documentElement.lang || 'en');
-    var x = '';
-    for (var j = 0; j <= H; j++) {
-      var hr = (start + j) % 24;
-      if (j === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
-      if (hr % 3 !== 0 || j < 2 || j > H - 2) continue;  // keep clear of the "Now" label
-      var left = (j / H * 100).toFixed(2) + '%';
-      x += hr === 0
-        ? '<span class="d" style="left:' + left + '">' + esc(new Date(Date.now() + j * 3600000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
-        : '<span' + (hr % 6 ? ' class="m"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
-    }
-    var html = '<span></span><div class="plan-x">' + x + '</div>';
-    // Odin lane: planned energy per hour + Touch's lift of Odin's comfort band.
-    // Space heat = kWh heat (heat_kw); DHW / legionella hours carry no space
-    // heat, so their bar is Odin's planned electricity (kWh el).
-    if (odin.available) {
-      var energy = odin.energy_kwh || [];
-      var vals = [];
-      var kinds = [];
-      for (var q = 0; q < H; q++) {
-        var m = Number(mode[q]);
-        var kind = m === 1 ? 'dhw' : (m === 6 ? 'legionella' : 'heat');
-        kinds.push(kind);
-        vals.push(kind === 'heat' ? (Number(heat[q]) || 0) : (Number(energy[q]) || 0));
-      }
-      var vmax = 0;
-      vals.forEach(function (v2) { if (v2 > vmax) vmax = v2; });
-      // Round the axis up to 1 / 2 / 2.5 / 5 × 10^n.
-      var top = 1;
-      if (vmax > 0) {
-        var mag = Math.pow(10, Math.floor(Math.log10(vmax)));
-        top = [1, 2, 2.5, 5, 10].map(function (f) { return f * mag; }).filter(function (v3) { return v3 >= vmax; })[0];
-      }
-      var bars = '';
-      for (var h = 0; h < H; h++) {
-        var pct = Math.round(vals[h] / top * 100);
-        var label = String((start + h) % 24).padStart(2, '0') + ':00';
-        bars += '<i class="plan-bar"' + (kinds[h] !== 'heat' ? ' data-mode="' + kinds[h] + '"' : '') + ' style="--v:' + pct + '" title="' +
-          esc(t('planG.tip.' + kinds[h], { h: label, kwh: num(vals[h]) })) + '"></i>';
-      }
-      var lifts = '';
-      var lc = odin.lift_c || [];
-      for (var a2 = 0; a2 < H; a2++) {
-        if (!(Number(lc[a2]) > 0)) continue;
-        var b2 = a2;
-        while (b2 < H && Number(lc[b2]) > 0) b2++;
-        lifts += span('plan-lift', a2, b2, '', t('planG.tipLift', { c: num(lc[a2]) }));
-        a2 = b2;
-      }
-      var ticks = '<span class="plan-y"><i>' + esc(num(top)) + ' kWh</i><i>' + esc(num(top / 2)) + '</i><i>0</i></span>';
-      html += '<span class="plan-lab plan-lab--y"><b>' + esc(t('planG.odin')) + '</b>' + ticks + '</span>' +
-        '<div class="plan-lane plan-lane--odin">' + bars + lifts + '</div>';
-    } else {
-      html += '<span class="plan-lab">' + esc(t('planG.odin')) + '</span><span class="plan-empty-lane">' + esc(t('planG.noOdin')) + '</span>';
-    }
-    rooms.forEach(function (r) {
-      var segs = '';
-      if (r.preload) segs += span('plan-seg', r.preload.from, r.preload.to, ' data-kind="preload"', t('planG.tipPre', { c: num(r.preload.offset_c) }));
-      if (r.charge) {
-        var ins = !!r.charge.insufficient;
-        segs += span('plan-seg', r.charge.from, r.charge.to, ' data-kind="charge"' + (ins ? ' data-insufficient' : ''),
-          t(ins ? 'planG.tipInsufficient' : 'planG.tipCharge', { c: num(r.charge.store_c) }));
-      }
-      html += '<span class="plan-lab" title="' + esc(r.name) + '">' + esc(r.name) + '</span><div class="plan-lane">' + segs + '</div>';
-    });
-    host.innerHTML = html;
+    host.innerHTML = planTimeline(ph, rooms, false) + '<div class="bars-readout" aria-live="polite" hidden></div>';
+    host.style.setProperty('--now', nowInHour());
+    state.planHours = ph;
+    bindPlanReadout(host);
   }
 
-  // Approximate split of the pump flow per manifold (LDS .dist): each loop's
-  // conductance is taken as its valve opening; a manifold's share is the sum of
-  // its open loops over all open loops. Pipe runs to each manifold are ignored.
+  // Readout per hour: hover, touch or arrow keys mark the hour in every lane (--hi) and
+  // show its figures above the plan in two lines (LDS .plan[data-readout]).
+  function planReadoutText(ph, k) {
+    var r = ph.rows[k];
+    if (!r) return '';
+    var hh = String(r.hour).padStart(2, '0') + ':00';
+    var a = [hh];
+    if (r.price != null) a.push(num(r.price, 2) + ' ' + ph.cur + '/kWh');
+    if (ph.odin.available) a.push(t('planG.tip.' + r.kind, { h: '', kwh: num(r.kwh) }).replace(/^\s*·\s*/, ''));
+    var b = [];
+    if (r.lo != null && r.hi != null) b.push(t('planG.roBand', { lo: num(r.lo), hi: num(r.hi) }));
+    if (r.lift > 0) {
+      // Why: bits 1 = slab charge, 2 = room lag, 4 = weather preload (/plan lift_src).
+      var why = [];
+      if (r.src & 4) why.push(t('planG.srcPre'));
+      if (r.src & 2) why.push(t('planG.srcLag'));
+      if (r.src & 1) why.push(t('planG.srcCharge'));
+      b.push(t('planG.roLift', { c: num(r.lift), f: num(r.floor) }) + (why.length ? ' · ' + why.join(' + ') : ''));
+    }
+    else if (r.skip) b.push(t('planG.roSkip'));
+    if (r.wind != null) b.push(num(r.wind, 0) + ' m/s' + (r.temp != null ? ' · ' + num(r.temp) + ' °C' : ''));
+    return '<span><b>' + esc(a[0]) + '</b>' + (a.length > 1 ? ' · ' + esc(a.slice(1).join(' · ')) : '') + '</span>' +
+      (b.length ? '<span>' + esc(b.join(' · ')) + '</span>' : '');
+  }
+
+  function bindPlanReadout(host) {
+    host.setAttribute('data-readout', '');
+    host.tabIndex = 0;
+    if (host.dataset.readoutBound) return;
+    host.dataset.readoutBound = '1';
+    // The plan is redrawn when prices or the forecast arrive: look its parts up each time.
+    var axis = function () { return qs('.plan-x', host); };
+    var clear = function () {
+      host.removeAttribute('data-hi');
+      var box = qs('.bars-readout', host);
+      if (box) box.hidden = true;
+    };
+    var at = function (k) {
+      var ph = state.planHours;
+      var ax = axis();
+      var box = qs('.bars-readout', host);
+      if (!ph || !ax || !box) return;
+      k = Math.max(0, Math.min(ph.H - 1, k));
+      host.style.setProperty('--hi', k);
+      host.setAttribute('data-hi', k);
+      box.innerHTML = planReadoutText(ph, k);
+      box.hidden = false;
+      var hr = host.getBoundingClientRect(), ar = ax.getBoundingClientRect();
+      var x = ar.left - hr.left + (k + 0.5) / ph.H * ar.width;
+      var half = box.offsetWidth / 2;
+      box.style.left = Math.max(half, Math.min(hr.width - half, x)) + 'px';
+    };
+    var fromPointer = function (ev) {
+      var ph = state.planHours, ax = axis();
+      if (!ph || !ax) return;
+      var ar = ax.getBoundingClientRect();
+      var frac = (ev.clientX - ar.left) / ar.width;
+      if (!(frac >= 0 && frac < 1)) { clear(); return; }
+      at(Math.floor(frac * ph.H));
+    };
+    host.addEventListener('pointermove', fromPointer);
+    host.addEventListener('pointerdown', fromPointer);
+    host.addEventListener('pointerleave', clear);
+    host.addEventListener('blur', clear);
+    host.addEventListener('keydown', function (ev) {
+      var cur = Number(host.getAttribute('data-hi'));
+      if (!isFinite(cur) || !host.hasAttribute('data-hi')) cur = -1;
+      if (ev.key === 'ArrowRight') at(cur + 1);
+      else if (ev.key === 'ArrowLeft') at(Math.max(0, cur - 1));
+      else if (ev.key === 'Home') at(0);
+      else if (ev.key === 'End') at(23);
+      else if (ev.key === 'Escape') clear();
+      else return;
+      ev.preventDefault();
+    });
+  }
+
+  // Split of the pump flow per manifold (LDS .dist), from the loops' openings: every
+  // loop counts as equal at the same opening. Pipe runs to each manifold are ignored.
   function renderDist() {
     var host = qs('[data-bind-dist]');
     if (!host) return;
@@ -2996,10 +3241,11 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     zones.forEach(function (z) {
       var n = Number(z.node_index) || 0;
       var v = Math.max(0, Math.min(100, Number(z.valve_pct) || 0));
+      var q = v / 100;
       if (!byNode[n]) byNode[n] = { kv: 0, zones: [] };
-      byNode[n].kv += v / 100;
-      byNode[n].zones.push({ name: z.name || ('Z' + ((Number(z.zone_index) || 0) + 1)), v: v });
-      total += v / 100;
+      byNode[n].kv += q;
+      byNode[n].zones.push({ name: z.name || ('Z' + ((Number(z.zone_index) || 0) + 1)), v: v, q: q });
+      total += q;
     });
     var circ = (state.heat && state.heat.circulation) || {};
     var lpmTotal = finite(circ.flow_m3h) ? Number(circ.flow_m3h) * 1000 / 60 : null;
@@ -3020,7 +3266,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       bar += '<span class="dist-seg"' + di + ' style="--w:' + pct.toFixed(1) + '" title="' + esc(name + ' · ' + num(pct, 0) + ' %') + '"></span>';
       var zbar = '';
       g.zones.forEach(function (z) {
-        var zp = g.kv > 0 ? (z.v / 100) / g.kv * 100 : 0;
+        var zp = g.kv > 0 ? z.q / g.kv * 100 : 0;
         if (zp <= 0) return;
         zbar += '<span class="dist-seg"' + di + ' style="--w:' + zp.toFixed(1) + '" title="' +
           esc(t('flow.zoneTip', { zone: z.name, v: num(z.v, 0), pct: num(zp, 0) })) + '"></span>';
@@ -3060,6 +3306,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     put('pump_flow_entity', circ.flow_entity || 'pump_flow');
     put('pump_head_entity', circ.head_entity || 'pump_head_pressure');
     put('pump_power_entity', circ.power_entity || 'pump_power');
+    put('buffer_tank', circ.buffer_tank);
     if (f.luneResnap) f.luneResnap();
   }
 
@@ -3345,6 +3592,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (!fc) return;
     state.forecast = fc;
     renderHeatmap();  // charge badges follow the forecast
+    renderPlan();     // the plan's wind lane
     var hours = fc.hours || [];
     var start = (fc.cache && fc.cache.decision_start_index >= 0) ? fc.cache.decision_start_index : 0;
     var nowHour = hours[start] || hours[0];
@@ -3542,6 +3790,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       applyHierarchy(map['/zones'] || {}, nodes);
       applyForecast(map['/forecast']);
       applyHeat(map['/heat-source']);
+      applyActivity(map['/heat-source']);
       applyHeatPlan(map['/plan']);
       applyHeatControl(map['/heat-source/control']);
       applyOdinMqtt(map['/odin/mqtt']);
@@ -3719,7 +3968,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (circ.host) {
       await post('/circulation/settings', {
         enabled: '1', host: circ.host || '', port: circ.port || 80,
-        flow_entity: circ.flow_entity || '', head_entity: circ.head_entity || '', power_entity: circ.power_entity || ''
+        flow_entity: circ.flow_entity || '', head_entity: circ.head_entity || '', power_entity: circ.power_entity || '',
+        buffer_tank: circ.buffer_tank || ''
       });
       applied++;
     }
@@ -3804,18 +4054,31 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
   }
 
   // House balance: one read-value row per V6 board (scale Touch sends) under the switch.
+  // One row per V6 board: its share (scale) and what it is based on, and its weight
+  // (house_balance.h): 100 % = as computed; lower gives the board less of the flow.
   function drawHouseBalance(hb) {
     var sw = qs('input[name="house_balance_enabled"]');
     var body = sw && sw.closest('.gated') && sw.closest('.gated').querySelector('.gated-body');
-    if (!body) return;
-    var boards = (hb && hb.boards) || [];
-    body.innerHTML = boards.map(function (b) {
-      var none = b.worst_kpa == null;
-      var hint = none ? t('heat.houseBalanceNone') : t('heat.houseBalanceRow', { kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) });   // 1 m head = 9.81 kPa
-      return '<div class="setting"><div class="setting-label"><span>' + esc(b.name || b.node_id || '—') +
-        '</span><small>' + hint + '</small></div><div class="setting-control"><span class="setting-value">' +
-        (none ? '—' : num(b.scale, 2)) + '</span></div></div>';
+    if (!body || formBusy(sw.form)) return;
+    hb = hb || {};
+    var boards = hb.boards || [];
+    var mn = hb.weight_min || 50, mx = hb.weight_max || 150, st = hb.weight_step || 5;
+    setText('heat.houseBalanceBasis', t('heat.houseBalanceSub'));
+    body.innerHTML = boards.map(function (b, i) {
+      var name = b.name || b.node_id || '—';
+      var hint = b.worst_kpa != null ? t('heat.houseBalanceRowModel', { scale: num(b.scale, 2), kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) })   // 1 m head = 9.81 kPa
+        : t('heat.houseBalanceNone');
+      var id = 'hbw_' + i, label = t('heat.houseBalanceWeight', { name: name });
+      var w = b.weight_pct != null ? b.weight_pct : 100;
+      return '<div class="setting"><div class="setting-label"><label for="' + id + '">' + esc(name) +
+        '</label><small>' + esc(hint) + '</small></div><div class="setting-control"><div class="stepper">' +
+        '<button type="button" data-step="-1" aria-label="' + esc(t('common.decrease', { x: label.toLowerCase() })) + '">−</button>' +
+        '<span class="value"><input type="number" inputmode="numeric" id="' + id + '" name="hbw_' + esc(b.node_id || '') +
+        '" value="' + w + '" min="' + mn + '" max="' + mx + '" step="' + st + '"><span class="unit">%</span></span>' +
+        '<button type="button" data-step="1" aria-label="' + esc(t('common.increase', { x: label.toLowerCase() })) + '">+</button>' +
+        '</div></div></div>';
     }).join('');
+    if (sw.form.luneResnap) sw.form.luneResnap();
   }
 
   async function saveHeatBehavior(form, ch) {
@@ -3904,8 +4167,10 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       } else if (key === 'circulation') {
         if (has(ch, 'house_balance_enabled'))
           await post('/heat-source/settings', { house_balance_enabled: bit(fval(form, 'house_balance_enabled')) });
-        if (has(ch, 'valves_follow_hp_enabled'))
-          await post('/heat-source/settings', { valves_follow_hp_enabled: bit(fval(form, 'valves_follow_hp_enabled')) });
+        // Not «hbw:…»: lune-forms reads «:» as a radio/checkbox suffix and drops the rest.
+        var weights = Object.keys(ch).filter(function (k) { return k.indexOf('hbw_') === 0; });
+        for (var wi = 0; wi < weights.length; wi++)
+          await post('/heat-source/settings', { house_balance_weight_node: weights[wi].slice(4), house_balance_weight_pct: fval(form, weights[wi]) });
         if (has(ch, 'internal_gains_w') || has(ch, 'hp_max_kw')) {
           var ctlBody = {};
           if (has(ch, 'internal_gains_w')) ctlBody.internal_gains_w = fval(form, 'internal_gains_w');
@@ -3914,7 +4179,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           if (savedCtl && savedCtl.control) applyHeatControl(savedCtl.control);
         }
         var balanceOnly = Object.keys(ch).every(function (k) {
-          return k === 'house_balance_enabled' || k === 'valves_follow_hp_enabled' || k === 'internal_gains_w' || k === 'hp_max_kw';
+          return k === 'house_balance_enabled' || k.indexOf('hbw_') === 0 || k === 'internal_gains_w' || k === 'hp_max_kw';
         });
         if (!balanceOnly) await post('/circulation/settings', {
           enabled: '1',
@@ -3922,7 +4187,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           port: data.pump_port || data.port || 80,
           flow_entity: data.flow_entity || '',
           head_entity: data.head_entity || '',
-          power_entity: data.power_entity || ''
+          power_entity: data.power_entity || '',
+          buffer_tank: data.buffer_tank || ''
         });
       } else if (key === 'prices') {
         priceSchedSync();
@@ -4067,7 +4333,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (key === 'heat_source') { await saveHeatConnection(form, ch); await saveHeatBehavior(form, ch); }
       else if (key === 'weather' && sw.name === 'solar_holdoff_enabled')
         await post('/weather/settings', { solar_holdoff_enabled: on ? 1 : 0 });
-      else if (key === 'circulation' && (sw.name === 'house_balance_enabled' || sw.name === 'valves_follow_hp_enabled')) {
+      else if (key === 'circulation' && sw.name === 'house_balance_enabled') {
         var one = {};
         one[sw.name] = on ? 1 : 0;
         await post('/heat-source/settings', one);

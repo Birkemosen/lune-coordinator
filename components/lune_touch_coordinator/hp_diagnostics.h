@@ -24,6 +24,8 @@
 //   the tank straight back to it, its return warms up and it cycles.
 //   secondary > primary × 1.25 for 10 min → MIXING; clears when < primary × 1.15 for
 //   10 min. Much floor return is drawn into the supply, and the heat pump runs hotter.
+//   Which of the two apply follows the tank's piping (circulation_pump.h BufferTank):
+//   SHORT only with a four-port tank, MIXING with a three- or four-port tank.
 // =============================================================================
 
 #pragma once
@@ -57,6 +59,8 @@ struct Params {
   float mix_clear_ratio = 1.15f;
   float short_ratio = cp::SHORT_FLOW_RATIO;
   float short_clear_ratio = 1.0f;
+  bool judge_short = true;  ///< cp::judges_short(tank)
+  bool judge_mix = true;    ///< cp::judges_mixing(tank)
 };
 
 enum class Dev : uint8_t { Unknown, Idle, Ok, Over, Under };
@@ -253,10 +257,14 @@ inline void step_mixing(State &s, const Input &in, uint32_t now_ms, const Params
     s.primary_lmin = in.primary_lmin;
     s.secondary_lmin = in.secondary_lmin;
     const float sec = in.secondary_lmin, pri = in.primary_lmin;
-    hold_flag(s.mixing, s.mix_since_ms, s.unmix_since_ms, sec > pri * p.mix_ratio, sec < pri * p.mix_clear_ratio,
-              now_ms);
-    hold_flag(s.short_flow, s.short_since_ms, s.unshort_since_ms, sec < pri * p.short_ratio,
-              sec >= pri * p.short_clear_ratio, now_ms);
+    hold_flag(s.mixing, s.mix_since_ms, s.unmix_since_ms, p.judge_mix && sec > pri * p.mix_ratio,
+              !p.judge_mix || sec < pri * p.mix_clear_ratio, now_ms);
+    hold_flag(s.short_flow, s.short_since_ms, s.unshort_since_ms, p.judge_short && sec < pri * p.short_ratio,
+              !p.judge_short || sec >= pri * p.short_clear_ratio, now_ms);
+    if (!p.judge_mix)
+      s.mixing = false;
+    if (!p.judge_short)
+      s.short_flow = false;
     s.mix = mix_of(s);
   }
   e.mix_raised = !was_mix && s.mixing;

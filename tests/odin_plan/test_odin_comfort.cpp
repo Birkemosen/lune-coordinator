@@ -94,6 +94,86 @@ int main() {
   assert(lift_changed(w, Lift{16, 3, 0.5f}));
   assert(lift_changed(w, Lift{}));
 
+  // --- one or two lagging rooms open only the band's top -------------------
+  {
+    assert(near(floor_share_for(1.0f / 12.0f), FLOOR_SHARE_MIN));  // Laura alone
+    assert(near(floor_share_for(0.25f), 0.5f));
+    assert(near(floor_share_for(0.6f), 1.0f));
+    assert(near(floor_share_for(NAN), 1.0f));
+    // 2026-11-12: Laura 1.6 K behind lifted the whole band 1.5 °C for 6 h.
+    const Lift l = lag_lift(19, 1.5f, 2, p, floor_share_for(1.0f / 12.0f));
+    assert(l.start_hour == 20 && l.hours == LAG_CHOICE_H && near(l.floor_share, 0.2f));
+    assert(lag_lift(19, 1.5f, 2, p).hours == 4);  // whole house lagging: as before
+    const Profile one = apply_lift(user, Lift{15, 3, 1.5f, 0.2f});
+    assert(near(block_at(one, 15).sp, 22.3f));                       // floor up 0.3
+    assert(near(block_at(one, 15).sp + block_at(one, 15).max, 22.0f + 1.5f + 1.5f));  // top up 1.5
+    assert(near(block_at(one, 14).sp, 22.0f) && near(block_at(one, 14).max, 1.5f));
+    assert(lift_changed(Lift{15, 3, 1.5f, 0.2f}, Lift{15, 3, 1.5f, 1.0f}));
+  }
+
+  // --- a dear hour is skipped only when heating earlier is cheaper -----------
+  {
+    // Tariff peak 17–21 with now = 13: window 14–21 (8 h), up to 2 h skipped: the
+    // two with the largest saving over 14–16, heat loss included.
+    float price[24];
+    for (int k = 0; k < 24; k++) {
+      const int h = (13 + k) % 24;
+      price[k] = (h >= 17 && h < 21) ? 2.6f : 1.8f;
+    }
+    price[(18 + 24 - 13) % 24] = 2.9f;  // 18:00 dearest
+    price[(19 + 24 - 13) % 24] = 2.8f;
+    Lift l{14, 8, 1.0f};
+    skip_dearest(l, 13, price, 24);
+    assert(l.skip_mask == ((1UL << 18) | (1UL << 19)));
+    assert(!hour_in_lift(l, 18) && hour_in_lift(l, 17) && hour_in_lift(l, 14));
+    const Profile lifted2 = apply_lift(user, l);
+    assert(near(block_at(lifted2, 18).sp, 22.0f) && near(block_at(lifted2, 17).sp, 23.0f));
+    // Flat prices: nothing skipped.
+    float flat[24];
+    for (float &f : flat) f = 1.8f;
+    Lift f2{14, 8, 1.0f};
+    skip_dearest(f2, 13, flat, 24);
+    assert(f2.skip_mask == 0);
+    // An unknown price in the window: nothing skipped.
+    price[3] = NAN;
+    Lift u{14, 8, 1.0f};
+    skip_dearest(u, 13, price, 24);
+    assert(u.skip_mask == 0);
+    // Short window: a third of 2 h is 0 h.
+    Lift s2{18, 2, 1.0f};
+    price[3] = 1.8f;
+    skip_dearest(s2, 13, price, 24);
+    assert(s2.skip_mask == 0);
+    // Across midnight: 00:00 with now = 22 → bit 0.
+    float night[24];
+    for (int k = 0; k < 24; k++) night[k] = 1.0f;
+    night[2] = 3.0f;
+    Lift m{23, 3, 1.0f};
+    skip_dearest(m, 22, night, 24);
+    assert(m.skip_mask == 1UL);
+    // The window's first hour has nothing earlier to heat in: it stays lifted.
+    float first[24];
+    for (int k = 0; k < 24; k++) first[k] = 1.0f;
+    first[1] = 3.0f;
+    Lift fl{23, 6, 1.0f};
+    skip_dearest(fl, 22, first, 24);
+    assert(fl.skip_mask == 0);
+    // Heat loss against price: 5 % dearer 3 h later is worth storing for in a house
+    // with a 167 h time constant (3/167 ≈ 2 % loss), not in one with 10 h (30 %).
+    float small[24];
+    for (int k = 0; k < 24; k++) small[k] = 1.0f;
+    small[4] = 1.05f;
+    Lift slow{14, 6, 1.0f};
+    skip_dearest(slow, 13, small, 24, 167.0f);
+    assert(slow.skip_mask == (1UL << 17));
+    Lift fast{14, 6, 1.0f};
+    skip_dearest(fast, 13, small, 24, 10.0f);
+    assert(fast.skip_mask == 0);
+    // Time constant from Odin's thermal mass and heat loss; a default without them.
+    assert(std::fabs(house_tau_h(21.76f, 0.13f) - 167.4f) < 0.1f);
+    assert(house_tau_h(NAN, 0.13f) == TAU_DEFAULT_H && house_tau_h(21.76f, 0.0f) == TAU_DEFAULT_H);
+  }
+
   // --- ownership state machine --------------------------------------------
   {
     OwnerState s{};
@@ -233,6 +313,55 @@ int main() {
     StepResult r2 = step(s, r.profile, Lift{}, wider);
     assert(r2.action == Action::WRITE_LIFT && std::fabs(r2.profile.blocks[0].max - 1.5f) < 0.01f &&
            std::fabs(r2.profile.blocks[0].min + 0.5f) < 0.01f);
+  }
+
+  // ---- Weather preload: now through the hour after the peak, at least 3 h ----
+  {
+    LiftParams p{};
+    Lift l = preload_lift(14, 1.5f, 3, p, 0.2f);
+    assert(l.active() && l.start_hour == 14 && l.hours == 5 && std::fabs(l.lift_c - 1.5f) < 0.01f);
+    assert(std::fabs(l.floor_share - 0.2f) < 0.01f);
+    Lift soon = preload_lift(23, 0.8f, 0, p);
+    assert(soon.active() && soon.start_hour == 23 && soon.hours == 3 && std::fabs(soon.floor_share - 1.0f) < 0.01f);
+    assert(!preload_lift(14, 1.5f, -1, p).active());   // no peak in the forecast
+    assert(!preload_lift(14, 0.2f, 3, p).active());    // below the write threshold
+  }
+
+  // ---- Merge: union of windows, larger lift, larger floor share ----
+  {
+    LiftParams p{};
+    Lift lag = lag_lift(14, 0.6f, 2, p, 0.2f);       // 15:00 for 8 h
+    Lift pre = preload_lift(14, 1.2f, 3, p, 0.4f);   // 14:00 for 5 h
+    Lift m = merge_lifts(14, lag, pre, p);
+    assert(m.active() && m.start_hour == 14 && m.hours == 9);
+    assert(std::fabs(m.lift_c - 1.2f) < 0.01f && std::fabs(m.floor_share - 0.4f) < 0.01f);
+    Lift only = merge_lifts(14, Lift{}, pre, p);
+    assert(only.start_hour == pre.start_hour && only.hours == pre.hours);
+    assert(!merge_lifts(14, Lift{}, Lift{}, p).active());
+    // Across midnight.
+    Lift a = make_lift(22, 0, 3, 0.5f, p);   // 22–01
+    Lift b = make_lift(22, 2, 6, 0.5f, p);   // 00–04
+    Lift w = merge_lifts(22, a, b, p);
+    assert(w.start_hour == 22 && w.hours == 6);
+  }
+
+  // ---- Sources per hour: preload alone vs shared with a lagging room ----
+  {
+    LiftParams p{};
+    Lift lag = lag_lift(14, 0.6f, 2, p, 0.2f);       // 15–22
+    Lift pre = preload_lift(14, 1.2f, 3, p, 0.4f);   // 14–18
+    Lift m = merge_lifts(14, lag, pre, p);
+    m.skip_mask = 1UL << 16;
+    const uint32_t keep = lift_hours_mask(m);
+    assert(keep == (((1UL << 23) - 1) & ~((1UL << 14) - 1) & ~(1UL << 16)));
+    LiftSources s{lift_hours_mask(Lift{}) & keep, lift_hours_mask(lag) & keep, lift_hours_mask(pre) & keep};
+    assert(s.at(14) == 4);   // preload only
+    assert(s.at(15) == 6);   // lag + preload
+    assert(s.at(16) == 0);   // skipped
+    assert(s.at(20) == 2);   // lag only
+    assert(s.at(23) == 0);
+    Lift w = make_lift(22, 0, 4, 0.5f, p);           // 22–01 across midnight
+    assert(lift_hours_mask(w) == ((1UL << 22) | (1UL << 23) | 1UL | 2UL));
   }
 
   std::puts("odin_comfort: all assertions passed");

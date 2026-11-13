@@ -71,6 +71,14 @@ static bool heat_source_type_is_asgard_(const char *type) {
   return type != nullptr && std::strcmp(type, "asgard") == 0;
 }
 
+/// Why the heat source is asked for more: `odin.reason` in /api/v1 and the HA entity.
+static const char *lift_reason_(bool charge, bool lag, bool preload) {
+  static const char *const WHY[8] = {"none",    "slab_charge",         "room_lag",
+                                     "slab_charge+room_lag", "preload", "slab_charge+preload",
+                                     "room_lag+preload",     "slab_charge+room_lag+preload"};
+  return WHY[(charge ? 1U : 0U) | (lag ? 2U : 0U) | (preload ? 4U : 0U)];
+}
+
 static void normalize_heat_source_type_(char *type, size_t capacity) {
   if (type == nullptr || capacity == 0)
     return;
@@ -106,6 +114,8 @@ static constexpr uint32_t OTA_SLOT_BYTES = 0x640000;
 static constexpr uint32_t FORECAST_CACHE_MAGIC = 0x4C544657;  // LTFW
 static constexpr uint32_t PRELOAD_LEARN_MAGIC = 0x4C54504C;  // LTPL
 static constexpr uint16_t PRELOAD_LEARN_VERSION = 1;
+static constexpr uint32_t UA_DAY_MAGIC = 0x4C545544;  // LTUD
+static constexpr uint16_t UA_DAY_VERSION = 1;
 static constexpr float LOAD_THRESHOLD = 1.0f;
 static constexpr float GAIN_C_PER_LOAD = 0.5f;
 static constexpr float COMFORT_BAND_C = 0.5f;
@@ -228,6 +238,95 @@ esp_err_t open_touch_registry_nvs_(nvs_open_mode_t mode, nvs_handle_t *handle) {
     return nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, mode, handle);
   return nvs_open(TOUCH_NAMESPACE, mode, handle);
 }
+// Touch's own namespaces (settings, weather, ledger) live on touchreg once it exists:
+// the default partition is 20 KB and also holds ESPHome's preferences and the PHY
+// calibration, and ran full (settings stopped persisting).
+esp_err_t open_touch_nvs_(const char *ns, nvs_open_mode_t mode, nvs_handle_t *handle) {
+  if (touch_registry_partition_ready_)
+    return nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, ns, mode, handle);
+  return nvs_open(ns, mode, handle);
+}
+
+esp_err_t copy_nvs_entry_(nvs_handle_t src, nvs_handle_t dst, const nvs_entry_info_t &info) {
+  const char *k = info.key;
+  switch (info.type) {
+    case NVS_TYPE_U8: { uint8_t v; esp_err_t e = nvs_get_u8(src, k, &v); return e == ESP_OK ? nvs_set_u8(dst, k, v) : e; }
+    case NVS_TYPE_I8: { int8_t v; esp_err_t e = nvs_get_i8(src, k, &v); return e == ESP_OK ? nvs_set_i8(dst, k, v) : e; }
+    case NVS_TYPE_U16: { uint16_t v; esp_err_t e = nvs_get_u16(src, k, &v); return e == ESP_OK ? nvs_set_u16(dst, k, v) : e; }
+    case NVS_TYPE_I16: { int16_t v; esp_err_t e = nvs_get_i16(src, k, &v); return e == ESP_OK ? nvs_set_i16(dst, k, v) : e; }
+    case NVS_TYPE_U32: { uint32_t v; esp_err_t e = nvs_get_u32(src, k, &v); return e == ESP_OK ? nvs_set_u32(dst, k, v) : e; }
+    case NVS_TYPE_I32: { int32_t v; esp_err_t e = nvs_get_i32(src, k, &v); return e == ESP_OK ? nvs_set_i32(dst, k, v) : e; }
+    case NVS_TYPE_U64: { uint64_t v; esp_err_t e = nvs_get_u64(src, k, &v); return e == ESP_OK ? nvs_set_u64(dst, k, v) : e; }
+    case NVS_TYPE_I64: { int64_t v; esp_err_t e = nvs_get_i64(src, k, &v); return e == ESP_OK ? nvs_set_i64(dst, k, v) : e; }
+    case NVS_TYPE_STR:
+    case NVS_TYPE_BLOB: {
+      const bool str = info.type == NVS_TYPE_STR;
+      size_t len = 0;
+      esp_err_t e = str ? nvs_get_str(src, k, nullptr, &len) : nvs_get_blob(src, k, nullptr, &len);
+      if (e != ESP_OK)
+        return e;
+      void *buf = heap_caps_malloc(len == 0 ? 1 : len, MALLOC_CAP_8BIT);
+      if (buf == nullptr)
+        return ESP_ERR_NO_MEM;
+      e = str ? nvs_get_str(src, k, static_cast<char *>(buf), &len) : nvs_get_blob(src, k, buf, &len);
+      if (e == ESP_OK)
+        e = str ? nvs_set_str(dst, k, static_cast<const char *>(buf)) : nvs_set_blob(dst, k, buf, len);
+      heap_caps_free(buf);
+      return e;
+    }
+    default:
+      return ESP_OK;
+  }
+}
+
+/// Moves a namespace from the default partition to touchreg: copies every key, marks
+/// the copy complete, then erases the default copy. A complete copy is never
+/// overwritten again (the default copy is then only erased).
+void move_namespace_to_touchreg_(const char *ns) {
+  static const char *const MOVED_KEY = "_moved";
+  if (!touch_registry_partition_ready_)
+    return;
+  nvs_iterator_t it = nullptr;
+  if (nvs_entry_find(NVS_DEFAULT_PART_NAME, ns, NVS_TYPE_ANY, &it) != ESP_OK)
+    return;  // nothing left on the default partition
+  nvs_handle_t src, dst;
+  if (nvs_open(ns, NVS_READWRITE, &src) != ESP_OK) {
+    nvs_release_iterator(it);
+    return;
+  }
+  if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, ns, NVS_READWRITE, &dst) != ESP_OK) {
+    nvs_release_iterator(it);
+    nvs_close(src);
+    return;
+  }
+  uint8_t moved = 0;
+  esp_err_t err = ESP_OK;
+  unsigned keys = 0;
+  if (nvs_get_u8(dst, MOVED_KEY, &moved) != ESP_OK || moved == 0) {
+    for (esp_err_t res = ESP_OK; res == ESP_OK && err == ESP_OK; res = nvs_entry_next(&it)) {
+      nvs_entry_info_t info{};
+      nvs_entry_info(it, &info);
+      err = copy_nvs_entry_(src, dst, info);
+      keys++;
+    }
+    if (err == ESP_OK)
+      err = nvs_set_u8(dst, MOVED_KEY, 1);
+    if (err == ESP_OK)
+      err = nvs_commit(dst);
+  }
+  nvs_release_iterator(it);
+  if (err == ESP_OK)
+    err = nvs_erase_all(src);
+  if (err == ESP_OK)
+    err = nvs_commit(src);
+  nvs_close(dst);
+  nvs_close(src);
+  if (err == ESP_OK)
+    ESP_LOGI(TAG, "Moved NVS namespace %s to %s (%u keys)", ns, TOUCH_REGISTRY_PARTITION, keys);
+  else
+    ESP_LOGE(TAG, "Could not move NVS namespace %s to %s: %s", ns, TOUCH_REGISTRY_PARTITION, esp_err_to_name(err));
+}
+
 struct PersistedLedgerCompact {
   uint32_t magic{::lune_touch::PERSISTED_LEDGER_MAGIC};
   uint16_t version{1};
@@ -270,6 +369,58 @@ bool load_registry_chunks_for_(nvs_handle_t handle, State *state) {
 
 bool load_registry_chunks_(nvs_handle_t handle, ::lune_touch::PersistedState *state) {
   return load_registry_chunks_for_(handle, state);
+}
+
+// Default NVS usage per namespace (keys, and entries their values take), logged when a
+// save runs out of space so the namespace that fills the partition shows in the log.
+void log_default_nvs_usage_() {
+  nvs_stats_t stats{};
+  if (nvs_get_stats(nullptr, &stats) == ESP_OK)
+    ESP_LOGE(TAG, "Default NVS: used=%u free=%u total=%u namespaces=%u", static_cast<unsigned>(stats.used_entries),
+             static_cast<unsigned>(stats.free_entries), static_cast<unsigned>(stats.total_entries),
+             static_cast<unsigned>(stats.namespace_count));
+  if (touch_registry_partition_ready_ && nvs_get_stats(TOUCH_REGISTRY_PARTITION, &stats) == ESP_OK)
+    ESP_LOGE(TAG, "%s NVS: used=%u free=%u total=%u", TOUCH_REGISTRY_PARTITION,
+             static_cast<unsigned>(stats.used_entries), static_cast<unsigned>(stats.free_entries),
+             static_cast<unsigned>(stats.total_entries));
+  struct Ns {
+    char name[16];
+    unsigned keys;
+    unsigned entries;
+  };
+  Ns seen[12]{};
+  size_t n = 0;
+  nvs_iterator_t it = nullptr;
+  esp_err_t res = nvs_entry_find(NVS_DEFAULT_PART_NAME, nullptr, NVS_TYPE_ANY, &it);
+  while (res == ESP_OK) {
+    nvs_entry_info_t info{};
+    nvs_entry_info(it, &info);
+    size_t k = 0;
+    while (k < n && std::strncmp(seen[k].name, info.namespace_name, sizeof(seen[k].name)) != 0)
+      k++;
+    if (k == n && n < sizeof(seen) / sizeof(seen[0])) {
+      std::strncpy(seen[n].name, info.namespace_name, sizeof(seen[n].name) - 1);
+      n++;
+    }
+    if (k < n) {
+      size_t len = 0;
+      nvs_handle_t h;
+      if ((info.type == NVS_TYPE_STR || info.type == NVS_TYPE_BLOB) &&
+          nvs_open(info.namespace_name, NVS_READONLY, &h) == ESP_OK) {
+        if (info.type == NVS_TYPE_STR)
+          nvs_get_str(h, info.key, nullptr, &len);
+        else
+          nvs_get_blob(h, info.key, nullptr, &len);
+        nvs_close(h);
+      }
+      seen[k].keys++;
+      seen[k].entries += 1 + static_cast<unsigned>((len + 31) / 32);
+    }
+    res = nvs_entry_next(&it);
+  }
+  nvs_release_iterator(it);
+  for (size_t k = 0; k < n; k++)
+    ESP_LOGE(TAG, "  NVS namespace %s: %u keys, ~%u entries", seen[k].name, seen[k].keys, seen[k].entries);
 }
 
 void cleanup_legacy_touch_registry_() {
@@ -435,6 +586,27 @@ char *alloc_psram_body_(size_t capacity) {
 }
 
 // Large registry blobs (~16 KiB) must not live in .dram0.bss — prefer PSRAM.
+// Old registry shapes are read once, at boot, to migrate. They share one scratch buffer,
+// in PSRAM when there is one; as function statics they held ~100 KB of internal DRAM for
+// good, which the HTTP server then lacked at boot.
+void *legacy_scratch_bytes_(size_t size) {
+  static void *buf = nullptr;
+  static size_t cap = 0;
+  if (size > cap) {
+    heap_caps_free(buf);
+    buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf == nullptr)
+      buf = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    cap = buf != nullptr ? size : 0;
+  }
+  return buf;
+}
+
+template <typename T> T *legacy_scratch_() {
+  void *p = legacy_scratch_bytes_(sizeof(T));
+  return p != nullptr ? new (p) T : nullptr;
+}
+
 ::lune_touch::PersistedState *alloc_persisted_state_() {
   void *p = heap_caps_malloc(sizeof(::lune_touch::PersistedState),
                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -1457,6 +1629,14 @@ struct PersistedPreloadLearning {
   } zones[::lune_touch::MAX_HOUSE_ZONES]{};
 };
 
+struct PersistedUaDay {
+  uint32_t magic{UA_DAY_MAGIC};
+  uint16_t version{UA_DAY_VERSION};
+  uint16_t count{0};
+  int32_t ymd{0};  ///< Local date the totals belong to
+  ::lune_touch::HouseModel::UaDayPersist rooms[::lune_touch::MAX_HOUSE_ROOMS]{};
+};
+
 void json_escape_(const char *src, char *out, size_t out_len) {
   if (out_len == 0)
     return;
@@ -1525,20 +1705,20 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
   json_float_token_(flow_lmin_tok, sizeof(flow_lmin_tok), flow_lmin, 1);
   // Mixing: the last sample taken while heating, shown for MIXING_HOLD_MS after it.
   const bool mix_held = source.mix_ms != 0 && now_ms - source.mix_ms <= circulation_pump::MIXING_HOLD_MS;
-  const auto mix = mix_held ? circulation_pump::mixing_state(source.mix_ratio) : circulation_pump::Mixing::Unknown;
+  const auto mix = !circulation_pump::judges_mixing(source.buffer_tank) ? circulation_pump::Mixing::NotApplicable
+                   : mix_held ? circulation_pump::mixing_state(source.mix_ratio, source.buffer_tank)
+                              : circulation_pump::Mixing::Unknown;
   char mix_ratio[16], mix_primary[16], mix_secondary[16], mix_age[16], mix_in[16], mix_out[16];
   json_float_token_(mix_in, sizeof(mix_in), mix_held ? source.mix_in_kw : NAN, 1);
   json_float_token_(mix_out, sizeof(mix_out), mix_held ? source.mix_out_kw : NAN, 1);
   json_float_token_(mix_ratio, sizeof(mix_ratio), mix_held ? source.mix_ratio : NAN, 2);
   json_float_token_(mix_primary, sizeof(mix_primary), mix_held ? source.mix_primary_lmin : NAN, 1);
   json_float_token_(mix_secondary, sizeof(mix_secondary), mix_held ? source.mix_secondary_lmin : NAN, 1);
-  // Recommended secondary flow from the held primary sample, and the head it needs through
-  // the valves as they are now (live head and flow).
-  const float rec_lmin = mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin) : NAN;
-  const float rec_head = circulation_pump::head_for_flow_m(source.has_head ? source.head_m : NAN, flow_lmin, rec_lmin);
-  char mix_rec[16], mix_rec_head[16];
+  // Recommended secondary flow from the held primary sample.
+  const float rec_lmin =
+      mix_held ? circulation_pump::recommended_secondary_lmin(source.mix_primary_lmin, source.buffer_tank) : NAN;
+  char mix_rec[16];
   json_float_token_(mix_rec, sizeof(mix_rec), rec_lmin, 1);
-  json_float_token_(mix_rec_head, sizeof(mix_rec_head), rec_head, 1);
   if (mix_held)
     snprintf(mix_age, sizeof(mix_age), "%lu", static_cast<unsigned long>((now_ms - source.mix_ms) / 1000UL));
   else
@@ -1551,8 +1731,8 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            "\"flow_m3h\":%s,\"flow_l_min\":%s,\"head_m\":%s,\"power_w\":%s,"
            "\"thermal_kw\":%s,\"thermal_kw_source\":\"%s\","
            "\"hydraulic_authority\":%s,\"consecutive_failures\":%u,\"last_error\":\"%s\","
-           "\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
-           "\"age_s\":%s,\"recommended_l_min\":%s,\"recommended_head_m\":%s,\"in_kw\":%s,\"out_kw\":%s}}",
+           "\"buffer_tank\":\"%s\",\"mixing\":{\"state\":\"%s\",\"ratio\":%s,\"primary_l_min\":%s,\"secondary_l_min\":%s,"
+           "\"age_s\":%s,\"recommended_l_min\":%s,\"in_kw\":%s,\"out_kw\":%s}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port),
            static_cast<unsigned>(source.refresh_interval_s),
            static_cast<unsigned>(source.refresh_interval_idle_s),
@@ -1560,8 +1740,8 @@ void format_circulation_json_(const CirculationPumpState &source, uint32_t now_m
            power_entity, source.reachable ? "true" : "false", fresh ? "true" : "false",
            status, source.last_http_status, age_s, flow, flow_lmin_tok, head, power, thermal,
            thermal_source, authority, static_cast<unsigned>(source.consecutive_failures), error,
-           circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
-           mix_rec_head, mix_in, mix_out);
+           circulation_pump::buffer_tank_name(source.buffer_tank), circulation_pump::mixing_name(mix), mix_ratio, mix_primary, mix_secondary, mix_age, mix_rec,
+           mix_in, mix_out);
 }
 
 enum class CirculationUiStatus : uint8_t { Hidden, Waiting, Ok, Stale, Offline };
@@ -1606,6 +1786,9 @@ void LuneTouchCoordinator::setup() {
   state_lock_ = xSemaphoreCreateMutex();
   heat_source_probe_done_ = xSemaphoreCreateBinary();
   init_touch_registry_partition_();
+  move_namespace_to_touchreg_(SETTINGS_NAMESPACE);
+  move_namespace_to_touchreg_(WEATHER_NAMESPACE);
+  move_namespace_to_touchreg_(LEDGER_NAMESPACE);
   boot_id_ = esp_random();
   if (boot_id_ == 0)
     boot_id_ = 1;
@@ -1618,6 +1801,7 @@ void LuneTouchCoordinator::setup() {
   cleanup_legacy_touch_registry_();
   load_forecast_settings_();
   load_preload_learning_();
+  load_ua_day_();
   load_settings_();
   load_odin_control_();
   model_.set_internal_gains_w(odin_control_.internal_gains_w);
@@ -2118,6 +2302,7 @@ void LuneTouchCoordinator::poll_task_() {
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
       run_hp_phase_(esphome::millis());
+      run_valve_flush_(esphome::millis());
       run_hp_diagnostics_(esphome::millis());
       run_problems_(esphome::millis());
       run_exposure_learning_();
@@ -3052,11 +3237,8 @@ bool LuneTouchCoordinator::sync_comfort_target_() {
       strategy = model_.strategy_snapshot(true, day, minute);
     }
   }
-  // Largest slab charge among rooms whose charge window is open now.
-  float charge_store_c = 0.0f;
-  for (size_t i = 0; i < forecast_decision_count_; i++)
-    if (forecast_decisions_[i].charge_now)
-      charge_store_c = std::max(charge_store_c, forecast_decisions_[i].charge_store_c);
+  // Largest slab charge whose window is open now, or room preload ahead of wind/cold.
+  const float charge_store_c = weather_store_c_();
   give_state_lock_();
 
   // The route does not depend on target sync: with Odin in control, demand
@@ -3082,8 +3264,9 @@ bool LuneTouchCoordinator::sync_comfort_target_() {
   }
 
   // Demand-led target: keep the virtual thermostat calling while the room that
-  // lags most is behind, or a slab-charge window is open — even when a warm
-  // floor has pulled the weighted average to target (house_demand.h).
+  // lags most is behind, a slab-charge window is open, or rooms are preloaded
+  // ahead of wind or cold — even when a warm floor has pulled the weighted
+  // average to target (house_demand.h).
   // With Odin in control the VT target does not drive heating (Odin plans from
   // its own comfort schedule), so the real target is written unlifted and the
   // demand goes to Odin's schedule instead (run_odin_control_).
@@ -3226,24 +3409,100 @@ bool LuneTouchCoordinator::odin_in_control_() const {
   return odin_control_.enabled || (odin_control_.forwarder_known && odin_control_.forwarder_active);
 }
 
+bool LuneTouchCoordinator::weather_preload_(float *offset_c, int *peak_in_h, float *share) const {
+  float offset = 0.0f;
+  int peak = -1;
+  unsigned rooms = 0, preloading = 0;
+  for (size_t i = 0; i < forecast_decision_count_; i++) {
+    const auto &d = forecast_decisions_[i];
+    // A room may span zones: count it once, preloading if any of its zones does.
+    bool seen = false;
+    for (size_t j = 0; j < i && !seen; j++)
+      seen = std::strcmp(forecast_decisions_[j].room_id, d.room_id) == 0;
+    const bool pre = d.active && !d.solar_holdoff && !d.charge_episode && d.offset_c > 0.01f &&
+                     d.peak_in_h >= 0;
+    if (!seen)
+      rooms++;
+    if (!pre)
+      continue;
+    offset = std::max(offset, d.offset_c);
+    peak = std::max<int>(peak, d.peak_in_h);
+    bool counted = false;
+    for (size_t j = 0; j < i && !counted; j++) {
+      const auto &e = forecast_decisions_[j];
+      counted = std::strcmp(e.room_id, d.room_id) == 0 && e.active && !e.solar_holdoff && !e.charge_episode &&
+                e.offset_c > 0.01f && e.peak_in_h >= 0;
+    }
+    if (!counted)
+      preloading++;
+  }
+  if (offset_c != nullptr)
+    *offset_c = offset;
+  if (peak_in_h != nullptr)
+    *peak_in_h = peak;
+  if (share != nullptr)
+    *share = rooms > 0 ? static_cast<float>(preloading) / static_cast<float>(rooms) : NAN;
+  return preloading > 0;
+}
+
+float LuneTouchCoordinator::weather_store_c_() const {
+  float store = 0.0f;
+  for (size_t i = 0; i < forecast_decision_count_; i++)
+    if (forecast_decisions_[i].charge_now)
+      store = std::max(store, forecast_decisions_[i].charge_store_c);
+  float preload = 0.0f;
+  weather_preload_(&preload, nullptr, nullptr);
+  return std::max(store, preload);
+}
+
 lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour, float *energy_kwh,
-                                                               const char **reason) {
+                                                               const char **reason,
+                                                               lune_touch_odin::LiftSources *sources) {
   lune_touch_odin::LiftParams params{};
   float thermal_mass = NAN;
+  float heat_loss = NAN;
   float held = 0.0f;
   float energy = 0.0f;
   int start = INT16_MAX;
   int end = -1;
   uint8_t lag_floor_h = 0;
+  float lagging_share = NAN;
+  float pre_lift_c = 0.0f;
+  int pre_peak_in_h = -1;
+  float pre_share = NAN;
+  // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
+  float price_rel[24];
+  std::fill(std::begin(price_rel), std::end(price_rel), NAN);
+  int today = 0;
+  uint16_t minute = 0;
+  const bool clock_ok = local_today_(&today, &minute);
   if (take_state_lock_(100)) {
+    if (price_rt_ != nullptr && clock_ok) {
+      const lune_touch_price::DayPrices *d0 = nullptr;
+      const lune_touch_price::DayPrices *d1 = nullptr;
+      if (price_rt_->today.valid && price_rt_->today.ymd == today) {
+        d0 = &price_rt_->today;
+        d1 = price_rt_->tomorrow.valid ? &price_rt_->tomorrow : nullptr;
+      } else if (price_rt_->tomorrow.valid && price_rt_->tomorrow.ymd == today) {
+        d0 = &price_rt_->tomorrow;
+      }
+      for (size_t k = 0; k < 24 && d0 != nullptr; k++) {
+        const size_t h = now_hour + k;
+        const lune_touch_price::DayPrices *d = h < 24 ? d0 : d1;
+        if (d != nullptr)
+          price_rel[k] = d->total[h % 24];
+      }
+    }
     // One setting for "how far Touch may raise ahead": Weather › Preload › Max.
     // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
     params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
     thermal_mass = odin_control_.thermal_mass_kwh_per_k;
+    heat_loss = odin_control_.heat_loss_kw_per_k;
     const auto strategy = model_.strategy_snapshot();
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
+    lagging_share = strategy.lagging_share;
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
       const auto rz = model_.resolve_room(strategy.driver_room_id);
@@ -3264,6 +3523,8 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       start = std::min<int>(start, d.charge_start_in_h);
       end = std::max<int>(end, d.charge_end_in_h);
     }
+    // Weather preload: rooms V6 raises ahead of wind or cold (a charge covers its own room).
+    weather_preload_(&pre_lift_c, &pre_peak_in_h, &pre_share);
     give_state_lock_();
   }
   lune_touch_odin::Lift charge{};
@@ -3274,34 +3535,43 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // A room that lags (held demand): shift the band from the next hour for the
   // room's floor lag + 2 h (odin_comfort.h lag_lift), so Odin has at least an hour
   // to plan heat that reaches the room. Re-evaluated every cycle.
+  // One or two lagging rooms open only the band's top over a wider window, so Odin
+  // chooses the hours (odin_comfort.h floor_share_for); a slab charge moves it all.
+  const float floor_share = charge.active() ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
   lune_touch_odin::Lift lag{};
   if (held > 0.0f)
-    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params);
+    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
+  // only what the house would have had anyway. The band opens from now through the
+  // peak, by the largest room offset, its floor by the preloading share of the house.
+  lune_touch_odin::Lift pre{};
+  if (pre_lift_c > 0.0f)
+    pre = lune_touch_odin::preload_lift(now_hour, pre_lift_c, pre_peak_in_h, params,
+                                        lune_touch_odin::floor_share_for(pre_share));
   if (energy_kwh != nullptr)
     *energy_kwh = charge.active() ? energy : 0.0f;
-  if (charge.active() && lag.active()) {
+  const lune_touch_odin::Lift out = lune_touch_odin::merge_lifts(
+      now_hour, lune_touch_odin::merge_lifts(now_hour, charge, lag, params), pre, params);
+  if (out.active()) {
+    lune_touch_odin::Lift lifted = out;
+    // A dear hour stays lifted unless heating earlier is cheaper, heat loss included.
+    lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
+                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss));
     if (reason != nullptr)
-      *reason = "slab_charge+room_lag";
-    // Merge both windows (relative to now) into one lift.
-    const int charge_start_rel = static_cast<int>((charge.start_hour + 24 - now_hour) % 24);
-    const int charge_end_rel = charge_start_rel + charge.hours;
-    return lune_touch_odin::make_lift(
-        now_hour, std::min(charge_start_rel, lune_touch_odin::LAG_LEAD_IN_H),
-        std::max(charge_end_rel, lune_touch_odin::lag_end_in_h(lag_floor_h)),
-        std::max(charge.lift_c, lag.lift_c), params);
-  }
-  if (charge.active()) {
-    if (reason != nullptr)
-      *reason = "slab_charge";
-    return charge;
-  }
-  if (lag.active()) {
-    if (reason != nullptr)
-      *reason = "room_lag";
-    return lag;
+      *reason = lift_reason_(charge.active(), lag.active(), pre.active());
+    // Which source wants each lifted hour (a skipped hour has none).
+    if (sources != nullptr) {
+      const uint32_t keep = lune_touch_odin::lift_hours_mask(lifted);
+      sources->charge = lune_touch_odin::lift_hours_mask(charge) & keep;
+      sources->lag = lune_touch_odin::lift_hours_mask(lag) & keep;
+      sources->preload = lune_touch_odin::lift_hours_mask(pre) & keep;
+    }
+    return lifted;
   }
   if (reason != nullptr)
     *reason = "none";
+  if (sources != nullptr)
+    *sources = lune_touch_odin::LiftSources{};
   return lune_touch_odin::Lift{};
 }
 
@@ -3574,9 +3844,10 @@ void LuneTouchCoordinator::run_odin_control_() {
   }
   float energy = 0.0f;
   const char *reason = "none";
+  lune_touch_odin::LiftSources sources{};
   lune_touch_odin::Lift want{};
   if (enabled && clock_ok)
-    want = compute_odin_lift_(now_hour, &energy, &reason);
+    want = compute_odin_lift_(now_hour, &energy, &reason, &sources);
 
   lune_touch_odin::OwnerState owner{};
   if (!take_state_lock_(100))
@@ -3585,6 +3856,7 @@ void LuneTouchCoordinator::run_odin_control_() {
   odin_control_.wanted = want;
   odin_control_.wanted_energy_kwh = energy;
   std::strncpy(odin_control_.reason, reason, sizeof(odin_control_.reason) - 1);
+  odin_control_.sources = sources;
   give_state_lock_();
 
   const char *control_status = "idle";
@@ -3685,7 +3957,7 @@ void LuneTouchCoordinator::run_odin_control_() {
 
 void LuneTouchCoordinator::load_odin_control_() {
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   uint8_t u8 = 0;
   if (nvs_get_u8(handle, "odc_en", &u8) == ESP_OK)
@@ -3711,12 +3983,17 @@ void LuneTouchCoordinator::load_odin_control_() {
     if (nvs_get_u8(handle, "odc_applied", &applied) == ESP_OK)
       odin_owner_.applied = applied != 0;
   }
-  uint8_t lift[3]{};
+  // start hour, hours, lift ×10, floor share ×100, skip mask (3 bytes LE); older
+  // firmware stored the first three only.
+  uint8_t lift[7]{0, 0, 0, 100, 0, 0, 0};
   len = sizeof(lift);
-  if (nvs_get_blob(handle, "odc_lift", lift, &len) == ESP_OK && len == sizeof(lift)) {
+  if (nvs_get_blob(handle, "odc_lift", lift, &len) == ESP_OK && (len == 3 || len == sizeof(lift))) {
     odin_owner_.lift.start_hour = lift[0] % 24;
     odin_owner_.lift.hours = lift[1];
     odin_owner_.lift.lift_c = static_cast<float>(lift[2]) / 10.0f;
+    odin_owner_.lift.floor_share = std::min(1.0f, static_cast<float>(lift[3]) / 100.0f);
+    odin_owner_.lift.skip_mask = static_cast<uint32_t>(lift[4]) | (static_cast<uint32_t>(lift[5]) << 8) |
+                                 (static_cast<uint32_t>(lift[6]) << 16);
   }
   if (nvs_get_u8(handle, "odc_yield", &u8) == ESP_OK)
     odin_owner_.yielded = u8 != 0;
@@ -3787,11 +4064,15 @@ void LuneTouchCoordinator::save_odin_control_() {
     lune_touch_odin::format_profile(owner.user, user, 640);
   if (owner.applied)
     lune_touch_odin::format_profile(owner.written, written, 640);
-  const uint8_t lift[3]{owner.lift.start_hour, owner.lift.hours,
-                        static_cast<uint8_t>(std::clamp(std::lround(owner.lift.lift_c * 10.0f), 0L, 255L))};
+  const uint32_t skip = owner.lift.skip_mask;
+  const uint8_t lift[7]{owner.lift.start_hour, owner.lift.hours,
+                        static_cast<uint8_t>(std::clamp(std::lround(owner.lift.lift_c * 10.0f), 0L, 255L)),
+                        static_cast<uint8_t>(std::clamp(std::lround(owner.lift.floor_share * 100.0f), 0L, 100L)),
+                        static_cast<uint8_t>(skip & 0xFF), static_cast<uint8_t>((skip >> 8) & 0xFF),
+                        static_cast<uint8_t>((skip >> 16) & 0xFF)};
   const float curve[2]{levers.curve_gain, levers.curve_max_offset_c};
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   esp_err_t err = nvs_set_u8(handle, "odc_en", control.enabled ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_blob(handle, "odc_maxlift", &control.max_lift_c, sizeof(float));
@@ -3831,9 +4112,7 @@ bool LuneTouchCoordinator::push_generic_levers_() {
   source = heat_source_;
   levers = generic_levers_;
   strategy = model_.strategy_snapshot();
-  for (size_t i = 0; i < forecast_decision_count_; i++)
-    if (forecast_decisions_[i].charge_now)
-      charge_store_c = std::max(charge_store_c, forecast_decisions_[i].charge_store_c);
+  charge_store_c = weather_store_c_();
   give_state_lock_();
   const float held = update_demand_hold_(strategy, charge_store_c);
   if (!source.enabled || source.host[0] == '\0')
@@ -3852,7 +4131,7 @@ bool LuneTouchCoordinator::push_generic_levers_() {
   lune_touch_house::LeverParams lp{};
   lp.curve_gain = levers.curve_gain;
   lp.curve_max_offset_c = levers.curve_max_offset_c;
-  // Charge windows count as demand too (max with the held lag).
+  // Slab charge and weather preload count as demand too (max with the held lag).
   const float demand = std::max(held, charge_store_c);
   const auto out = lune_touch_house::generic_levers(strategy.house_target_c, strategy.physical_temperature_c,
                                                      demand, lp);
@@ -4323,6 +4602,11 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
           }
         }
         odin_plan_.today_energy_kwh[h] = v;
+        float hv = NAN;
+        if (i < odin_plan::HORIZON_HOURS)
+          hv = h < plan.current_hour && plan.has_actual_prod && std::isfinite(plan.actual_prod[i]) ? plan.actual_prod[i]
+                                                                                                  : plan.heat_production[i];
+        odin_plan_.today_heat_kwh[h] = hv;
       }
       // History ≤ idx_now only — never feed future plan slots into past comparison.
       odin_plan_.past_count = 0;
@@ -4488,8 +4772,11 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
       circulation_.last_error[0] = '\0';
       circulation_.consecutive_failures = 0;
       const bool any_calling = model_.calling_zone_count() > 0;
-      const uint16_t want = any_calling ? circulation_.refresh_interval_active_s
-                                        : circulation_.refresh_interval_idle_s;
+      circulation_.valves_held = vf_run_.active;
+      const uint16_t want = circulation_.valves_held
+                                ? ::lune_touch_valve_flush::CIRCULATION_POLL_S
+                            : any_calling ? circulation_.refresh_interval_active_s
+                                          : circulation_.refresh_interval_idle_s;
       if (want >= 10 && want <= 3600)
         circulation_.refresh_interval_s = want;
       // Integrate between consecutive samples only; a longer gap (pump unreachable,
@@ -4517,16 +4804,22 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
         const time_t raw = static_cast<time_t>(epoch_now);
         struct tm local {};
         if (localtime_r(&raw, &local) != nullptr) {
-          static int ua_day_ymd = 0;
-          const int ymd = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
-          if (ua_day_ymd != ymd) {
-            const bool learn = ua_day_ymd != 0;
-            ua_day_ymd = ymd;
+          const int32_t ymd = (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
+          // ua_day_ymd_ comes back from NVS with the day's totals (load_ua_day_), so a
+          // restart neither loses the day nor learns from a part of one.
+          if (ua_day_ymd_ != ymd) {
+            const bool learn = ua_day_ymd_ != 0;
+            ua_day_ymd_ = ymd;
             ::lune_touch::HouseModel::UaDayResult days[::lune_touch::MAX_HOUSE_ROOMS];
             const size_t n = model_.close_ua_day(days, learn ? ::lune_touch::MAX_HOUSE_ROOMS : 0);
             for (size_t k = 0; k < n; k++)
               queue_ua_learned_writes_(days[k].room_index, days[k].confidence, days[k].observed_days,
                                        static_cast<uint32_t>(epoch_now));
+            ua_day_saved_ms_ = 0;  // store the new day at once
+          }
+          if (ua_day_saved_ms_ == 0 || now_fetch_ms - ua_day_saved_ms_ >= 3600000UL) {
+            save_ua_day_();
+            ua_day_saved_ms_ = now_fetch_ms != 0 ? now_fetch_ms : 1;
           }
         }
       }
@@ -5549,6 +5842,8 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
       hl.applied = zone["house_balance"] | 1.0f;
       hl.enabled = zone["enabled"] | true;
       hl.seen_ms = now_ms;
+      // The valve pin's travel (V6 2.4: the opening is pin position in % of its learned travel).
+      v6_opening_[node_index][zone_number - 1].mm = zone["opening_mm"] | NAN;
     }
 
     fields.has_temperature = !zone["temperature_c"].isNull();
@@ -6032,7 +6327,7 @@ void LuneTouchCoordinator::ensure_preload_learning_defaults_() {
 bool LuneTouchCoordinator::load_preload_learning_() {
   ensure_preload_learning_defaults_();
   nvs_handle_t handle = 0;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return false;
   PersistedPreloadLearning blob{};
   size_t len = sizeof(blob);
@@ -6061,6 +6356,38 @@ bool LuneTouchCoordinator::load_preload_learning_() {
   return true;
 }
 
+bool LuneTouchCoordinator::load_ua_day_() {
+  nvs_handle_t handle = 0;
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+  static PersistedUaDay blob;
+  blob = PersistedUaDay{};
+  size_t len = sizeof(blob);
+  const esp_err_t err = nvs_get_blob(handle, "ua_day", &blob, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len != sizeof(blob) || blob.magic != UA_DAY_MAGIC || blob.version != UA_DAY_VERSION ||
+      blob.count > ::lune_touch::MAX_HOUSE_ROOMS)
+    return false;
+  model_.import_ua_day(blob.rooms, blob.count);
+  ua_day_ymd_ = blob.ymd;
+  return true;
+}
+
+bool LuneTouchCoordinator::save_ua_day_() {
+  static PersistedUaDay blob;
+  blob = PersistedUaDay{};
+  blob.ymd = ua_day_ymd_;
+  blob.count = static_cast<uint16_t>(model_.export_ua_day(blob.rooms, ::lune_touch::MAX_HOUSE_ROOMS));
+  nvs_handle_t handle = 0;
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return false;
+  const esp_err_t err = nvs_set_blob(handle, "ua_day", &blob, sizeof(blob));
+  if (err == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+  return err == ESP_OK;
+}
+
 bool LuneTouchCoordinator::save_preload_learning_() {
   ensure_preload_learning_defaults_();
   PersistedPreloadLearning blob{};
@@ -6075,7 +6402,7 @@ bool LuneTouchCoordinator::save_preload_learning_() {
     entry.lead_bias_h = preload_lead_bias_h_[z];
   }
   nvs_handle_t handle = 0;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return false;
   const esp_err_t err = nvs_set_blob(handle, "preload_lrn", &blob, sizeof(blob));
   if (err == ESP_OK)
@@ -6090,30 +6417,36 @@ void LuneTouchCoordinator::apply_preload_outcome_learning_() {
   uint16_t minute_of_day = 0;
   const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
   bool changed = false;
-  for (size_t i = 0; i < forecast_decision_count_; i++) {
-    const ForecastDecisionState &decision = forecast_decisions_[i];
-    if (!decision.active || decision.solar_holdoff)   // preload learning only
-      continue;
-    size_t zone_index = ::lune_touch::MAX_HOUSE_ZONES;
-    for (size_t z = 0; z < model_.zone_count(); z++) {
-      const auto *zone = model_.zone(z);
-      if (zone != nullptr && std::strcmp(zone->room_id, decision.room_id) == 0) {
-        zone_index = z;
-        break;
-      }
-    }
-    if (zone_index >= ::lune_touch::MAX_HOUSE_ZONES)
-      continue;
+  // A preload is judged once, by where it left the room when it ended. Judging it
+  // at every recompute while it still ran counted a room that was still warming
+  // as undershoot each time (and recomputes come with every settings edit).
+  for (size_t zone_index = 0; zone_index < model_.zone_count() && zone_index < ::lune_touch::MAX_HOUSE_ZONES;
+       zone_index++) {
     const auto *zone = model_.zone(zone_index);
+    if (zone == nullptr)
+      continue;
+    bool active = false;
+    for (size_t i = 0; i < forecast_decision_count_; i++) {
+      const ForecastDecisionState &decision = forecast_decisions_[i];
+      if (decision.active && !decision.solar_holdoff && std::strcmp(zone->room_id, decision.room_id) == 0)
+        active = true;   // preload learning only
+    }
+    if (active) {
+      preload_pending_[zone_index] = true;
+      continue;
+    }
+    if (!preload_pending_[zone_index])
+      continue;
+    preload_pending_[zone_index] = false;
     const auto *live = model_.zone_live(zone_index);
-    if (zone == nullptr || live == nullptr || !live->fresh || !live->has_temperature)
+    if (live == nullptr || !live->fresh || !live->has_temperature)
       continue;
     const auto effective =
         ::lune_touch::HouseModel::effective_comfort(*zone, time_valid, day_index, minute_of_day);
     hv6fc::PreloadOutcome outcome{};
     outcome.preload_was_active = true;
     const float band_lo = effective.setpoint_c - COMFORT_BAND_C;
-    const float band_hi = effective.setpoint_c + COMFORT_BAND_C + decision.offset_c;
+    const float band_hi = effective.setpoint_c + COMFORT_BAND_C;
     if (live->temperature_c < band_lo)
       outcome.undershoot_c = band_lo - live->temperature_c;
     if (live->temperature_c > band_hi)
@@ -6993,7 +7326,12 @@ bool LuneTouchCoordinator::load_registry_() {
         nvs_close(dedicated_handle);
       }
       // Attempt v12 dedicated blob (same chunk layout, smaller LogicalRoom).
-      static PersistedStateV12 legacy_v12;
+      PersistedStateV12 *legacy_v12_p = legacy_scratch_<PersistedStateV12>();
+      if (legacy_v12_p == nullptr) {
+        ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV12)));
+        return false;
+      }
+      PersistedStateV12 &legacy_v12 = *legacy_v12_p;
       std::memset(&legacy_v12, 0, sizeof(legacy_v12));
       if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
                                   &dedicated_handle) == ESP_OK) {
@@ -7030,7 +7368,12 @@ bool LuneTouchCoordinator::load_registry_() {
         nvs_close(dedicated_handle);
       }
       // Attempt v13 dedicated blob (ZoneBinding without unassigned flags).
-      static PersistedStateV13 legacy_v13;
+      PersistedStateV13 *legacy_v13_p = legacy_scratch_<PersistedStateV13>();
+      if (legacy_v13_p == nullptr) {
+        ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV13)));
+        return false;
+      }
+      PersistedStateV13 &legacy_v13 = *legacy_v13_p;
       std::memset(&legacy_v13, 0, sizeof(legacy_v13));
       if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
                                   &dedicated_handle) == ESP_OK) {
@@ -7067,7 +7410,12 @@ bool LuneTouchCoordinator::load_registry_() {
         nvs_close(dedicated_handle);
       }
       // Attempt v14 dedicated blob (pre-physics-ownership LogicalRoom/ZoneBinding).
-      static PersistedStateV14 legacy_v14;
+      PersistedStateV14 *legacy_v14_p = legacy_scratch_<PersistedStateV14>();
+      if (legacy_v14_p == nullptr) {
+        ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV14)));
+        return false;
+      }
+      PersistedStateV14 &legacy_v14 = *legacy_v14_p;
       std::memset(&legacy_v14, 0, sizeof(legacy_v14));
       if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
                                   &dedicated_handle) == ESP_OK) {
@@ -7132,7 +7480,13 @@ bool LuneTouchCoordinator::load_registry_() {
   }
 
   bool registry_migrated = false;
-  static PersistedStateV11 legacy_chunked;
+  PersistedStateV11 *legacy_chunked_p = legacy_scratch_<PersistedStateV11>();
+  if (legacy_chunked_p == nullptr) {
+    ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV11)));
+    nvs_close(handle);
+    return false;
+  }
+  PersistedStateV11 &legacy_chunked = *legacy_chunked_p;
   std::memset(&legacy_chunked, 0, sizeof(legacy_chunked));
   if (load_registry_chunks_for_(handle, &legacy_chunked)) {
     nvs_close(handle);
@@ -7229,7 +7583,13 @@ bool LuneTouchCoordinator::load_registry_() {
     }
   } else if (len == sizeof(PersistedStateV11)) {
     registry_migrated = true;
-    static PersistedStateV11 legacy;
+    PersistedStateV11 *legacy_p = legacy_scratch_<PersistedStateV11>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV11)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV11 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7250,7 +7610,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v11; runtime history reset");
   } else if (len == sizeof(PersistedStateV10)) {
     registry_migrated = true;
-    static PersistedStateV10 legacy;
+    PersistedStateV10 *legacy_p = legacy_scratch_<PersistedStateV10>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV10)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV10 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7268,7 +7634,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v10 to v11");
   } else if (len == sizeof(PersistedStateV9)) {
     registry_migrated = true;
-    static PersistedStateV9 legacy;
+    PersistedStateV9 *legacy_p = legacy_scratch_<PersistedStateV9>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV9)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV9 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7286,7 +7658,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v9 to v10");
   } else if (len == sizeof(PersistedStateV8)) {
     registry_migrated = true;
-    static PersistedStateV8 legacy;
+    PersistedStateV8 *legacy_p = legacy_scratch_<PersistedStateV8>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV8)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV8 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7306,7 +7684,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v8 to v9");
   } else if (len == sizeof(PersistedStateV7)) {
     registry_migrated = true;
-    static PersistedStateV7 legacy;
+    PersistedStateV7 *legacy_p = legacy_scratch_<PersistedStateV7>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV7)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV7 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7326,7 +7710,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v7 to v9");
   } else if (len == sizeof(PersistedStateV6)) {
     registry_migrated = true;
-    static PersistedStateV6 legacy;
+    PersistedStateV6 *legacy_p = legacy_scratch_<PersistedStateV6>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV6)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV6 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7345,7 +7735,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v6 to v9");
   } else if (len == sizeof(PersistedStateV5)) {
     registry_migrated = true;
-    static PersistedStateV5 legacy;
+    PersistedStateV5 *legacy_p = legacy_scratch_<PersistedStateV5>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV5)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV5 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7364,7 +7760,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v5 to v9");
   } else if (len == sizeof(PersistedStateV4)) {
     registry_migrated = true;
-    static PersistedStateV4 legacy;
+    PersistedStateV4 *legacy_p = legacy_scratch_<PersistedStateV4>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV4)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV4 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7401,7 +7803,13 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v4 to v9");
   } else if (len == sizeof(PersistedStateV3)) {
     registry_migrated = true;
-    static PersistedStateV3 legacy;
+    PersistedStateV3 *legacy_p = legacy_scratch_<PersistedStateV3>();
+    if (legacy_p == nullptr) {
+      ESP_LOGE(TAG, "No heap for the old Touch registry (%u bytes)", static_cast<unsigned>(sizeof(PersistedStateV3)));
+      nvs_close(handle);
+      return false;
+    }
+    PersistedStateV3 &legacy = *legacy_p;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
     nvs_close(handle);
@@ -7552,7 +7960,7 @@ void LuneTouchCoordinator::save_registry_() {
 
 void LuneTouchCoordinator::load_ledger_() {
   nvs_handle_t handle;
-  if (nvs_open(LEDGER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(LEDGER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
 
   PersistedLedgerCompact compact{};
@@ -7612,7 +8020,7 @@ void LuneTouchCoordinator::save_ledger_() {
   }
 
   nvs_handle_t handle;
-  if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(LEDGER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   // The previous ledger was a large single blob. Clear the ledger namespace
   // only during that migration; normal saves overwrite the compact blob.
@@ -7641,7 +8049,7 @@ void LuneTouchCoordinator::save_ledger_() {
 
 void LuneTouchCoordinator::load_forecast_settings_() {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   int32_t lat_e6 = 0;
   int32_t lon_e6 = 0;
@@ -7656,7 +8064,7 @@ void LuneTouchCoordinator::load_forecast_settings_() {
 
 void LuneTouchCoordinator::save_forecast_settings_(float latitude, float longitude, const char *mode) {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   nvs_set_i32(handle, "lat_e6", static_cast<int32_t>(latitude * 1000000.0f));
   nvs_set_i32(handle, "lon_e6", static_cast<int32_t>(longitude * 1000000.0f));
@@ -7667,7 +8075,7 @@ void LuneTouchCoordinator::save_forecast_settings_(float latitude, float longitu
 
 void LuneTouchCoordinator::load_forecast_cache_() {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   static PersistedForecastCache cache;
   std::memset(&cache, 0, sizeof(cache));
@@ -7739,7 +8147,7 @@ void LuneTouchCoordinator::save_forecast_cache_() {
     return;
 
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   if (nvs_set_blob(handle, "cache", &cache, sizeof(cache)) == ESP_OK)
     nvs_commit(handle);
@@ -7748,7 +8156,7 @@ void LuneTouchCoordinator::save_forecast_cache_() {
 
 void LuneTouchCoordinator::clear_forecast_cache_() {
   nvs_handle_t handle;
-  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   nvs_erase_key(handle, "cache");
   nvs_commit(handle);
@@ -7757,7 +8165,7 @@ void LuneTouchCoordinator::clear_forecast_cache_() {
 
 void LuneTouchCoordinator::load_settings_() {
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
     size_t len = sizeof(coordinator_name_);
     nvs_get_str(handle, "name", coordinator_name_, &len);
     len = sizeof(install_id_);
@@ -7816,6 +8224,10 @@ void LuneTouchCoordinator::load_settings_() {
     uint8_t house_balance = 0;
     if (nvs_get_u8(handle, "hs_hbal_en", &house_balance) == ESP_OK)
       heat_source_.house_balance_enabled = house_balance != 0;
+    size_t hbw_len = sizeof(hb_weights_);
+    if (nvs_get_blob(handle, "hs_hbal_w", hb_weights_, &hbw_len) != ESP_OK || hbw_len != sizeof(hb_weights_))
+      for (auto &w : hb_weights_)
+        w = HouseBalanceWeight{};
     uint8_t follow_hp = 0;
     if (nvs_get_u8(handle, "hs_vfhp_en", &follow_hp) == ESP_OK)
       heat_source_.valves_follow_hp_enabled = follow_hp != 0;
@@ -7901,6 +8313,9 @@ void LuneTouchCoordinator::load_settings_() {
     nvs_get_str(handle, "circ_head", circulation_.head_entity, &len);
     len = sizeof(circulation_.power_entity);
     nvs_get_str(handle, "circ_pwr", circulation_.power_entity, &len);
+    uint8_t tank = static_cast<uint8_t>(circulation_.buffer_tank);
+    if (nvs_get_u8(handle, "circ_tank", &tank) == ESP_OK && tank <= static_cast<uint8_t>(circulation_pump::BufferTank::FourPort))
+      circulation_.buffer_tank = static_cast<circulation_pump::BufferTank>(tank);
     float max_boost_c = weather_max_boost_c_;
     len = sizeof(max_boost_c);
     if (nvs_get_blob(handle, "weather_boost", &max_boost_c, &len) == ESP_OK &&
@@ -8012,7 +8427,7 @@ void LuneTouchCoordinator::ensure_automatic_identity_() {
 
 void LuneTouchCoordinator::save_settings_() {
   nvs_handle_t handle;
-  const esp_err_t settings_open = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
+  const esp_err_t settings_open = open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
   if (settings_open == ESP_OK) {
     esp_err_t err = nvs_set_str(handle, "name", coordinator_name_);
     if (err == ESP_OK) err = nvs_set_str(handle, "install_id", install_id_);
@@ -8041,6 +8456,7 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK) err = nvs_set_str(handle, "hs_climate", heat_source_.climate_entity);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_target_en", heat_source_.target_sync_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_hbal_en", heat_source_.house_balance_enabled ? 1 : 0);
+    if (err == ESP_OK) err = nvs_set_blob(handle, "hs_hbal_w", hb_weights_, sizeof(hb_weights_));
     if (err == ESP_OK) err = nvs_set_u8(handle, "hs_vfhp_en", heat_source_.valves_follow_hp_enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_en", odin_plan_.enabled ? 1 : 0);
     if (err == ESP_OK) err = nvs_set_u8(handle, "odin_absorb", odin_plan_.absorb_arm_enabled ? 1 : 0);
@@ -8073,6 +8489,7 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_flow", circulation_.flow_entity);
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_head", circulation_.head_entity);
     if (err == ESP_OK) err = nvs_set_str(handle, "circ_pwr", circulation_.power_entity);
+    if (err == ESP_OK) err = nvs_set_u8(handle, "circ_tank", static_cast<uint8_t>(circulation_.buffer_tank));
     if (err == ESP_OK)
       err = nvs_set_blob(handle, "weather_boost", &weather_max_boost_c_, sizeof(weather_max_boost_c_));
     if (err == ESP_OK)
@@ -8084,8 +8501,11 @@ void LuneTouchCoordinator::save_settings_() {
     if (err == ESP_OK)
       err = nvs_commit(handle);
     nvs_close(handle);
-    if (err != ESP_OK)
+    if (err != ESP_OK) {
       ESP_LOGE(TAG, "Could not persist Touch settings: %s", esp_err_to_name(err));
+      if (err == ESP_ERR_NVS_NOT_ENOUGH_SPACE)
+        log_default_nvs_usage_();
+    }
   } else {
     ESP_LOGE(TAG, "Could not open Touch settings NVS: %s", esp_err_to_name(settings_open));
   }
@@ -8783,7 +9203,7 @@ bool LuneTouchCoordinator::reset_registry(const char *confirmation, char *respon
     nvs_commit(handle);
     nvs_close(handle);
   }
-  if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+  if (open_touch_nvs_(LEDGER_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
     nvs_erase_all(handle);
     nvs_commit(handle);
     nvs_close(handle);
@@ -10355,8 +10775,14 @@ bool LuneTouchCoordinator::run_heat_source_test_push_(char *response, size_t cap
 bool LuneTouchCoordinator::set_circulation_settings(
     bool has_enabled, bool enabled, const char *host, uint16_t port,
     const char *flow_entity, const char *head_entity, const char *power_entity,
-    char *response, size_t capacity) {
-  if (!has_enabled && (host == nullptr || host[0] == '\0') && port == 0 &&
+    char *response, size_t capacity, const char *buffer_tank) {
+  const bool has_tank = buffer_tank != nullptr && buffer_tank[0] != '\0';
+  circulation_pump::BufferTank tank = circulation_pump::BufferTank::FourPort;
+  if (has_tank && !circulation_pump::parse_buffer_tank(buffer_tank, &tank)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_buffer_tank\"}");
+    return false;
+  }
+  if (!has_enabled && !has_tank && (host == nullptr || host[0] == '\0') && port == 0 &&
       (flow_entity == nullptr || flow_entity[0] == '\0') &&
       (head_entity == nullptr || head_entity[0] == '\0') &&
       (power_entity == nullptr || power_entity[0] == '\0')) {
@@ -10397,6 +10823,8 @@ bool LuneTouchCoordinator::set_circulation_settings(
     std::strncpy(circulation_.power_entity, power_entity, sizeof(circulation_.power_entity) - 1);
     circulation_.power_entity[sizeof(circulation_.power_entity) - 1] = '\0';
   }
+  if (has_tank)
+    circulation_.buffer_tank = tank;
   circulation_.refresh_interval_s = 300;
   if (circulation_.enabled && circulation_.host[0] != '\0')
     circulation_poll_requested_ = true;
@@ -10412,11 +10840,11 @@ bool LuneTouchCoordinator::set_circulation_settings(
   snprintf(response, capacity,
            "{\"result\":\"saved\",\"circulation\":{\"enabled\":%s,\"host\":\"%s\",\"port\":%u,"
            "\"refresh_interval_s\":%u,\"flow_entity\":\"%s\",\"head_entity\":\"%s\","
-           "\"power_entity\":\"%s\"}}",
+           "\"power_entity\":\"%s\",\"buffer_tank\":\"%s\"}}",
            circulation_.enabled ? "true" : "false", escaped_host,
            static_cast<unsigned>(circulation_.port),
            static_cast<unsigned>(circulation_.refresh_interval_s), escaped_flow, escaped_head,
-           escaped_power);
+           escaped_power, circulation_pump::buffer_tank_name(circulation_.buffer_tank));
   give_state_lock_();
   if (poll_task_handle_ != nullptr)
     xTaskNotifyGive(poll_task_handle_);
@@ -11513,6 +11941,42 @@ uint8_t LuneTouchCoordinator::display_odin_status() const {
   }
   give_state_lock_();
   return st;
+}
+
+// Heat-source block on the wall display (LDS DESIGN.md 13.3): one line of text — what the
+// heat pump does, or what is wrong with the link — instead of status dots. severity: 0 =
+// normal (muted), 2 = warn, 3 = fault.
+std::string LuneTouchCoordinator::display_heat_source_status_text(uint8_t *severity) const {
+  const uint8_t asgard = display_asgard_status();
+  const uint8_t odin = display_odin_status();
+  const std::string name = display_heat_source_name();
+  if (severity != nullptr)
+    *severity = 0;
+  if (asgard == 3 || odin == 3) {
+    if (severity != nullptr)
+      *severity = 3;
+    return (asgard == 3 ? name : std::string("Odin")) + " svarer ikke";
+  }
+  if (!take_state_lock_(50))
+    return "Varmepumpe";
+  const HeatSourceState &h = heat_source_;
+  const bool fresh = h.hp_telemetry_ms != 0 && esphome::millis() - h.hp_telemetry_ms < 300000UL;
+  const bool on = fresh && h.hp_compressor_on;
+  const int mode = h.hp_operation_mode;
+  const auto phase = hp_phase_;
+  give_state_lock_();
+  if (!fresh)
+    return asgard == 0 ? "Varmekilde" : name;
+  const char *what = on ? (mode == 1 ? "varmt vand" : (mode == 6 ? "legionella" : "opvarmer"))
+                        : (phase == ::lune_touch_hp_phase::Phase::Prestart ? "starter snart" : "hviler");
+  // A link that needs attention says which, after the state (colour is never the only signal).
+  std::string out = std::string("Varmepumpe · ") + what;
+  if (asgard == 2 || odin == 2) {
+    if (severity != nullptr)
+      *severity = 2;
+    out += asgard == 2 ? " · tjek " + name : std::string(" · tjek Odin");
+  }
+  return out;
 }
 
 std::string LuneTouchCoordinator::display_heat_source_name() const {
@@ -12976,6 +13440,12 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     if (live != nullptr && live->has_temperature) snprintf(temp_buf, sizeof(temp_buf), "%.1f", live->temperature_c); else std::strncpy(temp_buf, "null", sizeof(temp_buf));
     if (live != nullptr && live->has_setpoint) snprintf(sp_buf, sizeof(sp_buf), "%.1f", live->setpoint_c); else std::strncpy(sp_buf, "null", sizeof(sp_buf));
     if (live != nullptr && live->has_valve) snprintf(valve_buf, sizeof(valve_buf), "%.1f", live->valve_pct); else std::strncpy(valve_buf, "null", sizeof(valve_buf));
+    char mm_buf[16];
+    {
+      const bool in_range = zone->node_index < ::lune_touch::MAX_NODES && zone->zone_index < ::lune_touch::ZONES_PER_NODE;
+      const float mm = in_range ? v6_opening_[zone->node_index][zone->zone_index].mm : NAN;
+      if (std::isfinite(mm)) snprintf(mm_buf, sizeof(mm_buf), "%.2f", mm); else std::strncpy(mm_buf, "null", sizeof(mm_buf));
+    }
     if (history != nullptr && history->has_temperature) {
       snprintf(hist_avg_buf, sizeof(hist_avg_buf), "%.2f", history->average_temperature_c);
       snprintf(hist_min_buf, sizeof(hist_min_buf), "%.2f", history->min_temperature_c);
@@ -13045,7 +13515,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"ble_sensor_mismatch\":%s,\"ownership\":{\"walls\":\"v6\",\"area\":\"v6\","
                   "\"floor\":\"v6\",\"weather\":\"touch\"}},"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
-                  "\"valve_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
+                  "\"valve_pct\":%s,\"opening_mm\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
                   "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"effective_source\":\"%s\","
                   "\"schedule_active\":%s,\"time_valid\":%s,\"priority\":%u},"
                   "\"resolver\":{\"fallback_base_target_c\":%.1f,\"touch_available\":%s,"
@@ -13097,7 +13567,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   room != nullptr && room->physics_conflict ? "true" : "false",
                   room != nullptr && room->ble_sensor_mismatch ? "true" : "false",
                   temp_buf, sp_buf, status_esc, live != nullptr && live->fresh && zone->enabled ? "true" : "false",
-                  valve_buf,
+                  valve_buf, mm_buf,
                   static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0),
                   zone->comfort_setpoint_c, zone->comfort_bias_c,
                   effective.setpoint_c,
@@ -13729,6 +14199,7 @@ void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity)
            hp_output, static_cast<unsigned long>(hp_age_s),
            circulation_json);
   append_house_balance_json_(buffer, capacity);
+  append_valve_flush_json_(buffer, capacity);
   append_hp_diagnostics_json_(buffer, capacity);
 }
 
@@ -14612,6 +15083,8 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   odin = OdinPlanState{};
   lune_touch_odin::Lift applied{};
   lune_touch_odin::Lift wanted{};
+  char lift_reason[32] = "none";
+  lune_touch_odin::LiftSources lift_sources{};
   bool control_enabled = false;
   ::lune_touch::StrategySnapshot strategy{};
   if (!take_state_lock_(50)) {
@@ -14621,6 +15094,8 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
   odin = odin_plan_;
   applied = odin_control_.applied;
   wanted = odin_control_.wanted;
+  std::strncpy(lift_reason, odin_control_.reason, sizeof(lift_reason) - 1);
+  lift_sources = odin_control_.sources;
   control_enabled = odin_control_.enabled;
   strategy = model_.strategy_snapshot();
   for (size_t i = 0; i < forecast_decision_count_ && room_count < ::lune_touch::MAX_HOUSE_ZONES; i++) {
@@ -14704,7 +15179,32 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
     const float v = clock_ok && lune_touch_odin::hour_in_lift(lift, wall) ? lift.lift_c : 0.0f;
     appendf_(buffer, capacity, off, "%s%.1f", h ? "," : "", static_cast<double>(v));
   }
-  appendf_(buffer, capacity, off, "]},\"rooms\":[");
+  // The part of the lift that moves the band's floor (the rest raises only its top).
+  appendf_(buffer, capacity, off, "],\"lift_floor_c\":[");
+  for (size_t h = 0; h < H; h++) {
+    const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
+    const float v = clock_ok && lune_touch_odin::hour_in_lift(lift, wall)
+                        ? std::round(lift.lift_c * std::clamp(lift.floor_share, 0.0f, 1.0f) * 10.0f) / 10.0f
+                        : 0.0f;
+    appendf_(buffer, capacity, off, "%s%.1f", h ? "," : "", static_cast<double>(v));
+  }
+  // Hours inside the lift's window left unlifted because heating earlier is cheaper.
+  appendf_(buffer, capacity, off, "],\"lift_skip\":[");
+  for (size_t h = 0; h < H; h++) {
+    const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
+    const bool skip = clock_ok && lift.active() && ((lift.skip_mask >> wall) & 1U) != 0;
+    appendf_(buffer, capacity, off, "%s%d", h ? "," : "", skip ? 1 : 0);
+  }
+  // Why each hour is lifted: 1 = slab charge, 2 = room lag, 4 = weather preload (bits).
+  appendf_(buffer, capacity, off, "],\"lift_src\":[");
+  for (size_t h = 0; h < H; h++) {
+    const uint8_t wall = static_cast<uint8_t>((hour + h) % 24);
+    const unsigned src = clock_ok && lune_touch_odin::hour_in_lift(lift, wall) ? lift_sources.at(wall) : 0U;
+    appendf_(buffer, capacity, off, "%s%u", h ? "," : "", src);
+  }
+  char reason_esc[48];
+  json_escape_(lift.active() ? lift_reason : "none", reason_esc, sizeof(reason_esc));
+  appendf_(buffer, capacity, off, "],\"lift_reason\":\"%s\"},\"rooms\":[", reason_esc);
   for (size_t i = 0; i < room_count && off + 256 < capacity; i++) {
     const RoomPlan &r = rooms[i];
     char id[64], name[96];
@@ -14788,8 +15288,10 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
       "\"reason\":\"%s\",\"last_action\":\"%s\",\"user_schedule_known\":%s,\"yielded\":%s,"
-      "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"energy_kwh\":%.2f},"
-      "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f},"
+      "\"wanted\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"floor_share\":%.2f,"
+      "\"skip_mask\":%lu,\"energy_kwh\":%.2f},"
+      "\"applied\":{\"active\":%s,\"start_hour\":%u,\"hours\":%u,\"lift_c\":%.1f,\"floor_share\":%.2f,"
+      "\"skip_mask\":%lu},"
       "\"thermal_mass_kwh_per_k\":%s,\"heat_loss_kw_per_k\":%s,\"internal_gains_w\":%.0f,\"hp_max_kw\":%s,"
       "\"hp_max_kw_source\":\"%s\",\"hp_max_kw_user\":%s,"
       "\"last_write_age_s\":%u,\"last_http_status\":%d,\"last_error\":\"%s\"},"
@@ -14808,9 +15310,11 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       c.last_action, has_user ? "true" : "false", yielded ? "true" : "false",
       c.wanted.active() ? "true" : "false", static_cast<unsigned>(c.wanted.start_hour),
       static_cast<unsigned>(c.wanted.hours), static_cast<double>(c.wanted.lift_c),
+      static_cast<double>(c.wanted.floor_share), static_cast<unsigned long>(c.wanted.skip_mask),
       static_cast<double>(c.wanted_energy_kwh),
       c.applied.active() ? "true" : "false", static_cast<unsigned>(c.applied.start_hour),
-      static_cast<unsigned>(c.applied.hours), static_cast<double>(c.applied.lift_c), tm, hl,
+      static_cast<unsigned>(c.applied.hours), static_cast<double>(c.applied.lift_c),
+      static_cast<double>(c.applied.floor_share), static_cast<unsigned long>(c.applied.skip_mask), tm, hl,
       static_cast<double>(c.internal_gains_w), hpmax, hpmax_src, hpmax_user,
       static_cast<unsigned>(write_age_s), c.last_http_status, err,
       c.link_status, c.link_alarm ? "true" : "false", static_cast<unsigned>(bad_s),
@@ -14997,6 +15501,8 @@ constexpr const char *EDS_BASE = "https://api.energidataservice.dk/dataset/";
 // also publishes PT60M), Energy-Charts ~4 KB; DataHub answers stay under 5 KB.
 constexpr size_t PRICE_BODY_CAP = 49152;
 constexpr uint32_t EDS_CALL_GAP_MS = 1200;  // the public API rate-limits bursts
+// DatahubPricelist answers one call a minute per client (HTTP 429, Retry-After
+// ~55 s): the grid and system tariffs come in one call when both are DataHub.
 
 struct PsramBody {
   char *ptr;
@@ -15073,10 +15579,10 @@ bool LuneTouchCoordinator::fetch_https_(const char *url, char *body, size_t capa
   return ok;
 }
 
-bool LuneTouchCoordinator::fetch_datahub_series_(const char *gln, const char *codes_json, char *body,
-                                                 size_t capacity, char *error, size_t error_len) {
-  char filter[128];
-  std::snprintf(filter, sizeof(filter), "{\"GLN_Number\":[\"%s\"],\"ChargeTypeCode\":[%s]}", gln, codes_json);
+bool LuneTouchCoordinator::fetch_datahub_series_(const char *glns_json, const char *codes_json, unsigned limit,
+                                                 char *body, size_t capacity, char *error, size_t error_len) {
+  char filter[160];
+  std::snprintf(filter, sizeof(filter), "{\"GLN_Number\":[%s],\"ChargeTypeCode\":[%s]}", glns_json, codes_json);
   char encoded[256];
   url_encode_(filter, encoded, sizeof(encoded));
   char url[640];
@@ -15085,8 +15591,7 @@ bool LuneTouchCoordinator::fetch_datahub_series_(const char *gln, const char *co
            EDS_BASE, encoded);
   for (unsigned h = 1; h <= lune_touch_price::HOURS; h++)
     appendf_(url, sizeof(url), off, ",Price%u", h);
-  if (!appendf_(url, sizeof(url), off, "&sort=ValidFrom%%20desc&limit=%u",
-                static_cast<unsigned>(lune_touch_price::MAX_TARIFF_RECORDS))) {
+  if (!appendf_(url, sizeof(url), off, "&sort=ValidFrom%%20desc&limit=%u", limit)) {
     std::snprintf(error, error_len, "url_too_long");
     return false;
   }
@@ -15423,6 +15928,21 @@ void LuneTouchCoordinator::run_price_cycle_() {
   }
 
   // 3) Grid tariff: DataHub price list (DK), the user's schedule, or none.
+  // With the system tariff also from DataHub, one call carries both.
+  const bool shared_datahub =
+      dk && cfg.grid_source == GridSource::DATAHUB && cfg.system_source != SystemSource::FIXED;
+  bool shared_fetched = false;
+  char shared_err[40] = "";
+  if (shared_datahub) {
+    char glns[48];
+    std::snprintf(glns, sizeof(glns), "\"%s\",\"%s\"", cfg.grid_gln, ENERGINET_GLN);
+    char codes[48];
+    std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\",\"%s\"", cfg.grid_code, ENERGINET_TRANSMISSION_CODE,
+                  ENERGINET_SYSTEM_CODE);
+    vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+    shared_fetched = fetch_datahub_series_(glns, codes, 3 * MAX_TARIFF_RECORDS, body.ptr, PRICE_BODY_CAP,
+                                           shared_err, sizeof(shared_err));
+  }
   float grid0[HOURS]{};
   float grid1[HOURS]{};
   bool grid1_ok = true;
@@ -15440,10 +15960,16 @@ void LuneTouchCoordinator::run_price_cycle_() {
     }
     char key[48];
     std::snprintf(key, sizeof(key), "%s/%s", cfg.grid_gln, cfg.grid_code);
-    char codes[32];
-    std::snprintf(codes, sizeof(codes), "\"%s\"", cfg.grid_code);
-    vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
-    const bool fetched = fetch_datahub_series_(cfg.grid_gln, codes, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    bool fetched = shared_fetched;
+    copy_str_(err, sizeof(err), shared_err);
+    if (!shared_datahub) {
+      char glns[24];
+      std::snprintf(glns, sizeof(glns), "\"%s\"", cfg.grid_gln);
+      char codes[32];
+      std::snprintf(codes, sizeof(codes), "\"%s\"", cfg.grid_code);
+      vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+      fetched = fetch_datahub_series_(glns, codes, MAX_TARIFF_RECORDS, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    }
     if (fetched && parse_tariff_records(body.ptr, std::strlen(body.ptr), cfg.grid_code, &rt.scratch) > 0) {
       rt.grid = rt.scratch;
       rt.have_grid = true;
@@ -15478,10 +16004,16 @@ void LuneTouchCoordinator::run_price_cycle_() {
       fail_price_cycle_("system_datahub_dk_only");
       return;
     }
-    char codes[32];
-    std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\"", ENERGINET_TRANSMISSION_CODE, ENERGINET_SYSTEM_CODE);
-    vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
-    const bool fetched = fetch_datahub_series_(ENERGINET_GLN, codes, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    bool fetched = shared_fetched;
+    copy_str_(err, sizeof(err), shared_err);
+    if (!shared_datahub) {
+      char glns[24];
+      std::snprintf(glns, sizeof(glns), "\"%s\"", ENERGINET_GLN);
+      char codes[32];
+      std::snprintf(codes, sizeof(codes), "\"%s\",\"%s\"", ENERGINET_TRANSMISSION_CODE, ENERGINET_SYSTEM_CODE);
+      vTaskDelay(pdMS_TO_TICKS(EDS_CALL_GAP_MS));
+      fetched = fetch_datahub_series_(glns, codes, MAX_TARIFF_RECORDS, body.ptr, PRICE_BODY_CAP, err, sizeof(err));
+    }
     const size_t len = fetched ? std::strlen(body.ptr) : 0;
     if (fetched && parse_tariff_records(body.ptr, len, ENERGINET_TRANSMISSION_CODE, &rt.scratch) > 0 &&
         parse_tariff_records(body.ptr, len, ENERGINET_SYSTEM_CODE, &rt.scratch2) > 0) {
@@ -15565,7 +16097,7 @@ void LuneTouchCoordinator::load_price_settings_() {
   price_.cfg.grid_schedule = default_grid_schedule();
   price_.cfg.model = Model::ODIN;  // fresh install: Odin keeps fetching its own price
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   Config &cfg = price_.cfg;
   uint8_t u8 = 0;
@@ -15650,7 +16182,7 @@ void LuneTouchCoordinator::save_price_settings_() {
   const float nums[4]{cfg.system_fixed, cfg.energy_tax, cfg.markup, cfg.vat_pct};
   const float nums2[3]{cfg.fx, cfg.spot_fixed_eur, cfg.odin_fixed_price};
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   esp_err_t err = nvs_set_u8(handle, "pr_en", cfg.enabled ? 1 : 0);
   if (err == ESP_OK) err = nvs_set_u8(handle, "pr_model", static_cast<uint8_t>(cfg.model));
@@ -15969,6 +16501,61 @@ bool LuneTouchCoordinator::set_house_balance_enabled(bool enabled) {
   return true;
 }
 
+// Caller holds the state lock.
+int LuneTouchCoordinator::house_balance_weight_(const char *node_id) const {
+  if (node_id == nullptr || node_id[0] == '\0')
+    return 100;
+  for (const auto &w : hb_weights_)
+    if (std::strncmp(w.node_id, node_id, sizeof(w.node_id)) == 0)
+      return ::lune_touch_house_balance::clamp_weight(w.pct);
+  return 100;
+}
+
+bool LuneTouchCoordinator::set_house_balance_weight(const char *node_id, int weight_pct) {
+  if (node_id == nullptr || node_id[0] == '\0' || std::strlen(node_id) >= sizeof(hb_weights_[0].node_id))
+    return false;
+  const int pct = ::lune_touch_house_balance::clamp_weight(weight_pct);
+  if (!take_state_lock_(100))
+    return false;
+  // Its own slot, else a free one (100 % is the default), else the slot of a board Touch no longer has.
+  HouseBalanceWeight *slot = nullptr;
+  for (auto &w : hb_weights_)
+    if (std::strncmp(w.node_id, node_id, sizeof(w.node_id)) == 0)
+      slot = &w;
+  for (auto &w : hb_weights_)
+    if (slot == nullptr && (w.node_id[0] == '\0' || w.pct == 100))
+      slot = &w;
+  for (auto &w : hb_weights_) {
+    if (slot != nullptr)
+      break;
+    bool known = false;
+    for (size_t i = 0; i < model_.node_count(); i++) {
+      const auto *node = model_.node(i);
+      known = known || (node != nullptr && std::strncmp(node->node_id, w.node_id, sizeof(w.node_id)) == 0);
+    }
+    if (!known)
+      slot = &w;
+  }
+  if (slot == nullptr) {
+    give_state_lock_();
+    return false;
+  }
+  const bool changed = std::strncmp(slot->node_id, node_id, sizeof(slot->node_id)) != 0 || slot->pct != pct;
+  std::strncpy(slot->node_id, node_id, sizeof(slot->node_id) - 1);
+  slot->node_id[sizeof(slot->node_id) - 1] = '\0';
+  slot->pct = static_cast<int16_t>(pct);
+  if (changed)
+    hb_last_push_ms_ = 0;  // recompute and push on the next poll
+  give_state_lock_();
+  if (changed) {
+    save_settings_();
+    char msg[64];
+    snprintf(msg, sizeof(msg), "house balance weight %s %d %%", node_id, pct);
+    log_event_("info", "settings", msg);
+  }
+  return true;
+}
+
 void LuneTouchCoordinator::run_house_balance_(uint32_t now_ms) {
   namespace hb = ::lune_touch_house_balance;
   constexpr size_t N = ::lune_touch::MAX_NODES;
@@ -16011,7 +16598,14 @@ void LuneTouchCoordinator::run_house_balance_(uint32_t now_ms) {
       loops[i * Z + z] = hb::Loop{src.area_m2, src.inner_mm, src.spacing_mm, src.supply_m, src.enabled};
     }
   }
-  hb::board_scales(loops, N, Z, hb::Params{}, hb_worst_pa_, scale);
+  int weights[N];
+  for (size_t i = 0; i < N; i++) {
+    const auto *node = i < model_.node_count() ? model_.node(i) : nullptr;
+    weights[i] = house_balance_weight_(node != nullptr ? node->node_id : nullptr);
+  }
+  hb::Basis basis = hb::Basis::None;
+  hb::board_scales(loops, N, Z, hb::Params{}, hb_worst_pa_, scale, weights, &basis);
+  hb_basis_ = static_cast<uint8_t>(basis);
   for (size_t i = 0; i < N; i++)
     hb_scale_[i] = scale[i];
   hb_last_push_ms_ = now_ms == 0 ? 1 : now_ms;
@@ -16084,6 +16678,8 @@ void LuneTouchCoordinator::run_hp_phase_(uint32_t now_ms) {
   in.plan_mode_next = odin_plan_.operation_mode_horizon[1];
   in.minute = minute;
   hp_phase_ = hpp::step(hp_phase_state_, in, now_ms);
+  // V6's dynamic balancing uses the phase: static balance while the heat source is idle,
+  // the load law while it runs or prestarts, and the load law when Touch says nothing.
   const bool enabled = h.valves_follow_hp_enabled;
   const bool release = hp_phase_release_pending_;
   const bool changed = hp_phase_ != hp_phase_sent_;
@@ -16179,8 +16775,13 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
     return;
   add(",\"valves_follow_hp\":{\"enabled\":%s,\"phase\":\"%s\"}",
       heat_source_.valves_follow_hp_enabled ? "true" : "false", ::lune_touch_hp_phase::name(hp_phase_));
-  add(",\"house_balance\":{\"enabled\":%s,\"boards\":[",
-      heat_source_.house_balance_enabled ? "true" : "false");
+  const auto basis = static_cast<::lune_touch_house_balance::Basis>(hb_basis_);
+  add(",\"house_balance\":{\"enabled\":%s,\"basis\":\"%s\",\"weight_min\":%d,\"weight_max\":%d,"
+      "\"weight_step\":%d,\"boards\":[",
+      heat_source_.house_balance_enabled ? "true" : "false",
+      basis == ::lune_touch_house_balance::Basis::Model ? "model" : "none",
+      ::lune_touch_house_balance::WEIGHT_MIN, ::lune_touch_house_balance::WEIGHT_MAX,
+      ::lune_touch_house_balance::WEIGHT_STEP);
   bool first = true;
   for (size_t i = 0; i < model_.node_count() && i < ::lune_touch::MAX_NODES; i++) {
     const auto *node = model_.node(i);
@@ -16196,12 +16797,15 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
         break;
       }
     }
+    const int weight = house_balance_weight_(node->node_id);
     if (hb_worst_pa_[i] > 0.0f)
-      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":%.1f,\"scale\":%.2f,\"applied\":%.2f}",
-          first ? "" : ",", node->node_id, label, hb_worst_pa_[i] / 1000.0f, hb_scale_[i], applied);
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":%.1f,\"weight_pct\":%d,"
+          "\"scale\":%.2f,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, hb_worst_pa_[i] / 1000.0f, weight, hb_scale_[i], applied);
     else
-      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":null,\"scale\":1.00,\"applied\":%.2f}",
-          first ? "" : ",", node->node_id, label, applied);
+      add("%s{\"node_id\":\"%s\",\"name\":\"%s\",\"worst_kpa\":null,\"weight_pct\":%d,"
+          "\"scale\":1.00,\"applied\":%.2f}",
+          first ? "" : ",", node->node_id, label, weight, applied);
     first = false;
   }
   give_state_lock_();
@@ -16347,7 +16951,7 @@ void LuneTouchCoordinator::save_exposure_learning_() {
   exposure_learn_saved_ms_ = esphome::millis();
   give_state_lock_();
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   if (nvs_set_blob(handle, "xlearn", recs, count * sizeof(Rec)) == ESP_OK)
     nvs_commit(handle);
@@ -16363,7 +16967,7 @@ void LuneTouchCoordinator::load_exposure_learning_() {
   if (recs == nullptr)
     return;
   nvs_handle_t handle;
-  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   size_t len = ::lune_touch::MAX_HOUSE_ZONES * sizeof(Rec);
   const esp_err_t err = nvs_get_blob(handle, "xlearn", recs, &len);
@@ -16404,7 +17008,10 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
   const bool circ_fresh = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
                           now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
   in.secondary_lmin = circ_fresh ? circulation_.flow_m3h * (1000.0f / 60.0f) : NAN;
-  const hd::Edges e = hd::step(hp_diag_, in, now_ms);
+  hd::Params hdp;
+  hdp.judge_short = circulation_pump::judges_short(circulation_.buffer_tank);
+  hdp.judge_mix = circulation_pump::judges_mixing(circulation_.buffer_tank);
+  const hd::Edges e = hd::step(hp_diag_, in, now_ms, hdp);
   const float mean = hp_diag_.mean_kw, plan = hp_diag_.plan_kw;
   const float pri = hp_diag_.primary_lmin, sec = hp_diag_.secondary_lmin;
   give_state_lock_();
@@ -16744,6 +17351,58 @@ void LuneTouchCoordinator::flush_problem_events_() {
 #endif
 }
 
+bool LuneTouchCoordinator::weather_summary(float *rooms, float *offset_c, float *lift_c, std::string *text,
+                                           std::string *reason) const {
+  if (!take_state_lock_(20))
+    return false;
+  // Rooms V6 preloads now, each once (a room may span zones).
+  char list[160] = "";
+  size_t off = 0;
+  unsigned count = 0;
+  for (size_t i = 0; i < forecast_decision_count_; i++) {
+    const auto &d = forecast_decisions_[i];
+    if (!d.active || d.solar_holdoff || d.charge_episode || !(d.offset_c > 0.01f) || d.peak_in_h < 0)
+      continue;
+    bool seen = false;
+    for (size_t j = 0; j < i && !seen; j++)
+      seen = std::strcmp(forecast_decisions_[j].room_id, d.room_id) == 0;
+    if (seen)
+      continue;
+    count++;
+    const char *name = d.room_name[0] != '\0' ? d.room_name : d.room_id;
+    if (off < sizeof(list)) {
+      const int n = std::snprintf(list + off, sizeof(list) - off, "%s%s +%.1f C, peak in %d h",
+                                  off ? "; " : "", name, d.offset_c, static_cast<int>(d.peak_in_h));
+      if (n > 0)
+        off += static_cast<size_t>(n);
+    }
+  }
+  float preload = 0.0f;
+  weather_preload_(&preload, nullptr, nullptr);
+  // What the heat source is asked for: Odin's band lift, or the virtual thermostat's uplift.
+  const bool odin = odin_in_control_();
+  float lift = 0.0f;
+  const char *why = "none";
+  if (odin) {
+    lift = odin_control_.wanted.active() ? odin_control_.wanted.lift_c : 0.0f;
+    why = odin_control_.reason;
+  } else {
+    lift = std::isfinite(demand_target_uplift_c_) ? demand_target_uplift_c_ : 0.0f;
+    bool charge = false;
+    for (size_t i = 0; i < forecast_decision_count_; i++)
+      charge = charge || forecast_decisions_[i].charge_now;
+    if (lift > 0.0f)
+      why = lift_reason_(charge, demand_held_c_ > 0.0f, preload > 0.0f);
+  }
+  *rooms = static_cast<float>(count);
+  *offset_c = preload;
+  *lift_c = lift;
+  text->assign(count > 0 ? list : "none");
+  reason->assign(why);
+  give_state_lock_();
+  return true;
+}
+
 bool LuneTouchCoordinator::problems_summary(float *count, std::string *titles) const {
   if (problems_rt_ == nullptr) {
     *count = 0.0f;
@@ -16789,6 +17448,272 @@ void LuneTouchCoordinator::append_problems_json_(char *buffer, size_t capacity) 
   give_state_lock_();
   if (!ok || !appendf_(buffer, capacity, off, "]}"))
     std::snprintf(buffer + len - 1, capacity - (len - 1), "}");   // did not fit: leave it out
+}
+
+
+// -----------------------------------------------------------------------------
+// Loop flush (valve_flush.h): one loop fully open, every other loop on every V6
+// closed, held through V6's valve test.
+// -----------------------------------------------------------------------------
+bool LuneTouchCoordinator::request_valve_flush(int node, int zone, uint32_t minutes, char *response,
+                                               size_t capacity) {
+  if (node < 1 || node > static_cast<int>(::lune_touch::MAX_NODES) || zone < 1 ||
+      zone > static_cast<int>(::lune_touch::ZONES_PER_NODE)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"invalid node or zone\"}");
+    return false;
+  }
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"busy\"}");
+    return false;
+  }
+  const char *reason = nullptr;
+  const HouseBalanceLoop &loop = hb_loops_[node - 1][zone - 1];
+  if (vf_run_.active)
+    reason = "a loop is being flushed";
+  else if (loop.seen_ms == 0 || !loop.enabled)
+    reason = "loop off or not reported by V6";
+  else if (authority_shared_key_[0] == '\0')
+    reason = "no authority key";
+  const uint32_t mins = ::lune_touch_valve_flush::minutes(minutes);
+  if (reason == nullptr)
+    ::lune_touch_valve_flush::start(vf_run_, static_cast<uint8_t>(node - 1), static_cast<uint8_t>(zone - 1),
+                                    esphome::millis(), mins);
+  give_state_lock_();
+  if (reason != nullptr) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"%s\"}", reason);
+    return false;
+  }
+  snprintf(response, capacity, "{\"result\":\"accepted\",\"node\":%d,\"zone\":%d,\"minutes\":%lu}", node, zone,
+           static_cast<unsigned long>(mins));
+  char msg[64];
+  snprintf(msg, sizeof(msg), "flushing board %d loop %d for %lu min", node, zone, static_cast<unsigned long>(mins));
+  log_event_("info", "valve_flush", msg);
+  return true;
+}
+
+bool LuneTouchCoordinator::stop_valve_flush(char *response, size_t capacity) {
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"reason\":\"busy\"}");
+    return false;
+  }
+  const bool active = vf_run_.active;
+  vf_run_.stop_requested = active;
+  give_state_lock_();
+  snprintf(response, capacity, "{\"result\":\"%s\"}", active ? "accepted" : "not running");
+  return active;
+}
+
+void LuneTouchCoordinator::run_valve_flush_(uint32_t now_ms) {
+  namespace vf = ::lune_touch_valve_flush;
+  constexpr size_t N = ::lune_touch::MAX_NODES;
+  char hosts[N][64]{};
+  bool host_ok[N]{};
+  if (!take_state_lock_(100))
+    return;
+  for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+      continue;
+    const char *h = node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
+    if (h[0] == '\0')
+      continue;
+    std::strncpy(hosts[i], h, sizeof(hosts[i]) - 1);
+    host_ok[i] = true;
+  }
+  const vf::Action action = vf::tick(vf_run_, now_ms);
+  const vf::Run run = vf_run_;
+  give_state_lock_();
+  if (action == vf::Action::None)
+    return;
+  bool sent = action == vf::Action::Send && host_ok[run.node];
+  if (sent) {
+    // The loop fully open, every other loop on every V6 closed.
+    for (size_t i = 0; i < N && sent; i++)
+      if (host_ok[i])
+        sent = send_v6_valve_test_(hosts[i], i == run.node ? run.zone + 1 : 0, 100.0f, false, 0.0f);
+    if (sent)
+      return;
+    if (take_state_lock_(100)) {
+      vf_run_.active = false;
+      give_state_lock_();
+    }
+  }
+  for (size_t i = 0; i < N; i++)
+    if (host_ok[i])
+      send_v6_valve_test_(hosts[i], 0, 0.0f, true);
+  if (action == vf::Action::Stop)
+    log_event_("info", "valve_flush", "done");
+  else
+    log_event_("warn", "valve_flush", "stopped: V6 did not accept the hold");
+}
+
+bool LuneTouchCoordinator::send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop,
+                                               float others_pct) {
+  if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
+    return false;
+  const int64_t ts = current_epoch_s_();
+  char nonce[48];
+  snprintf(nonce, sizeof(nonce), "vt-%lld-%lu", static_cast<long long>(ts),
+           static_cast<unsigned long>(++vt_nonce_));
+  char payload[224];
+  char others[24]{};
+  if (std::isfinite(others_pct))
+    snprintf(others, sizeof(others), ",\"others_pct\":%.1f", others_pct);
+  if (stop)
+    snprintf(payload, sizeof(payload), "{\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+             static_cast<long long>(ts), nonce);
+  else
+    snprintf(payload, sizeof(payload),
+             "{\"zone\":%d,\"position_pct\":%.1f%s,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+             zone, position_pct, others, static_cast<unsigned long>(::lune_touch_valve_flush::HOLD_TTL_S),
+             static_cast<long long>(ts), nonce);
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/v1/valve-test%s", host, stop ? "/stop" : "");
+  char body[256];
+  int status = 0;
+  if (!post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+    ESP_LOGW(TAG, "V6 valve test via %s failed (%d)", host, status);
+    return false;
+  }
+  return true;
+}
+
+void LuneTouchCoordinator::append_valve_flush_json_(char *buffer, size_t capacity) const {
+  // Turns {...} into {..., "flush":{...}}.
+  const size_t len = std::strlen(buffer);
+  if (len < 2 || buffer[len - 1] != '}')
+    return;
+  if (!take_state_lock_(50))
+    return;
+  const int n = snprintf(buffer + len - 1, capacity - (len - 1),
+                         ",\"flush\":{\"active\":%s,\"node\":%u,\"zone\":%u,\"left_s\":%lu}}",
+                         vf_run_.active ? "true" : "false", static_cast<unsigned>(vf_run_.node + 1),
+                         static_cast<unsigned>(vf_run_.zone + 1),
+                         static_cast<unsigned long>(::lune_touch_valve_flush::left_s(vf_run_, esphome::millis())));
+  give_state_lock_();
+  if (n < 0 || static_cast<size_t>(n) >= capacity - (len - 1))
+    std::snprintf(buffer + len - 1, capacity - (len - 1), "}");  // did not fit: leave it out
+}
+
+
+// ---------------------------------------------------------------------------
+// Wall display, house row «Nu» field (LDS DESIGN.md 13.3): status here and now in place of
+// a 24 h chart — Odin's next heat, the price now in words, and the coldest room.
+// ---------------------------------------------------------------------------
+namespace {
+std::string display_decimal_(float v, int decimals) {
+  char b[16];
+  std::snprintf(b, sizeof(b), "%.*f", decimals, static_cast<double>(v));
+  for (char *p = b; *p != '\0'; ++p)
+    if (*p == '.')
+      *p = ',';
+  return b;
+}
+}  // namespace
+
+std::string LuneTouchCoordinator::display_next_heat_text() const {
+  int ymd = 0;
+  uint16_t minute = 0;
+  if (!local_today_(&ymd, &minute))
+    return "—";
+  const int hour = minute / 60;
+  if (!take_state_lock_(50))
+    return "—";
+  const OdinPlanState &o = odin_plan_;
+  std::string out = "Ingen plan fra Odin";
+  if (o.available && o.heat_production_count > 0) {
+    const int n = std::min<int>(o.heat_production_count, 24);
+    auto heats = [&](int k) { return o.heat_production_horizon[k] > 0.05f || o.energy_horizon[k] > 0.05f; };
+    int a = 0;
+    while (a < n && !heats(a))
+      a++;
+    if (a >= n) {
+      out = "Ingen varme de næste 24 t";
+    } else {
+      int b = a;
+      float heat = 0.0f, el = 0.0f;
+      while (b < n && heats(b)) {
+        heat += std::max(0.0f, o.heat_production_horizon[b]);
+        el += std::max(0.0f, o.energy_horizon[b]);
+        b++;
+      }
+      char span[40];
+      if (a == 0)
+        std::snprintf(span, sizeof(span), "varmer nu til kl. %02d", (hour + b) % 24);
+      else
+        std::snprintf(span, sizeof(span), "kl. %02d–%02d", (hour + a) % 24, (hour + b) % 24);
+      out = std::string(span) + " · " + (heat > 0.05f ? display_decimal_(heat, 1) + " kWh" : display_decimal_(el, 1) + " kWh el");
+    }
+  }
+  give_state_lock_();
+  return out;
+}
+
+std::string LuneTouchCoordinator::display_price_now_text(uint8_t *tone) const {
+  if (tone != nullptr)
+    *tone = 0;
+  int ymd = 0;
+  uint16_t minute = 0;
+  if (price_rt_ == nullptr || !local_today_(&ymd, &minute))
+    return "";
+  if (!take_state_lock_(50))
+    return "";
+  std::string out;
+  const lune_touch_price::DayPrices &d = price_rt_->today;
+  const int hour = minute / 60;
+  if (d.valid && d.ymd == ymd && hour < 24 && std::isfinite(d.total[hour])) {
+    // Scale as on the web: rank among today's hours, cheap → expensive in 5 steps.
+    int below = 0, count = 0;
+    for (int h = 0; h < 24; h++) {
+      if (!std::isfinite(d.total[h]))
+        continue;
+      count++;
+      if (d.total[h] < d.total[hour])
+        below++;
+    }
+    const int step = count > 0 ? std::clamp(1 + below * 5 / count, 1, 5) : 3;
+    static const char *const WORDS[6] = {"", "meget billig", "billig", "middel", "dyr", "meget dyr"};
+    out = "Elpris nu " + display_decimal_(d.total[hour], 2) + " kr · " + WORDS[step];
+    if (tone != nullptr)
+      *tone = step <= 2 ? 1 : (step == 4 ? 2 : (step == 5 ? 3 : 0));
+  }
+  give_state_lock_();
+  return out;
+}
+
+std::string LuneTouchCoordinator::display_today_text() const {
+  int ymd = 0;
+  uint16_t minute = 0;
+  if (!local_today_(&ymd, &minute))
+    return "";
+  if (!take_state_lock_(50))
+    return "";
+  const OdinPlanState &o = odin_plan_;
+  std::string out;
+  if (o.available && o.has_today_energy) {
+    // Today's heating as on the web (plan sheet): electricity × price per hour, actual for
+    // the hours gone and plan for the rest, plus the heat it gives.
+    const lune_touch_price::DayPrices *d =
+        price_rt_ != nullptr && price_rt_->today.valid && price_rt_->today.ymd == ymd ? &price_rt_->today : nullptr;
+    float el = 0.0f, heat = 0.0f, cost = 0.0f;
+    bool priced = d != nullptr;
+    for (int h = 0; h < 24; h++) {
+      const float e = o.today_energy_kwh[h];
+      if (std::isfinite(e) && e > 0.0f) {
+        el += e;
+        if (d != nullptr && std::isfinite(d->total[h]))
+          cost += e * d->total[h];
+        else
+          priced = false;
+      }
+      if (std::isfinite(o.today_heat_kwh[h]) && o.today_heat_kwh[h] > 0.0f)
+        heat += o.today_heat_kwh[h];
+    }
+    out = std::string("I dag ") + (priced ? "ca. " + display_decimal_(cost, cost >= 10.0f ? 0 : 1) + " kr · " : "") +
+          display_decimal_(el, 1) + " kWh el · " + display_decimal_(heat, 0) + " kWh varme";
+  }
+  give_state_lock_();
+  return out;
 }
 
 }  // namespace lune_touch_coordinator

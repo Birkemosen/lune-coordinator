@@ -1,0 +1,72 @@
+# Weather preload and what the heat source is asked for, so Home Assistant keeps
+# the history (Touch's own decisions reset when it restarts).
+# Contract: docs/house_balancing_and_weather.md §7.
+
+sensor:
+  - platform: template
+    id: lune_weather_preload_rooms
+    name: "Weather preload rooms"
+    icon: mdi:weather-windy
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      float rooms = 0.0f, offset = 0.0f, lift = 0.0f;
+      std::string text, reason;
+      if (!id(lune_touch_app).weather_summary(&rooms, &offset, &lift, &text, &reason))
+        return {};
+      return rooms;
+  - platform: template
+    id: lune_weather_preload_offset
+    name: "Weather preload offset"
+    icon: mdi:thermometer-chevron-up
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      float rooms = 0.0f, offset = 0.0f, lift = 0.0f;
+      std::string text, reason;
+      if (!id(lune_touch_app).weather_summary(&rooms, &offset, &lift, &text, &reason))
+        return {};
+      return offset;
+  - platform: template
+    id: lune_heat_source_lift
+    name: "Heat source lift"
+    icon: mdi:heat-wave
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      float rooms = 0.0f, offset = 0.0f, lift = 0.0f;
+      std::string text, reason;
+      if (!id(lune_touch_app).weather_summary(&rooms, &offset, &lift, &text, &reason))
+        return {};
+      return lift;
+
+text_sensor:
+  - platform: template
+    id: lune_weather_preload_text
+    name: "Weather preload"
+    icon: mdi:weather-windy
+    update_interval: 60s
+    lambda: |-
+      float rooms = 0.0f, offset = 0.0f, lift = 0.0f;
+      std::string text, reason;
+      if (!id(lune_touch_app).weather_summary(&rooms, &offset, &lift, &text, &reason))
+        return {};
+      return text;
+  - platform: template
+    id: lune_heat_source_lift_reason
+    name: "Heat source lift reason"
+    icon: mdi:heat-wave
+    update_interval: 60s
+    lambda: |-
+      float rooms = 0.0f, offset = 0.0f, lift = 0.0f;
+      std::string text, reason;
+      if (!id(lune_touch_app).weather_summary(&rooms, &offset, &lift, &text, &reason))
+        return {};
+      return reason;

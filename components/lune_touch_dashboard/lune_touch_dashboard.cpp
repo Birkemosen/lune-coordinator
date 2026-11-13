@@ -1354,6 +1354,14 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       parse_uint_param(api, api.json_body, "house_balance_enabled", &house_balance);
       house_balance_saved = coordinator_->set_house_balance_enabled(house_balance != 0);
     }
+    if (present("house_balance_weight_node")) {
+      char weight_node[24]{};
+      uint32_t weight_pct = 100;
+      parse_text_param(api, api.json_body, "house_balance_weight_node", weight_node, sizeof(weight_node));
+      parse_uint_param(api, api.json_body, "house_balance_weight_pct", &weight_pct);
+      house_balance_saved = coordinator_->set_house_balance_weight(weight_node, static_cast<int>(weight_pct)) ||
+                            house_balance_saved;
+    }
     if (present("valves_follow_hp_enabled")) {
       uint32_t follow = 0;
       parse_uint_param(api, api.json_body, "valves_follow_hp_enabled", &follow);
@@ -1440,9 +1448,11 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     char flow_entity[64];
     char head_entity[64];
     char power_entity[64];
+    char buffer_tank[16];
     uint32_t enabled = 0;
     uint32_t port = 0;
     parse_text_param(api, api.json_body, "host", host, sizeof(host));
+    parse_text_param(api, api.json_body, "buffer_tank", buffer_tank, sizeof(buffer_tank));
     parse_text_param(api, api.json_body, "flow_entity", flow_entity, sizeof(flow_entity));
     parse_text_param(api, api.json_body, "head_entity", head_entity, sizeof(head_entity));
     parse_text_param(api, api.json_body, "power_entity", power_entity, sizeof(power_entity));
@@ -1454,7 +1464,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     }
     const bool accepted = coordinator_->set_circulation_settings(
         has_enabled, enabled != 0, host, static_cast<uint16_t>(port), flow_entity, head_entity,
-        power_entity, data_buf_, DATA_BUF_SIZE);
+        power_entity, data_buf_, DATA_BUF_SIZE, buffer_tank);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/circulation/refresh") == 0) {
     const bool accepted = coordinator_->request_circulation_refresh(data_buf_, DATA_BUF_SIZE);
@@ -1651,6 +1661,17 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
   } else if (strcmp(path, "/display/wake") == 0) {
     const bool accepted = coordinator_->request_display_wake(data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/valve-curves/flush") == 0) {
+    uint32_t node = 0, zone = 0, minutes = 0;
+    parse_uint_param(api, api.json_body, "node", &node);
+    parse_uint_param(api, api.json_body, "zone", &zone);
+    parse_uint_param(api, api.json_body, "minutes", &minutes);
+    const bool accepted = coordinator_->request_valve_flush(static_cast<int>(node), static_cast<int>(zone), minutes,
+                                                            data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/valve-curves/flush/stop") == 0) {
+    const bool accepted = coordinator_->stop_valve_flush(data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, 409);
   } else if (strcmp(path, "/forecast/fetch") == 0) {
     const bool accepted = coordinator_->request_forecast_fetch(data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);

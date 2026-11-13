@@ -344,6 +344,10 @@ test-circulation-pump:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/circulation_pump/test_circulation_pump.cpp -o $(CIRCULATION_PUMP_OUT)
 	$(CIRCULATION_PUMP_OUT)
 
+test-valve-flush:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/valve_flush/test_valve_flush.cpp -o /tmp/test_lune_touch_valve_flush
+	/tmp/test_lune_touch_valve_flush
+
 test-comfort-signal:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/comfort_signal/test_comfort_signal.cpp -o /tmp/test_lune_touch_comfort_signal
 	/tmp/test_lune_touch_comfort_signal
@@ -365,7 +369,7 @@ test-simulation:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator -I components/forecast -I ../lune/lune-v6/components/lv6_dashboard components/lune_touch_coordinator/coordinator_model.cpp components/forecast/forecast_model.cpp tests/simulation/test_end_to_end_simulation.cpp -o $(SIMULATION_OUT) -lm
 	$(SIMULATION_OUT)
 
-test: design-verify test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-history test-energy-price test-circulation-pump test-hp-diagnostics test-problems test-simulation test-dashboard test-display
+test: design-verify test-forecast test-coordinator test-valve-flush test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-history test-energy-price test-circulation-pump test-hp-diagnostics test-problems test-simulation test-dashboard test-display
 
 test-dashboard:
 	sh tests/dashboard/test_phase8_overview.sh

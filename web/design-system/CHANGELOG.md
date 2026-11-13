@@ -1,5 +1,43 @@
 # Changelog — Lune Design System
 
+## 2.4.0
+
+- Touch' Hjem: husets mål er flyttet fra hovedsektionen til husets ark (`sheet-house`, ringen med autogem). Hus-kortet i `.home-scopes` er en knap (`.scope--house`) med hustemperatur, mål (`.scope-tgt`) og afvigelsen som varmekortets chip, og Ude står lige efter som læseværdi (`.scope--fact`). Hovedsektionen har kun hilsen, overskrift og sætning. DESIGN.md 15.10.
+- Hjem: hovedsektionen er lavere (mindre luft, bredere sætning). Den kompakte plan i «Næste varme» har ikke længere et Odin-spor: Odins planlagte varme er en orange markering i bunden af båndsporet (`rect.ht`), så båndet er højere (64 px) og prisen fylder mere (32 px), og feltet har en forklaring (`.ht-legend`). DESIGN.md 15.10.
+- `.plan`: spornavne-kolonnen er kun så bred som navnet (`fit-content(6.5rem)`), sporene er højere (pris og vind 36 px, Odin 88 px, bånd 80 px), og en stiplet nu-linje går gennem alle spor (`--now` = timer fra planens start).
+- Det brede felt (`.home-tile.wide`) har fra 768 px hovedtal og prislinje til højre i hovedet, så planen får højden.
+- Planens båndspor hedder «Komfort» / «Comfort» i stedet for «Bånd» / «Band».
+- Touch' Hjem har ikke længere overskriften «Lige nu / Varme, plan og vejr» (`.home-head`). Feltet og arket «Næste varme» hedder «Plan»; hovedtallet har etiketten «Næste opvarmning» foran tidsrummet.
+- Den kompakte plans varme-markering skelner husvarme (solid) fra varmt vand (skraveret) og legionella (krydsskraveret) med HTML-mærker (`.plan-marks`) i stedet for SVG (`rect.ht`), og forklaringen har varmt vand og dyr time sprunget over.
+- Navbaren bliver ikke længere smallere, når den klæber ved scroll (fjernet `scroll-state`-containeren): aktiviteten til højre skifter tekst, så en indholdsbred pille skiftede bredde af sig selv.
+- Vægskærmen: `display.dev-3` (på målet) er dæmpet grøn som på web (mørk #42614a / 0x4309, lys #bdd3ad / 0xBE95). Varmekilde-blokken i husrækken siger med ord, hvad den viser: status som tekst, frem og retur med labels og forbindelserne som navn + prik i en højrejusteret kolonne. Husrækkens 24-t graf er afløst af et Nu-felt: næste opvarmning, elpris nu med prisskalaens ord og dagens opvarmning (kr, kWh el, kWh varme); varmekilde-blokken fylder rækken uden vejrbesked. DESIGN.md 13.3.
+- Feltet og arket «Varme» hedder «Opvarmning» / «Heating» (adresse `#opvarmning` / `#heating`).
+- Ark på mobil: højden regnes af det mindste synlige område (`100svh` minus top-luft) i stedet for `92vh`, så arkets top med luk-knappen ikke gemmer sig bag browserens værktøjslinje (Brave/Chrome på mobil).
+- Styringskortenes søjler (`.scope .mini i`) er farvet efter rummets afvigelse fra mål (`data-dev="1–5"`, `scale-cold-warm`); højden er fortsat ventilåbningen.
+- Ventiler vises igen som **åbning**: ventilpinnens position i % af den vandring, motoren har lært (0 % = i sædet, 100 % = pinden helt fri, ca. 2 mm), ikke beregnet flow. Flowkurverne byggede på pumpens beregnede flow og holdt ventilerne på ca. 1 mm. «x % åben» i felter, bjælker og statuslinjer; rummets og zonens ark viser også mm («ventil 62 % · 1,2 mm»). Ventilkurven i V6' zoneark og motorlab (`.trend .vc`, `.vpos`, `.mtrace-row.square`) og aktiviteten «måler ventiler» er fjernet. DESIGN.md 5.1, 15.10.
+- `scale-cold-warm-3` (±0,3 °C, på målet) er dæmpet grøn i stedet for neutral grå: varmekort, `.tile-dev`, nøgle og søjler. Kontrast for `fg` på trinnet tjekkes.
+
+## 2.3.33
+
+- `.plan` båndspor: timer Touch kun løfter for vejret (forvarmning før vind eller kulde) er blå (`.bd.pre`, `--info`); løft for et rum, der halter, eller en opladning er fortsat violet (`.bd.lift`), også når forvarmning gælder samme time. Forklaringen har `.lbandpre`, og aflæsningen nævner årsagen. DESIGN.md 8.
+
+## 2.3.32
+
+- `.plan` time for time: en streg pr. time i alle spor og et mærke pr. time på x-aksen, som planen viser efter sin bredde (container: hver 6./3./2./time). Nye spor over og under Odins varme: **Pris** (`.plan-lane--price`, søjle pr. time i prisskalaen), **Bånd** (`.plan-lane--band`: Odins komfortbånd pr. time med forventet temperatur som trappekurve; timer Touch løfter i violet, en dyr time Touch springer over stiplet) og **Vind** (`.plan-lane--wind`). Den tynde løftestreg (`.plan-lift`) er afløst af båndsporet. Aflæsning pr. time (`.plan[data-readout]`, `--hi`, `.bars-readout`). DESIGN.md 8.
+- Hjem: ét felt må være bredt (`.home-tile.wide`, sidst i `.home-tiles`) med en kompakt plan (`.plan--mini.ht-plan`); de andre felter står tre i rækken. Touch' «Næste varme» er det brede felt. DESIGN.md 15.
+
+## 2.3.31
+
+- Navbaren i Touch viser, hvad enheden er i gang med (`.badge.activity` først i `.tools`): måler ventiler (violet, med zone og trin fra 1200 px), varmekilde offline (rød), varmt vand / legionella / opvarmer (varme), starter snart og hviler (neutral). Udlufter kreds (neutral, med kreds og minutter tilbage) står efter måler ventiler. Under 600 px viser enhedsvælgeren kun logoet, og aktiviteten afkortes med ellipse, så sprog og tema bliver stående. DESIGN.md 5.1.
+
+- Ventiler vises som **flow** (% af sløjfens fulde flow), ikke som pinnens åbning: ventilindsatser åbner hurtigt, så 20 % åbning kan være 80 % flow. Bjælker, felter og statuslinjer bruger flow; pinnens position står som sekundær tekst («62 % flow · ventil 22 %»), hvor der er plads (rummets/zonens ark), ikke i små felter. Heatmappens nøgle hedder «flow».
+- Motorlabbets endestop-explorer (V6): strømmen med tærskler (`.trend .thr` stiplet for den dynamiske, `.cap` prikket for de absolutte), en lodret `.trip` hvor hver vej ville stoppe motoren (`.trip.first` fuldt optrukket) og en `.table` med vej, tærskel, tid og tællinger (`tr.first`). Ventilkurven (`.trend .vc` i vandets farve, `.vpos` for ventilens stilling) i `.mtrace-row.square`. Tærsklerne redigeres som grupperet liste med gem-bjælke under grafen.
+- V6' zoneark viser rummets fysik under Overblik: varmetab (UA, W/K) og tidskonstant (τ = C/UA, timer) som beregnet / lært / brugt i en `.table` (tal højrestillet, manglende lærte værdier som «—»), med termisk masse og hvor længe varmetabet er lært i en `.note`.
+- V6' zoneark viser den lærte ventilkurve under Overblik (`.sub.mtrace` med `.mtrace-row.square`), når Touch har målt den; uden målt kurve vises intet.
+- `.mtrace` (V6, Motorlab i dev-builds): et motorslag som rækker med hver sin skala (`.mtrace-row`, y-labels i `.mtrace-y`) over én tidsakse — strøm (`.trend .mc`) altid, kadence (`.cad`, sensor-blå) og hældning (`.slp`, stiplet) som lag, der slås til/fra med `.layers` (checkbokse som piller, ingen JS). `.phase-strip` viser slagets faser i én neutral tone i trin. Labbets forløb bruger handlinger efter tilstand med tilstandene `setup`, `armed`, `seated`, `opened`, `closed`, `running`, `halted`. V6-eksemplet (`--dev`) viser et optaget åbneslag.
+- V6-eksemplet: manifoldens indstillinger (ventiltype, prober, følerlayout) er flyttet fra System › «Manifold og motorer» til manifold-arket › Indstillinger; System-kategorien hedder «Motorer». «Live værdier» i arket viser, hvad hver probe er tildelt, som en neutral `.badge` ved probens navn, og zonekortet viser med 8 prober zonens retur («flow 62 % · retur 29,1°»). DESIGN.md 15 er opdateret.
+- `.normal-only` (V6): modstykket til `.hp-limits`; en indstilling, der kun gælder i normal tilstand (fx «Min. samlet åbning»), er dæmpet i varmepumpetilstand og siger det i sin hint-tekst.
+
 ## 2.3.30
 
 - `.dist`: fordelingen pr. manifold er i pumpens kulør (`--data-pump`) i nuancer pr. manifold som `.ht-dist`, i stedet for hvid/grå, og trinene er spredt mere (100/58/32/18 %, også i `.ht-dist`). Nøgle og zonebjælke følger manifoldens nuance.

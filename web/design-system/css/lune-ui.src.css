@@ -112,18 +112,8 @@
   }
   .header > :last-child { justify-self: end; }
   .header .mode { background: var(--raised); }
-  /* Ved scroll (navbaren sidder fast øverst) bliver pillen kun så bred som indholdet.
-     Kræver scroll-state-queries; uden dem forbliver den bred. */
-  @media (min-width: 768px) {
-    .navbar-wrap { container-type: scroll-state; }
-    /* Kolonnerne bevares (1fr auto 1fr), så bredden kan animeres; navigationen bliver i midten. */
-    .header { margin-inline: auto; interpolate-size: allow-keywords;
-      transition: width var(--dur-slow) var(--ease), gap var(--dur-slow) var(--ease), padding var(--dur-slow) var(--ease); }
-    @container scroll-state(stuck: top) {
-      .header { width: fit-content; gap: var(--space-5); padding-inline: 8px; }
-    }
-    @media (prefers-reduced-motion: reduce) { .header { transition: none; } }
-  }
+  /* Navbaren beholder fuld bredde, også når den klæber (2.4.0): aktiviteten til højre skifter
+     tekst, så en indholdsbred pille ville skifte bredde af sig selv. */
   .top { position: static; }
 
   /* Mobil: ingen backdrop-filter på navbaren — et filter på en forfader
@@ -493,7 +483,24 @@
   }
 
   /* Værktøjer i headerens højre side: sprog + tema */
-  .tools { display: flex; align-items: center; gap: var(--space-1); }
+  .tools { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+
+  /* Aktivitet (Touch): hvad enheden gør nu, som .badge først i værktøjerne (DESIGN.md 5.1).
+     Afkortes med ellipse frem for at skubbe sprog og tema ud; detaljen kun fra 1200 px. */
+  .tools .activity { min-width: 0; max-width: 24em; margin-right: var(--space-1); }
+  .activity > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .activity small { font: inherit; opacity: .8; }
+  @media (max-width: 1199.98px) { .activity small { display: none; } }
+  @media (max-width: 767.98px) {
+    .header:has(.activity) { grid-template-columns: auto minmax(0, 1fr); }
+    .header > .tools { justify-self: stretch; justify-content: flex-end; }
+  }
+  /* Smal mobil: logoet alene står for enheden, så aktiviteten kan stå læseligt. */
+  @media (max-width: 599.98px) {
+    .header:has(.activity) .device .name { display: none; }
+    .tools .activity { padding-inline: var(--space-2); margin-right: 0; }
+    .tools .activity::before { display: none; }
+  }
 
   /* Sprogvælger — almindelige links til /en/ og /da/ (ingen JS).
      Kun renderet når buildet indeholder mere end ét sprog. */
@@ -557,6 +564,7 @@
   /* Tekst på chippen: næsten sort, undtagen trin 1 i lyst tema (mørk blå → hvid, ≥ 4,5:1). */
   .tile-dev[data-dev="1"] { background: var(--scale-cold-warm-1); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
   .tile-dev[data-dev="2"] { background: var(--scale-cold-warm-2); color: var(--on-warn-fill); }
+  .tile-dev[data-dev="3"] { background: var(--scale-cold-warm-3); color: var(--fg); }
   .tile-dev[data-dev="4"] { background: var(--scale-cold-warm-4); color: var(--on-warn-fill); }
   .tile-dev[data-dev="5"] { background: var(--scale-cold-warm-5); color: var(--on-warn-fill); }
 
@@ -1120,22 +1128,21 @@
   :is(.fc-legend, .chart-legend) .lleg  { height: 10px; border-radius: 2px 2px 0 0; box-shadow: inset 0 0 0 1px var(--heat-fill);
     background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1px, transparent 1px 3.5px),
                 repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1px, transparent 1px 3.5px); }
-  .fc-legend .llift { border-top: 3px solid var(--violet); border-radius: var(--r-pill); }
   .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px); }
   .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--warn) 0 3px, transparent 3px 6px); }
 
   /* Plan (Lune Touch): 24 t frem fra nu. Venstre kolonne = spornavn, højre = tidsakse
      (--a/--b = fra/til i timer fra nu). Øverste spor: Odin — planlagt varme som søjler
-     (--v = højde i %), Touch' løft af Odins komfortbånd som violet streg under.
+     (--v = højde i %); Touch' løft af Odins komfortbånd står i båndsporet (nedenfor).
      Rumspor: forvarme (skraveret lys), opladning før vind/kulde (skraveret varme; gul =
      gulvet kan ikke dække hele underskuddet). Ingen jævne orange flader under 30 %
      (3.2.1) — derfor skravering. Farve er aldrig eneste signal: hvert segment har
      title-tekst, og forklaringen står under grafen. */
-  .plan { display: grid; grid-template-columns: minmax(4.5rem, 8rem) minmax(0, 1fr); column-gap: var(--space-3); row-gap: 6px; align-items: center; }
+  .plan { display: grid; grid-template-columns: fit-content(6.5rem) minmax(0, 1fr); column-gap: var(--space-2); row-gap: 6px; align-items: center; }
   .plan-lab { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .plan-lane { position: relative; height: 18px; border-radius: 4px; background: var(--seg-off); }
   .plan-lane--odin {
-    height: 64px; margin-bottom: 6px;
+    height: 88px; margin-bottom: 6px;
     display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 1px;
     border-radius: 0; background: none; border-bottom: 1px solid var(--border);
   }
@@ -1153,12 +1160,11 @@
     box-shadow: inset 0 0 0 1px var(--heat-fill);
   }
   /* Y-akse for Odin-sporet: navn til venstre, kWh-mærker højrestillet ved sporet. */
-  .plan-lab--y { display: flex; align-items: stretch; justify-content: space-between; gap: var(--space-2); height: 64px; margin-bottom: 6px; }
+  .plan-lab--y { display: flex; align-items: stretch; justify-content: space-between; gap: var(--space-2); height: 88px; margin-bottom: 6px; }
   .plan-lab--y > b { font-weight: inherit; align-self: center; }
   .plan-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: 10px; color: var(--faint); line-height: 1; }
   .plan-y i { font-style: normal; }
-  .plan-lift, .plan-seg { position: absolute; left: calc(var(--a, 0) * 100% / 24); width: calc((var(--b, 0) - var(--a, 0)) * 100% / 24); border-radius: var(--r-pill); }
-  .plan-lift { bottom: -6px; height: 3px; background: var(--violet); }
+  .plan-seg { position: absolute; left: calc(var(--a, 0) * 100% / 24); width: calc((var(--b, 0) - var(--a, 0)) * 100% / 24); border-radius: var(--r-pill); }
   .plan-seg { top: 3px; bottom: 3px; }
   .plan-seg[data-kind="preload"] { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 60%, transparent) 0 1.5px, transparent 1.5px 5px); }
   .plan-seg[data-kind="charge"] { background: repeating-linear-gradient(135deg, var(--accent) 0 3px, transparent 3px 6px); }
@@ -1168,6 +1174,81 @@
   .plan-x span:first-child { transform: none; }
   .plan-x .d { color: var(--fg); font-weight: 600; }
   .plan-empty-lane { grid-column: 2; font-size: var(--fs-xs); color: var(--faint); }
+  /* Time for time (2.3.32): en streg pr. time i alle spor, mærker efter bredden (container),
+     og aflæsning pr. time. Prisspor: én søjle pr. time i prisskalaen (højde = pris, farve =
+     billig → dyr), så man ser hvorfor Odin vælger timerne. Båndspor: Odins komfortbånd pr.
+     time (bund → top) med forventet temperatur som trappekurve; timer Touch løfter står i
+     violet (bundens løft ses som trin i underkanten), en dyr time Touch springer over
+     (lift_skip) har stiplet violet kant. Vindspor: vind pr. time i vejrets blå. */
+  .plan { position: relative; container-type: inline-size; }
+  .plan-lane { background-image: linear-gradient(to right, var(--border) 1px, transparent 1px); background-size: calc(100% / 24) 100%; }
+  .plan-lane--odin { position: relative; }
+  .plan-lane--price, .plan-lane--wind {
+    display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 1px;
+    height: 36px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border);
+  }
+  .plan-cell { height: calc(var(--v, 0) * 1%); min-height: 2px; border-radius: 2px 2px 0 0; background: var(--seg-off); }
+  .plan-cell[data-scale="1"] { background: var(--scale-good-bad-1); }
+  .plan-cell[data-scale="2"] { background: var(--scale-good-bad-2); }
+  .plan-cell[data-scale="3"] { background: var(--scale-good-bad-3); }
+  .plan-cell[data-scale="4"] { background: var(--scale-good-bad-4); }
+  .plan-cell[data-scale="5"] { background: var(--scale-good-bad-5); }
+  .plan-lane--wind .plan-cell { background: color-mix(in srgb, var(--data-return) 70%, transparent); }
+  .plan-lane--band { height: 80px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
+  .plan-lane--band svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .plan-lane--band .bd { fill: var(--seg-off); }
+  .plan-lane--band .bd.lift { fill: color-mix(in srgb, var(--violet) 45%, transparent); }
+  /* Timer Touch kun løfter for vejret (forvarmning før vind/kulde) er blå (vejr); fælles
+     timer med et rum, der halter, eller en opladning er violette. Aldrig begge i én time. */
+  .plan-lane--band .bd.pre { fill: color-mix(in srgb, var(--info) 65%, transparent); }
+  .plan-lane--band .bd.skip { fill: var(--seg-off); stroke: var(--violet); stroke-width: 1.2; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+  .plan-lane--band .exp { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .plan-lab--y.plan-lab--band { height: 80px; margin-bottom: 0; }
+  .plan-lab--y.plan-lab--sm { height: 36px; margin-bottom: 0; }
+  /* x-akse: binderen skriver et mærke pr. time; smalle planer viser hver 2., 3. eller 6. time. */
+  .plan-x span.h1 { visibility: hidden; }
+  .plan-x span.h2, .plan-x span.h3 { visibility: hidden; }
+  @container (min-width: 300px) { .plan-x span.h3 { visibility: visible; } }
+  @container (min-width: 520px) { .plan-x span.h2 { visibility: visible; } }
+  @container (min-width: 900px) { .plan-x span.h1 { visibility: visible; } }
+  /* Aflæsning: hover/tryk på en time markerer kolonnen i alle spor (--hi) og viser timens
+     tal i .bars-readout over planen. Binderen sætter data-hi, --hi og boksens left. */
+  .plan[data-readout] :is(.plan-lane, .plan-x) { cursor: crosshair; touch-action: pan-y; }
+  .plan[data-hi] .plan-lane::after {
+    content: ""; position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
+    left: calc(var(--hi, 0) * 100% / 24); width: calc(100% / 24);
+    background: color-mix(in srgb, var(--fg) 14%, transparent);
+  }
+  .plan .bars-readout { left: 0; flex-direction: column; gap: 0; }
+  /* Nu: en stiplet lodret linje gennem alle spor ved --now (timer fra planens start, fx 0.4
+     = 24 minutter inde i første time), som .nowl i graferne. */
+  .plan[style*="--now"] .plan-lane::before {
+    content: ""; position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: none;
+    left: calc(var(--now) * 100% / 24); border-left: 1px dashed var(--muted);
+  }
+  .fc-legend .lprice { height: 10px; border-radius: 2px 2px 0 0; background: var(--scale-good-bad-1); box-shadow: 6px 0 0 var(--scale-good-bad-3), 12px 0 0 var(--scale-good-bad-5); width: 4px; margin-right: 12px; }
+  .fc-legend .lband { height: 10px; border-radius: 2px; background: var(--seg-off); border-top: 2px solid var(--fg); }
+  .fc-legend .lbandlift { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--violet) 45%, transparent); }
+  .fc-legend .lbandpre { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--info) 65%, transparent); }
+  .fc-legend .lskip { height: 10px; border-radius: 2px; background: var(--seg-off); outline: 1.2px dashed var(--violet); outline-offset: -1px; }
+  .fc-legend .lwind { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--data-return) 70%, transparent); }
+  /* Bredt felt på Hjem (.home-tile.wide): fylder hele rækken, og de andre felter står tre i
+     rækken. Visualiseringen er en kompakt plan (.ht-plan.plan--mini: pris, varme, løft; ingen
+     rumspor og ingen aflæsning — feltet er én knap, der åbner arket). */
+  /* Mini: intet Odin-spor; Odins planlagte varme er mærker i båndsporets bund (.plan-marks:
+     husvarme solid, varmt vand skraveret, legionella krydsskraveret, alle med varmens kant), så båndet kan være højere, og prisen
+     fylder mere. Forklaringen (.ht-legend) står under planen. */
+  .plan--mini { row-gap: 4px; }
+  .plan--mini .plan-lane--price, .plan--mini .plan-lab--sm { height: 32px; }
+  .plan--mini .plan-lane--band, .plan--mini .plan-lab--band { height: 64px; }
+  .plan-marks { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; display: grid; grid-template-columns: repeat(24, 1fr); }
+  .plan-marks i { margin-inline: 6%; border-radius: 1px; }
+  .plan-marks i[data-mode="heat"] { background: var(--heat-fill); }
+  .plan-marks i[data-mode="dhw"] { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
+  .plan-marks i[data-mode="legionella"] { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1px, transparent 1px 3px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
+  .fc-legend .lheatmark { height: 4px; border-radius: 1px; background: var(--heat-fill); }
+  .home-tile > .ht-legend { grid-column: 1 / -1; margin-top: var(--space-3); }
 
   /* Fordeling (.dist, Touch): omtrentlig andel af pumpens flow pr. manifold. Flow er pumpens
      vand → én kulør (data-pump) i faldende styrke pr. manifold (data-i 0–3), som donutten i
@@ -1265,7 +1346,7 @@
     /* @only touch */
     .fc.fc--dual { grid-template-columns: 26px minmax(0, 1fr) 34px; }
     .fc-dirs > :nth-child(even) { visibility: hidden; }
-    :is(.fc-x, .plan-x) span.m { visibility: hidden; }  /* 3-timers mærker kun på bred skærm */
+    .fc-x span.m { visibility: hidden; }  /* 3-timers mærker kun på bred skærm */
     /* @end */
   }
 
@@ -1520,7 +1601,10 @@
     .sheet {
       inset: auto 0 0 0;
       width: 100%;
+      /* svh = det mindste synlige område (med browserens værktøjslinje): vh er det største, så
+         arkets top med luk-knappen gemte sig bag linjen (Brave/Chrome på mobil). */
       max-height: 92vh;
+      max-height: calc(100svh - max(var(--space-6), env(safe-area-inset-top)));
       border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     }
     .sheet-head { padding: var(--space-4) var(--space-4) var(--space-3); }
@@ -1545,12 +1629,12 @@
 
   /* @only touch */
   /* ---- Hjem (DESIGN.md 15.7): hovedsektion, termostat-ring, felter, varmekort ---- */
-  /* Hovedsektion: hilsen, én overskrift i to toner (situation · varmekilde), én sætning —
-     og målet i ringen. Tallene står i felterne lige under, ikke her. */
+  /* Hovedsektion: hilsen, én overskrift i to toner (situation · varmekilde) og én sætning.
+     Målet står i Hus-kortet over den og indstilles i husets ark; tallene står i felterne under. */
   .home-hero {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-5) var(--space-7);
     position: relative; isolation: isolate; overflow: hidden;
-    padding: var(--space-5) var(--space-7);
+    padding: var(--space-4) var(--space-7);
     border-radius: var(--r-card); background: var(--card); box-shadow: var(--card-edge);
   }
   /* Højdekurver bag hovedsektionen (inline-SVG fra builderen): tynde streger i varmefarven,
@@ -1558,12 +1642,12 @@
   .hero-waves { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
   .hero-waves path { fill: none; stroke-width: 1; vector-effect: non-scaling-stroke;
     stroke: light-dark(color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--accent) 20%, transparent)); }
-  .hero-text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .hero-text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
   .hero-text > small { font-size: var(--fs-sm); font-weight: 500; color: var(--accent-ink); }
   .home-hero h2 { font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -.03em; line-height: 1.1; text-wrap: balance; }
   .home-hero h2 .sub { display: block; color: var(--muted); }
   .home-hero h2 .sub:empty { display: none; }
-  .hero-text > p { max-width: 52ch; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
+  .hero-text > p { max-width: 72ch; font-size: var(--fs-md); line-height: 1.45; color: var(--muted); }
   @media (max-width: 767.98px) {
     .home-hero { grid-template-columns: minmax(0, 1fr); padding: var(--space-5) var(--panel-pad); }
     /* Mobil: tekst og ring. */
@@ -1664,6 +1748,19 @@
   .scope .mini i[data-state="fault"] { height: 100%; background: var(--danger); }
   .scope[data-offline] .mini { opacity: .45; }
   .scope > small span { color: var(--warn); }
+  /* Søjlerne: højden er ventilens åbning, farven rummets afvigelse fra mål i varmekortets
+     5 trin (data-dev, scale-cold-warm), så en manifold med kolde rum ses fra Hjem. */
+  .scope .mini i[data-dev="1"] { background: var(--scale-cold-warm-1); }
+  .scope .mini i[data-dev="2"] { background: var(--scale-cold-warm-2); }
+  .scope .mini i[data-dev="3"] { background: var(--scale-cold-warm-3); }
+  .scope .mini i[data-dev="4"] { background: var(--scale-cold-warm-4); }
+  .scope .mini i[data-dev="5"] { background: var(--scale-cold-warm-5); }
+  /* Hus-kortet (.scope--house): huset nu, målet og afvigelsen som varmekortets chip. Det åbner
+     husets ark, hvor målet indstilles (ringen). Ude (.scope--fact) står lige efter og er kun
+     en læseværdi med ikonbrik. */
+  .scope .tile-dev { display: inline-flex; grid-column: 2; grid-row: 1 / 3; align-self: center; }
+  .scope .scope-tgt { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; opacity: .7; }
+  .scope--fact > .chip-icon { grid-column: 2; grid-row: 1 / 3; align-self: center; }
   @media (max-width: 599.98px) {
     .scope { flex: 1 1 40%; min-width: 0; padding: var(--space-2) var(--space-3); }
     .scope[aria-current] { min-width: 0; }
@@ -1720,6 +1817,21 @@
   .fr-dt b { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
   .home-tile > .ht-viz { grid-area: viz; align-self: end; display: block; width: 100%; height: 64px; margin-top: var(--space-4); overflow: visible; }
   .home-tile[data-empty] > .ht-viz { display: none; }
+  .home-tile.wide { grid-column: 1 / -1; }
+  /* Bredt felt fra 768 px: hovedtal og prislinje står til højre i hovedet (før ›), så
+     planen får højden. */
+  @media (min-width: 768px) {
+    .home-tile.wide { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "icon title val go" "icon status price go" "viz viz viz viz"; grid-template-rows: auto auto 1fr; }
+    .home-tile.wide > .ht-val { margin-top: 0; justify-content: flex-end; text-align: right; }
+    .home-tile.wide > .ht-price { margin-top: var(--space-1); justify-content: flex-end; }
+  }
+  .home-tile > .ht-plan { grid-area: viz; align-self: end; margin-top: var(--space-4); }
+  .home-tile[data-empty] > :is(.ht-plan, .ht-legend) { display: none; }
+  @media (min-width: 1100px) { .home-tiles:has(> .home-tile.wide) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  /* To spalter: et felt, der ellers står alene før det brede, fylder rækken. */
+  @media (min-width: 600px) and (max-width: 1099.98px) {
+    .home-tiles:has(> .home-tile.wide) > .home-tile:not(.wide):nth-child(odd):nth-last-child(2) { grid-column: 1 / -1; }
+  }
   /* Én ekstra linje (fx aktuel elpris + skala-chip i Næste varme). */
   .home-tile > .ht-price { grid-area: price; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--muted); }
   .home-tile > .ht-price[hidden] { display: none; }
@@ -1766,7 +1878,7 @@
 
   /* Varmekort: rum grupperet pr. manifold. Rumfelterne fylder efter rummets areal (--area),
      har afvigelses-chip (5 trin, forklaret i .heatmap-legend), temperatur og en 5-trins
-     ventilbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
+     åbningsbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
   .heatmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
   .heatmap-head > div:first-child { display: grid; gap: var(--space-1); flex: 1 0 auto; }
   .heatmap-head small { font-size: var(--fs-sm); color: var(--muted); }
@@ -2035,10 +2147,69 @@
   /* @only v6 */
   /* V6: varmepumpe-grænser gælder kun i varmepumpe-tilstand (seg-radioer i formularen). */
   form:has(input[name="heat_mode"]):not(:has(input[name="heat_mode"][value="heat_pump"]:checked)) .hp-limits { opacity: .4; pointer-events: none; }
+  /* …og omvendt: indstillinger, der kun gælder i normal tilstand. */
+  form:has(input[name="heat_mode"][value="heat_pump"]:checked) .normal-only { opacity: .4; pointer-events: none; }
 
   /* V6 med 2 prober: kun manifold frem/retur — skjul zone-returfelter og ekstra prober. */
   .app[data-probe-layout="2"] .zone-ret { display: none; }
   .app[data-probe-layout="2"] .metric[data-probe]:not([data-probe="1"]):not([data-probe="2"]) { display: none; }
+
+  /* Motorlab (V6, kun dev-builds): ét slag på én motor. .mtrace stabler rækker med hver sin skala
+     (y-labels i HTML, kurven i SVG) over én fælles tidsakse: strøm altid, kadence og hældning som lag,
+     der slås til/fra med .layers (checkbokse, ingen JS). Under kurverne viser .phase-strip slagets
+     faser som én neutral tone i trin (fri vandring → pin-kontakt → under belastning → stopper),
+     med navnet i HTML. Strømmen er hovedkurven (--fg); kadence er en sensor (--info); hældning er
+     afledt og stiplet. */
+  .sys-cat .lab { display: grid; gap: var(--space-5); min-width: 0; }
+  .lab > *, .mtrace > * { min-width: 0; }
+  .lab .actions { flex-wrap: wrap; }
+  .lab .actions .hint { align-self: center; font-size: var(--fs-sm); color: var(--muted); }
+  .mtrace { display: grid; gap: var(--space-2); }
+  .mtrace-row { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: var(--space-3); }
+  .mtrace-row .trend { height: 180px; }
+  .mtrace-row[data-layer] .trend { height: 90px; }
+  .mtrace-y { display: flex; flex-direction: column; justify-content: space-between; font-size: var(--fs-xs); color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+  .mtrace-y small { color: var(--faint); }
+  .mtrace .axis, .mtrace .phase-strip { margin-left: calc(3.5em + var(--space-3)); }
+  .trend .mc  { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .cad { fill: none; stroke: var(--info); stroke-width: 1.4; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .slp { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .trend .zero { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+  .phase-strip { display: flex; height: 22px; border-radius: var(--r-field); overflow: hidden; background: var(--raised); }
+  .phase-strip span { display: block; min-width: 0; padding: 0 var(--space-1); overflow: hidden; line-height: 22px; text-align: center; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; text-overflow: ellipsis;
+    flex: var(--w, 1) 1 0; border-right: 1px solid var(--card); }
+  .phase-strip span:last-child { border-right: 0; }
+  .phase-strip [data-phase="contact"]  { background: color-mix(in srgb, var(--fg) 14%, var(--raised)); color: var(--fg); }
+  .phase-strip [data-phase="load"]     { background: color-mix(in srgb, var(--fg) 26%, var(--raised)); color: var(--fg); }
+  .phase-strip [data-phase="stopping"] { background: color-mix(in srgb, var(--fg) 40%, var(--raised)); color: var(--fg); }
+  .layers { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .layers label { display: inline-flex; align-items: center; gap: var(--space-2); min-height: calc(var(--hit) - 8px); padding: 0 var(--space-3);
+    border-radius: var(--r-pill); background: var(--raised); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
+  .layers label:has(input:checked) { background: var(--inv-bg); color: var(--inv-fg); }
+  .layers label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .layers i { display: inline-block; width: 14px; border-top: 2px solid; border-radius: 2px; }
+  .layers .lcad { border-color: var(--info); }
+  .layers .lslp { border-top-style: dashed; border-color: currentColor; }
+  .mtrace:has(.layers input[value="cadence"]:not(:checked)) .mtrace-row[data-layer="cadence"],
+  .mtrace:has(.layers input[value="slope"]:not(:checked)) .mtrace-row[data-layer="slope"],
+  .mtrace:has(.layers input[value="phase"]:not(:checked)) .phase-strip { display: none; }
+  .mtrace[data-empty] :is(.layers, .mtrace-row, .phase-strip, .actions, .note, .table-wrap) { display: none; }
+  /* Endestop-explorer: tærskler som linjer over strømmen — den dynamiske tærskel stiplet, de absolutte
+     grænser prikket — og en lodret streg, hvor hver vej ville stoppe motoren; den, der stopper først, er fuldt optrukket.
+     Navne og tider står i tabellen under (HTML). */
+  .trend .thr  { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+  .trend .cap  { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; }
+  .trend .trip { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+  .trend .trip.first { stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: none; }
+  .table tr.first td:first-child { font-weight: 600; }
+  /* Motorlabbets forløb: handlinger efter tilstand (DESIGN.md 6.1b) med labbets egne tilstande. */
+  [data-state="setup"]   [data-show-when~="setup"],
+  [data-state="armed"]   [data-show-when~="armed"],
+  [data-state="seated"]  [data-show-when~="seated"],
+  [data-state="opened"]  [data-show-when~="opened"],
+  [data-state="closed"]  [data-show-when~="closed"],
+  [data-state="running"] [data-show-when~="running"],
+  [data-state="halted"]  [data-show-when~="halted"] { display: var(--show-display, block); }
   /* @end */
 
   /* Segmenteret valg — pille, aktiv inverteret */

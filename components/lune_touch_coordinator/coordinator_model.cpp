@@ -1185,6 +1185,43 @@ void HouseModel::accumulate_ua_day(float hours, float outdoor_c) {
   }
 }
 
+size_t HouseModel::export_ua_day(UaDayPersist *out, size_t capacity) const {
+  size_t n = 0;
+  for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS && out != nullptr && n < capacity; i++) {
+    if (rooms_[i].room_id[0] == '\0' || !(ua_day_[i].hours > 0.0f))
+      continue;
+    UaDayPersist &e = out[n++];
+    e = UaDayPersist{};
+    copy_text_(e.room_id, sizeof(e.room_id), rooms_[i].room_id);
+    e.kwh = ua_day_[i].kwh;
+    e.dt_kh = ua_day_[i].dt_kh;
+    e.hours = ua_day_[i].hours;
+    e.first_c = ua_day_[i].first_c;
+    e.last_c = ua_day_[i].last_c;
+  }
+  return n;
+}
+
+void HouseModel::import_ua_day(const UaDayPersist *in, size_t count) {
+  for (size_t k = 0; k < count && in != nullptr; k++) {
+    const UaDayPersist &e = in[k];
+    if (!(std::isfinite(e.hours) && e.hours > 0.0f && e.hours <= 24.5f) || !std::isfinite(e.kwh) ||
+        !std::isfinite(e.dt_kh))
+      continue;
+    for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
+      if (!same_text_(rooms_[i].room_id, e.room_id))
+        continue;
+      ua_day_[i].kwh = e.kwh;
+      ua_day_[i].dt_kh = e.dt_kh;
+      ua_day_[i].hours = e.hours;
+      ua_day_[i].first_c = e.first_c;
+      ua_day_[i].last_c = e.last_c;
+      rooms_[i].delivered_kwh_today = e.kwh;
+      break;
+    }
+  }
+}
+
 size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
   size_t n = 0;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
@@ -1929,6 +1966,7 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
   float preview_setpoint_sum = 0.0f;
   size_t preview_setpoint_count = 0;
   float best_weighted_deficit = 0.0f;
+  float lagging_weight = 0.0f;
   float comfort_sum = 0.0f;
   size_t comfort_count = 0;
   float temp_min = 0.0f;
@@ -2170,6 +2208,8 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
           may_drive = nd.recommendation == HeatRecommendation::RAISE && critical_is_ours;
         }
       }
+      if (may_drive && deficit > LAGGING_DEFICIT_C)
+        lagging_weight += room_weight;
       if (may_drive && weighted_deficit > best_weighted_deficit) {
         best_weighted_deficit = weighted_deficit;
         snapshot.driver_deficit_c = deficit;
@@ -2213,6 +2253,8 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
     snapshot.has_house_target = true;
     snapshot.house_target_c = weighted_target_sum / target_weight_sum;
   }
+  if (weight_sum > 0.0f)
+    snapshot.lagging_share = std::min(1.0f, lagging_weight / weight_sum);
   if (weight_sum > 0.0f) {
     snapshot.physical_temperature_c = weighted_temp_sum / weight_sum;
     snapshot.comfort_demand_c = weighted_demand_sum / weight_sum;
@@ -2434,16 +2476,45 @@ void HouseModel::record_zone_history_(size_t zone_index, float temperature_c, co
       const float delta_c = temperature_c - history.last_temperature_c;
       history.last_delta_c_per_h = delta_c / hours;
       history.has_delta = true;
-      ZoneBinding &zone = zones_[zone_index];
+    }
+  }
+
+  // A1: rates over windows of RATE_WINDOW_H with one calling state throughout,
+  // not between polls (15-60 s apart, all rejected as too short); probe jumps
+  // are still rejected against the τ prior.
+  ZoneBinding &zone = zones_[zone_index];
+  // Stored by firmware without the rate gates (Kontor: 36.7 °C/h cooling): start over.
+  if (!(zone.learned_heat_gain_c_per_h >= 0.0f && zone.learned_heat_gain_c_per_h <= 0.35f) ||
+      !(zone.learned_cool_loss_c_per_h >= 0.0f && zone.learned_cool_loss_c_per_h <= 0.40f)) {
+    zone.learned_heat_gain_c_per_h = 0.0f;
+    zone.learned_cool_loss_c_per_h = 0.0f;
+    zone.thermal_samples = 0;
+  }
+  static constexpr float RATE_WINDOW_H = 1.0f;
+  if (!history.has_rate_anchor || calling != history.rate_anchor_calling || now_ms < history.rate_anchor_ms) {
+    history.rate_anchor_ms = now_ms;
+    history.rate_anchor_c = temperature_c;
+    history.rate_anchor_calling = calling;
+    history.has_rate_anchor = true;
+  } else {
+    const float hours = static_cast<float>(now_ms - history.rate_anchor_ms) / 3600000.0f;
+    // A window with a gap in it (stale probe, Touch offline) may hide a state change.
+    const bool gap = now_ms - history.last_sample_ms > 15UL * 60UL * 1000UL;
+    if (gap) {
+      history.rate_anchor_ms = now_ms;
+      history.rate_anchor_c = temperature_c;
+    } else if (hours >= RATE_WINDOW_H) {
+      const float delta_c = temperature_c - history.rate_anchor_c;
+      history.rate_anchor_ms = now_ms;
+      history.rate_anchor_c = temperature_c;
       float tau_h = 24.0f;
       if (std::isfinite(zone.learned_heat_gain_c_per_h) && zone.learned_heat_gain_c_per_h >= 0.05f &&
           zone.learned_heat_gain_c_per_h <= 0.35f)
         tau_h = clamp_float_(1.0f / zone.learned_heat_gain_c_per_h, 8.0f, 80.0f, 24.0f);
 
-      // A1: rate learning only on 30–60+ min windows; reject probe jumps vs τ prior.
       if (thermal_rate_sample_acceptable(delta_c, hours, tau_h)) {
         const uint16_t previous_samples = zone.thermal_samples;
-        const float rate = history.last_delta_c_per_h;
+        const float rate = delta_c / hours;
         if (calling && rate > 0.02f && rate <= 0.35f) {
           zone.learned_heat_gain_c_per_h =
               rolling_average_(zone.learned_heat_gain_c_per_h, rate, previous_samples);

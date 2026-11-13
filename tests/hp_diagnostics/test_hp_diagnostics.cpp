@@ -27,9 +27,9 @@ static Input heating(float out_kw, float plan_kw, uint32_t t) {
 
 // Runs one sample a minute from t for n minutes; returns the time after.
 template <typename F>
-static uint32_t run(State &s, uint32_t t, uint32_t n, F make, Edges *acc = nullptr) {
+static uint32_t run(State &s, uint32_t t, uint32_t n, F make, Edges *acc = nullptr, const Params &p = Params{}) {
   for (uint32_t i = 0; i < n; i++, t += MIN) {
-    const Edges e = step(s, make(t), t);
+    const Edges e = step(s, make(t), t, p);
     if (acc) {
       acc->over_raised |= e.over_raised; acc->over_cleared |= e.over_cleared;
       acc->under_raised |= e.under_raised; acc->under_cleared |= e.under_cleared;
@@ -185,6 +185,33 @@ int main() {
     Edges c;
     run(s, t, 11, sec(13.5f), &c);
     assert(!s.short_flow && c.short_cleared && s.mix == Mix::Ok);
+  }
+  // Three-port tank: a secondary deficit charges the tank (no SHORT), a surplus still mixes.
+  {
+    auto sec = [](float v) { return [v](uint32_t tt) { Input in = heating(6.0f, 6.0f, tt); in.secondary_lmin = v; return in; }; };
+    Params three;
+    three.judge_short = false;
+    State s;
+    Edges e;
+    run(s, 1000, 30, sec(12.0f), &e, three);
+    assert(!s.short_flow && !e.short_raised && s.mix == Mix::Ok);
+    State m;
+    run(m, 1000, 11, sec(17.0f), &e, three);
+    assert(m.mixing && s.mix == Mix::Ok);
+    // Series or no tank: nothing judged.
+    Params none;
+    none.judge_short = none.judge_mix = false;
+    State n;
+    Edges en;
+    run(n, 1000, 30, sec(17.0f), &en, none);
+    run(n, 1000 + 30 * MIN, 30, sec(12.0f), &en, none);
+    assert(!n.mixing && !n.short_flow && !en.mix_raised && !en.short_raised);
+    // Switching a raised flag's tank off clears it.
+    State f;
+    run(f, 1000, 11, sec(12.0f));
+    assert(f.short_flow);
+    run(f, 1000 + 11 * MIN, 1, sec(12.0f), nullptr, three);
+    assert(!f.short_flow);
   }
   // Hot water: primary goes to the tank, mixing not judged.
   {

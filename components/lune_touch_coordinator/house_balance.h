@@ -6,13 +6,20 @@
 // the same pressure, so a board with short, wide loops (20 mm PEX, cc 300) takes
 // flow from a board with long, narrow loops (16 mm PEX, cc 200).
 //
-// Touch estimates, from what V6 reports (area, pipe inner diameter, spacing,
-// lead length), the pressure each loop needs to carry its design flow, and scales
-// every board by sqrt(board's worst loop / house's worst loop). The board with
-// the most demanding loop stays at 1.0; V6's own split inside a board is kept.
+// Each board gets a need, and every board is scaled by its need / the house's
+// largest need, so the board with the most demanding loop stays at 1.0; V6's own
+// split inside a board is kept.
 //
-// Deliberately rough: no valve or manifold resistance, no riser, one design
-// heat flux. It only removes the systematic advantage of the "easy" manifold.
+// A board's need comes from what V6 reports (area, pipe inner diameter, spacing,
+// lead length): the pressure each loop needs to carry its design flow, and the
+// board's need is sqrt(worst loop pressure), as flow goes with sqrt(pressure).
+// Deliberately rough: no valve or manifold resistance, no riser, one design heat
+// flux. It only removes the systematic advantage of the "easy" manifold. (A
+// "measured" basis from Touch's valve-curve full flows was removed with the
+// measurement, 2026-11-13: the pump's computed flow could not resolve pin lift.)
+//
+// A weight per board (WEIGHT_MIN..WEIGHT_MAX %, 100 = as computed) moves heat
+// between floors that the model cannot see: ground contact, internal gains, sun.
 // Opt-in (heat-source settings); V6 reverts to 1.0 when Touch stops sending.
 // =============================================================================
 
@@ -31,6 +38,17 @@ struct Loop {
   float supply_m{2.0f};     // one-way lead from the manifold
   bool enabled{true};
 };
+
+enum class Basis : unsigned char { None, Model };
+
+constexpr int WEIGHT_MIN = 50;
+constexpr int WEIGHT_MAX = 150;
+constexpr int WEIGHT_STEP = 5;
+
+inline int clamp_weight(int pct) {
+  pct = std::clamp(pct, WEIGHT_MIN, WEIGHT_MAX);
+  return (pct + WEIGHT_STEP / 2) / WEIGHT_STEP * WEIGHT_STEP;
+}
 
 struct Params {
   float heat_flux_w_m2 = 40.0f;  // design heat flux, same for every loop
@@ -72,31 +90,39 @@ inline float required_pa(const Loop &l, const Params &p) {
 }
 
 /// Board scales for `boards` boards of `per_board` loops each (loops[b * per_board + z]).
-/// Writes each board's worst-loop pressure to worst_pa[b] and its scale to scale[b].
-/// A board without modelled loops gets 1.0. Returns the number of modelled boards;
-/// with fewer than two there is nothing to balance and every scale is 1.0.
+/// Writes each board's need (worst-loop pressure in Pa) to need[b] and its scale to scale[b]. `weight_pct` (nullable) holds each board's
+/// weight. A board without a need gets 1.0. Returns the number of boards with a need
+/// (fewer than two: nothing to balance, every scale 1.0) and the basis in `basis`.
 inline size_t board_scales(const Loop *loops, size_t boards, size_t per_board, const Params &p,
-                           float *worst_pa, float *scale) {
+                           float *need, float *scale, const int *weight_pct = nullptr,
+                           Basis *basis = nullptr) {
   float house = 0.0f;
-  size_t modelled_boards = 0;
-  for (size_t b = 0; b < boards; b++) {
+  size_t with_need = 0;
+  float flow_need[16]{};  // need as a flow ratio (sqrt of pressure) × weight
+  for (size_t b = 0; b < boards && b < 16; b++) {
     float worst = 0.0f;
-    for (size_t z = 0; z < per_board; z++)
-      worst = std::max(worst, required_pa(loops[b * per_board + z], p));
-    worst_pa[b] = worst;
+    for (size_t z = 0; z < per_board; z++) {
+      const Loop &l = loops[b * per_board + z];
+      worst = std::max(worst, required_pa(l, p));
+    }
+    need[b] = worst;
     scale[b] = 1.0f;
     if (worst > 0.0f) {
-      modelled_boards++;
-      house = std::max(house, worst);
+      with_need++;
+      const float w = weight_pct != nullptr ? static_cast<float>(clamp_weight(weight_pct[b])) / 100.0f : 1.0f;
+      flow_need[b] = std::sqrt(worst) * w;
+      house = std::max(house, flow_need[b]);
     }
   }
-  if (modelled_boards < 2)
-    return modelled_boards;
-  for (size_t b = 0; b < boards; b++) {
-    if (worst_pa[b] > 0.0f)
-      scale[b] = std::clamp(std::sqrt(worst_pa[b] / house), p.min_scale, 1.0f);
+  if (basis != nullptr)
+    *basis = with_need == 0 ? Basis::None : Basis::Model;
+  if (with_need < 2)
+    return with_need;
+  for (size_t b = 0; b < boards && b < 16; b++) {
+    if (flow_need[b] > 0.0f)
+      scale[b] = std::clamp(flow_need[b] / house, p.min_scale, 1.0f);
   }
-  return modelled_boards;
+  return with_need;
 }
 
 }  // namespace lune_touch_house_balance
