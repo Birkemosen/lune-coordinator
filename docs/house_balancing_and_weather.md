@@ -68,7 +68,10 @@ stops early. A single V6 cannot tell "surplus" from "another manifold's demand".
 
 Therefore, under a Touch lease, **only Touch arms absorb**, because only Touch sees all
 manifolds and the Odin plan:
-- **Odin heat window** (cheap/planned surplus): all zones, house-wide.
+- **Odin pre-buffer** (Odin's reason says thermal buffer): every room at most a comfort
+  band above its target. A planned heat hour alone is heating, not pre-buffering, and
+  arms nothing: the rooms below target are heated by the load law, and the others close
+  at target + overheat margin.
 - **Slab charge** (section 5): only the rooms that need stored heat, per zone
   (`POST /api/v1/zones/{z}/absorb-arm` / `absorb-disarm` on V6).
 

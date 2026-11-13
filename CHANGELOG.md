@@ -2,6 +2,11 @@
 
 ## Unreleased (for v1.0.0)
 
+### Pre-buffering is not heating
+- Touch armed the absorb band on every room whenever Odin planned heat for the hour (`odin_plan heat window`). The band lets a satisfied room's loop stay open past its target, so heating for one cold room kept every room open: on 2026-11-13 Soveværelse sat 1.7 °C over its 21 °C at 30 % while Odin heated for Laura. A planned heat hour is heating for the rooms below target; pre-buffering is when Odin says so (a v2 `thermal_buffer` reason, or an Odin MQTT absorb command), and weather pre-charging is Touch's slab charge per room. Plans without a reason no longer arm.
+- An Odin pre-buffer arms only rooms at most a comfort band (0.5 °C) above their target; a warmer room is skipped and an earlier arm is withdrawn at the next re-arm. A disarm from Odin leaves a room's weather charge in place.
+- V6 (same release) closes a loop at target + overheat margin, not target + comfort band + margin.
+
 ### A room far behind makes Odin heat
 - A lagging room lifts Odin's comfort band, but its floor only by twice the room's share of the house, so one room lets Odin choose cheap hours instead of forcing heat. On 2026-11-13 Laura (11 % of the house) was 3 °C behind and falling 0.2 °C/h in wind from 11:00 to 18:30; the floor rose 0.2 × the lift, the house was 0.2 °C above target, and Odin waited for the night. Now the floor share is also at least what the room's deficit asks: 0 up to 2 °C behind (Laura at 1.6 °C on 2026-11-12 still lifts only the top), rising to 1 at 3 °C, so Odin must heat within the room's lag window.
 - Touch now receives V6's heat demand (raise / lower, the critical loop) with the zones (V6 sent it only in `/overview`, where Touch did not look). A room may drive the lift only while its loop is the manifold's critical one and V6 says raise, as intended; the flow trim (shadow mode) sees raise and lower for the first time.

@@ -47,7 +47,7 @@ static void test_unified_may_arm() {
   v1.source = plan_source::SourceId::AsgardDashboardV1;
   v1.heat_production[0] = 4.8f;
   v1.operation_mode[0] = 2;
-  assert(plan_source::may_arm_absorb(v1, 0, true));
+  assert(!plan_source::may_arm_absorb(v1, 0, true));  // a heat hour is heating, not pre-buffering
   v1.operation_mode[0] = 1;  // DHW
   assert(!plan_source::may_arm_absorb(v1, 0, true));
 
@@ -142,6 +142,15 @@ static void test_physics_deviation() {
   assert(!odin_physics::deviation_flag(NAN, 1.0f));
 }
 
+static void test_absorb_headroom() {
+  // 1. sal 2026-11-13: Soveværelse 22.7 °C against 21 °C was armed with the rest and stayed open.
+  assert(!plan_source::absorb_room_has_headroom(true, 22.7f, 21.0f, 0.5f));
+  assert(plan_source::absorb_room_has_headroom(true, 21.5f, 21.0f, 0.5f));
+  assert(plan_source::absorb_room_has_headroom(true, 20.0f, 21.0f, 0.5f));
+  assert(plan_source::absorb_room_has_headroom(false, 25.0f, 21.0f, 0.5f));  // unknown: V6 decides
+  assert(plan_source::absorb_room_has_headroom(true, NAN, 21.0f, 0.5f));
+}
+
 static void test_v2_fixtures_placeholder() {
   const std::string forecast = read_file("tests/fixtures/odin_forecast_v2.json");
   assert(forecast.find("\"disabled\": true") != std::string::npos ||
@@ -160,6 +169,7 @@ int main() {
   test_v2_fixtures_placeholder();
   test_mqtt_helpers();
   test_physics_deviation();
+  test_absorb_headroom();
   std::puts("Odin plan_source / mqtt / physics tests passed.");
   return 0;
 }

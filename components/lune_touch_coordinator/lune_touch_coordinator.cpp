@@ -2032,7 +2032,7 @@ void LuneTouchCoordinator::run_mqtt_followups_() {
   const uint8_t action = mqtt_absorb_action_;
   mqtt_absorb_action_ = 0;
   if (action == 1)
-    maybe_dispatch_absorb_arm_();
+    maybe_dispatch_absorb_arm_(true);  // odin_mqtt checked Odin's reason (pre-buffering)
   else if (action == 2)
     maybe_dispatch_absorb_disarm_(mqtt_absorb_reason_[0] != '\0' ? mqtt_absorb_reason_ : "mqtt");
 }
@@ -6806,7 +6806,7 @@ void LuneTouchCoordinator::apply_odin_timing_bias_(ForecastDecisionState *decisi
   decision->active = decision->offset_c > 0.01f;
 }
 
-void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
+void LuneTouchCoordinator::maybe_dispatch_absorb_arm_(bool requested) {
   if (!odin_plan_active_() || !odin_plan_.absorb_arm_enabled || !odin_plan_.available)
     return;
   if (odin_defrost_blocks_arm_()) {
@@ -6820,8 +6820,11 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
   const uint32_t now = esphome::millis();
   if (odin_plan_.last_absorb_arm_ms != 0 && now - odin_plan_.last_absorb_arm_ms < 30UL * 60UL * 1000UL)
     return;
-  bool upcoming = odin_plan_.heat_window_active;
-  char reason_buf[48]{"odin_plan heat window"};
+  // Pre-buffering only: Odin asked for it (MQTT) or its plan says so for this or the next
+  // hour. A heat hour alone is heating for rooms below target, not a reason to let every
+  // room run past its target (heat_window_active armed them all, 2026-11-13).
+  bool upcoming = requested;
+  char reason_buf[48]{"odin_plan preload"};
   if (odin_plan_.current_decision_reason[0] != '\0' &&
       std::strcmp(odin_plan_.current_decision_reason, "unknown") != 0) {
     std::snprintf(reason_buf, sizeof(reason_buf), "%s", odin_plan_.current_decision_reason);
@@ -6854,6 +6857,33 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
     const auto *node = model_.node(zone->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
       continue;
+    // A room already a comfort band over its target has stored its share: skip it, and
+    // take back an arm this sent earlier (a weather charge from slab_charge stays).
+    const auto *live = model_.zone_live(zi);
+    const bool known = live != nullptr && live->fresh && live->has_temperature && live->has_setpoint;
+    if (!plan_source::absorb_room_has_headroom(known, known ? live->temperature_c : NAN,
+                                               known ? live->setpoint_c : NAN, COMFORT_BAND_C)) {
+      if (zi < ::lune_touch::MAX_HOUSE_ZONES && odin_armed_[zi] &&
+          !charge_armed_[zone->node_index][zone->zone_index]) {
+        ::lune_touch::CommandRecord record{};
+        snprintf(record.request_id, sizeof(record.request_id), "ad-%lu-%02u",
+                 static_cast<unsigned long>(now), static_cast<unsigned>(zi));
+        std::strncpy(record.source, "absorb_arm", sizeof(record.source) - 1);
+        std::strncpy(record.reason, "room_above_band", sizeof(record.reason) - 1);
+        record.node_index = zone->node_index;
+        record.zone_index = zone->zone_index;
+        stamp_command_timing_(&record, now, 0);
+        const auto target = model_.resolve_room(zone->room_id);
+        stamp_command_target_(&record, target.node, target.binding);
+        ::lune_touch::CommandRecord final_record = record;
+        send_v6_absorb_disarm_(*node, zone->zone_index, &final_record, "room_above_band");
+        ledger_.append(final_record);
+        any = true;
+      }
+      if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+        odin_armed_[zi] = false;
+      continue;
+    }
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "aa-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(zi));
@@ -6868,6 +6898,8 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
     ::lune_touch::CommandRecord final_record = record;
     send_v6_absorb_arm_(*node, zone->zone_index, 3600, &final_record, reason_buf);
     ledger_.append(final_record);
+    if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+      odin_armed_[zi] = true;
     any = true;
   }
   if (any) {
@@ -6894,6 +6926,10 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_disarm_(const char *reason) {
     const auto *node = model_.node(zone->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
       continue;
+    if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+      odin_armed_[zi] = false;
+    if (charge_armed_[zone->node_index][zone->zone_index])
+      continue;  // a weather charge (slab_charge) keeps its arm
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "ad-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(zi));

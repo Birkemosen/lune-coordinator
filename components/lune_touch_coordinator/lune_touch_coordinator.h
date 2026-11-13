@@ -982,7 +982,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool run_heat_source_test_read_(char *response, size_t capacity);
   bool run_heat_source_test_push_(char *response, size_t capacity);
   void apply_odin_timing_bias_(ForecastDecisionState *decision);
-  void maybe_dispatch_absorb_arm_();
+  void maybe_dispatch_absorb_arm_(bool requested = false);
   void maybe_dispatch_absorb_disarm_(const char *reason);
   bool send_v6_absorb_arm_(const ::lune_touch::PairedNode &node, uint8_t zone_index, uint32_t ttl_s,
                            ::lune_touch::CommandRecord *result, const char *decision_reason = nullptr);
@@ -1105,6 +1105,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void dispatch_charge_arms_();
   uint32_t charge_last_arm_ms_[::lune_touch::MAX_NODES][6]{};
   bool charge_armed_[::lune_touch::MAX_NODES][6]{};
+  bool odin_armed_[::lune_touch::MAX_HOUSE_ZONES]{};  ///< Absorb band armed by an Odin pre-buffer (by model zone)
   /// Current lift of the Asgard comfort target above the real house target (°C).
   float demand_target_uplift_c_{0.0f};
   /// Where house demand goes: "virtual_thermostat" | "odin_schedule" | "generic" | "none".
