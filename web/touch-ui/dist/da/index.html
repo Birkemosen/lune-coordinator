@@ -88,7 +88,6 @@
             <p data-bind="home.sentence">Ingen hustemperatur endnu. Tilføj en styring under System › Styringer.</p>
           </div>
         </section>
-        <header class="home-head"><small>Lige nu</small><h3>Varme, plan og vejr</h3></header>
         <div class="home-tiles">
           <button class="home-tile" type="button" popovertarget="sheet-heat" data-empty data-tile="heat">
             <span class="chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg></span><b>Varme</b>
@@ -109,9 +108,9 @@
             <div class="ht-dist" data-bind-tiledist hidden></div>
           </button>
           <button class="home-tile wide" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
-            <span class="chip-icon" data-tone="violet" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><b>Næste varme</b>
+            <span class="chip-icon" data-tone="violet" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><b>Plan</b>
             <span class="ht-status" data-bind="tile.planStatus">Ingen plan endnu</span>
-            <span class="ht-val"><span data-bind="tile.planVal">—</span> <small data-bind="tile.planKwh"></small></span>
+            <span class="ht-val"><small>Næste varme</small> <span data-bind="tile.planVal">—</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span> <span data-bind="tile.todayCost"></span></span>
             <span class="plan plan--mini ht-plan" aria-hidden="true" data-bind-plan-mini></span>
             <span class="fc-legend ht-legend" aria-hidden="true"><span><i class="lprice"></i>Elpris (billig → dyr)</span><span><i class="lheatmark"></i>Odin varmer</span><span><i class="lband"></i>Komfortbånd</span><span><i class="lbandlift"></i>Løft</span><span><i class="lbandpre"></i>Forvarmning</span></span>
@@ -257,11 +256,11 @@
           <footer class="savebar"><span class="save-status" id="ss-heat" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem varmekilde</button></footer>
         </form></section></div>
   </div>
-  <div id="sheet-plan" popover class="sheet" role="dialog" aria-labelledby="sheet-plan-t" data-hash="naeste-varme">
+  <div id="sheet-plan" popover class="sheet" role="dialog" aria-labelledby="sheet-plan-t" data-hash="plan">
     <input class="state tab" type="radio" name="tab-plan" id="t-plan-o" value="overview" data-hash="overblik" aria-label="Overblik" checked><input class="state tab" type="radio" name="tab-plan" id="t-plan-h" value="history" data-hash="historik" aria-label="Historik"><input class="state tab" type="radio" name="tab-plan" id="t-plan-s" value="settings" data-hash="indstillinger" aria-label="Indstillinger">
     <header class="sheet-head">
       <span class="chip-icon" data-tone="violet" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span>
-      <div><h2 id="sheet-plan-t">Næste varme</h2><p data-bind="tile.planStatus">—</p></div>
+      <div><h2 id="sheet-plan-t">Plan</h2><p data-bind="tile.planStatus">—</p></div>
       <button class="sheet-close" type="button" popovertarget="sheet-plan" popovertargetaction="hide" aria-label="Luk">×</button>
       <nav class="tabs" aria-label="Faner"><label for="t-plan-o" data-tab="overview">Overblik</label><label for="t-plan-h" data-tab="history">Historik</label><label for="t-plan-s" data-tab="settings">Indstillinger</label></nav>
     </header>

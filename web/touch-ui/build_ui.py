@@ -306,7 +306,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <button class="home-tile wide" type="button" popovertarget="sheet-plan" data-empty data-tile="plan">
             <span class="chip-icon" data-tone="violet" aria-hidden="true">{I["plan"]}</span><b>{T("tile.plan")}</b>
             <span class="ht-status" data-bind="tile.planStatus">{T("tile.planNone")}</span>
-            <span class="ht-val"><span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
+            <span class="ht-val"><small>{T("tile.planNext")}</small> <span data-bind="tile.planVal">{DASH}</span> <small data-bind="tile.planKwh"></small></span>
             <span class="ht-price" data-bind-show="tile.price" hidden><span data-bind="tile.priceText"></span> <span class="scale-chip" data-bind-scale></span> <span data-bind="tile.todayCost"></span></span>
             <span class="plan plan--mini ht-plan" aria-hidden="true" data-bind-plan-mini></span>
             <span class="fc-legend ht-legend" aria-hidden="true"><span><i class="lprice"></i>{T("planG.lPrice")}</span><span><i class="lheatmark"></i>{T("planG.lHeatMark")}</span><span><i class="lband"></i>{T("planG.lBandShort")}</span><span><i class="lbandlift"></i>{T("planG.lLiftShort")}</span><span><i class="lbandpre"></i>{T("planG.lPreShort")}</span></span>
@@ -355,7 +355,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             <p data-bind="home.sentence">{T("home.sentence.none")}</p>
           </div>
         </section>
-        <header class="home-head"><small>{T("home.nowEyebrow")}</small><h3>{T("home.nowTitle")}</h3></header>
         <div class="home-tiles">{tile_heat}{tile_wx}{tile_pump}{tile_plan}</div>
         {heatmap}
       </section>'''

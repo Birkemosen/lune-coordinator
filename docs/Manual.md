@@ -13,7 +13,7 @@ in the linked docs.
 **[Sheets](#sheets)**
 
 - [Heat](#heat)
-- [Next heating](#next-heating)
+- [Plan](#plan)
 - [Weather and preload](#weather-and-preload)
 - [Circulation](#circulation)
 - [Controller](#controller)
@@ -40,7 +40,7 @@ The UI has three places, following the Lune design system:
 
 - **Home** — the house now: temperature and target, heat, plan, weather, circulation and
   every room. The target saves by itself; nothing else to save.
-- **Sheets** — one per thing: **Heat**, **Next heating**, **Weather**, **Circulation**, one per
+- **Sheets** — one per thing: **Heat**, **Plan**, **Weather**, **Circulation**, one per
   **controller** (V6) and one per **room**. A sheet slides in over Home, with the tabs
   **Overview**, **History** and **Settings** where they apply. Settings for that one thing live
   in its sheet, including its connection.
@@ -68,7 +68,7 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
 - **Heat, plan and weather** — four tiles that open their sheets:
   - **Heat** — flow over return with ΔT between them, and the last 24 hours (from the heat
     source's own history).
-  - **Next heating** — Odin's next block, its energy and today's price with a price chip.
+  - **Plan** — Odin's next block («Next heating»), its energy and today's price with a price chip, over a compact plan.
   - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched; it says
     how many rooms have solar hold-off when any do.
   - **Circulation** — flow (m³/h), power and the split per controller. The tile turns
@@ -172,7 +172,7 @@ and optionally syncs the comfort target. A wrong host or a disabled push blocks 
 [Asgard authority](lune_asgard_authority_state_machine.md).
 
 
-### Next heating
+### Plan
 
 Odin's planned heat for the next 24 hours together with Touch's preheating and charging per
 room, today's price per hour, and under **History** plan vs. actual for the last 12 hours.
