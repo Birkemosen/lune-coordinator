@@ -1,9 +1,7 @@
 #pragma once
 
 #include "hp_phase.h"
-#include "valve_probe.h"
 #include "valve_flush.h"
-#include "system_curve.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
 #include "room_reached.h"
@@ -298,16 +296,8 @@ struct CirculationPumpState {
   float mix_in_kw{NAN};    // heat into the tank (Asgard output, else primary flow × THW1−THW2)
   float mix_out_kw{NAN};   // heat drawn from it (secondary flow × Zone 1 feed−return, else thermal_kw)
   uint32_t mix_ms{0};
-  // A valve-curve run holds the valves, so the live flow says nothing about the system curve.
+  // A loop flush holds the valves (valve_flush.h); the pump is polled fast meanwhile.
   bool valves_held{false};
-  // Flow against the valves' summed flow, learned in operation, and the house at full
-  // load on it (system_curve.h); persisted every few hours.
-  lune_touch_system_curve::Curve curve{};
-  float curve_x{NAN};         // Σ live loop flow × full flow (l/min at the reference head)
-  float full_x{NAN};          // the same with every room calling
-  float full_ref_lmin{NAN};   // pump flow at full load, at the reference head
-  uint32_t curve_sample_ms{0};
-  uint32_t curve_saved_ms{0};
 };
 
 struct OdinPlanState {
@@ -796,9 +786,6 @@ class LuneTouchCoordinator : public esphome::Component {
                     bool has_display_idle_timeout, uint32_t display_idle_timeout_s,
                     char *response, size_t capacity, const char *language = nullptr);
   bool request_display_wake(char *response, size_t capacity);
-  /// Measure this loop's valve curve next (after the run in progress).
-  /// node 1-based index of an approved V6, zone 1..6.
-  bool request_valve_probe(int node, int zone, char *response, size_t capacity);
   /// Flush one loop (valve_flush.h): fully open, every other loop closed, for
   /// `minutes` (0 = default). node 1-based index of an approved V6, zone 1..6.
   bool request_valve_flush(int node, int zone, uint32_t minutes, char *response, size_t capacity);
@@ -869,9 +856,6 @@ class LuneTouchCoordinator : public esphome::Component {
     float supply_m{2.0f};
     float applied{1.0f};
     bool enabled{false};
-    float ua_w_k{0.0f};
-    float full_lmin{0.0f};
-    float flow_frac{NAN};  // V6's live loop flow (flow_pct / 100)
     uint32_t seen_ms{0};
   };
   struct HouseBalanceWeight {
@@ -890,48 +874,16 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_house_balance_(uint32_t now_ms);
   bool send_v6_house_balance_(const char *host, uint8_t zone_index, float factor, uint32_t ttl_s);
   void append_house_balance_json_(char *buffer, size_t capacity) const;
-  // Valve curve measurement (valve_probe.h): the curve V6 reports per loop and the
-  // run in progress. RAM only; V6 keeps the curves.
-  struct ValveProbeLoop {
-    float start_pct{NAN};
-    float full_pct{NAN};
-    uint32_t measured_epoch_s{0};
-    uint32_t failed_epoch_s{0};
-    bool enabled{false};
-    bool reported{false};  ///< V6 sends valve_curve (firmware with the curve)
-    float pin_pct{NAN};    ///< Valve pin travel when V6 reports flow_pct (live valve_pct is then flow)
-    float full_lmin{NAN};  ///< Loop's full flow as measured (V6 stores it with the curve)
-    uint32_t seen_ms{0};
-    uint8_t fails{0};      ///< Failed tries in a row (reset by a written curve)
-    bool cold{false};      ///< Room below its target
+  // V6's valve pin travel per loop (opening_mm in /zones); NAN when V6 does not report it.
+  struct V6Opening {
+    float mm{NAN};
   };
-  ValveProbeLoop vp_loops_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
-  ::lune_touch_valve_probe::Run vp_run_{};
-  ::lune_touch_valve_probe::Fit vp_last_fit_{};
-  char vp_last_result_[64]{};
-  uint8_t vp_last_node_{0};
-  uint8_t vp_last_zone_{0};
-  int64_t vp_last_epoch_s_{0};
-  uint32_t vp_last_end_ms_{0};
-  int8_t vp_request_node_{-1};
-  int8_t vp_request_zone_{-1};
-  uint32_t vp_last_flow_ms_{0};
-  uint32_t vp_nonce_{0};
-  int64_t vp_idle_epoch_s_{0};            ///< Heat source last seen not running (or start)
-  int64_t vp_last_remeasure_epoch_s_{0};  ///< Last automatic remeasurement started
-  uint32_t vp_auto_starts_[::lune_touch_valve_probe::MAX_RUNS_PER_DAY]{};  ///< Latest automatic run starts
-  void load_valve_probe_state_();
-  void save_valve_probe_state_();
-  void load_system_curve_();
-  void save_system_curve_();
-  void update_system_curve_(uint32_t now_ms);
-  void run_valve_probe_(uint32_t now_ms);
+  V6Opening v6_opening_[::lune_touch::MAX_NODES][::lune_touch::ZONES_PER_NODE]{};
+  uint32_t vt_nonce_{0};
   ::lune_touch_valve_flush::Run vf_run_{};
   void run_valve_flush_(uint32_t now_ms);
   bool send_v6_valve_test_(const char *host, int zone, float position_pct, bool stop, float others_pct = NAN);
-  bool send_v6_valve_curve_(const char *host, uint8_t zone_index, float start_pct, float full_pct,
-                            uint32_t measured_epoch_s, float full_lmin);
-  void append_valve_probe_json_(char *buffer, size_t capacity) const;
+  void append_valve_flush_json_(char *buffer, size_t capacity) const;
   // Valves follow the heat pump: phase pushed to every approved V6.
   ::lune_touch_hp_phase::State hp_phase_state_{};
   ::lune_touch_hp_phase::Phase hp_phase_{::lune_touch_hp_phase::Phase::Unknown};

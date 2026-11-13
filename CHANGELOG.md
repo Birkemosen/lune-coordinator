@@ -2,6 +2,12 @@
 
 ## Unreleased (for v1.0.0)
 
+### Home: the house target lives in the house sheet; valves show their opening
+- The house's target moved from Home's main section to a new house sheet (the ring, autosaved). The House card on Home shows the house temperature, the target and the deviation as the heat map's chip, and opens the sheet; Outside sits next to it. The manifold cards' bars are coloured by each room's deviation from target (height is still the valve's opening), and on target (±0.3 °C) is a muted green everywhere. Valves read «x % åben» (the pin's position over its learned travel) instead of «% flow», and the room sheet adds the lift in mm (`opening_mm` from V6). The pump's full-load head advice is gone with the system curve it was built on. LDS 2.4.0.
+
+### Valve curves are no longer measured
+- Touch measured each loop's valve curve from the circulation pump's computed flow and wrote it to V6, but the pump's flow could not resolve the pin's lift: every curve put full flow at about 1 mm. V6 has dropped curves (its opening is now the pin position in % of its learned travel, `opening_mm` in mm), so Touch no longer measures, stores, sends or uses them: the automatic and manual runs (`POST /valve-curves/measure`), `valve_probe` in `GET /heat-source`, the measured house-balance basis (`boards[].need`), the system curve behind the pump-head advice (`circulation.full_load`, `mixing.recommended_head_m`), the per-loop heat weight for UA learning (back to loop area × opening) and `pin_pct` / `full_lmin` in `GET /zones` are gone. `GET /zones` adds `opening_mm` from V6. The loop flush stays; its status moves from `valve_probe.flush` to a top-level `flush` in `GET /heat-source`, and a flush no longer requires a V6 that reports a curve.
+
 ### The plan tells a weather preload from other lifts
 - Every lifted hour in the plan's band lane was violet, so a preload ahead of wind or cold looked like a lift for a lagging room or a slab charge. Hours lifted only for the weather are now blue (the weather's colour); an hour shared with a room or a charge stays violet, and the readout says why («før vind/kulde + rum halter»). LDS 2.3.33. `GET /plan` → `odin` adds `lift_src` (per hour: 1 = slab charge, 2 = room lag, 4 = weather preload).
 

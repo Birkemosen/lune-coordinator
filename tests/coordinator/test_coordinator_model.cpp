@@ -1584,7 +1584,7 @@ static void test_daily_ua_learning() {
   expect(n2 == 1 && std::fabs(r2.room_by_id("living")->ua_learned_w_per_k - 15.0f) < 0.3f,
          "ua day: a restart mid-day still learns the whole day (15 W/K)");
 
-  // The pump's heat goes to the loops by their heat (l/min × K), not by area × flow.
+  // The pump's heat goes to the loops by area × valve opening.
   HouseModel hw;
   hw.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
   hw.bind_zone("living", "Living", 0, 0);
@@ -1593,15 +1593,9 @@ static void test_daily_ua_learning() {
   hw.apply_v6_physics_mirror(0, 1, 0x00, 10.0f, floor, 5.0f, 0.0f, 5.0f, 0.0f, 0, 1, "", "", "g2", nullptr);
   hw.update_zone_live_by_binding(0, 0, 21.0f, true, 21.0f, true, "heat", true, 5000, 50.0f, true);
   hw.update_zone_live_by_binding(0, 1, 21.0f, true, 21.0f, true, "heat", true, 5000, 50.0f, true);
-  hw.update_zone_heat_weight(0, 0, 3.0f);  // 1 l/min × 3 K
-  hw.update_zone_heat_weight(0, 1, 9.0f);  // 1.5 l/min × 6 K
   hw.allocate_delivered_kwh(1.2f, 5000);
-  expect(std::fabs(hw.room_by_id("bed")->delivered_kwh_today - 0.9f) < 0.01f,
-         "ua day: heat shared by loop heat (bed 9 of 12)");
-  hw.update_zone_heat_weight(0, 1, NAN);  // one loop unknown: area × flow for all
-  hw.allocate_delivered_kwh(1.2f, 5000);
-  expect(std::fabs(hw.room_by_id("bed")->delivered_kwh_today - 0.9f - 0.4f) < 0.01f,
-         "ua day: without every loop's heat, area × flow (bed 10 of 30 m²)");
+  expect(std::fabs(hw.room_by_id("bed")->delivered_kwh_today - 0.4f) < 0.01f,
+         "ua day: heat shared by area × opening (bed 10 of 30 m²)");
 }
 
 static void test_calibration_uses_default_priors() {

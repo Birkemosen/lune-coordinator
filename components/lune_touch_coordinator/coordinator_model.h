@@ -234,9 +234,6 @@ struct ZoneLiveState {
   bool headroom{false};
   HeatRecommendation recommendation{HeatRecommendation::HOLD};
   bool heat_demand_fresh{false};
-  // Runtime-only: the loop's heat as l/min × K (flow × full flow × supply − return),
-  // the share of the pump's heat it gets for UA learning. NaN: not known.
-  float heat_weight{std::numeric_limits<float>::quiet_NaN()};
 };
 
 struct NodeHeatDemand {
@@ -679,8 +676,6 @@ class HouseModel {
                         float setpoint_c, bool has_setpoint, const char *status,
                         bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
                         bool has_valve = false);
-  // The loop's heat (l/min × K) for sharing the pump's heat between rooms; NaN: unknown.
-  bool update_zone_heat_weight(size_t node_index, size_t zone_index, float heat_weight);
   bool update_zone_live_by_binding(size_t node_index, size_t zone_index,
                                    float temperature_c, bool has_temperature,
                                    float setpoint_c, bool has_setpoint, const char *status,

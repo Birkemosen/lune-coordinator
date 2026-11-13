@@ -365,7 +365,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     climate_entity: 'Virtual Thermostat z1',
     target_sync_enabled: true,
     valves_follow_hp: { enabled: true, phase: 'idle' },
-    house_balance: { enabled: true, basis: 'measured', weight_min: 50, weight_max: 150, weight_step: 5, boards: [
+    house_balance: { enabled: true, basis: 'model', weight_min: 50, weight_max: 150, weight_step: 5, boards: [
       { node_id: 'lune-v6-cbe680', name: 'Stueetage', worst_kpa: null, need: 11.7, weight_pct: 100, scale: 0.70, applied: 0.70 },
       { node_id: 'lune-v6-cbe67c', name: '1. sal', worst_kpa: null, need: 16.7, weight_pct: 100, scale: 1, applied: 1 }] },
     odin_plan_enabled: true,
@@ -390,8 +390,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       host: 'alpha2go.local', port: 80, flow_m3h: 1.34, head_m: 2.9, power_w: 38, buffer_tank: 'four_port',
       flow_entity: 'pump_flow', head_entity: 'pump_head_pressure', power_entity: 'pump_power',
       mixing: { state: 'short', ratio: 0.92, primary_l_min: 19.0, secondary_l_min: 17.5, age_s: 120,
-        recommended_l_min: 20.0, recommended_head_m: 5.2, in_kw: 5.3, out_kw: 4.9 },
-        full_load: { l_min: 18.6, ref_l_min: 15.2, x_l_min: 12.8, x_now_l_min: 9.4 }
+        recommended_l_min: 20.0, in_kw: 5.3, out_kw: 4.9 }
     }
   };
 
@@ -439,7 +438,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       return {
         room_id: secondary ? '' : rid, name: r[1], node_index: r[2], zone_index: r[3],
         loop_area_m2: members.length ? 24.5 : (r[8] || null),
-        temperature_c: r[4], setpoint_c: r[5], status: r[6], valve_pct: r[7], fresh: hasT && r[2] !== 2,
+        temperature_c: r[4], setpoint_c: r[5], status: r[6], valve_pct: r[7], opening_mm: r[7] == null ? null : r[7] / 100 * 2, fresh: hasT && r[2] !== 2,
         is_group_secondary: secondary, unassigned: secondary, group_members: members,
         room: { revision: st.revision, total_area_m2: r[8] || 48, physical_weight: st.weight, ua_w_per_k: 0,
           include_in_house_temperature: st.include, wind_exposure: st.wind, solar_gain: st.solar, floor_unset: false },
@@ -1122,16 +1121,24 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return sp;
   }
 
-  // Deviation from target as a 5-step chip (DESIGN.md 15.8).
-  function devChip(z) {
-    if (!zoneHasData(z)) return '';
+  // Deviation from target in 5 steps (DESIGN.md 15.8, scale-cold-warm); ±0,3 is step 3.
+  function devStep(d) {
+    return d <= -1 ? 1 : d <= -0.3 ? 2 : d < 0.3 ? 3 : d < 1 ? 4 : 5;
+  }
+  function devText(d) {
+    return (d > 0.05 ? '+' : (d < -0.05 ? '−' : '±')) + num(Math.abs(d)) + '°';
+  }
+  // The room's deviation, or null (no reading, fault, off, no setpoint).
+  function zoneDev(z) {
+    if (!zoneHasData(z)) return null;
     var st = mapStatus(z.status);
     var sp = roomSetpoint(z);
-    if (st === 'fault' || st === 'off' || !finite(sp)) return '';
-    var d = Number(z.temperature_c) - Number(sp);
-    var k = d <= -1 ? 1 : d <= -0.3 ? 2 : d < 0.3 ? 3 : d < 1 ? 4 : 5;
-    var sign = d > 0.05 ? '+' : (d < -0.05 ? '−' : '±');
-    return '<span class="tile-dev" data-dev="' + k + '">' + sign + num(Math.abs(d)) + '°</span>';
+    if (st === 'fault' || st === 'off' || !finite(sp)) return null;
+    return Number(z.temperature_c) - Number(sp);
+  }
+  function devChip(z) {
+    var d = zoneDev(z);
+    return d == null ? '' : '<span class="tile-dev" data-dev="' + devStep(d) + '">' + devText(d) + '</span>';
   }
 
   function tileLevel(z, valve) {
@@ -1171,11 +1178,12 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
 
   // Varmekort (DESIGN.md 15.10): rooms per controller; the head opens the
   // controller's sheet, each tile the room's sheet.
-  // Hjem: huset + ét kort pr. styring med én søjle pr. zone (ventil i 5 trin).
+  // Hjem: huset, ude + ét kort pr. styring med én søjle pr. zone: højden er ventilens
+  // åbning i 5 trin, farven rummets afvigelse fra mål (som varmekortet).
   function renderScopes(list) {
     var host = qs('[data-bind-scopes]');
     if (!host) return;
-    qsa('button.scope', host).forEach(function (b) { b.remove(); });
+    qsa('button.scope:not(.scope--house)', host).forEach(function (b) { b.remove(); });
     host.insertAdjacentHTML('beforeend', list.map(function (m) {
       var node = state.nodes[m - 1];
       var name = nodeLabel(node) || (t('common.unnamed') + ' M' + m);
@@ -1184,7 +1192,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       var bars = zones.map(function (z) {
         if (mapStatus(z.status) === 'fault') return '<i data-state="fault"></i>';
         var lvl = tileLevel(z, z.valve_pct);
-        return '<i data-level="' + (lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(z.valve_pct) / 20)))) + '"></i>';
+        var d = zoneDev(z);
+        return '<i data-level="' + (lvl === 0 ? 0 : Math.max(1, Math.min(5, Math.ceil(Number(z.valve_pct) / 20)))) + '"' +
+          (d == null ? '' : ' data-dev="' + devStep(d) + '"') + '></i>';
       }).join('');
       var isOff = node && node.reachable === false;
       var off = isOff ? ' data-offline' : '';
@@ -1346,9 +1356,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       fHtml(sh, 'loops', r.loops.map(function (c) {
         var cz = mzOf(c);
         var lbl = (cz.m !== mz.m ? 'M' + cz.m + ' ' : '') + 'Z' + cz.z + (r.merged && c.name ? ' · ' + c.name : '');
-        // valve_pct is the loop's flow (% of full); pin_pct the valve's travel when V6 has a curve.
+        // valve_pct is the opening (pin position over its learned travel); opening_mm the lift.
         var v = !(finite(c.valve_pct) && zoneHasData(c)) ? '—'
-          : finite(c.pin_pct) ? t('room.valvePin', { v: num(c.valve_pct, 0), pin: num(c.pin_pct, 0) })
+          : finite(c.opening_mm) ? t('room.valveMm', { v: num(c.valve_pct, 0), mm: num(c.opening_mm, 1) })
           : t('room.valveShort', { v: num(c.valve_pct, 0) });
         if (r.merged && zoneHasData(c)) v = deg(c.temperature_c) + ' · ' + v;
         return '<div><dt>' + esc(lbl) + '</dt><dd>' + esc(v) + '</dd></div>';
@@ -1802,6 +1812,15 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('home.sentence', t('home.sentence.' + rel, { d: ht != null && tg != null ? num(Math.abs(ht - tg)) : '—', n: calling }));
     setText('house.now', ht == null ? '' : deg(ht));
     setText('scope.house', deg(ht));
+    // Hus-kortet: temperatur, mål og afvigelsen som varmekortets chip; husets ark har målet.
+    setText('scope.target', tg == null ? '' : t('scope.target', { t: num(tg) }));
+    setText('house.status', ht == null || tg == null ? '—' : t('sheet.houseStatus', { t: num(ht), g: num(tg) }));
+    setText('house.calling', t('house.callingVal', { n: calling }));
+    var hd = qs('[data-bind-housedev]');
+    if (hd) {
+      hd.hidden = ht == null || tg == null;
+      if (!hd.hidden) { hd.setAttribute('data-dev', devStep(ht - tg)); hd.textContent = devText(ht - tg); }
+    }
     var ring = qs('[data-bind-thermo]');
     if (ring) {
       var pct = function (v) { return Math.max(0, Math.min(100, Math.round((v - THERMO_MIN) / (THERMO_MAX - THERMO_MIN) * 100))); };
@@ -2063,20 +2082,16 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
   function applyActivity(hs) {
     var b = qs('[data-bind-activity]');
     if (!b) return;
-    var vp = (hs && hs.valve_probe) || {};
     var hp = (hs && hs.heat_pump) || {};
     var phase = hs && hs.valves_follow_hp ? hs.valves_follow_hp.phase : '';
     var opm = hp.available ? Number(hp.operation_mode) : 0;
     var key = '', cls = '', detail = '';
-    var fl = vp.flush || {};
+    var fl = (hs && hs.flush) || {};
     var loopName = function (node, zone) {
       var z = (state.zones || []).filter(function (x) { return x && x.node_index === node - 1 && x.zone_index === zone - 1; })[0];
       return z && z.name ? z.name + ' · ' : '';
     };
-    if (vp.stage === 'settling' || vp.stage === 'measuring') {
-      key = 'probe'; cls = 'violet';
-      detail = loopName(vp.node, vp.zone) + t('activity.step', { s: vp.step, n: vp.steps });
-    } else if (fl.active) {
+    if (fl.active) {
       key = 'flush';
       detail = loopName(fl.node, fl.zone) + t('activity.minutesLeft', { m: Math.max(1, Math.ceil((fl.left_s || 0) / 60)) });
     } else if (hs && hs.enabled !== false && hs.push && hs.push.status === 'unreachable') {
@@ -2336,19 +2351,12 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var shortFlow = mx.state === 'short';
     var mxVars = { sec: num(mx.secondary_l_min, 1), pri: num(mx.primary_l_min, 1),
       pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
-      rec: num(mx.recommended_l_min, 1), h: num(mx.recommended_head_m, 1),
+      rec: num(mx.recommended_l_min, 1),
       in: num(mx.in_kw, 1), out: num(mx.out_kw, 1) };
-    // Advice: the head that gives the recommended flow with every room calling, on the
-    // learned system curve (system_curve.h). The live flow follows the rooms' load, so it
-    // is no yardstick; while the curve has no data near full load, Touch says so.
-    var fl = circ.full_load || {};
-    mxVars.full = num(fl.l_min, 1);
+    // Advice: the recommended flow. The head for it at full load came from a system curve
+    // built on the valve-curve measurement, which is gone (2026-11-13).
     mxVars.head = num(circ.head_m, 1);
-    var headOk = finite(mx.recommended_head_m) && finite(circ.head_m) &&
-      Math.abs(Number(mx.recommended_head_m) - Number(circ.head_m)) < 0.3;
     var advice = !finite(mx.recommended_l_min) ? ''
-      : finite(mx.recommended_head_m) ? t(headOk ? 'pump.fullLoadOk' : 'pump.fullLoadHead', mxVars)
-      : finite(fl.x_l_min) ? t('pump.fullLoadLearning', mxVars)
       : t(shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
@@ -3200,21 +3208,18 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     });
   }
 
-  // Split of the pump flow per manifold (LDS .dist). Each loop passes its flow
-  // fraction (valve_pct is V6's flow %) of its full flow. When every loop has a
-  // measured full flow (l/min, from the valve-curve measurement) that is used;
-  // otherwise every loop counts as equal. Pipe runs to each manifold are ignored.
+  // Split of the pump flow per manifold (LDS .dist), from the loops' openings: every
+  // loop counts as equal at the same opening. Pipe runs to each manifold are ignored.
   function renderDist() {
     var host = qs('[data-bind-dist]');
     if (!host) return;
     var zones = (state.zones || []).filter(function (z) { return z && !z.unassigned; });
-    var measured = zones.length > 0 && zones.every(function (z) { return finite(z.full_lmin) && Number(z.full_lmin) > 0; });
     var byNode = {};
     var total = 0;
     zones.forEach(function (z) {
       var n = Number(z.node_index) || 0;
       var v = Math.max(0, Math.min(100, Number(z.valve_pct) || 0));
-      var q = v / 100 * (measured ? Number(z.full_lmin) : 1);
+      var q = v / 100;
       if (!byNode[n]) byNode[n] = { kv: 0, zones: [] };
       byNode[n].kv += q;
       byNode[n].zones.push({ name: z.name || ('Z' + ((Number(z.zone_index) || 0) + 1)), v: v, q: q });
@@ -3250,7 +3255,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         '<div class="dist-bar dist-bar--thin">' + zbar + '</div>';
     });
     host.innerHTML = '<div class="dist-bar">' + bar + '</div><div class="dist-rows">' + rows + '</div>' +
-      '<p class="dist-note">' + esc(t(measured ? 'flow.noteMeasured' : (lpmTotal != null ? 'flow.noteLpm' : 'flow.note'))) + '</p>';
+      '<p class="dist-note">' + esc(t(lpmTotal != null ? 'flow.noteLpm' : 'flow.note')) + '</p>';
     setText('svc.dist', nodes.map(function (n) { return num(byNode[n].kv / total * 100, 0); }).join(' · ') + ' %');
     // Home's Circulation tile: the same split as a donut + legend.
     var td = qs('[data-bind-tiledist]');
@@ -4036,12 +4041,10 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     hb = hb || {};
     var boards = hb.boards || [];
     var mn = hb.weight_min || 50, mx = hb.weight_max || 150, st = hb.weight_step || 5;
-    var measured = hb.basis === 'measured';
-    setText('heat.houseBalanceBasis', measured ? t('heat.houseBalanceSubMeasured') : t('heat.houseBalanceSub'));
+    setText('heat.houseBalanceBasis', t('heat.houseBalanceSub'));
     body.innerHTML = boards.map(function (b, i) {
       var name = b.name || b.node_id || '—';
-      var hint = b.need != null ? t('heat.houseBalanceRowMeasured', { scale: num(b.scale, 2) })
-        : b.worst_kpa != null ? t('heat.houseBalanceRowModel', { scale: num(b.scale, 2), kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) })   // 1 m head = 9.81 kPa
+      var hint = b.worst_kpa != null ? t('heat.houseBalanceRowModel', { scale: num(b.scale, 2), kpa: num(b.worst_kpa, 1), m: num(b.worst_kpa / 9.81, 1) })   // 1 m head = 9.81 kPa
         : t('heat.houseBalanceNone');
       var id = 'hbw_' + i, label = t('heat.houseBalanceWeight', { name: name });
       var w = b.weight_pct != null ? b.weight_pct : 100;

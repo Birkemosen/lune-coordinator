@@ -7,9 +7,10 @@
 // others, does not get. A flush opens one loop fully with every other loop on every
 // V6 closed, so the pump's whole head drives that loop, for a few minutes.
 //
-// Started by hand (Touch API), never automatically. It uses V6's valve test like the
-// valve-curve measurement (valve_probe.h) and never runs at the same time as one.
-// The hold is renewed every RESEND_MS; V6 releases it by its TTL if Touch goes away.
+// Started by hand (Touch API), never automatically. It uses V6's valve test
+// (/api/v1/valve-test). The hold is renewed every RESEND_MS; V6 releases it by its
+// TTL (HOLD_TTL_S) if Touch goes away. The circulation pump is polled every
+// CIRCULATION_POLL_S while it runs.
 // =============================================================================
 
 #pragma once
@@ -22,7 +23,9 @@ namespace lune_touch_valve_flush {
 constexpr uint32_t DEFAULT_MIN = 15;
 constexpr uint32_t MIN_MIN = 5;
 constexpr uint32_t MAX_MIN = 30;
-constexpr uint32_t RESEND_MS = 60000;  ///< Well inside V6's hold TTL (valve_probe.h HOLD_TTL_S)
+constexpr uint32_t HOLD_TTL_S = 300;          ///< V6 hold TTL, sent with every hold
+constexpr uint32_t RESEND_MS = 60000;         ///< Well inside HOLD_TTL_S
+constexpr uint16_t CIRCULATION_POLL_S = 15;   ///< Pump poll interval while a flush runs
 
 struct Run {
   bool active{false};

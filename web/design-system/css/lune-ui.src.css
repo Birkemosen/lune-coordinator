@@ -574,6 +574,7 @@
   /* Tekst på chippen: næsten sort, undtagen trin 1 i lyst tema (mørk blå → hvid, ≥ 4,5:1). */
   .tile-dev[data-dev="1"] { background: var(--scale-cold-warm-1); color: light-dark(var(--on-fill), var(--on-warn-fill)); }
   .tile-dev[data-dev="2"] { background: var(--scale-cold-warm-2); color: var(--on-warn-fill); }
+  .tile-dev[data-dev="3"] { background: var(--scale-cold-warm-3); color: var(--fg); }
   .tile-dev[data-dev="4"] { background: var(--scale-cold-warm-4); color: var(--on-warn-fill); }
   .tile-dev[data-dev="5"] { background: var(--scale-cold-warm-5); color: var(--on-warn-fill); }
 
@@ -1618,8 +1619,8 @@
 
   /* @only touch */
   /* ---- Hjem (DESIGN.md 15.7): hovedsektion, termostat-ring, felter, varmekort ---- */
-  /* Hovedsektion: hilsen, én overskrift i to toner (situation · varmekilde), én sætning —
-     og målet i ringen. Tallene står i felterne lige under, ikke her. */
+  /* Hovedsektion: hilsen, én overskrift i to toner (situation · varmekilde) og én sætning.
+     Målet står i Hus-kortet over den og indstilles i husets ark; tallene står i felterne under. */
   .home-hero {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-5) var(--space-7);
     position: relative; isolation: isolate; overflow: hidden;
@@ -1737,6 +1738,19 @@
   .scope .mini i[data-state="fault"] { height: 100%; background: var(--danger); }
   .scope[data-offline] .mini { opacity: .45; }
   .scope > small span { color: var(--warn); }
+  /* Søjlerne: højden er ventilens åbning, farven rummets afvigelse fra mål i varmekortets
+     5 trin (data-dev, scale-cold-warm), så en manifold med kolde rum ses fra Hjem. */
+  .scope .mini i[data-dev="1"] { background: var(--scale-cold-warm-1); }
+  .scope .mini i[data-dev="2"] { background: var(--scale-cold-warm-2); }
+  .scope .mini i[data-dev="3"] { background: var(--scale-cold-warm-3); }
+  .scope .mini i[data-dev="4"] { background: var(--scale-cold-warm-4); }
+  .scope .mini i[data-dev="5"] { background: var(--scale-cold-warm-5); }
+  /* Hus-kortet (.scope--house): huset nu, målet og afvigelsen som varmekortets chip. Det åbner
+     husets ark, hvor målet indstilles (ringen). Ude (.scope--fact) står lige efter og er kun
+     en læseværdi med ikonbrik. */
+  .scope .tile-dev { display: inline-flex; grid-column: 2; grid-row: 1 / 3; align-self: center; }
+  .scope .scope-tgt { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; opacity: .7; }
+  .scope--fact > .chip-icon { grid-column: 2; grid-row: 1 / 3; align-self: center; }
   @media (max-width: 599.98px) {
     .scope { flex: 1 1 40%; min-width: 0; padding: var(--space-2) var(--space-3); }
     .scope[aria-current] { min-width: 0; }
@@ -1847,7 +1861,7 @@
 
   /* Varmekort: rum grupperet pr. manifold. Rumfelterne fylder efter rummets areal (--area),
      har afvigelses-chip (5 trin, forklaret i .heatmap-legend), temperatur og en 5-trins
-     flowbjælke med «x % flow» under. Gruppeoverskriften åbner manifoldens ark. */
+     åbningsbjælke med «x % åben» under. Gruppeoverskriften åbner manifoldens ark. */
   .heatmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3) var(--space-5); }
   .heatmap-head > div:first-child { display: grid; gap: var(--space-1); flex: 1 0 auto; }
   .heatmap-head small { font-size: var(--fs-sm); color: var(--muted); }
@@ -2165,14 +2179,11 @@
   .mtrace[data-empty] :is(.layers, .mtrace-row, .phase-strip, .actions, .note, .table-wrap) { display: none; }
   /* Endestop-explorer: tærskler som linjer over strømmen — den dynamiske tærskel stiplet, de absolutte
      grænser prikket — og en lodret streg, hvor hver vej ville stoppe motoren; den, der stopper først, er fuldt optrukket.
-     Navne og tider står i tabellen under (HTML). Ventilkurven er flow mod åbning i vandets farve. */
+     Navne og tider står i tabellen under (HTML). */
   .trend .thr  { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
   .trend .cap  { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; }
   .trend .trip { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
   .trend .trip.first { stroke: var(--fg); stroke-width: 1.5; stroke-dasharray: none; }
-  .trend .vc   { fill: none; stroke: var(--data-pump); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .trend .vpos { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-  .mtrace-row.square .trend { height: 160px; }
   .table tr.first td:first-child { font-weight: 600; }
   /* Motorlabbets forløb: handlinger efter tilstand (DESIGN.md 6.1b) med labbets egne tilstande. */
   [data-state="setup"]   [data-show-when~="setup"],

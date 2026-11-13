@@ -293,9 +293,7 @@ compares the two flows while the heat pump heats:
   pump has to run hotter for the same room temperature.
 
 **Recommended flow** is 5 % above the heat pump's measured flow while heating, rounded up to
-0.5 l/min. A warning also says what to set: with a pump that reports its head, the constant
-pressure (m) that gives that flow through the valves as they are now (head ∝ flow²), otherwise
-the flow to turn the pump up or down to. **Heat into / out of the tank** shows the heat pump's
+0.5 l/min. A warning also says the flow to turn the pump up or down to. **Heat into / out of the tank** shows the heat pump's
 output and the heat the floors draw (secondary flow × Zone 1 feed − return from Asgard's
 1-wire probes, else the V6 manifold sensors), from the last sample while heating. Touch only
 advises — the pump is set on the pump itself.

@@ -292,6 +292,20 @@ within ±1.0 °C and freezes on DHW, Legionella, defrost, Odin heat-off, degrade
 house quality, forecast offset on the critical zone, or unconfigured freeze inputs.
 Bias writes are lease-gated and reseed from Asgard read-back after lease recovery.
 
+`flush` is the loop flush (`POST /valve-curves/flush` with `node`, `zone`, `minutes` 5–30,
+default 15; `POST /valve-curves/flush/stop` ends it early): one loop fully open and every
+other loop on every V6 closed through V6's `/api/v1/valve-test`, renewed every minute:
+
+```json
+"flush": { "active": true, "node": 1, "zone": 3, "left_s": 540 }
+```
+
+`node` and `zone` are 1-based; `left_s` is 0 when no flush runs. The valve-curve measurement
+(`valve_probe`, `POST /valve-curves/measure`) was removed on 2026-11-13: the circulation pump's
+computed flow could not resolve the valve pin's lift (every curve put full flow at about 1 mm),
+and V6 no longer keeps curves. `house_balance.basis` is `model` or `none` (the `measured`
+basis and `boards[].need` went with it).
+
 `heat_pump` is the live Asgard `/dashboard/state` snapshot; `heat_pump.output_kw` is
 Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
 
@@ -579,6 +593,7 @@ registry import/export:
   "temperature_c": 21.3,
   "setpoint_c": 21.0,
   "valve_pct": 47.0,
+  "opening_mm": 0.94,
   "status": "heat",
   "fresh": true,
   "comfort": {
@@ -630,6 +645,11 @@ registry import/export:
   }
 }
 ```
+
+`valve_pct` is V6's valve opening: the pin's position in % of its learned travel. `opening_mm`
+is the same position in mm, passed through from V6's `/api/v1/zones` (`null` when V6 does not
+report it). The fields `pin_pct` and `full_lmin` were removed with the valve-curve measurement
+(2026-11-13).
 
 `comfort_chart` is **not** embedded in `GET /zones` (payload size). Fetch one zone:
 
@@ -1211,16 +1231,16 @@ head/flow. Delivered energy is integrated into per-room
   "hydraulic_authority": 0.72,
   "last_error": "",
   "mixing": { "state": "ok", "ratio": 1.2, "primary_l_min": 19.0, "secondary_l_min": 22.7,
-              "age_s": 600, "recommended_l_min": 20.0, "recommended_head_m": 3.9,
-              "in_kw": 5.3, "out_kw": 5.1 }
+              "age_s": 600, "recommended_l_min": 20.0, "in_kw": 5.3, "out_kw": 5.1 }
 }
 ```
 
 `mixing` is the last sample taken while Asgard reports space heating with its pump on,
 held for 6 h (all values `null` and `state` `unknown` without one). `state` is `short`
 (ratio < 0.97), `ok` or `risk` (ratio > 1.25). `recommended_l_min` is 5 % above the primary
-flow, rounded up to 0.5 l/min; `recommended_head_m` the constant pressure for it through the
-valves as they are now. `in_kw` is Asgard's `computed_output_power` (else primary flow ×
+flow, rounded up to 0.5 l/min. `recommended_head_m` and `full_load` (the head for that flow on
+a system curve learned from the loops' measured full flows) were removed with the valve-curve
+measurement (2026-11-13). `in_kw` is Asgard's `computed_output_power` (else primary flow ×
 `hp_feed_temp − hp_return_temp`); `out_kw` is the secondary flow × Asgard's 1-wire Zone 1
 feed − return (`ow_role_z1_feed/return`), else `thermal_kw`; `null` when unknown.
 

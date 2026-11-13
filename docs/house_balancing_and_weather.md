@@ -109,7 +109,9 @@ every 5 min to `POST /api/v1/zones/{n}/house-balance` (`factor`, `ttl_s` 900, To
 authentication); V6 multiplies it onto the zone's balance factor and falls back to 1.0
 when the TTL lapses. Turning the switch off sends 1.0 with a 60 s TTL. Scales are
 computed and shown (`GET /heat-source → house_balance`) even while the switch is off.
-Rough by design: no valve, manifold or riser resistance.
+Rough by design: no valve, manifold or riser resistance. (A measured basis, from loop full
+flows that Touch measured with the circulation pump, was removed on 2026-11-13 with the
+valve-curve measurement: the pump's computed flow could not resolve the valve pin's lift.)
 
 Not done yet: actively **throttling** the satisfied manifold (e.g. negative offsets on
 the ground floor while the upper floor catches up). In heat-pump mode a satisfied zone
