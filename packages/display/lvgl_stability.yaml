@@ -490,7 +490,7 @@ text_sensor:
                 set_label(id(page_home_house_target),
                           std::isfinite(house_sp) ? ("mål " + fmt_c(house_sp, false)) : "");
               }
-              // Nu: Odin's next heat, the price now in words, the coldest room.
+              // Nu: Odin's next heat, the price now in words, and today's heating (cost, kWh el, kWh heat).
               set_label(id(page_home_now_value), id(lune_touch_app).display_next_heat_text());
               {
                 uint8_t tone = 0;
@@ -499,7 +499,7 @@ text_sensor:
                 lv_obj_set_style_text_color(id(page_home_now_price),
                                             lv_color_hex(tone == 1 ? c_ok_p : (tone == 2 ? c_warn : (tone == 3 ? c_danger : c_muted))), LV_PART_MAIN);
               }
-              set_label(id(page_home_now_cold), id(lune_touch_app).display_coldest_room_text());
+              set_label(id(page_home_now_cold), id(lune_touch_app).display_today_text());
 
               // Heat source / pump from primary manifold + circulation
               const uint8_t node_count = id(lune_touch_app).display_visible_node_count();
@@ -554,6 +554,17 @@ text_sensor:
                 lv_obj_clear_flag(id(page_home_house_msg), LV_OBJ_FLAG_HIDDEN);
               } else {
                 lv_obj_add_flag(id(page_home_house_msg), LV_OBJ_FLAG_HIDDEN);
+              }
+              // Without a weather message the heat-source block takes the card's full width:
+              // status line and pump to the right edge, the link column at the far right.
+              {
+                const int right = wx_msg.empty() ? 974 : 770;
+                lv_obj_set_width(id(page_home_house_hs_label), right - 574);
+                lv_obj_set_width(id(page_home_house_hs_pump), right - 574);
+                lv_obj_set_x(id(page_home_hs_src_label), right - 84);
+                lv_obj_set_x(id(page_home_hs_odin_label), right - 84);
+                lv_obj_set_x(id(page_home_hs_asgard_dot), right - 12);
+                lv_obj_set_x(id(page_home_hs_odin_dot), right - 12);
               }
 
               const bool large = node_count <= 2;

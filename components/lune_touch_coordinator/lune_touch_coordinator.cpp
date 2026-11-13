@@ -4602,6 +4602,11 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
           }
         }
         odin_plan_.today_energy_kwh[h] = v;
+        float hv = NAN;
+        if (i < odin_plan::HORIZON_HOURS)
+          hv = h < plan.current_hour && plan.has_actual_prod && std::isfinite(plan.actual_prod[i]) ? plan.actual_prod[i]
+                                                                                                  : plan.heat_production[i];
+        odin_plan_.today_heat_kwh[h] = hv;
       }
       // History ≤ idx_now only — never feed future plan slots into past comparison.
       odin_plan_.past_count = 0;
@@ -17676,30 +17681,36 @@ std::string LuneTouchCoordinator::display_price_now_text(uint8_t *tone) const {
   return out;
 }
 
-std::string LuneTouchCoordinator::display_coldest_room_text() const {
+std::string LuneTouchCoordinator::display_today_text() const {
+  int ymd = 0;
+  uint16_t minute = 0;
+  if (!local_today_(&ymd, &minute))
+    return "";
   if (!take_state_lock_(50))
     return "";
-  const ::lune_touch::ZoneBinding *pick = nullptr;
-  const ::lune_touch::ZoneLiveState *pick_live = nullptr;
-  float worst = -0.3f;
-  for (size_t i = 0; i < model_.zone_count(); i++) {
-    const auto *zone = model_.zone(i);
-    const auto *live = model_.zone_live(i);
-    if (zone == nullptr || live == nullptr || !zone->enabled || !live->fresh || !live->is_group_primary ||
-        !live->has_temperature || !live->has_setpoint)
-      continue;
-    const float d = live->temperature_c - live->setpoint_c;
-    if (d < worst) {
-      worst = d;
-      pick = zone;
-      pick_live = live;
+  const OdinPlanState &o = odin_plan_;
+  std::string out;
+  if (o.available && o.has_today_energy) {
+    // Today's heating as on the web (plan sheet): electricity × price per hour, actual for
+    // the hours gone and plan for the rest, plus the heat it gives.
+    const lune_touch_price::DayPrices *d =
+        price_rt_ != nullptr && price_rt_->today.valid && price_rt_->today.ymd == ymd ? &price_rt_->today : nullptr;
+    float el = 0.0f, heat = 0.0f, cost = 0.0f;
+    bool priced = d != nullptr;
+    for (int h = 0; h < 24; h++) {
+      const float e = o.today_energy_kwh[h];
+      if (std::isfinite(e) && e > 0.0f) {
+        el += e;
+        if (d != nullptr && std::isfinite(d->total[h]))
+          cost += e * d->total[h];
+        else
+          priced = false;
+      }
+      if (std::isfinite(o.today_heat_kwh[h]) && o.today_heat_kwh[h] > 0.0f)
+        heat += o.today_heat_kwh[h];
     }
-  }
-  std::string out = "Alle rum ved målet";
-  if (pick != nullptr) {
-    const char *name = display_binding_room_label_(model_, pick, pick_live);
-    out = std::string("Koldest: ") + (name != nullptr ? name : "rum") + " " +
-          display_decimal_(pick_live->temperature_c, 1) + "° · −" + display_decimal_(-worst, 1) + "°";
+    out = std::string("I dag ") + (priced ? "ca. " + display_decimal_(cost, cost >= 10.0f ? 0 : 1) + " kr · " : "") +
+          display_decimal_(el, 1) + " kWh el · " + display_decimal_(heat, 0) + " kWh varme";
   }
   give_state_lock_();
   return out;

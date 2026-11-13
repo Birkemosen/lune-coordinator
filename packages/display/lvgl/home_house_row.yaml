@@ -64,7 +64,7 @@ obj:
         y: 8
         width: 304
         height: 20
-        text: "Næste varme"
+        text: "Næste opvarmning"
         text_color: ${lds_muted}
         text_font: lds_font_xs
         long_mode: dot

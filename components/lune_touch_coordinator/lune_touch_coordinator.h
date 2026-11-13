@@ -355,6 +355,8 @@ struct OdinPlanState {
   // Today's electricity per wall-clock hour 0–23 (kWh): Odin's actual_cons for the
   // hours gone, its plan for the rest. Bit h of today_actual_mask = hour h is actual.
   float today_energy_kwh[24]{};
+  // Today's space heat per wall-clock hour (kWh): actual for the hours gone, plan for the rest.
+  float today_heat_kwh[24]{};
   uint32_t today_actual_mask{0};
   bool has_today_energy{false};
   float last_run_execution_ms{NAN};
@@ -607,7 +609,7 @@ class LuneTouchCoordinator : public esphome::Component {
   std::string display_heat_source_status_text(uint8_t *severity) const;
   std::string display_next_heat_text() const;
   std::string display_price_now_text(uint8_t *tone) const;
-  std::string display_coldest_room_text() const;
+  std::string display_today_text() const;
   std::string display_circulation_flow_text() const;
   std::string display_circulation_head_text() const;
   std::string display_circulation_power_text() const;

@@ -799,7 +799,7 @@
   "tile.flow": "Frem",
   "tile.return": "Retur",
   "tile.plan": "Plan",
-  "tile.planNext": "Næste varme",
+  "tile.planNext": "Næste opvarmning",
   "tile.weather": "Vejr",
   "tile.weatherSub": "ude · vind {w} m/s",
   "tile.pump": "Cirkulation",
