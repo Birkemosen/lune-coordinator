@@ -12,7 +12,7 @@ in the linked docs.
 
 **[Sheets](#sheets)**
 
-- [Heat](#heat)
+- [Heating](#heating)
 - [Plan](#plan)
 - [Weather and preload](#weather-and-preload)
 - [Circulation](#circulation)
@@ -40,7 +40,7 @@ The UI has three places, following the Lune design system:
 
 - **Home** — the house now: temperature and target, heat, plan, weather, circulation and
   every room. The target saves by itself; nothing else to save.
-- **Sheets** — one per thing: **Heat**, **Plan**, **Weather**, **Circulation**, one per
+- **Sheets** — one per thing: **Heating**, **Plan**, **Weather**, **Circulation**, one per
   **controller** (V6) and one per **room**. A sheet slides in over Home, with the tabs
   **Overview**, **History** and **Settings** where they apply. Settings for that one thing live
   in its sheet, including its connection.
@@ -66,7 +66,7 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   now; **House now** and **Outside** stand as two small cards to the right of the ring (below it
   on a phone).
 - **Heat, plan and weather** — four tiles that open their sheets:
-  - **Heat** — flow over return with ΔT between them, and the last 24 hours (from the heat
+  - **Heating** — flow over return with ΔT between them, and the last 24 hours (from the heat
     source's own history).
   - **Plan** — Odin's next block («Next heating»), its energy and today's price with a price chip, over a compact plan.
   - **Weather** — outdoor now, wind, and the next 24 hours with preheating hatched; it says
@@ -109,7 +109,7 @@ still has room to open would only overheat the others. The dashboard still shows
 
 ## Sheets
 
-### Heat
+### Heating
 
 **Overview** — flow, return and ΔT with the compressor state, and a chart for the last
 **24 h** or **7 d** taken from the heat pump's own history (Asgard). Hatched bands mark where
@@ -439,7 +439,7 @@ What Touch reports (V6 reports its own valves and sensors):
 
 | Category | Problem | When | Severity |
 |---|---|---|---|
-| Heat pump | Delivers more / less than Odin's plan | 30 min mean off plan for 30 min (see [Heat](#heat)) | warning |
+| Heat pump | Delivers more / less than Odin's plan | 30 min mean off plan for 30 min (see [Heating](#heating)) | warning |
 | Hydraulics | Too little flow on the secondary side | Secondary flow under 97 % of primary for 10 min | warning |
 | Hydraulics | Mixing in the buffer tank | Secondary flow over 125 % of primary for 10 min | warning |
 | Connectivity | A Lune V6 is not answering | No answer for 10 min | error |
