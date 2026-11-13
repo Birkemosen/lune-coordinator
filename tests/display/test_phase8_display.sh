@@ -343,9 +343,10 @@ rg -F 'DISPLAY_ICON_WIND[] = "\xEF\x81\xB4"' "$coordinator" >/dev/null
 rg -F '%s %s | sent %s | confirmed %s' "$coordinator" >/dev/null
 rg -F '%s %.1f C | %s %.1f m/s | %s' "$coordinator" >/dev/null
 rg -F 'text: "\uF054 --.- C"' "$zone_cell" >/dev/null
-# display_weather_message() feeds a Geist label (lds_font_xs) and is exempt, like the overview.
+# display_weather_message() and display_heat_source_status_text() feed Geist labels
+# (lds_font_xs) and are exempt, like the overview.
 display_text=$(sed -n '/display_header_text() const/,/display_selected_room_text() const/p' "$coordinator" |
-  sed '/display_weather_message() const {/,/^}/d')
+  sed '/display_weather_message() const {/,/^}/d' | sed '/display_heat_source_status_text(uint8_t \*severity) const {/,/^}/d')
 # Legacy Montserrat widgets must not use glyphs absent from that font.
 # Overview (Geist) may use · → − ● from lds_font_* extras.
 if printf '%s' "$display_text" | rg '[●→↑↓↗·−]' >/dev/null || rg '[●→↑↓↗·−]' "$zone_cell" "$zone_chip" "$controller_chip" packages/display/lvgl/overview_circulation.yaml >/dev/null; then

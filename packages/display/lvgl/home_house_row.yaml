@@ -95,64 +95,57 @@ obj:
         pad_all: 0
         scrollable: false
         clickable: false
-    # Status-ikoner: prik (ok/advarsel/fejl/grå = ikke sat op) + navn.
-    # Farve er aldrig eneste signal — navnet står ved prikken, og detaljer
-    # findes i web-UI'et (Varmekilde).
-    - obj:
-        id: page_home_hs_asgard_dot
-        x: 574
-        y: 15
-        width: 10
-        height: 10
-        radius: 5
-        bg_color: ${lds_faint}
-        bg_opa: COVER
-        border_width: 0
-        pad_all: 0
-        scrollable: false
-        clickable: false
+    # Varmekilde (LDS DESIGN.md 13.3): én statuslinje i tekst — hvad varmepumpen gør, eller
+    # hvad der er galt med forbindelsen — og frem/retur som to tal med hver sin label.
     - label:
         id: page_home_house_hs_label
-        x: 590
-        y: 10
-        width: 84
-        height: 22
-        text: "Asgard"
-        text_color: ${lds_muted}
-        text_font: lds_font_xs
-        long_mode: clip
-        bg_opa: 0%
-    - obj:
-        id: page_home_hs_odin_dot
-        x: 680
-        y: 15
-        width: 10
-        height: 10
-        radius: 5
-        bg_color: ${lds_faint}
-        bg_opa: COVER
-        border_width: 0
-        pad_all: 0
-        scrollable: false
-        clickable: false
-    - label:
-        id: page_home_hs_odin_label
-        x: 696
-        y: 10
-        width: 68
-        height: 22
-        text: "Odin"
-        text_color: ${lds_muted}
-        text_font: lds_font_xs
-        long_mode: clip
-        bg_opa: 0%
-    - label:
-        id: page_home_house_hs_temps
         x: 574
-        y: 32
-        width: 190
-        height: 30
-        text: "--,-° → --,-°"
+        y: 8
+        width: 196
+        height: 22
+        text: "Varmepumpe"
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        long_mode: dot
+        bg_opa: 0%
+    - label:
+        id: page_home_hs_flow_cap
+        x: 574
+        y: 30
+        width: 92
+        height: 20
+        text: "Frem"
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        bg_opa: 0%
+    - label:
+        id: page_home_hs_ret_cap
+        x: 672
+        y: 30
+        width: 92
+        height: 20
+        text: "Retur"
+        text_color: ${lds_muted}
+        text_font: lds_font_xs
+        bg_opa: 0%
+    - label:
+        id: page_home_hs_flow
+        x: 574
+        y: 48
+        width: 96
+        height: 28
+        text: "--,-°"
+        text_color: ${lds_fg}
+        text_font: lds_font_md
+        long_mode: clip
+        bg_opa: 0%
+    - label:
+        id: page_home_hs_ret
+        x: 672
+        y: 48
+        width: 96
+        height: 28
+        text: "--,-°"
         text_color: ${lds_fg}
         text_font: lds_font_md
         long_mode: clip
@@ -160,7 +153,7 @@ obj:
     - label:
         id: page_home_house_hs_pump
         x: 574
-        y: 64
+        y: 78
         width: 190
         height: 22
         text: ""

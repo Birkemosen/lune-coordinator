@@ -11938,6 +11938,42 @@ uint8_t LuneTouchCoordinator::display_odin_status() const {
   return st;
 }
 
+// Heat-source block on the wall display (LDS DESIGN.md 13.3): one line of text — what the
+// heat pump does, or what is wrong with the link — instead of status dots. severity: 0 =
+// normal (muted), 2 = warn, 3 = fault.
+std::string LuneTouchCoordinator::display_heat_source_status_text(uint8_t *severity) const {
+  const uint8_t asgard = display_asgard_status();
+  const uint8_t odin = display_odin_status();
+  const std::string name = display_heat_source_name();
+  if (severity != nullptr)
+    *severity = 0;
+  if (asgard == 3 || odin == 3) {
+    if (severity != nullptr)
+      *severity = 3;
+    return (asgard == 3 ? name : std::string("Odin")) + " svarer ikke";
+  }
+  if (!take_state_lock_(50))
+    return "Varmepumpe";
+  const HeatSourceState &h = heat_source_;
+  const bool fresh = h.hp_telemetry_ms != 0 && esphome::millis() - h.hp_telemetry_ms < 300000UL;
+  const bool on = fresh && h.hp_compressor_on;
+  const int mode = h.hp_operation_mode;
+  const auto phase = hp_phase_;
+  give_state_lock_();
+  if (!fresh)
+    return asgard == 0 ? "Varmekilde" : name;
+  const char *what = on ? (mode == 1 ? "varmt vand" : (mode == 6 ? "legionella" : "opvarmer"))
+                        : (phase == ::lune_touch_hp_phase::Phase::Prestart ? "starter snart" : "hviler");
+  // A link that needs attention says which, after the state (colour is never the only signal).
+  std::string out = std::string("Varmepumpe · ") + what;
+  if (asgard == 2 || odin == 2) {
+    if (severity != nullptr)
+      *severity = 2;
+    out += asgard == 2 ? " · tjek " + name : std::string(" · tjek Odin");
+  }
+  return out;
+}
+
 std::string LuneTouchCoordinator::display_heat_source_name() const {
   if (!take_state_lock_(50))
     return "Asgard";

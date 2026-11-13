@@ -9,6 +9,8 @@
 - Planens båndspor hedder «Komfort» / «Comfort» i stedet for «Bånd» / «Band».
 - Touch' Hjem har ikke længere overskriften «Lige nu / Varme, plan og vejr» (`.home-head`). Feltet og arket «Næste varme» hedder «Plan»; hovedtallet har etiketten «Næste varme» foran tidsrummet.
 - Den kompakte plans varme-markering skelner husvarme (solid) fra varmt vand (skraveret) og legionella (krydsskraveret) med HTML-mærker (`.plan-marks`) i stedet for SVG (`rect.ht`), og forklaringen har varmt vand.
+- Navbaren bliver ikke længere smallere, når den klæber ved scroll (fjernet `scroll-state`-containeren): aktiviteten til højre skifter tekst, så en indholdsbred pille skiftede bredde af sig selv.
+- Vægskærmen: `display.dev-3` (på målet) er dæmpet grøn som på web (mørk #42614a / 0x4309, lys #bdd3ad / 0xBE95). Varmekilde-blokken i husrækken siger med ord, hvad den viser: status som tekst i stedet for prikker, frem og retur med labels. DESIGN.md 13.3.
 - Styringskortenes søjler (`.scope .mini i`) er farvet efter rummets afvigelse fra mål (`data-dev="1–5"`, `scale-cold-warm`); højden er fortsat ventilåbningen.
 - Ventiler vises igen som **åbning**: ventilpinnens position i % af den vandring, motoren har lært (0 % = i sædet, 100 % = pinden helt fri, ca. 2 mm), ikke beregnet flow. Flowkurverne byggede på pumpens beregnede flow og holdt ventilerne på ca. 1 mm. «x % åben» i felter, bjælker og statuslinjer; rummets og zonens ark viser også mm («ventil 62 % · 1,2 mm»). Ventilkurven i V6' zoneark og motorlab (`.trend .vc`, `.vpos`, `.mtrace-row.square`) og aktiviteten «måler ventiler» er fjernet. DESIGN.md 5.1, 15.10.
 - `scale-cold-warm-3` (±0,3 °C, på målet) er dæmpet grøn i stedet for neutral grå: varmekort, `.tile-dev`, nøgle og søjler. Kontrast for `fg` på trinnet tjekkes.

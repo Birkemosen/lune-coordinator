@@ -1051,8 +1051,9 @@ Touch har en 1024×600 berøringsskærm med 16-bit farver (RGB565), der hænger 
 0 ┌──────────────────────────────────────────────────────────────┐
   │ 14:32 ons 30. sep   ☁ 13,4 °C  ≋ 6 m/s     [⚠ M1·Z6: fejl]  ⌔ │ statuslinje 64
 64├──────────────────────────────────────────────────────────────┤
-  │ Huset ● Kalder │ graf 24 t        │ Varmepumpe   │ vejrbesked│ husrække 104
-  │ 21,3° mål 21,6 │                  │ 34,2° → 29,8°│           │
+  │ Huset ● Kalder │ graf 24 t        │ Varmepumpe · │ vejrbesked│ husrække 104
+  │ 21,3° mål 21,6 │                  │ Frem   Retur │           │
+  │                │                  │ 34,2°  29,8° │           │
   ├────────────┬─────┬─────┬─────┬──────┬─────┬─────┤             │
   │ Stueetage  │ Z1  │ Z2  │ Z3  │ Z4–5 │ Z5  │ Z6  │  manifold-  │
   │ M1         │21,4°│20,8°│22,6°│21,1° │21,0°│Fejl │  rækker     │
@@ -1063,6 +1064,7 @@ Touch har en 1024×600 berøringsskærm med 16-bit farver (RGB565), der hænger 
 ```
 
 - **Huset er en vandret række øverst**, samme form som manifold-rækkerne: hustemperatur og mål, 24-t graf, varmepumpe og pumpe, vejrbesked. Så får zonefelterne hele skærmens bredde.
+- **Varmekilde-blokken i husrækken** (2.4.0): én statuslinje i tekst — «Varmepumpe · opvarmer / varmt vand / legionella / hviler» (`muted`), eller hvad der er galt med forbindelsen, «Asgard svarer ikke» (`danger`) / «Odin svarer ikke» (`warn`) — og derunder frem og retur som to tal med hver sin label («Frem», «Retur», `muted` 16 px over `fg` 18 px), og pumpens flow og effekt («Pumpe 1,3 l/min · 38 W»). Ingen statusprikker uden tekst og ingen «a → b» uden at sige, hvad tallene er. Uden varmepumpens data: første manifolds frem og retur.
 - **Manifoldens navn, ID, fremløb/retur og tilstand står i en kolonne til venstre i rækken** (124 px kompakt, 150 px store felter), så felternes højde går til indhold.
 - Zonefelter står **altid i 6 kolonner**, så Z1–Z6 flugter på tværs af manifolds. Tomme pladser vises som stiplede huller.
 - **1–2 manifolds:** store felter (temperatur 36 px, mål, 24-t graf). **3–4 manifolds:** kompakte felter (temperatur 28 px med mål, ingen graf).

@@ -249,18 +249,8 @@
   }
   .header > :last-child { justify-self: end; }
   .header .mode { background: var(--raised); }
-  /* Ved scroll (navbaren sidder fast øverst) bliver pillen kun så bred som indholdet.
-     Kræver scroll-state-queries; uden dem forbliver den bred. */
-  @media (min-width: 768px) {
-    .navbar-wrap { container-type: scroll-state; }
-    /* Kolonnerne bevares (1fr auto 1fr), så bredden kan animeres; navigationen bliver i midten. */
-    .header { margin-inline: auto; interpolate-size: allow-keywords;
-      transition: width var(--dur-slow) var(--ease), gap var(--dur-slow) var(--ease), padding var(--dur-slow) var(--ease); }
-    @container scroll-state(stuck: top) {
-      .header { width: fit-content; gap: var(--space-5); padding-inline: 8px; }
-    }
-    @media (prefers-reduced-motion: reduce) { .header { transition: none; } }
-  }
+  /* Navbaren beholder fuld bredde, også når den klæber (2.4.0): aktiviteten til højre skifter
+     tekst, så en indholdsbred pille ville skifte bredde af sig selv. */
   .top { position: static; }
 
   /* Mobil: ingen backdrop-filter på navbaren — et filter på en forfader
