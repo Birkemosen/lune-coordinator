@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### V6 hears again whether the heat source runs
+- Touch had stopped sending the heat-pump phase to the V6 boards on the belief that their dynamic balancing no longer used it, but V6 still does: while the heat source is idle every loop gets its design share, the load law runs only while it runs or prestarts, and without word from Touch V6 ran the load law all the time (1. sal 2026-11-13: `hp_phase: unknown` with the heat pump idle). Touch sends the phase again when «Valves follow the heat pump» is on (pushed on a change and every 5 min, 15 min TTL).
+
 ### Home: the house target lives in the house sheet; valves show their opening
 - The house's target moved from Home's main section to a new house sheet (the ring, autosaved). The House card on Home shows the house temperature, the target and the deviation as the heat map's chip, and opens the sheet; Outside sits next to it. The manifold cards' bars are coloured by each room's deviation from target (height is still the valve's opening), and on target (±0.3 °C) is a muted green everywhere. Valves read «x % åben» (the pin's position over its learned travel) instead of «% flow», and the room sheet adds the lift in mm (`opening_mm` from V6). The pump's full-load head advice is gone with the system curve it was built on. Home's main section is lower, and the compact plan on «Næste varme» marks Odin's planned heat at the foot of a taller comfort band instead of in its own lane, with a taller price lane and a legend. The plan sheet's lane names take only the room they need, the lanes are taller, a dashed line marks now through every lane, and English says «expensive hour», not «dear hour». The tile and sheet «Næste varme» are now «Plan», with «Næste varme» as the label before the next block, the band lane is «Komfort», and Home no longer has the «Lige nu» header. LDS 2.4.0.
 

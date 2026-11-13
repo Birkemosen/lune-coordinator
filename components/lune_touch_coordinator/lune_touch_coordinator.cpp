@@ -16637,9 +16637,9 @@ void LuneTouchCoordinator::run_hp_phase_(uint32_t now_ms) {
   in.plan_mode_next = odin_plan_.operation_mode_horizon[1];
   in.minute = minute;
   hp_phase_ = hpp::step(hp_phase_state_, in, now_ms);
-  // V6's heat-pump law (dynamic balancing) no longer uses the phase, so Touch no longer
-  // sends it; the phase stays for the heat-source JSON (valves_follow_hp.phase).
-  const bool enabled = false;
+  // V6's dynamic balancing uses the phase: static balance while the heat source is idle,
+  // the load law while it runs or prestarts, and the load law when Touch says nothing.
+  const bool enabled = h.valves_follow_hp_enabled;
   const bool release = hp_phase_release_pending_;
   const bool changed = hp_phase_ != hp_phase_sent_;
   const bool due = release || changed || hp_phase_push_ms_ == 0 || now_ms - hp_phase_push_ms_ >= PERIOD_MS;
