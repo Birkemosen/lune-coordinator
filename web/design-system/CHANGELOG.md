@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## 2.4.1
+
+- Hjem-felternes grafer (`.ht-viz`) har en timeakse (`.ht-x`) som den kompakte plan: klokkeslæt hver 6. time og «Nu» i den ende, der er nu (Opvarmning: de seneste 24 t, Vejr: de næste 24 t). DESIGN.md 15.10.
+
 ## 2.4.0
 
 - Touch' Hjem: husets mål er flyttet fra hovedsektionen til husets ark (`sheet-house`, ringen med autogem). Hus-kortet i `.home-scopes` er en knap (`.scope--house`) med hustemperatur, mål (`.scope-tgt`) og afvigelsen som varmekortets chip, og Ude står lige efter som læseværdi (`.scope--fact`). Hovedsektionen har kun hilsen, overskrift og sætning. DESIGN.md 15.10.

@@ -1405,6 +1405,21 @@
     });
   }
 
+  // Hour axis under a Home tile's chart (.ht-x): every 6th clock hour and "now" at the end
+  // that is now. from/span in epoch seconds; labels within 3 h of either end are left out.
+  function tileAxis(key, from, span, nowAtEnd) {
+    var ax = qs('[data-bind-tilex="' + key + '"]');
+    if (!ax || !(span > 0)) return;
+    var out = '';
+    for (var s = Math.ceil(from / 3600) * 3600; s <= from + span; s += 3600) {
+      var f = (s - from) / span, hr = new Date(s * 1000).getHours();
+      if (hr % 6 || f < .125 || f > .875) continue;
+      out += '<span style="left:' + (f * 100).toFixed(1) + '%">' + String(hr).padStart(2, '0') + '</span>';
+    }
+    var now = '<span class="' + (nowAtEnd ? 'end' : 'start') + '">' + esc(t('fc.now')) + '</span>';
+    ax.innerHTML = nowAtEnd ? out + now : now + out;
+  }
+
   // Home's Heat tile: the same 24 h, drawn small. Page samples are only the fallback.
   function drawHeatTile(h) {
     var fs = (h && h.feed_c) || [], rs = (h && h.return_c) || [];
@@ -1434,6 +1449,8 @@
       }
       mg.innerHTML = mh;
     }
+    var step = Number(h.step_s) || 0;
+    if (Number(h.from_ts) && step) tileAxis('heat', Number(h.from_ts), (n - 1) * step, true);
   }
 
   function drawHeatHistory(panel, rng, h) {
@@ -3412,6 +3429,7 @@
         rect.setAttribute('x', String(x0 / n2 * 240));
         rect.setAttribute('width', String(Math.max(0, (x1 - x0) / n2 * 240)));
       }
+      tileAxis('weather', Date.now() / 1000, (next.length - 1) * 3600, false);
     }
     // Weather › History: the hours before now that the forecast still carries.
     var pastBox = qs('[data-f="wxpast"]');
