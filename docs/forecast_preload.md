@@ -31,11 +31,14 @@ can, while each Lune V6 keeps validating and clamping the resulting commands loc
    `(peak − threshold) × gain × priority × learned_gain_scale`, optionally raised by thermal
    sizing from learned cool-loss / heat-gain. Cap at `max_offset_c` / house `max_boost_c`,
    then apply **timing scale** (lower far from peak, full near peak, floor 0.4) and **taper**
-   after the peak as load falls.
+   after the peak as load falls. The timing scale counts the peak as the room's floor
+   response time (V6 `floor_lag_h`) closer, so the ramp starts that much earlier.
 
 4. **Plant horizon.** When enabled, simulate zone temperature over the lead window and choose
    the smallest offset that keeps predicted temp within the comfort band
-   (`scheduled ± comfort_band_c`). Falls back to the heuristic if learning is thin.
+   (`scheduled ± comfort_band_c`). Falls back to the heuristic if learning is thin. The offset
+   reaches the room only after the floor response time; until then the room runs as without
+   it.
 
 5. **Closed-loop learning.** While preload is active, compare live temperature to the comfort
    band. Undershoot raises gain scale (and may extend lead bias); overshoot eases gain. Values

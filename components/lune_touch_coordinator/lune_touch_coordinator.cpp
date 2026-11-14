@@ -5953,6 +5953,8 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
                                           static_cast<uint8_t>(fields.group_primary_zone),
                                           fields.group_members_mask, primary);
     }
+    if (!zone["floor_lag_h"].isNull())
+      model_.update_zone_floor_lag(node_index, zone_index, zone["floor_lag_h"] | 0.0f);
     if (fields.has_heat_demand) {
       model_.update_zone_heat_demand(
           node_index, zone_index, fields.demand_state, fields.opening_ratio, fields.saturated_s,
@@ -6530,6 +6532,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     out.learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
     const uint8_t house_active_lead = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
     out.active_thermal_lead_h = house_active_lead;
+    out.floor_lag_h = live != nullptr ? live->floor_lag_h : 0.0f;
     if (live == nullptr || !live->fresh)
       continue;
 
@@ -6560,6 +6563,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     params.scheduled_setpoint_c = out.comfort_setpoint_c;
     params.comfort_band_c = COMFORT_BAND_C;
     params.enable_horizon = true;
+    params.floor_lag_h = live->floor_lag_h;
     if (live->has_temperature && std::isfinite(live->temperature_c)) {
       params.has_current_temp = true;
       params.current_temp_c = live->temperature_c;
@@ -6607,6 +6611,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
       room_in.setpoint_c = out.comfort_setpoint_c;
       if (params.has_current_temp)
         room_in.temp_c = params.current_temp_c;
+      room_in.floor_lag_h = live->floor_lag_h;
       lune_touch_charge::Params cp{};
       cp.max_store_c = weather_max_boost_c_ > 0.0f ? weather_max_boost_c_ : 1.5f;
       const auto c = lune_touch_charge::plan(ch, hour_count, now_index, room_in, cp);
@@ -14401,7 +14406,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              h.wind_dir_deg, h.shortwave_wm2, h.precipitation_mm, h.cloud_cover_pct);
   }
   appendf_(buffer, capacity, off, "],\"decisions\":[");
-  for (size_t i = 0; i < forecast_decision_count_ && off + 420 < capacity; i++) {
+  for (size_t i = 0; i < forecast_decision_count_ && off + 440 < capacity; i++) {
     const ForecastDecisionState &d = forecast_decisions_[i];
     char room_id[48];
     char room_name[80];
@@ -14411,7 +14416,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
              "\"comfort_setpoint_c\":%.1f,\"priority\":%u,\"offset_c\":%.2f,"
              "\"peak_load\":%.2f,\"peak_in_h\":%d,\"configured_thermal_lead_h\":%u,"
-             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,"
+             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,\"floor_lag_h\":%.2f,"
              "\"timing_scale\":%.2f,\"heuristic_offset_c\":%.2f,\"min_temp_c\":%.2f,"
              "\"horizon_ok\":%s,\"used_horizon\":%s,\"used_thermal_sizing\":%s,"
              "\"preload_start_h\":%u,\"preload_end_h\":%u,\"active\":%s,\"odin_timing_bias\":%s,"
@@ -14425,7 +14430,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              static_cast<int>(d.peak_in_h),
              static_cast<unsigned>(d.configured_thermal_lead_h),
              static_cast<unsigned>(d.learned_thermal_lead_h),
-             static_cast<unsigned>(d.active_thermal_lead_h), d.timing_scale,
+             static_cast<unsigned>(d.active_thermal_lead_h), d.floor_lag_h, d.timing_scale,
              d.heuristic_offset_c, d.min_temp_c, d.horizon_ok ? "true" : "false",
              d.used_horizon ? "true" : "false", d.used_thermal_sizing ? "true" : "false",
              static_cast<unsigned>(d.preload_start_h), static_cast<unsigned>(d.preload_end_h),

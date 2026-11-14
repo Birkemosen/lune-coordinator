@@ -57,6 +57,9 @@ struct PreloadParams {
   float comfort_band_c = 0.5f;      ///< ± around scheduled for horizon / chart band
   bool enable_horizon = true;
   bool has_current_temp = false;
+  /// Floor response time (h) from V6: an offset reaches the room this long after it is
+  /// applied, so preload ramps up this much earlier. 0 = immediate.
+  float floor_lag_h = 0.0f;
 };
 
 struct PreloadDecision {

@@ -173,6 +173,67 @@ static void test_horizon_and_series() {
   expect(series.preload_active[0] == (d.offset_c > 0.01f), "series: preload flag at t0");
 }
 
+// Floor response: heat reaches the room late, so a storm a few hours out needs more
+// (or the same) offset than with an instant floor, never less.
+static void test_floor_lag() {
+  ForecastHour hours[FORECAST_HOURS];
+  fill_calm(hours, FORECAST_HOURS);
+  for (size_t i = 2; i < 8; i++)
+    hours[i] = ForecastHour{-8.0f, 18.0f, 270.0f, 0.0f};
+
+  ZoneExposure zone{};
+  zone.exterior_walls = WALL_WEST;
+  zone.wind_exposure = 1.0f;
+  zone.solar_gain = 0.0f;
+  zone.thermal_lead_h = 8;
+
+  PreloadParams params{};
+  params.has_current_temp = true;
+  params.current_temp_c = 21.0f;
+  params.scheduled_setpoint_c = 21.0f;
+  params.max_offset_c = 1.5f;
+  params.thermal_samples = 12;
+  params.learned_heat_gain_c_per_h = 0.15f;
+  params.learned_cool_loss_c_per_h = 0.20f;
+
+  const PreloadDecision instant = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
+  params.floor_lag_h = 2.0f;
+  const PreloadDecision lagged = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
+  expect(lagged.offset_c >= instant.offset_c, "floor lag: offset never smaller than instant");
+  expect(lagged.offset_c > instant.offset_c || lagged.min_temp_c < instant.min_temp_c,
+         "floor lag: late heat costs offset or comfort");
+
+  // An offset applied now reaches the room only after the lag: until then it coasts
+  // as without the offset.
+  ForecastHour calm[FORECAST_HOURS];
+  fill_calm(calm, FORECAST_HOURS);
+  PreloadDecision lift{};
+  lift.offset_c = 1.0f;
+  PreloadSeries now_s{}, late_s{}, base_s{};
+  params.floor_lag_h = 0.0f;
+  fill_preload_series(calm, FORECAST_HOURS, 0, zone, params, lift, &now_s);
+  params.floor_lag_h = 2.0f;
+  fill_preload_series(calm, FORECAST_HOURS, 0, zone, params, lift, &late_s);
+  fill_preload_series(calm, FORECAST_HOURS, 0, zone, params, PreloadDecision{}, &base_s);
+  expect(now_s.expected_temp_c[1] > base_s.expected_temp_c[1], "floor lag 0: offset felt at once");
+  expect(near(late_s.expected_temp_c[1], base_s.expected_temp_c[1]) &&
+             near(late_s.expected_temp_c[2], base_s.expected_temp_c[2]) &&
+             late_s.expected_temp_c[3] > base_s.expected_temp_c[3],
+         "floor lag 2: offset felt from hour 2");
+
+  // Preload ramps up the lag earlier: a peak 4 h out is felt as 2 h out.
+  ForecastHour later[FORECAST_HOURS];
+  fill_calm(later, FORECAST_HOURS);
+  later[4] = ForecastHour{-8.0f, 18.0f, 270.0f, 0.0f};
+  params.enable_horizon = false;
+  params.floor_lag_h = 0.0f;
+  const PreloadDecision t0 = compute_zone_preload(later, FORECAST_HOURS, 0, zone, params);
+  params.floor_lag_h = 2.0f;
+  const PreloadDecision t2 = compute_zone_preload(later, FORECAST_HOURS, 0, zone, params);
+  expect(t0.peak_in_h == 4 && t2.peak_in_h == 4, "floor lag: peak hour unchanged");
+  expect(t2.timing_scale > t0.timing_scale, "floor lag: ramp starts earlier");
+}
+
 static void test_learning_update() {
   PreloadOutcome miss{};
   miss.preload_was_active = true;
@@ -282,6 +343,7 @@ int main() {
   test_preload_decision();
   test_priority_and_thermal();
   test_horizon_and_series();
+  test_floor_lag();
   test_learning_update();
   test_taper_after_peak();
   test_absurd_heat_gain_suppresses_horizon();

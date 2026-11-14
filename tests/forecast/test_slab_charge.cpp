@@ -111,6 +111,19 @@ int main() {
                 d.start_in_h, d.insufficient ? 1 : 0);
   }
 
+  // A slower floor starts charging earlier: the margin is its response time.
+  {
+    Hour h[24];
+    storm_day(h);
+    Room r = timber_room();
+    r.floor_lag_h = 1.0f;
+    const Decision base = plan(h, 24, 0, r, p);
+    assert(base.start_in_h == plan(h, 24, 0, timber_room(), p).start_in_h);  // = default margin
+    r.floor_lag_h = 3.0f;
+    const Decision slow = plan(h, 24, 0, r, p);
+    assert(slow.start_in_h == base.start_in_h - 2);
+  }
+
   // Concrete, sheltered room: the same storm stays within floor capacity.
   {
     Hour h[24];

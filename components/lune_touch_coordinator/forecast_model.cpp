@@ -18,6 +18,7 @@ static constexpr float MAX_PLAUSIBLE_HEAT_GAIN = 0.35f;
 static constexpr float MIN_PLAUSIBLE_HEAT_GAIN = 0.05f;
 static constexpr float MAX_PLAUSIBLE_COOL_LOSS = 0.40f;
 static constexpr float MIN_PLAUSIBLE_COOL_LOSS = 0.02f;
+static constexpr float MAX_FLOOR_LAG_H = 5.0f;
 
 // <algorithm> is avoided so the file compiles with the host toolchain too.
 static inline float fmaxf_(float a, float b) { return a > b ? a : b; }
@@ -72,6 +73,10 @@ static bool thermal_confident_(const PreloadParams &params) {
          finite_(params.learned_cool_loss_c_per_h) &&
          params.learned_cool_loss_c_per_h >= MIN_PLAUSIBLE_COOL_LOSS &&
          params.learned_cool_loss_c_per_h <= MAX_PLAUSIBLE_COOL_LOSS;
+}
+
+static float lag_h_(const PreloadParams &params) {
+  return finite_(params.floor_lag_h) ? clampf_(params.floor_lag_h, 0.0f, MAX_FLOOR_LAG_H) : 0.0f;
 }
 
 static float timing_scale_for_(int8_t peak_in_h, uint8_t lead_h) {
@@ -142,6 +147,10 @@ static float simulate_min_temp_(const ForecastHour *hours, size_t /*count*/, siz
   const float heat = heat_gain_rate_(params);
   const float cool = cool_loss_rate_(params);
   const float target = params.scheduled_setpoint_c + offset_c;
+  // Floor response: an offset applied now reaches the room only after the lag; until
+  // then the room runs as it would without it (V6 anticipates its own lag, so the
+  // later control is modelled as prompt).
+  const float lag = lag_h_(params);
   const float temp_lo = fminf_(params.scheduled_setpoint_c - 4.0f, 5.0f);
   const float temp_hi = params.scheduled_setpoint_c + fmaxf_(params.max_offset_c, 1.5f) + 2.0f;
   float min_temp = temp;
@@ -152,15 +161,15 @@ static float simulate_min_temp_(const ForecastHour *hours, size_t /*count*/, siz
       out_series[written++] = temp;
     const float outdoor = hours[i].temp_c;
     const float load = zone_hour_load(hours[i], exposure, params.indoor_ref_c);
-    const float calling = temp < target - 0.05f ? 1.0f : 0.0f;
-    if (calling > 0.0f) {
-      // Calling: heat gain minus weather-scaled loss (capped so one hour stays physical).
-      temp += heat - cool * fminf_(2.0f, fmaxf_(0.2f, load));
-    } else {
-      // Idle: coast slowly toward outdoor — never unbounded free-fall.
-      const float drift = clampf_((outdoor - temp) * 0.04f, -0.12f, 0.06f);
-      temp += drift;
-    }
+    const float j = static_cast<float>(i - now_index);
+    const float with_offset = clampf_(j + 1.0f - lag, 0.0f, 1.0f);
+    const float heated = with_offset * (temp < target - 0.05f ? 1.0f : 0.0f) +
+                         (1.0f - with_offset) * (temp < params.scheduled_setpoint_c - 0.05f ? 1.0f : 0.0f);
+    // Heated: heat gain minus weather-scaled loss (capped so one hour stays physical).
+    // Idle: coast slowly toward outdoor — never unbounded free-fall.
+    const float gain = heat - cool * fminf_(2.0f, fmaxf_(0.2f, load));
+    const float drift = clampf_((outdoor - temp) * 0.04f, -0.12f, 0.06f);
+    temp += heated * gain + (1.0f - heated) * drift;
     temp = clampf_(temp, temp_lo, temp_hi);
     if (temp < min_temp)
       min_temp = temp;
@@ -232,7 +241,10 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
     decision.peak_in_h = 0;
 
   bool used_thermal = false;
-  decision.timing_scale = timing_scale_for_(decision.peak_in_h, lead);
+  // The floor answers late: ramp towards the peak as if it were the lag closer.
+  const int8_t felt_peak_in_h = static_cast<int8_t>(
+      fmaxf_(0.0f, static_cast<float>(decision.peak_in_h) - std::round(lag_h_(params))));
+  decision.timing_scale = timing_scale_for_(felt_peak_in_h, lead);
   const float taper =
       taper_scale_(hours, count, now_index, exposure, params, decision.peak_load, decision.peak_in_h);
   decision.heuristic_offset_c =

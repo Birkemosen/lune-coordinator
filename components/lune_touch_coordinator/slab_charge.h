@@ -53,6 +53,7 @@ struct Room {
   float solar_gain = 0.3f;        ///< 0..1 passive solar gain through glazing
   float setpoint_c = 21.0f;
   float temp_c = NAN;             ///< Current room temperature (NaN = unknown)
+  float floor_lag_h = 0.0f;       ///< Floor response time from V6 (0 → Params::margin_h)
 };
 
 struct Params {
@@ -71,7 +72,7 @@ struct Params {
   float default_c_kwh_per_k_m2 = 0.008f;
   /// Never plan more than this above setpoint (comfort ceiling).
   float max_store_c = 1.5f;
-  /// Safety margin before the deficit begins (hours).
+  /// Margin before the deficit begins (hours) when the room has no floor response time.
   float margin_h = 1.0f;
   /// Shortfall below this energy is ignored (kWh) — noise, not an episode.
   float min_deficit_kwh = 0.15f;
@@ -186,7 +187,9 @@ inline Decision plan(const Hour *hours, size_t count, size_t now_index, const Ro
     got_wh += std::max(0.0f, spare);
   }
   d.charge_hours = static_cast<float>(ep_start - k);
-  const float start_h = static_cast<float>(ep_start) - d.charge_hours - p.margin_h -
+  // The charge reaches the room one floor response time after it goes into the loop.
+  const float margin_h = room.floor_lag_h > 0.0f ? std::min(room.floor_lag_h, 5.0f) : p.margin_h;
+  const float start_h = static_cast<float>(ep_start) - d.charge_hours - margin_h -
                         static_cast<float>(now_index);
   d.start_in_h = static_cast<int16_t>(std::floor(start_h));
   d.charge_now = d.start_in_h <= 0 && d.episode_end_in_h > 0;

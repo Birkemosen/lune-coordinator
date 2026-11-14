@@ -234,6 +234,8 @@ struct ZoneLiveState {
   bool headroom{false};
   HeatRecommendation recommendation{HeatRecommendation::HOLD};
   bool heat_demand_fresh{false};
+  // Runtime-only floor response time from V6 (learned, else its build prior); 0 = unknown.
+  float floor_lag_h{0.0f};
 };
 
 struct NodeHeatDemand {
@@ -685,6 +687,7 @@ class HouseModel {
                                    bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
                                    bool has_valve = false);
   // Apply V6 group membership for a zone binding. Secondary members are detached from rooms.
+  bool update_zone_floor_lag(size_t node_index, size_t zone_index, float floor_lag_h);
   bool update_zone_group_membership(size_t node_index, size_t zone_index,
                                     uint8_t group_primary_zone_1based, uint8_t members_mask,
                                     bool is_primary);

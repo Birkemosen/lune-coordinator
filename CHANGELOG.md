@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### Preheating counts on the floor's response time
+- V6 now learns each loop's floor response time (how long the room takes to turn after heat starts or stops; about 1 h on 1. sal's timber floors, 2 h in the stueetage) and sends it with the zones (`floor_lag_h`, from the floor's build until learned). Weather preload and slab charging assumed an immediate floor. Preload now ramps up the response time earlier towards a wind/cold peak, and its horizon lets an offset reach the room only after it. Slab charging starts the response time before the shortfall instead of a fixed 1 h. Shown per room as `decisions[].floor_lag_h` in `/forecast`.
+
 ### A cold room can start the heat pump
 - A room more than twice the comfort band (1.0 °C) below its target calls for heat on its own: Touch lifts Odin's whole comfort band by the full allowed lift (Weather › Preload › Max, 1.5 °C) from this hour, so Odin must heat, and keeps it until the room is back within the band. Until now a lagging room only raised the band's top unless it was 2 °C behind (fully at 3 °C), and the house average decided: on 2026-11-14 Laura was 2.3 °C behind at 19.7 °C with its loop fully open, the house 0.4 °C above target, and the heat pump stood from 03 to 08. The call does not need the manifold's RAISE. `demand.cold_room_call` / `demand.coldest_deficit_c` in `/heat-source/control`.
 

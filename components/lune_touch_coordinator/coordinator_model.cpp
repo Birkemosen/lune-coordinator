@@ -1495,6 +1495,14 @@ bool HouseModel::update_zone_live_by_binding(size_t node_index, size_t zone_inde
   return false;
 }
 
+bool HouseModel::update_zone_floor_lag(size_t node_index, size_t zone_index, float floor_lag_h) {
+  const size_t i = find_binding_index_(node_index, zone_index);
+  if (i >= zone_count_ || !zones_[i].enabled)
+    return false;
+  live_[i].floor_lag_h = std::isfinite(floor_lag_h) && floor_lag_h > 0.0f ? floor_lag_h : 0.0f;
+  return true;
+}
+
 bool HouseModel::update_zone_group_membership(size_t node_index, size_t zone_index,
                                               uint8_t group_primary_zone_1based, uint8_t members_mask,
                                               bool is_primary) {

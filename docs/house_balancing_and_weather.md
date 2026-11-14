@@ -156,8 +156,9 @@ nothing about stored heat.
 - **Store**: `ΔT = E / C_slab`, capped at the house max boost (default 1.5 °C).
   `insufficient = true` when even the cap cannot cover `E`.
 - **Start**: walking back from the episode, accumulate spare floor power
-  `P_floor − P_loss` until the store is covered; start that many hours before, plus a 1 h
-  margin.
+  `P_floor − P_loss` until the store is covered; start that many hours before, plus the
+  room's floor response time from V6 (`floor_lag_h`: learned per loop, else from the floor's
+  build; 1 h when V6 sends none).
 
 **Action while the charge window is open** (from start to the end of the episode):
 - the room's setpoint offset is raised to at least `ΔT`, and

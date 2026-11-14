@@ -58,6 +58,7 @@ struct ForecastDecisionState {
   uint8_t configured_thermal_lead_h{4};
   uint8_t learned_thermal_lead_h{0};
   uint8_t active_thermal_lead_h{4};
+  float floor_lag_h{0.0f};  ///< V6 floor response time used for preload and charge (0 = unknown)
   float timing_scale{0.0f};
   float heuristic_offset_c{0.0f};
   float min_temp_c{0.0f};
