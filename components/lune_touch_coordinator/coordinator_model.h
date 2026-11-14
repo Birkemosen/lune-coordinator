@@ -379,6 +379,9 @@ struct StrategySnapshot {
   /// Share of the house (by weight) in rooms that lag beyond the band and may drive:
   /// one or two such rooms only open the top of Odin's band (odin_comfort.h).
   float lagging_share{0.0f};
+  /// Largest deficit (target − temp) of any contributing room, whether or not it may
+  /// drive: a room this far behind may call for heat on its own (odin_comfort.h ColdRoomCall).
+  float coldest_deficit_c{0.0f};
   // T2: Odin UA-prior calibration status.
   char ua_calibration_status[16]{"uncalibrated"};  // calibrated | uncalibrated | blocked
   char ua_calibration_reason[32]{"unknown"};

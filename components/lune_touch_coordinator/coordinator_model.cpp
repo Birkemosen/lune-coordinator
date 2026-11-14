@@ -2186,6 +2186,8 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
     }
 
     const float deficit = target_c - use_temp_c;
+    if (std::isfinite(deficit) && deficit > snapshot.coldest_deficit_c)
+      snapshot.coldest_deficit_c = deficit;
     if (deficit > 0.0f) {
       weighted_demand_sum += deficit * weight;
       snapshot.demand_zones++;

@@ -3398,6 +3398,11 @@ float LuneTouchCoordinator::update_demand_hold_(const ::lune_touch::StrategySnap
   if (take_state_lock_(100)) {
     held = demand_hold_.update(required, esphome::millis());
     demand_held_c_ = held;
+    coldest_deficit_c_ = strategy.has_physical_temperature ? strategy.coldest_deficit_c : 0.0f;
+    const bool was = cold_room_call_.engaged;
+    if (cold_room_call_.update(coldest_deficit_c_, COMFORT_BAND_C) != was)
+      ESP_LOGI(TAG, "Cold room call %s (coldest room %.1f C behind, band %.1f C)",
+               cold_room_call_.engaged ? "on" : "off", coldest_deficit_c_, COMFORT_BAND_C);
     give_state_lock_();
   }
   return held;
@@ -3462,6 +3467,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float thermal_mass = NAN;
   float heat_loss = NAN;
   float held = 0.0f;
+  bool cold_call = false;
   float energy = 0.0f;
   int start = INT16_MAX;
   int end = -1;
@@ -3502,6 +3508,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
+    cold_call = cold_room_call_.engaged;
     lagging_share = strategy.lagging_share;
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
@@ -3537,13 +3544,14 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // to plan heat that reaches the room. Re-evaluated every cycle.
   // One or two lagging rooms open only the band's top over a wider window, so Odin
   // chooses the hours (odin_comfort.h floor_share_for), unless the room is well behind
-  // (floor_share_for_deficit); a slab charge moves it all.
+  // (ColdRoomCall: more than twice the comfort band behind), which moves the whole band
+  // by the full allowed lift from this hour, so Odin must heat; a slab charge moves it all.
   const float floor_share =
-      charge.active() ? 1.0f
-                      : std::max(lune_touch_odin::floor_share_for(lagging_share),
-                                 lune_touch_odin::floor_share_for_deficit(held));
+      (charge.active() || cold_call) ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
   lune_touch_odin::Lift lag{};
-  if (held > 0.0f)
+  if (cold_call)
+    lag = lune_touch_odin::lag_lift(now_hour, params.max_lift_c, lag_floor_h, params, 1.0f, 0);
+  else if (held > 0.0f)
     lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
   // only what the house would have had anyway. The band opens from now through the
@@ -15275,6 +15283,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const char *route = "none";
   float held = 0.0f;
   float uplift = 0.0f;
+  bool cold_call = false;
+  float coldest = 0.0f;
   char type[24]{};
   if (take_state_lock_(50)) {
     c = odin_control_;
@@ -15283,6 +15293,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
     yielded = odin_owner_.yielded;
     route = demand_route_;
     held = demand_held_c_;
+    cold_call = cold_room_call_.engaged;
+    coldest = coldest_deficit_c_;
     uplift = demand_target_uplift_c_;
     std::strncpy(type, heat_source_.type, sizeof(type) - 1);
     give_state_lock_();
@@ -15323,7 +15335,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const char *hpmax_src = hp_max_odin ? "odin" : hp_max_user ? "user" : "none";
   std::snprintf(
       buffer, capacity,
-      "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
+      "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f,"
+      "\"cold_room_call\":%s,\"coldest_deficit_c\":%.2f},"
       "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
@@ -15341,8 +15354,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"generic\":{\"applies\":%s,\"target_url_template\":\"%s\",\"heat_request_url_template\":\"%s\","
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
-      route, static_cast<double>(held), static_cast<double>(uplift),
-      c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
+      route, static_cast<double>(held), static_cast<double>(uplift), cold_call ? "true" : "false",
+      static_cast<double>(coldest), c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
       c.sync_enabled ? "true" : "false",
       static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),
       static_cast<double>(c.sync_above_c), sync_target,

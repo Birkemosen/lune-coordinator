@@ -1113,6 +1113,9 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Hysteresis/hold on the house demand signal (lagging room / slab charge).
   lune_touch_house::DemandHold demand_hold_{};
   float demand_held_c_{0.0f};
+  /// A room more than twice the comfort band behind: Odin's band floor moves (odin_comfort.h).
+  lune_touch_odin::ColdRoomCall cold_room_call_{};
+  float coldest_deficit_c_{0.0f};
   OdinControlState odin_control_{};
   GenericLeverState generic_levers_{};
   lune_touch_odin::OwnerState odin_owner_{};

@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### A cold room can start the heat pump
+- A room more than twice the comfort band (1.0 °C) below its target calls for heat on its own: Touch lifts Odin's whole comfort band by the full allowed lift (Weather › Preload › Max, 1.5 °C) from this hour, so Odin must heat, and keeps it until the room is back within the band. Until now a lagging room only raised the band's top unless it was 2 °C behind (fully at 3 °C), and the house average decided: on 2026-11-14 Laura was 2.3 °C behind at 19.7 °C with its loop fully open, the house 0.4 °C above target, and the heat pump stood from 03 to 08. The call does not need the manifold's RAISE. `demand.cold_room_call` / `demand.coldest_deficit_c` in `/heat-source/control`.
+
 ### Pre-buffering is not heating
 - Touch armed the absorb band on every room whenever Odin planned heat for the hour (`odin_plan heat window`). The band lets a satisfied room's loop stay open past its target, so heating for one cold room kept every room open: on 2026-11-13 Soveværelse sat 1.7 °C over its 21 °C at 30 % while Odin heated for Laura. A planned heat hour is heating for the rooms below target; pre-buffering is when Odin says so (a v2 `thermal_buffer` reason, or an Odin MQTT absorb command), and weather pre-charging is Touch's slab charge per room. Plans without a reason no longer arm.
 - An Odin pre-buffer arms only rooms at most a comfort band (0.5 °C) above their target; a warmer room is skipped and an earlier arm is withdrawn at the next re-arm. A disarm from Odin leaves a room's weather charge in place.
