@@ -289,6 +289,17 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     qsa('[data-bind="' + key + '"]').forEach(function (n) { n.innerHTML = html; });
   }
 
+  // Replace an element's markup only when it changed: a refresh that rewrites the same
+  // chart or table would drop focus from what the user tapped, and WebKit (iOS) then
+  // scrolls the page back to the top.
+  function setHTML(el, html) {
+    if (!el) return false;
+    if (el.__html === html) return false;
+    el.innerHTML = html;
+    el.__html = html;
+    return true;
+  }
+
   function setText(key, text) {
     qsa('[data-bind="' + key + '"]').forEach(function (n) { n.textContent = text; });
   }
@@ -2897,7 +2908,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (box) {
       box.toggleAttribute('data-empty', !ok);
       var chart = box.querySelector('[data-f="chart"]');
-      if (chart) chart.innerHTML = ok ? plannerChart(plan, st) : '';
+      if (chart) setHTML(chart, ok ? plannerChart(plan, st) : '');
     }
     setText('planner.sub', ok
       ? t('planner.sub', { e: num(plan.heat_kwh, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' })
@@ -2906,7 +2917,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (vb) {
       vb.toggleAttribute('data-empty', !ok);
       var vc = vb.querySelector('[data-f="chart"]');
-      if (vc) vc.innerHTML = ok ? plannerVsChart(d) : '';
+      if (vc) setHTML(vc, ok ? plannerVsChart(d) : '');
     }
     var rb2 = qs('[data-f="plrooms"]');
     var rooms = ok && Array.isArray(d.rooms) ? d.rooms : [];
@@ -2914,12 +2925,20 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (rb2) {
       rb2.toggleAttribute('data-empty', !rok);
       var rc = rb2.querySelector('[data-f="chart"]');
-      // Keep the room the user opened (or closed all) across refreshes.
+      // Keep the room the user opened (or closed all) across refreshes, and the focus on its
+      // row, so nothing the user tapped disappears under them.
       var was = rc && rc.querySelector('details.rfc[open]');
       var hadRows = rc && rc.querySelector('details.rfc');
       var openId = was ? was.getAttribute('data-room') : (hadRows ? '' : null);
-      if (rc) rc.innerHTML = rok ? plannerRoomsTable(rooms, plan, openId) : '';
-      if (rc && openId === '') rc.querySelectorAll('details.rfc[open]').forEach(function (x) { x.open = false; });
+      var fd = rc && document.activeElement && rc.contains(document.activeElement) ? document.activeElement.closest('details.rfc') : null;
+      var focused = fd ? fd.getAttribute('data-room') : null;
+      if (rc && setHTML(rc, rok ? plannerRoomsTable(rooms, plan, openId) : '')) {
+        if (openId === '') rc.querySelectorAll('details.rfc[open]').forEach(function (x) { x.open = false; });
+        if (focused) {
+          var back = rc.querySelector('details.rfc[data-room="' + focused + '"] > summary');
+          if (back) back.focus({ preventScroll: true });
+        }
+      }
     }
     setText('planner.roomsSub', rok
       ? t('planner.roomsSub', { n: rooms.filter(function (r) { return r.charge || r.preload; }).length })
@@ -2988,9 +3007,11 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setM('planner.pa.cost', esc(ca != null ? num(ca, 2) : '—') + ' / ' + esc(cp != null ? num(cp, 2) : '—') + ' <small>€</small>');
     var chart = qs('[data-f="pachart"]', box);
     if (!chart) return;
+    var html = paPanels(h, '24h', 24) + paPanels(h, '7d', 168);
+    if (chart.__pa === html) return;   // unchanged: leave it (see setHTML)
+    chart.__pa = html;
     qsa('.hchart-panel', chart).forEach(function (p) { p.remove(); });
     var legend = qs('.chart-legend', chart);
-    var html = paPanels(h, '24h', 24) + paPanels(h, '7d', 168);
     if (legend) legend.insertAdjacentHTML('beforebegin', html); else chart.insertAdjacentHTML('beforeend', html);
   }
 
@@ -4286,6 +4307,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       }));
       var map = {};
       results.forEach(function (r) { map[r.p] = r.v; });
+      // Wherever the redraw leaves the page, put it back where the user had it.
+      var keepY = window.scrollY;
       applyDiagnostics(map['/diagnostics']);   // first: uptime for "last seen"
       applyOverview(map['/overview']);
       state.strategy = map['/strategy'] || state.strategy;
@@ -4304,6 +4327,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       applySettings(map['/settings']);
       applyCommands(map['/commands']);
       renderHome();
+      if (Math.abs(window.scrollY - keepY) > 2) window.scrollTo(0, keepY);
     } catch (e) {
       console.warn('refresh failed', e);
     }
