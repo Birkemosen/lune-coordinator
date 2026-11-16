@@ -5,7 +5,9 @@
 // Each room gets its share of the house's space heating (rooms.bin heat_kwh: valve ×
 // loop area × (feed − room)) and the house's weather, and the same model and daily
 // refit as the house. Reported per room: fitted loss and floor mass, and forecast RMSE
-// at 3, 6 and 12 h next to persistence.
+// at 3, 6 and 12 h next to persistence. "chosen" is what a live planner would use: each
+// day, per room and horizon, the model or persistence, whichever was better over the
+// previous 7 days.
 #include "house_model.h"
 #include "planner.h"
 
@@ -94,7 +96,7 @@ int main(int argc, char **argv) {
   const int HZ[] = {3, 6, 12};
   const size_t win = static_cast<size_t>(window_days) * 24;
   std::printf("room  UA W/K  floors kWh/K  rooms kWh/K  sun  late sun | RMSE model/persistence  3 h        6 h        12 h\n");
-  double tse[3] = {}, tsp[3] = {};
+  double tse[3] = {}, tsp[3] = {}, tsc[3] = {};
   size_t tcnt[3] = {};
   for (auto &kv : temp) {
     const int idx = kv.first;
@@ -122,13 +124,24 @@ int main(int argc, char **argv) {
     p.g_kw_per_100wm2 *= size; p.p_int_kw *= size;
     static HouseFitter rf;
     rf = HouseFitter(p, 0.01f, size);
-    double se[3] = {}, sp[3] = {};
+    double se[3] = {}, sp[3] = {}, sc[3] = {};
     size_t cnt[3] = {};
+    std::vector<double> day_se[3], day_sp[3];
     for (size_t day = static_cast<size_t>(warmup_days) * 24; day + 25 < n; day += 24) {
       const size_t from = day > win ? day - win : 0;
       rf.fit(&t[from], &in[from], day - from, &p);
       std::vector<float> ts(day + 24 - from);
       track_floor(p, &t[from], &in[from], ts.size(), std::isfinite(t[from]) ? t[from] + 2.0f : 22.0f, ts.data());
+      // Choose per horizon from the last 7 days' errors (before this day).
+      bool use_model[3];
+      for (int j = 0; j < 3; j++) {
+        double a = 0, b = 0;
+        for (size_t k = day_se[j].size() > 7 ? day_se[j].size() - 7 : 0; k < day_se[j].size(); k++) {
+          a += day_se[j][k]; b += day_sp[j][k];
+        }
+        use_model[j] = day_se[j].empty() || a <= b;
+      }
+      double dse[3] = {}, dsp[3] = {};
       for (size_t s = day; s < day + 24 && s + 13 < n; s++) {
         if (!std::isfinite(t[s])) continue;
         const float t0 = t[s] - (s ? p.sensor_sun_k * in[s - 1].sun_wm2 / 100.0f : 0.0f);
@@ -139,23 +152,27 @@ int main(int argc, char **argv) {
             const float m = t[s + k];
             if (std::isfinite(m)) {
               const float shown = sensor_reading(p, st.t_c, in[s + k - 1]);
-            se[j] += (shown - m) * (shown - m); sp[j] += (t[s] - m) * (t[s] - m); cnt[j]++;
+            const double em = (shown - m) * (shown - m), ep = (t[s] - m) * (t[s] - m);
+            se[j] += em; sp[j] += ep; sc[j] += use_model[j] ? em : ep; dse[j] += em; dsp[j] += ep; cnt[j]++;
             }
             j++;
           }
         }
       }
+      for (int j = 0; j < 3; j++) { day_se[j].push_back(dse[j]); day_sp[j].push_back(dsp[j]); }
     }
     std::printf("%4d  %6.1f  %12.1f  %11.1f  %4.2f %8.2f |", idx, 1000.0f * p.ua_kw_per_k, p.cs_kwh_per_k, p.ca_kwh_per_k,
                 p.g_kw_per_100wm2, p.g_lag_kw_per_100wm2);
     for (int j = 0; j < 3; j++) {
       std::printf("  %.2f/%.2f", cnt[j] ? std::sqrt(se[j] / cnt[j]) : NAN, cnt[j] ? std::sqrt(sp[j] / cnt[j]) : NAN);
-      tse[j] += se[j]; tsp[j] += sp[j]; tcnt[j] += cnt[j];
+      tse[j] += se[j]; tsp[j] += sp[j]; tsc[j] += sc[j]; tcnt[j] += cnt[j];
     }
     std::printf("\n");
   }
   std::printf(" all                                                 |");
   for (int j = 0; j < 3; j++) std::printf("  %.2f/%.2f", std::sqrt(tse[j] / tcnt[j]), std::sqrt(tsp[j] / tcnt[j]));
+  std::printf("\n chosen per room (model or persistence, by the last 7 days)  |");
+  for (int j = 0; j < 3; j++) std::printf("  %.2f     ", std::sqrt(tsc[j] / tcnt[j]));
   std::printf("\n");
   (void)fitter;
   return 0;
