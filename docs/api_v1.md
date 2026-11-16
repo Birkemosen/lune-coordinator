@@ -1063,7 +1063,8 @@ it planned with and the shadow flow controller:
            "heat_kwh": 58.5, "cost_eur": 3.41, "below_kh": 0.00,
            "heat_kw": [0.0, 3.2, "..."], "zone_feed_c": [null, 26.1, "..."],
            "t_end_c": [22.55, 22.49, "..."], "price": [0.2875, 0.2810, "..."],
-           "elec_kwh": [0.00, 0.66, "..."]},
+           "elec_kwh": [0.00, 0.66, "..."], "band_min_c": [21.5, "..."], "band_max_c": [23.0, "..."],
+           "price_est": [0, 0, "...", 1], "band_source": "odin"},
   "model": {"ua_kw_per_k": 0.161, "ca_kwh_per_k": 13.3, "cs_kwh_per_k": 30.0, "h_kw_per_k": 0.70,
             "sun_kw_per_100wm2": 0.79, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "floor_kw_per_k": 0.441,
             "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
@@ -1076,8 +1077,12 @@ it planned with and the shadow flow controller:
 - `plan` arrays are per hour from `from_ts` (the current hour): planned space-heating
   output (kW, 0 or between min and max output), the flow to the floors that output needs
   (`null` when off), the house temperature expected at the hour's end, the €/kWh price
-  Touch pushes to Odin (incl. grid tariffs; `null` beyond the known prices) and the
-  electricity the hour costs. The band is `target_c − band_c` to `target_c + 1.0`.
+  Touch pushes to Odin (incl. grid tariffs), the electricity the hour costs and the
+  comfort band the plan is held to. An hour whose price is not published yet carries the
+  same hour of the last known day and `price_est` 1 (`null` before any prices). With
+  `band_source` `odin` the band is Odin's comfort schedule as Touch keeps it: the user's
+  schedule or the synced setpoint, with Touch's lifted copy for the coming 24 h while one
+  is on Odin. With `target` (no schedule known) it is `target_c − band_c` to `target_c + 1.0`.
 - `model_source` is `seed`: start values fitted on this house's 2 Oct–16 Nov 2026
   history (components/planner/seed_params.h). Touch does not learn them yet (F3); with no
   floor tracker on Touch yet, the floors start where they would stand if the house were

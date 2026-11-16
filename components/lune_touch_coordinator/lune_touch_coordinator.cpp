@@ -1795,6 +1795,10 @@ struct PlannerRuntime {
   ::lune_planner::PlanHour hours[::lune_planner::PLAN_H]{};
   ::lune_planner::HeatPlan plan{};
   float price[::lune_planner::PLAN_H]{};
+  bool price_est[::lune_planner::PLAN_H]{};   // not published yet: the same hour of the last known day
+  float band_min[::lune_planner::PLAN_H]{};
+  float band_max[::lune_planner::PLAN_H]{};
+  bool band_odin{false};        // band from Odin's comfort schedule as Touch keeps it (with its lift)
   uint32_t from_ts{0};          // hour_start of plan hour 0 (the current hour)
   uint32_t solved_ts{0};        // wall clock of the last solve
   uint32_t solved_hour{0};      // from_ts of the last solve
@@ -15182,9 +15186,22 @@ void LuneTouchCoordinator::planner_tick_() {
   int eur_ymd = 0;
   float house_t = NAN, target = NAN, out_kw = NAN, odin_flow = NAN, outside = NAN;
   bool pending = false;
+  // Odin's comfort band as Touch keeps it: the user's schedule (or the synced setpoint)
+  // and, while one is on Odin, the lifted copy Touch wrote. The plan is held to the
+  // same band Odin plans against, lifts included.
+  lune_touch_odin::Profile base{}, lifted{};
+  bool has_base = false, has_lifted = false;
   if (!take_state_lock_(100))
     return;
   set = planner_settings_;
+  if (odin_owner_.has_user || odin_owner_.sync.on) {
+    base = lune_touch_odin::apply_sync(odin_owner_.user, odin_owner_.sync);
+    has_base = base.count > 0;
+  }
+  if (odin_owner_.applied && odin_owner_.written.count > 0) {
+    lifted = odin_owner_.written;
+    has_lifted = true;
+  }
   fc_n = forecast_hours_count_ > 72 ? 72 : forecast_hours_count_;
   for (uint8_t i = 0; i < fc_n; i++)
     fc[i] = forecast_hours_[i];
@@ -15251,9 +15268,26 @@ void LuneTouchCoordinator::planner_tick_() {
         if (lune_touch_price::make_ymd(prev.year, prev.month, prev.day_of_month) == eur_ymd)
           price = eur[24 + lt.hour];
       }
+      // Not published yet (tomorrow before ~13:00, the day after): the same hour of the
+      // last day that is known, so the plan keeps the day's shape instead of a flat guess.
+      rt.price_est[k] = !std::isfinite(price) && eur_n > 0;
+      if (rt.price_est[k]) {
+        const int last = eur_n > 24 && 24 + lt.hour < eur_n ? 24 + lt.hour : lt.hour;
+        price = last < eur_n ? eur[last] : NAN;
+      }
       ph.price_eur_kwh = price;
-      ph.band_min_c = target - COMFORT_BAND_C;
-      ph.band_max_c = target + 1.0f;
+      // The lifted copy covers the coming day; after that the base schedule.
+      const lune_touch_odin::Profile *prof = has_lifted && k < 24 ? &lifted : (has_base ? &base : nullptr);
+      if (prof != nullptr) {
+        const lune_touch_odin::Block b = lune_touch_odin::block_at(*prof, static_cast<uint8_t>(lt.hour));
+        ph.band_min_c = b.sp + b.min;
+        ph.band_max_c = b.sp + b.max;
+      } else {
+        ph.band_min_c = target - COMFORT_BAND_C;
+        ph.band_max_c = target + 1.0f;
+      }
+      rt.band_min[k] = ph.band_min_c;
+      rt.band_max[k] = ph.band_max_c;
       rt.price[k] = price;
       n = k + 1;
     }
@@ -15283,6 +15317,7 @@ void LuneTouchCoordinator::planner_tick_() {
       rt.seen_price_n = eur_n;
       rt.start_t_c = house_t;
       rt.target_c = target;
+      rt.band_odin = has_base || has_lifted;
       rt.out_now_c = rt.hours[0].weather.out_c;
       if (!rt.logged_runtime) {
         rt.logged_runtime = true;
@@ -15353,17 +15388,21 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
       "\"cost_eur\":%.2f,\"below_kh\":%.2f,",
       static_cast<unsigned long>(rt->from_ts), p.n, a, b, static_cast<double>(COMFORT_BAND_C),
       static_cast<double>(p.heat_kwh), static_cast<double>(p.cost_eur), static_cast<double>(p.below_kh));
-  const char *names[5] = {"heat_kw", "zone_feed_c", "t_end_c", "price", "elec_kwh"};
-  for (int f = 0; f < 5; f++) {
+  const char *names[7] = {"heat_kw", "zone_feed_c", "t_end_c", "price", "elec_kwh", "band_min_c", "band_max_c"};
+  for (int f = 0; f < 7; f++) {
     put("%s\"%s\":[", f ? "," : "", names[f]);
     for (int i = 0; i < p.n; i++) {
-      const float v = f == 0 ? p.kw[i] : f == 1 ? p.zone_feed_c[i] : f == 2 ? p.t_end_c[i] : f == 3 ? rt->price[i] : p.elec_kwh[i];
-      planner_num_(a, sizeof(a), v, f == 3 ? 4 : (f == 2 ? 2 : (f == 4 ? 2 : 1)));
+      const float v = f == 0 ? p.kw[i] : f == 1 ? p.zone_feed_c[i] : f == 2 ? p.t_end_c[i] : f == 3 ? rt->price[i]
+                      : f == 4 ? p.elec_kwh[i] : f == 5 ? rt->band_min[i] : rt->band_max[i];
+      planner_num_(a, sizeof(a), v, f == 3 ? 4 : (f == 2 || f == 4 ? 2 : 1));
       put("%s%s", i ? "," : "", a);
     }
     put("]");
   }
-  put("},");
+  put(",\"price_est\":[");
+  for (int i = 0; i < p.n; i++)
+    put("%s%d", i ? "," : "", rt->price_est[i] ? 1 : 0);
+  put("],\"band_source\":\"%s\"},", rt->band_odin ? "odin" : "target");
   const lp::HouseParams &h = rt->house;
   put("\"model\":{\"ua_kw_per_k\":%.3f,\"ca_kwh_per_k\":%.1f,\"cs_kwh_per_k\":%.1f,\"h_kw_per_k\":%.2f,"
       "\"sun_kw_per_100wm2\":%.2f,\"p_int_kw\":%.2f,\"wind_pct_per_ms\":%.1f,\"floor_kw_per_k\":%.3f,\"cop\":[",

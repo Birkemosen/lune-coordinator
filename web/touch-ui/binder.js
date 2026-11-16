@@ -2711,9 +2711,9 @@
   // dashed) and the house temperature the plan expects against the comfort band.
   function plannerChart(plan, st) {
     var n = plan.heat_kw.length;
-    var price = plan.price || [];
-    var known = price.filter(function (v) { return v != null; });
-    var ptop = Math.max.apply(null, known.concat([0.0001]));
+    var price = plan.price || [], est = plan.price_est || [];
+    var known = price.filter(function (v, k) { return v != null && !est[k]; });
+    var ptop = niceTop(Math.max.apply(null, price.filter(function (v) { return v != null; }).concat([0.0001])));
     var lane = function (cls, name, ticks) {
       return '<div class="plan-lab plan-lab--y' + cls + '"><b>' + esc(name) + '</b><span class="plan-y">' +
         ticks.map(function (v) { return '<i>' + esc(v) + '</i>'; }).join('') + '</span></div>';
@@ -2730,8 +2730,12 @@
     };
     var cells = '', bars = '';
     for (var i = 0; i < n; i++) {
-      var pv = price[i];
-      cells += pv == null ? '<i class="plan-cell"></i>' : '<i class="plan-cell" style="--v:' + Math.round(pv / ptop * 100) + '"></i>';
+      // Colour = rank among the published hours (cheap → dear); an estimated hour (same
+      // hour of the last known day) keeps its height but no colour.
+      var pv = price[i], below = known.filter(function (v) { return v < pv; }).length;
+      var sc = Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)));
+      cells += pv == null ? '<i class="plan-cell"></i>'
+        : '<i class="plan-cell"' + (est[i] ? '' : ' data-scale="' + sc + '"') + ' style="--v:' + Math.max(4, Math.round(Math.max(0, pv) / ptop * 100)) + '"></i>';
       bars += '<i class="plan-bar" style="--v:' + Math.round(Math.min(1, (plan.heat_kw[i] || 0) / 8) * 100) + '"></i>';
     }
     var fmax = st && st.max_flow_c ? Number(st.max_flow_c) : 35;
@@ -2742,8 +2746,13 @@
     var tgt = plan.target_c != null ? Number(plan.target_c) : 22, band = plan.band_c != null ? Number(plan.band_c) : 0.5;
     var hlo = tgt - 1.5, hhi = tgt + 1.5;   // temperature axis 3 °C
     var yy = function (v) { return ((hhi - v) / (hhi - hlo) * 100).toFixed(1); };
-    var house = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true"><rect class="rb" x="0" y="' + yy(tgt + 1) +
-      '" width="' + n + '" height="' + (yy(tgt - band) - yy(tgt + 1)).toFixed(1) + '"/><g class="exp">' + stair((plan.t_end_c || []).map(function (v) {
+    // Band hour by hour (Odin's schedule with Touch's lifts), else target − band … + 1.
+    var bmin = plan.band_min_c || [], bmax = plan.band_max_c || [], rb = '';
+    for (var b = 0; b < n; b++) {
+      var lo = bmin[b] != null ? Math.max(hlo, bmin[b]) : tgt - band, hi = bmax[b] != null ? Math.min(hhi, bmax[b]) : tgt + 1;
+      rb += '<rect class="rb" x="' + b + '" y="' + yy(hi) + '" width="1" height="' + Math.max(0, yy(lo) - yy(hi)).toFixed(1) + '"/>';
+    }
+    var house = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true">' + rb + '<g class="exp">' + stair((plan.t_end_c || []).map(function (v) {
         return v == null ? v : Math.max(hlo, Math.min(hhi, v));
       }), hlo, hhi) + '</g></svg>';
     var lang = (i18n._lang || document.documentElement.lang || 'en');
