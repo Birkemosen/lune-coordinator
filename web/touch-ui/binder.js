@@ -2846,9 +2846,9 @@
     return x;
   }
 
-  // Past day + 48 h in one chart (LDS 15.11 Touch vs Odin and the room charts): x in hours
-  // 0–72, now at 24. Axis marks every 6 h (every 12 h under 600 px, .h6), weekday at midnight.
-  var VS_H = 72, VS_PAST = 24;
+  // The last day and the next in one chart (LDS 15.11 Touch vs Odin and the room charts): x in
+  // hours 0–48, now at 24. Axis marks every 6 h (every 12 h under 600 px, .h6), weekday at midnight.
+  var VS_H = 48, VS_PAST = 24, VS_AHEAD = VS_H - VS_PAST;
   function vsAxis(from_ts) {
     var lang = (i18n._lang || document.documentElement.lang || 'en'), x = '';
     for (var k = 0; k <= VS_H; k += 6) {
@@ -2861,13 +2861,12 @@
     return '<div class="axis at" aria-hidden="true">' + x + '</div>';
   }
 
-  // Step line over hours starting at x0 on a lo–hi axis (null breaks the line).
+  // Line through the hours' midpoints from x0 on a lo–hi axis (null breaks the line).
   function vsLine(cls, x0, vals, lo, hi) {
     var segs = [], cur = [];
     (vals || []).forEach(function (v, k) {
       if (v == null || !isFinite(v)) { if (cur.length) segs.push(cur); cur = []; return; }
-      var y = ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1);
-      cur.push((x0 + k) + ',' + y, (x0 + k + 1) + ',' + y);
+      cur.push((x0 + k + 0.5).toFixed(1) + ',' + ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1));
     });
     if (cur.length) segs.push(cur);
     return segs.map(function (s2) { return '<polyline class="' + cls + '" points="' + s2.join(' ') + '"/>'; }).join('');
@@ -2875,27 +2874,32 @@
 
   // Temperature panel: past (24), band per future hour, Touch's forecast, Odin's (24 h).
   function vsTemp(o) {
-    var vals = [].concat(o.past, o.ahead, o.odin || [], o.lo, o.hi).filter(function (v) { return v != null && isFinite(v); });
+    var cut = function (a) { return (a || []).slice(0, VS_AHEAD); };
+    var ahead = cut(o.ahead), odin = o.odin ? cut(o.odin) : null, blo = cut(o.lo), bhi = cut(o.hi);
+    var vals = [].concat(o.past, ahead, odin || [], blo, bhi).filter(function (v) { return v != null && isFinite(v); });
     if (!vals.length) return '';
-    var lo = o.min != null ? o.min : Math.floor(Math.min.apply(null, vals) - 0.2);
-    var hi = o.max != null ? o.max : Math.ceil(Math.max.apply(null, vals) + 0.2);
+    var lo = Math.floor(Math.min.apply(null, vals) - 0.2), hi = Math.ceil(Math.max.apply(null, vals) + 0.2);
     if (hi - lo < 3) { lo = Math.floor((lo + hi) / 2 - 1.5); hi = lo + 3; }
     var y = function (v) { return ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1); };
-    var band = '';
-    o.lo.forEach(function (b, k) {
-      var top = o.hi[k];
-      if (b == null || top == null) return;
-      band += '<rect class="bd" x="' + (VS_PAST + k) + '" y="' + y(top) + '" width="1" height="' + Math.max(0, y(b) - y(top)).toFixed(1) + '"/>';
+    // The band hour by hour as one area (steps), the comfort limit as a line at its bottom.
+    var top = [], bot = [], floor = [];
+    blo.forEach(function (b, k) {
+      if (b == null || bhi[k] == null) return;
+      var x0 = VS_PAST + k, x1 = x0 + 1;
+      top.push(x0 + ',' + y(bhi[k]), x1 + ',' + y(bhi[k]));
+      bot.unshift(x1 + ',' + y(b), x0 + ',' + y(b));
+      floor.push(x0 + ',' + y(b), x1 + ',' + y(b));
     });
+    var band = top.length ? '<polygon class="bd" points="' + top.concat(bot).join(' ') + '"/><polyline class="bdl" points="' + floor.join(' ') + '"/>' : '';
     var segs = (o.segs || []).map(function (sg) {
-      var a = Math.max(0, Math.min(48, sg.from)), b = Math.max(0, Math.min(48, sg.to));
+      var a = Math.max(0, Math.min(VS_AHEAD, sg.from)), b = Math.max(0, Math.min(VS_AHEAD, sg.to));
       return b > a ? '<rect class="heat" x="' + (VS_PAST + a) + '" y="0" width="' + (b - a) + '" height="100"/>' : '';
     }).join('');
     var grid = ['0.5', '50', '99.5'].map(function (g) { return '<line class="grid" x1="0" x2="' + VS_H + '" y1="' + g + '" y2="' + g + '"/>'; }).join('');
     return '<div class="hchart-panel' + (o.pair ? ' pair' : '') + '"><div class="hchart-y" aria-hidden="true"><span>' + num(hi) + '°</span><span>' +
       num((hi + lo) / 2) + '°</span><span>' + num(lo) + '°</span></div><svg class="trend" viewBox="0 0 ' + VS_H + ' 100" preserveAspectRatio="none" role="img" aria-label="' +
-      esc(o.aria) + '"><rect class="future" x="' + VS_PAST + '" y="0" width="' + (VS_H - VS_PAST) + '" height="100"/>' + grid + segs + band +
-      vsLine('t', 0, o.past, lo, hi) + vsLine('tf', VS_PAST, o.ahead, lo, hi) + (o.odin ? vsLine('od', VS_PAST, o.odin, lo, hi) : '') +
+      esc(o.aria) + '"><rect class="future" x="' + VS_PAST + '" y="0" width="' + VS_AHEAD + '" height="100"/>' + grid + segs + band +
+      vsLine('t', 0, o.past, lo, hi) + (odin ? vsLine('od', VS_PAST, odin, lo, hi) : '') + vsLine('tf', VS_PAST, ahead, lo, hi) +
       '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(o.from_ts) + '</div>';
   }
 
@@ -2926,19 +2930,23 @@
     var metric_ = function (label, val, unit) { return '<div class="metric"><dt>' + esc(label) + '</dt><dd>' + val + ' <small>' + unit + '</small></dd></div>'; };
     var temp = vsTemp({ past: lastDay(h.temp_c), ahead: plan.t_end_c, odin: odin ? odin.expected_c : null, lo: bmin, hi: bmax,
       aria: t('planner.vsTempAria'), pair: true, from_ts: plan.from_ts });
-    // Heat per hour: delivered before now; Touch's plan and Odin's side by side after.
-    var top = 6, past = lastDay(h.heat_kwh), bars = '';
-    plan.heat_kw.concat(past).forEach(function (v) { if (v > top) top = Math.ceil(v); });
+    // Heat per hour: bars for delivered (before now) and Touch's plan (after); Odin's plan as a
+    // dashed step line over them (space heat only).
+    var top = 6, past = lastDay(h.heat_kwh), bars = '', ahead = plan.heat_kw.slice(0, VS_AHEAD);
+    ahead.concat(past).forEach(function (v) { if (v > top) top = Math.ceil(v); });
     if (odin) odin.heat_kw.forEach(function (v) { if (v > top) top = Math.ceil(v); });
-    var bar = function (cls, x, w, v) { var hh = Math.max(0, v || 0) / top * 100; return hh > 0 ? '<rect class="' + cls + '" x="' + x.toFixed(2) + '" y="' + (100 - hh).toFixed(1) + '" width="' + w + '" height="' + hh.toFixed(1) + '"/>' : ''; };
-    past.forEach(function (v, k) { bars += bar('ac', k + 0.12, 0.76, v); });
-    plan.heat_kw.forEach(function (v, k) {
-      bars += bar('ac', VS_PAST + k + 0.1, 0.4, v);
-      if (odin && k < ON && space(k)) bars += bar('odb', VS_PAST + k + 0.5, 0.4, odin.heat_kw[k]);
-    });
+    var bar = function (x, v) { var hh = Math.max(0, v || 0) / top * 100; return hh > 0 ? '<rect class="ac" x="' + x.toFixed(2) + '" y="' + (100 - hh).toFixed(1) + '" width=".7" height="' + hh.toFixed(1) + '"/>' : ''; };
+    past.forEach(function (v, k) { bars += bar(k + 0.15, v); });
+    ahead.forEach(function (v, k) { bars += bar(VS_PAST + k + 0.15, v); });
+    var odl = [];
+    for (var k2 = 0; odin && k2 < ON; k2++) {
+      var yv = (100 - Math.max(0, space(k2) ? odin.heat_kw[k2] || 0 : 0) / top * 100).toFixed(1);
+      odl.push((VS_PAST + k2) + ',' + yv, (VS_PAST + k2 + 1) + ',' + yv);
+    }
+    if (odl.length) bars += '<polyline class="odl" points="' + odl.join(' ') + '"/>';
     var heat = '<div class="hchart-panel"><div class="hchart-y" aria-hidden="true"><span>' + num(top, 0) + ' kW</span><span>0</span></div>' +
       '<svg class="trend" viewBox="0 0 ' + VS_H + ' 100" preserveAspectRatio="none" role="img" aria-label="' + esc(t('planner.vsHeatAria')) + '">' +
-      '<rect class="future" x="' + VS_PAST + '" y="0" width="' + (VS_H - VS_PAST) + '" height="100"/><line class="grid" x1="0" x2="' + VS_H + '" y1="99.5" y2="99.5"/>' + bars +
+      '<rect class="future" x="' + VS_PAST + '" y="0" width="' + VS_AHEAD + '" height="100"/><line class="grid" x1="0" x2="' + VS_H + '" y1="99.5" y2="99.5"/>' + bars +
       '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(plan.from_ts) + '</div>';
     var lg_ = function (c, k) { return '<span><i class="' + c + '"></i>' + esc(t(k)) + '</span>'; };
     return '<div class="hchart hchart--ahead hchart--vs"><div class="hchart-head"><dl class="metrics">' +
@@ -2946,7 +2954,7 @@
       metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
       (odin ? '' : '<p class="note">' + esc(t('planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
       '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lt', 'planner.lMeasured') + lg_('ltf', 'planner.lTouch') +
-      (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
+      (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodl', 'planner.lHeatOdin') : '') + '</p></div>';
   }
 
   // Rooms (LDS 15.11): a row per room (now, lowest and highest over the next 24 h, hours
