@@ -2743,9 +2743,9 @@
     var hlo = tgt - 1.5, hhi = tgt + 1.5;   // temperature axis 3 °C
     var yy = function (v) { return ((hhi - v) / (hhi - hlo) * 100).toFixed(1); };
     var house = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true"><rect class="rb" x="0" y="' + yy(tgt + 1) +
-      '" width="' + n + '" height="' + (yy(tgt - band) - yy(tgt + 1)).toFixed(1) + '"/>' + stair((plan.t_end_c || []).map(function (v) {
+      '" width="' + n + '" height="' + (yy(tgt - band) - yy(tgt + 1)).toFixed(1) + '"/><g class="exp">' + stair((plan.t_end_c || []).map(function (v) {
         return v == null ? v : Math.max(hlo, Math.min(hhi, v));
-      }), hlo, hhi) + '</svg>';
+      }), hlo, hhi) + '</g></svg>';
     var lang = (i18n._lang || document.documentElement.lang || 'en');
     var x = '';
     for (var k = 0; k < n; k++) {
@@ -2761,8 +2761,8 @@
     return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.planAria')) + '" style="--now:0">' +
       lane(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, 2), '0']) + '<div class="plan-lane plan-lane--price">' + cells + '</div>' +
       lane('', t('planner.laneOut'), ['8 kW', '4', '0']) + '<div class="plan-lane plan-lane--out">' + bars + '</div>' +
-      lane(' plan-lab--flow', t('planner.laneFlow'), [num(fhi, 0) + '°', num(flo, 0) + '°']) + '<div class="plan-lane plan-lane--flow">' + flow + '</div>' +
-      lane(' plan-lab--flow', t('planner.laneHouse'), [num(hhi, 0) + '°', num(hlo, 0) + '°']) + '<div class="plan-lane plan-lane--room">' + house + '</div>' +
+      lane('', t('planner.laneFlow'), [num(fhi, 0) + '°', num(flo, 0) + '°']) + '<div class="plan-lane plan-lane--flow">' + flow + '</div>' +
+      lane('', t('planner.laneHouse'), [num(hhi, 0) + '°', num(hlo, 0) + '°']) + '<div class="plan-lane plan-lane--room">' + house + '</div>' +
       '<span></span><div class="plan-x">' + x + '</div></div>';
   }
 

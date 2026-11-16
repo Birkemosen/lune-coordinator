@@ -1108,6 +1108,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "activity.flush", "activity.minutesLeft", "activity.offline", "activity.dhw", "activity.legionella", "activity.heating", "activity.prestart", "activity.idle", "activity.step",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.chargingVal", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
         "planner.shadow", "planner.sub", "planner.subEmpty", "planner.planAria", "planner.lPrice", "planner.laneOut",
+        "planner.laneFlow", "planner.laneHouse", "planner.perMs", "planner.confSeed", "planner.confLearning", "planner.cop",
+        "planner.copAt", "planner.copOut", "planner.copZone", "planner.copHp",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
