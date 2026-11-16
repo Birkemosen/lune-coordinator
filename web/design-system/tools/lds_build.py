@@ -30,8 +30,9 @@ TOK = json.loads((ROOT/"tokens/tokens.json").read_text(encoding="utf-8"))
 # "http" is the UI/CSS id; firmware API stores it as generic_http.
 KNOWN_HEAT_SOURCE_TYPES = frozenset({"http", "generic_http", "asgard"})
 
-# Tilstande (DESIGN.md 15): home har en visning pr. omfang, sys én visning.
-MODES = frozenset({"home", "sys"})
+# Tilstande (DESIGN.md 15): home og plan har en visning pr. omfang, sys én visning.
+# plan (Touch' planlægger, 15.11) er valgfri og står mellem home og sys.
+MODES = frozenset({"home", "plan", "sys"})
 LEGACY_MODES = frozenset({"dash", "conf"})
 # Valgfrie CSS-dele (@only-blokke) ud over projektets id.
 # legacy = Dashboard/Konfiguration-modellen (sektioner, Konfigurationens spalter).
@@ -106,6 +107,8 @@ def validate_cfg(cfg, path=""):
               file=sys.stderr)
     elif not set(modes) <= MODES:
         errs.append(f"modes must be {sorted(MODES)} (or legacy {sorted(LEGACY_MODES)}), got {modes}")
+    elif "plan" in modes and "home" not in modes:
+        errs.append("mode 'plan' requires 'home'")
 
     feats = cfg.get("features")
     if feats is not None and not (isinstance(feats, list) and all(f in KNOWN_FEATURES for f in feats)):
@@ -341,6 +344,15 @@ def state_css(cfg):
              " { background: var(--inv-bg); color: var(--inv-fg); }")
     L.append(",\n".join(f'  #m-{m}:focus-visible ~ .app .mode label[for="m-{m}"]' for m in all_modes) +
              " { outline: 2px solid var(--focus); outline-offset: 2px; }")
+    if len(all_modes) >= 3:
+        # Tablet: tre tilstande + brand + værktøjer er bredere end headeren. De inaktive viser
+        # kun ikonet; teksten står stadig i labelen (skærmlæsere), den aktive viser den.
+        L.append("  /* Tablet med 3+ tilstande: inaktive tilstande som ikon */")
+        L.append("  @media (min-width: 768px) and (max-width: 1023.98px) {")
+        L.append("    .mode label { font-size: 0; gap: 0; padding-inline: var(--space-3); }")
+        L.append(",\n".join(f'    #m-{m}:checked ~ .app .mode label[for="m-{m}"]' for m in all_modes) +
+                 " { font-size: var(--fs-sm); gap: var(--space-2); padding-inline: var(--space-5); }")
+        L.append("  }")
     L.append("")
     if "sys" in all_modes:
         L.append("  /* System: én visning; strimlen hører til Hjem */")

@@ -7,6 +7,7 @@
 #include "room_reached.h"
 #include "coordinator_model.h"
 #include "energy_price.h"
+#include "planner_settings.h"
 #include "exposure_learning.h"
 #include "flow_trim.h"
 #include "hp_history.h"
@@ -765,6 +766,11 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_heat_source_control_json(char *buffer, size_t capacity) const;
   /// Touch's heating plan for the next 24 h (dashboard plan graph).
   void write_plan_json(char *buffer, size_t capacity) const;
+  /// Shadow planner (GET /planner): settings, and null results until a planner runs.
+  void write_planner_json(char *buffer, size_t capacity) const;
+  /// Planner settings; absent fields keep their value. Shadow only: commands nothing.
+  bool set_planner_settings(const planner_settings::Settings &settings);
+  planner_settings::Settings get_planner_settings() const { return planner_settings_; }
   /// Odin comfort control + generic levers. Null strings / NAN = unchanged.
   bool set_heat_source_control(bool has_odin_enabled, bool odin_enabled, float odin_max_lift_c,
                                const char *forwarder_entity, const char *target_url_template,
@@ -1260,6 +1266,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool circulation_poll_requested_{false};
   float weather_max_boost_c_{1.5f};
   bool solar_holdoff_enabled_{true};
+  planner_settings::Settings planner_settings_{};
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};

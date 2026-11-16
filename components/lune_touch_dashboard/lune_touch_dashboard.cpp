@@ -918,6 +918,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/planner") == 0) {
+      if (coordinator_)
+        coordinator_->write_planner_json(data_buf_, DATA_BUF_SIZE);
+      else
+        snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/heat-source/control") == 0) {
       if (coordinator_)
         coordinator_->write_heat_source_control_json(data_buf_, DATA_BUF_SIZE);
@@ -1232,6 +1240,30 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     const bool accepted = coordinator_->set_house_target(target);
     snprintf(data_buf_, DATA_BUF_SIZE, accepted ? "{\"result\":\"stored\"}" : "{\"result\":\"rejected\",\"error\":\"house_target_rejected\"}");
     send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/planner/settings") == 0) {
+    // Shadow planner settings; absent fields keep their value. Commands nothing.
+    auto ps = coordinator_->get_planner_settings();
+    char strategy[16]{};
+    const bool has_strategy = !api_arg(api, "strategy").empty() ||
+                              (api.json_body != nullptr && !(*api.json_body)["strategy"].isNull());
+    if (has_strategy) {
+      parse_text_param(api, api.json_body, "strategy", strategy, sizeof(strategy));
+      if (!lune_touch_coordinator::planner_settings::parse_strategy(strategy, &ps.strategy)) {
+        send_error_(api, 400, "invalid_param", "strategy must be comfort, weighted or price");
+        return;
+      }
+    }
+    float v = NAN;
+    if (parse_float_param(api, api.json_body, "comfort_weight_eur", &v)) ps.comfort_weight_eur = v;
+    if (parse_float_param(api, api.json_body, "min_output_kw", &v)) ps.min_output_kw = v;
+    if (parse_float_param(api, api.json_body, "max_output_kw", &v)) ps.max_output_kw = v;
+    if (parse_float_param(api, api.json_body, "max_flow_c", &v)) ps.max_flow_c = v;
+    const bool accepted = coordinator_->set_planner_settings(ps);
+    if (accepted)
+      coordinator_->write_planner_json(data_buf_, DATA_BUF_SIZE);
+    else
+      snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    send_write_result_(api, accepted, 503);
   } else if (strcmp(path, "/weather/settings") == 0) {
     // Either field alone is a valid save (the solar switch saves on its own).
     float max_boost_c = 1.5f;

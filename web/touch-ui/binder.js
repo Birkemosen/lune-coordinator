@@ -329,6 +329,9 @@
     if (path === '/nodes') return { nodes: JSON.parse(JSON.stringify(mockNodeList)) };
     if (path === '/nodes/scan') return mockScan();
     if (path === '/wifi') return mockWifi;
+    if (path === '/planner') return { mode: 'shadow', running: false, strategy: 'comfort',
+      settings: { strategy: 'comfort', comfort_weight_eur: 0.5, min_output_kw: 3.2, max_output_kw: 8.0, max_flow_c: 35.0 },
+      solved_ts: null, plan: null, rooms: null, model: null, history: null };
     if (path === '/odin/mqtt') return mockMqtt;
     if (path === '/prices') return JSON.parse(JSON.stringify(mockPrices));
     var zd = path.match(/^\/prices\/zone-defaults\/(.+)$/);
@@ -457,6 +460,7 @@
   }
 
   async function mockPost(path, body) {
+    if (path === '/planner/settings') return mockGet('/planner');
     if (path === '/forecast/estimate-location') return { result: 'ok', source: 'network', latitude: 55.384697, longitude: 10.1402, city: 'Vissenbjerg', country: 'Denmark' };
     var bool = function (v) { return v === '1' || v === 1 || v === true; };
     if (path === '/heat-source/test-read' || path === '/heat-source/test-push') {
@@ -2639,6 +2643,66 @@
     }
   }
 
+  /* ---- Opvarmningsplan (shadow planner, GET /planner) ------------------------
+     The planner computes and logs only. Until it runs every result is null and each
+     panel keeps its .empty line; settings fill the planner sheet's form. */
+  function applyPlanner(d) {
+    if (!d) return;
+    var st = d.settings || {};
+    var f = qs('form[data-save="planner"]');
+    if (f && !formBusy(f)) {
+      if (st.strategy) putRadio(f, 'strategy', st.strategy);
+      ['comfort_weight_eur', 'min_output_kw', 'max_output_kw', 'max_flow_c'].forEach(function (k) {
+        var el2 = f.querySelector('[name="' + k + '"]');
+        if (el2 && st[k] != null) putVal(el2, Number(st[k]).toFixed(k === 'comfort_weight_eur' ? 2 : 1));
+      });
+      if (f.luneResnap) f.luneResnap();
+    }
+    setText('planner.modeText', t('planner.shadow'));
+    setText('planner.o.solved', d.solved_ts ? new Date(d.solved_ts * 1000).toLocaleTimeString(i18n._lang || document.documentElement.lang || 'en', { hour: '2-digit', minute: '2-digit' }) : '—');
+    var plan = d.plan;
+    var box = qs('[data-f="pl48"]');
+    var ok = !!(plan && Array.isArray(plan.heat_kw) && plan.heat_kw.length);
+    if (box) {
+      box.toggleAttribute('data-empty', !ok);
+      var chart = box.querySelector('[data-f="chart"]');
+      if (chart) chart.innerHTML = ok ? plannerChart(plan) : '';
+    }
+    if (ok) {
+      var e = plan.heat_kw.reduce(function (a, v) { return a + (v || 0); }, 0);
+      setText('planner.sub', t('planner.sub', { e: num(e, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' }));
+    } else {
+      setText('planner.sub', t('planner.subEmpty'));
+    }
+    ['plrooms', 'plcop', 'plpa'].forEach(function (k) {
+      var b = qs('[data-f="' + k + '"]');
+      if (b) b.toggleAttribute('data-empty', true);   // filled when the planner reports them (F1–F3)
+    });
+    var m = d.model || {};
+    ['loss', 'mass', 'floor', 'solar', 'wind', 'dhw'].forEach(function (k) {
+      setText('planner.model.' + k, m[k] != null ? num(m[k], k === 'mass' ? 1 : 3) : '—');
+      setText('planner.model.' + k + 'Conf', '—');
+    });
+  }
+
+  // 48 h plan: price cells, planned heat bars (hot water / legionella marked). Flow comes
+  // with the planner's flow controller (F2).
+  function plannerChart(plan) {
+    var n = plan.heat_kw.length;
+    var price = plan.price || [];
+    var ptop = Math.max.apply(null, price.concat([0.0001]));
+    var cells = '', bars = '';
+    for (var i = 0; i < n; i++) {
+      var pv = price[i];
+      cells += pv == null ? '<i class="plan-cell"></i>' : '<i class="plan-cell" style="--v:' + Math.round(pv / ptop * 100) + '"></i>';
+      var mode = plan.dhw && plan.dhw[i] === 2 ? ' data-mode="legionella"' : (plan.dhw && plan.dhw[i] === 1 ? ' data-mode="dhw"' : '');
+      bars += '<i class="plan-bar"' + mode + ' style="--v:' + Math.round(Math.min(1, (plan.heat_kw[i] || 0) / 6) * 100) + '"></i>';
+    }
+    return '<div class="plan plan--48" role="img" aria-label="' + t('planner.planAria') + '">' +
+      '<div class="plan-lab plan-lab--sm"><b>' + t('planner.lPrice') + '</b></div><div class="plan-lane plan-lane--price">' + cells + '</div>' +
+      '<div class="plan-lab"><b>' + t('planner.laneOut') + '</b></div><div class="plan-lane plan-lane--out">' + bars + '</div><span></span></div>';
+  }
+
   function applyWifi(w) {
     if (!w) return;
     setText('wifi.current', w.connected && w.ssid ? w.ssid : '—');
@@ -3580,7 +3644,7 @@
 
   async function refresh() {
     try {
-      var paths = ['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/plan', '/heat-source', '/heat-source/control', '/odin/mqtt', '/prices', '/settings', '/diagnostics', '/commands', '/wifi'];
+      var paths = ['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/plan', '/heat-source', '/heat-source/control', '/odin/mqtt', '/prices', '/planner', '/settings', '/diagnostics', '/commands', '/wifi'];
       var results = await Promise.all(paths.map(function (p) {
         return get(p).then(function (v) { return { p: p, v: v }; }).catch(function () { return { p: p, v: null }; });
       }));
@@ -3599,6 +3663,7 @@
       applyHeatControl(map['/heat-source/control']);
       applyOdinMqtt(map['/odin/mqtt']);
       applyPrices(map['/prices']);
+      applyPlanner(map['/planner']);
       applyWifi(map['/wifi']);
       applySettings(map['/settings']);
       applyCommands(map['/commands']);
@@ -3951,6 +4016,15 @@
       } else if (key === 'heat_source') {
         await saveHeatConnection(form, ch);
         await saveHeatBehavior(form, ch);
+      } else if (key === 'planner') {
+        var plSaved = await post('/planner/settings', {
+          strategy: data.strategy || 'comfort',
+          comfort_weight_eur: fval(form, 'comfort_weight_eur'),
+          min_output_kw: fval(form, 'min_output_kw'),
+          max_output_kw: fval(form, 'max_output_kw'),
+          max_flow_c: fval(form, 'max_flow_c')
+        });
+        applyPlanner(plSaved);
       } else if (key === 'weather') {
         var wxAll = !Object.keys(ch).length;   // no patch info: save both parts
         if (wxAll || has(ch, 'wx_boost')) await post('/weather/settings', { max_boost_c: fval(form, 'wx_boost') });

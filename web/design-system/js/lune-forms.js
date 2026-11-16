@@ -120,7 +120,9 @@ function hashOf(el){return el?(el.getAttribute("data-hash")||(el.id||"").replace
 function writeHash(){
 var sh=sheetOpen(),h="";
 if(sh){h=hashOf(sh);var tb=sh.querySelector("input.tab:checked"),first=sh.querySelector("input.tab");if(tb&&tb!==first)h+="/"+hashOf(tb)}
-else{var ms=document.getElementById("m-sys");if(ms&&ms.checked){h=hashOf(ms)||"system";var c=document.querySelector('input[name="syscat"]:checked');if(c&&c.id!=="c-none")h+="/"+hashOf(c)}}
+else{var ms=document.querySelector('input[name="mode"]:checked');if(ms&&ms.id==="m-sys"){h=hashOf(ms)||"system";var c=document.querySelector('input[name="syscat"]:checked');if(c&&c.id!=="c-none")h+="/"+hashOf(c)}
+/* Andre tilstande end Hjem (fx Plan): deres egen adresse (data-hash). */
+else if(ms&&ms.id!=="m-home"&&ms.getAttribute("data-hash"))h=ms.getAttribute("data-hash")}
 var url=location.pathname+location.search+(h?"#"+h:"");
 if(url!==location.pathname+location.search+location.hash)history.replaceState(null,"",url)}
 function readHash(){

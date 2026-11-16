@@ -117,6 +117,7 @@ I = {  # ikoner (stroke, currentColor) — samme som LDS-eksemplet
     "house": '<svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4z"/></svg>',
     "heat": '<svg viewBox="0 0 24 24"><path d="M12 3c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 0-8z"/></svg>',
     "plan": '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+    "planner": '<svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 5-6"/></svg>',
     "wx": '<svg viewBox="0 0 24 24"><path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/></svg>',
     "pump": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4c0-2.6 1.2-4.4 3.6-5M13.4 12.8c2.3 1.3 3.2 3.3 2.6 5.7M10.6 12.8c-2.3 1.3-4.5 1.2-6.2-.6"/></svg>',
     "room": '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h8V4"/></svg>',
@@ -940,6 +941,85 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
               + f'\n  <template id="tpl-mani">{manifold_sheet(SLOT)}</template>'
               + f'\n  <template id="tpl-room">{room_sheet(SLOT)}</template>')
 
+    # ================================================================ OPVARMNINGSPLAN
+    # Touch' egen planlægger i skyggedrift (DESIGN.md 15.11): den regner og logger, men styrer
+    # intet. Indtil den kører, viser hvert panel sin tomme tilstand; binderen fylder fra GET /planner.
+    def pl_help(pid, title, body_key, anchor):
+        return help_btn(f"hp-{pid}", title) + help_pop(f"hp-{pid}", [body_key], f"docs/Manual.md#{anchor}")
+
+    def pl_empty(f, key, body=""):
+        return f'<div class="sub" data-empty data-f="{f}"><p class="empty">{T(key)}</p>{body}</div>'
+
+    pl_legend = "".join(lg(c, k) for c, k in (("lprice", "planner.lPrice"), ("lbar", "planner.lOut"), ("ldhw", "plan.lDhw"),
+                                             ("lleg", "planner.lLeg"), ("lflow", "planner.lFlow"), ("lmax", "planner.lMax")))
+    room_legend = "".join(lg(c, k) for c, k in (("lrb", "planner.lRoomBand"), ("llo", "planner.lBelow"), ("lch", "plan.charge"),
+                                               ("lpre", "plan.preload"), ("lins", "plan.insufficient")))
+    model_keys = (("loss", "planner.mLoss"), ("mass", "planner.mMass"), ("floor", "planner.mFloor"),
+                  ("solar", "planner.mSolar"), ("wind", "planner.mWind"), ("dhw", "planner.mDhw"))
+    model_tbl = ('<div class="table-wrap"><table class="table"><thead><tr>'
+                 f'<th>{T("planner.mWhat")}</th><th class="num">{T("planner.mValue")}</th><th>{T("planner.mConf")}</th></tr></thead><tbody>'
+                 + "".join(f'<tr><td>{T(k)}</td><td class="num" data-bind="planner.model.{m}">{DASH}</td>'
+                           f'<td data-bind="planner.model.{m}Conf">{DASH}</td></tr>' for m, k in model_keys)
+                 + '</tbody></table></div>')
+    planner_view = f'''
+      <section class="view" id="v-plan-house" aria-labelledby="h-plan">
+        <header class="view-head">
+          <h2 id="h-plan">{T("planner.title")}</h2>
+          <span class="badge violet">{T("planner.shadow")}</span>
+          <p data-bind="planner.sub">{T("planner.subEmpty")}</p>
+          <button class="btn vh-end" type="button" popovertarget="sheet-planner" data-tab="settings">{T("planner.openSettings")}</button>
+        </header>
+        <section class="panel" aria-labelledby="h-pl48">
+          <header class="panel-head"><h3 id="h-pl48">{T("planner.plan48")}</h3>{pl_help("pl48", T("planner.plan48"), "planner.plan48Help", "planner-plan")}<p>{T("planner.plan48Sub")}</p></header>
+          {pl_empty("pl48", "planner.emptyPlan", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{pl_legend}</div>')}
+        </section>
+        <section class="panel" aria-labelledby="h-plrooms">
+          <header class="panel-head"><h3 id="h-plrooms">{T("planner.rooms")}</h3>{pl_help("plrooms", T("planner.rooms"), "planner.roomsHelp", "planner-rooms")}<p>{T("planner.roomsSubEmpty")}</p></header>
+          {pl_empty("plrooms", "planner.emptyRooms", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{room_legend}</div>')}
+        </section>
+        <section class="panel c5" aria-labelledby="h-plmodel">
+          <header class="panel-head"><h3 id="h-plmodel">{T("planner.model")}</h3>{pl_help("plmodel", T("planner.model"), "planner.modelHelp", "planner-model")}</header>
+          {model_tbl}
+          {pl_empty("plcop", "planner.emptyCop", '<div data-f="table"></div>')}
+        </section>
+        <section class="panel c7" aria-labelledby="h-plpa">
+          <header class="panel-head"><h3 id="h-plpa">{T("planner.pa")}</h3>{pl_help("plpa", T("planner.pa"), "planner.paHelp", "planner-accuracy")}<p>{T("planner.paSub")}</p></header>
+          <dl class="metrics">
+            {metric(T("planner.paTempErr"), "K", "planner.pa.tempErr")}
+            {metric(T("planner.paEnergy"), "kWh", "planner.pa.energy")}
+            {metric(T("planner.paCost"), "€", "planner.pa.cost")}
+          </dl>
+          {pl_empty("plpa", "planner.emptyHistory", '<div data-f="chart"></div>')}
+        </section>
+      </section>'''
+
+    r_st, seg_st = seg("strategy", "st", [("comfort", T("planner.stComfort")), ("weighted", T("planner.stWeighted")), ("price", T("planner.stPrice"))],
+                       "comfort", T("planner.strategy"))
+    planner_set = f'''
+        <form data-save="planner">
+          {r_st}
+          {group(T("planner.strategy"), srow(f'<span>{T("planner.priority")}</span>', seg_st, T("planner.strategyHint")))}
+          {typed("comfort", note(T("planner.stComfortNote")))}
+          {typed("weighted", group(T("planner.stWeighted"), sstep("comfort_weight_eur", T("planner.weight"), 0.5, 0, 5, 0.05, T("planner.weightUnit"), dec=2, hint=T("planner.weightHint"))))}
+          {typed("price", note(T("planner.stPriceNote")))}
+          {group(T("planner.output"), sstep("min_output_kw", T("planner.minOut"), 3.2, 0, 10, 0.1, "kW", hint=T("planner.minOutHint")) +
+                 sstep("max_output_kw", T("planner.maxOut"), 8.0, 1, 16, 0.1, "kW", hint=T("planner.maxOutHint")) +
+                 sstep("max_flow_c", T("planner.maxFlow"), 35.0, 25, 55, 0.5, "°C"))}
+          {group(T("planner.mode"), rrow(T("planner.modeNow"), "planner.modeText", T("planner.modeNowHint"), T("planner.shadow")))}
+          {savebar("planner")}
+        </form>'''
+    planner_over = f'''
+        <dl class="metrics">
+          {metric(T("planner.oNext"), "", "planner.o.next")}
+          {metric(T("planner.oEnergy"), "kWh", "planner.o.energy")}
+          {metric(T("planner.oCost"), "€", "planner.o.cost")}
+        </dl>
+        {kv([(T("planner.modeNow"), None, T("planner.shadow")), (T("planner.oSolved"), "planner.o.solved"),
+             (T("planner.oTelemetry"), "planner.o.telemetry"), (T("planner.oPrices"), "planner.o.prices"), (T("planner.oWeather"), "planner.o.weather")])}
+        <p class="note">{T("planner.shadowNote")}</p>'''
+    sheets += sheet("planner", T("hash.planner"), I["planner"], "violet", T("planner.sheet"), T("planner.sheetStatus"),
+                    [("overview", planner_over), ("settings", planner_set)])
+
     titles = {"device": "cat.device", "controllers": "cat.controllers", "network": "cat.network", "firmware": "cat.firmware", "service": "cat.service"}
     sys_radios = f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">' + "".join(
         f'<input class="state" type="radio" name="syscat" id="c-{c}" data-hash="{T("hash." + c)}" aria-label="{T(titles[c])}">' for c, *_ in cats)
@@ -1026,6 +1106,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "wx.pastN", "wx.past", "hash.settings", "trend.now", "heat.houseBalanceRowModel", "heat.houseBalanceSub", "heat.houseBalanceWeight", "heat.houseBalanceNone", "room.learned", "room.learning", "tile.weatherSolar", "tile.pumpMixing", "pump.mixBody", "pump.mixRatioVal", "pump.recommendedVal", "pump.mixAdvice", "pump.needVal", "pump.needHouseVal", "pump.needLim", "pump.needNow", "pump.src.odin", "pump.needHpKw", "pump.needNote", "pump.needNoteNone", "pump.src.learned", "pump.src.prior",
         "activity.flush", "activity.minutesLeft", "activity.offline", "activity.dhw", "activity.legionella", "activity.heating", "activity.prestart", "activity.idle", "activity.step",
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.chargingVal", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
+        "planner.shadow", "planner.sub", "planner.subEmpty", "planner.planAria", "planner.lPrice", "planner.laneOut",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")
@@ -1038,6 +1119,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     LOGO = ('<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/>'
             '<path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg>')
     I_HOME = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>'
+    I_PLAN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 5-6"/></svg>'
     I_SYS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>'
     css_tag = f"<style>\n{inline_css}\n</style>" if inline_css else f'<link rel="stylesheet" href="{css_href}">'
     js_tag = f'<script src="{js_href}" defer></script>' if js_href else ""
@@ -1058,8 +1140,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
 </head>
 <body>
 
-<!-- TILSTAND — før .app: Hjem/System, omfang (kun huset), tema -->
+<!-- TILSTAND — før .app: Hjem/Opvarmningsplan/System, omfang (kun huset), tema -->
 <input class="state" type="radio" name="mode" id="m-home" checked aria-label="{T("nav.home")}">
+<input class="state" type="radio" name="mode" id="m-plan" data-hash="{T("hash.planPage")}" aria-label="{T("nav.plan")}">
 <input class="state" type="radio" name="mode" id="m-sys" data-hash="{T("hash.system")}" aria-label="{T("nav.system")}">
 <input class="state" type="radio" name="scope" id="s-house" checked aria-label="{T("scope.house")}">
 <input class="state" type="checkbox" id="theme" aria-label="{T("theme.toggle")}">
@@ -1085,6 +1168,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       </details>
       <nav class="mode" aria-label="{T("nav.label")}">
         <label for="m-home">{I_HOME}{T("nav.home")}</label>
+        <label for="m-plan">{I_PLAN}{T("nav.plan")}</label>
         <label for="m-sys">{I_SYS}{T("nav.system")}</label>
       </nav>
       <div class="tools">
@@ -1098,7 +1182,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
       </div>
     </header>
   </div>
-  <main class="content wrap">{home}{sys_view}
+  <main class="content wrap">{home}{planner_view}{sys_view}
   </main>
 {sheets}
 </div>

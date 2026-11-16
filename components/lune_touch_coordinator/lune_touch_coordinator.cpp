@@ -8232,6 +8232,11 @@ void LuneTouchCoordinator::load_settings_() {
       asgard_enabled_ = asgard_enabled != 0;
     len = sizeof(asgard_mode_);
     nvs_get_str(handle, "asgard_mode", asgard_mode_, &len);
+    planner_settings::Settings planner{};
+    len = sizeof(planner);
+    if (nvs_get_blob(handle, "planner", &planner, &len) == ESP_OK && len == sizeof(planner) &&
+        planner.version == planner_settings::BLOB_VERSION)
+      planner_settings_ = planner_settings::sanitize(planner);
     len = sizeof(authority_leader_node_id_);
     nvs_get_str(handle, "auth_leader", authority_leader_node_id_, &len);
     len = sizeof(authority_coordinator_id_);
@@ -15108,6 +15113,27 @@ void LuneTouchCoordinator::write_odin_mqtt_json(char *buffer, size_t capacity) c
       mqtt.defrost_active ? "true" : "false", mqtt.soft_stop ? "true" : "false", flow,
       static_cast<unsigned long>(mqtt.valid_until_unix),
       mqtt.http_fallback_active ? "true" : "false", thermal, flow_rate, ret, feed, err);
+}
+
+void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) const {
+  planner_settings::write_api_json(planner_settings_, buffer, capacity);
+}
+
+bool LuneTouchCoordinator::set_planner_settings(const planner_settings::Settings &settings) {
+  const planner_settings::Settings clean = planner_settings::sanitize(settings);
+  if (!take_state_lock_(100))
+    return false;
+  planner_settings_ = clean;
+  give_state_lock_();
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return false;
+  esp_err_t err = nvs_set_blob(handle, "planner", &clean, sizeof(clean));
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  log_event_("info", "settings", "planner settings saved");
+  return err == ESP_OK;
 }
 
 void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const {

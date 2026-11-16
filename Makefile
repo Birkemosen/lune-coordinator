@@ -351,6 +351,8 @@ test-planner:
 	$(PLANNER_OUT)-record
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_planner_context.cpp -o $(PLANNER_OUT)-context
 	$(PLANNER_OUT)-context
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/planner/test_planner_settings.cpp -o $(PLANNER_OUT)-settings
+	$(PLANNER_OUT)-settings
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)
 
 # Build HISTORY/house.bin from exported CSVs (docs/planner_history_format.md):
