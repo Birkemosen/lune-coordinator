@@ -188,6 +188,20 @@ int main() {
     Lift fast{14, 6, 1.0f};
     skip_dearest(fast, 13, small, 24, 10.0f);
     assert(fast.skip_mask == 0);
+    // Deferring (defer_before): a window that starts in the day's dearest hours leaves
+    // them to cheaper lifted hours after, up to a third of the window, never past the need.
+    float eve[24];
+    for (int k = 0; k < 24; k++) eve[k] = 0.30f;
+    eve[0] = 0.43f; eve[1] = 0.39f;   // 20:00 and 21:00 dearest, now = 20
+    Lift late{20, 6, 1.3f};
+    skip_dearest(late, 20, eve, 24, 167.0f);
+    assert(late.skip_mask == 0);                                   // nothing earlier: lifted as before
+    Lift defer{20, 6, 1.3f};
+    skip_dearest(defer, 20, eve, 24, 167.0f, 6);
+    assert(defer.skip_mask == ((1UL << 20) | (1UL << 21)));        // the two dear hours wait
+    Lift soon{20, 6, 1.3f};
+    skip_dearest(soon, 20, eve, 24, 167.0f, 1);
+    assert(soon.skip_mask == 0);                                   // needed now: no later hour counts
     // Time constant from Odin's thermal mass and heat loss; a default without them.
     assert(std::fabs(house_tau_h(21.76f, 0.13f) - 167.4f) < 0.1f);
     assert(house_tau_h(NAN, 0.13f) == TAU_DEFAULT_H && house_tau_h(21.76f, 0.0f) == TAU_DEFAULT_H);
@@ -344,6 +358,33 @@ int main() {
     assert(soon.active() && soon.start_hour == 23 && soon.hours == 3 && std::fabs(soon.floor_share - 1.0f) < 0.01f);
     assert(!preload_lift(14, 1.5f, -1, p).active());   // no peak in the forecast
     assert(!preload_lift(14, 0.2f, 3, p).active());    // below the write threshold
+  }
+
+  // ---- Cold-room call: lift by need, start at the cheapest hour unless urgent ----
+  {
+    LiftParams p{};
+    // Stue 1.1 K behind (band 0.5) in a house at 22.2 with its floor at 21.5: 0.7 + 0.6.
+    assert(std::fabs(cold_call_lift_c(22.2f, 21.5f, 1.1f, 0.5f, p) - 1.3f) < 1e-3f);
+    // Laura 2.3 K behind in a house 0.9 above its floor: capped at the maximum, as before.
+    assert(std::fabs(cold_call_lift_c(22.4f, 21.5f, 2.3f, 0.5f, p) - p.max_lift_c) < 1e-3f);
+    // A cold house: at least the minimum lift. Unknown temperatures: the maximum.
+    assert(std::fabs(cold_call_lift_c(21.0f, 21.5f, 1.05f, 0.5f, p) - 0.55f) < 1e-3f);
+    assert(std::fabs(cold_call_lift_c(NAN, 21.5f, 1.1f, 0.5f, p) - p.max_lift_c) < 1e-3f);
+    float eve[24];
+    for (int k = 0; k < 24; k++) eve[k] = 0.30f;
+    eve[0] = 0.43f; eve[1] = 0.39f; eve[2] = 0.33f;
+    assert(cold_call_start_in_h(eve, 24, 4) == 2 || cold_call_start_in_h(eve, 24, 4) == 3);
+    float flat[24];
+    for (float &f : flat) f = 0.3f;
+    assert(cold_call_start_in_h(flat, 24, 4) == 0);   // nothing to win by waiting
+    eve[3] = NAN;
+    assert(cold_call_start_in_h(eve, 24, 4) == 0);    // an unknown price: start now
+    // Merge with a preload that opens only the top: the floor moves by the call's 1.3 K.
+    Lift call = make_lift(20, 0, 5, 1.3f, p);
+    call.floor_share = 1.0f;
+    Lift pre = preload_lift(20, 1.5f, 1, p, 0.2f);
+    Lift m = merge_lifts(20, call, pre, p);
+    assert(std::fabs(m.lift_c - 1.5f) < 1e-3f && std::fabs(m.lift_c * m.floor_share - 1.3f) < 0.01f);
   }
 
   // ---- Merge: union of windows, larger lift, larger floor share ----

@@ -148,6 +148,32 @@ const ZoneBinding *HouseModel::find_binding_by_loop_(const char *loop_id) const 
   return const_cast<HouseModel *>(this)->find_binding_by_loop_(loop_id);
 }
 
+float HouseModel::group_mean_temperature_c(size_t index) const {
+  if (index >= zone_count_)
+    return NAN;
+  const ZoneLiveState &live = live_[index];
+  const float own = live.has_temperature && std::isfinite(live.temperature_c) ? live.temperature_c : NAN;
+  const uint8_t mask = live.group_members_mask;
+  if (zones_[index].is_group_secondary || mask == 0 || (mask & (mask - 1)) == 0)
+    return own;
+  float sum = 0.0f;
+  unsigned n = 0;
+  for (size_t z = 0; z < ZONES_PER_NODE; z++) {
+    if (((mask >> z) & 1U) == 0)
+      continue;
+    const size_t bi = find_binding_index_(zones_[index].node_index, z);
+    if (bi >= zone_count_ || !zones_[bi].enabled)
+      continue;
+    const ZoneLiveState &m = live_[bi];
+    if (m.fresh && m.has_temperature && std::isfinite(m.temperature_c) && m.temperature_c >= PLAUSIBLE_MIN_C &&
+        m.temperature_c <= PLAUSIBLE_MAX_C) {
+      sum += m.temperature_c;
+      n++;
+    }
+  }
+  return n > 0 ? sum / static_cast<float>(n) : own;
+}
+
 size_t HouseModel::find_binding_index_(size_t node_index, size_t zone_index) const {
   for (size_t i = 0; i < zone_count_; i++) {
     if (zones_[i].node_index == node_index && zones_[i].zone_index == zone_index)

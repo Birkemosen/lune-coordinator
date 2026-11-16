@@ -732,6 +732,18 @@ static void test_sync_group_room_physics() {
   model.set_room_geometry("stue", 49.0f, 0.0f, true);
   const StrategySnapshot st = model.strategy_snapshot();
   expect(std::fabs(st.ua_total_w_per_k - 61.3f) < 0.05f, "group room: counts once with the full UA");
+  // Weather decisions run on the group as V6 controls it: the members' mean on the primary.
+  size_t primary = model.zone_count(), secondary = model.zone_count();
+  for (size_t i = 0; i < model.zone_count(); i++) {
+    const ZoneBinding *z = model.zone(i);
+    if (z != nullptr && z->node_index == 0 && z->zone_index == 3) primary = i;
+    if (z != nullptr && z->node_index == 0 && z->zone_index == 4) secondary = i;
+  }
+  expect(primary < model.zone_count() && std::fabs(model.group_mean_temperature_c(primary) - 22.5f) < 0.01f,
+         "group room: the primary reads the members' mean");
+  expect(secondary < model.zone_count() && model.zone(secondary)->is_group_secondary &&
+             std::fabs(model.group_mean_temperature_c(secondary) - 23.0f) < 0.01f,
+         "group room: a secondary is marked (no decision of its own) and keeps its own reading");
 }
 
 static void test_strategy_snapshot() {

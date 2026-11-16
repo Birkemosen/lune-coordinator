@@ -727,6 +727,10 @@ class HouseModel {
   const LogicalRoom *room_by_id(const char *room_id) const;
   const ZoneBinding *zone(size_t index) const;
   const ZoneLiveState *zone_live(size_t index) const;
+  /// A V6 sync group's temperature as V6 controls it: the mean of the members' fresh,
+  /// plausible sensors (the zone's own reading when it is not a group primary with
+  /// members). NAN when none.
+  float group_mean_temperature_c(size_t index) const;
   const ZoneHistory *zone_history(size_t index) const;
   size_t node_count() const { return node_count_; }
   size_t zone_count() const { return zone_count_; }

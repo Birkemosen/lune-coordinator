@@ -1267,10 +1267,8 @@
      (.plan--48). Ekstra spor:
      - .plan-lane--flow: fremløbsmålet pr. time som trappekurve i varmens farve (fremløb = varme),
        og en tynd stiplet linje for det maksimale fremløb (.max).
-     - .plan-lane--room: ét spor pr. rum. Rummets komfortbånd (mål − bånd … mål) som neutral flade,
-       forventet temperatur som trappekurve; timer under båndet er en tyk kant i bunden (.lo, varm
-       kant = mangler varme). Opladning/forvarmning før vind og kulde står som .plan-seg bag kurven
-       (samme skravering som Plan-arket). Farve er aldrig eneste signal: forklaringen står under. */
+     - .plan-lane--house: komfortbåndet time for time og husets forventede temperatur.
+     Rummene står i .rfc-list (nedenfor). Farve er aldrig eneste signal: forklaringen står under. */
   .plan-lane--flow { height: 80px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
   .plan-lab--y.plan-lab--flow { height: 80px; margin-bottom: 0; }
   /* Hus: Odins bånd time for time og husets forventede temperatur; højt nok til at aflæse tiendedele. */
@@ -1278,22 +1276,14 @@
   .plan-lab--y.plan-lab--house { height: 112px; margin-bottom: 0; }
   .plan-lane--house .rb { fill: var(--seg-off); }
   .plan-lane--house .exp { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linejoin: round; }
-  .plan-lane--flow svg, .plan-lane--room svg, .plan-lane--house svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .plan-lane--flow svg, .plan-lane--house svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .plan-lane--flow .fl { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .plan-lane--flow .max { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-  .plan-lane--room { height: 28px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
-  .plan-lane--room .plan-seg { top: 0; bottom: 0; border-radius: 0; opacity: .55; }
-  .plan-lane--room .rb { fill: var(--seg-off); }
-  .plan-lane--room .exp { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-  .plan-lane--room .lo { fill: var(--heat-fill); }
   /* vector-effect arves ikke: kurverne er polylines i en gruppe (.fl / .exp), så stregen sættes på dem. */
-  .plan-lane--flow .fl > *, .plan-lane--room .exp > *, .plan-lane--house .exp > * { vector-effect: non-scaling-stroke; }
-  .plan-lab.plan-lab--room { display: flex; flex-direction: column; justify-content: center; height: 28px; line-height: 1.15; }
-  .plan-lab--room small { font-size: 10px; color: var(--faint); }
+  .plan-lane--flow .fl > *, .plan-lane--house .exp > * { vector-effect: non-scaling-stroke; }
   .fc-legend .lflow { border-top: 2px solid var(--accent); }
   .fc-legend .lmax  { border-top: 1px dashed var(--muted); }
   .fc-legend .lrb   { height: 10px; border-radius: 2px; background: var(--seg-off); border-top: 2px solid var(--fg); }
-  .fc-legend .llo   { height: 4px; border-radius: 1px; background: var(--heat-fill); }
   /* Touch mod Odin (.hchart--vs) og et rums graf (.hchart--room): det seneste døgn og det næste i
      samme graf (.hchart--ahead). Komfortbåndet er én flade (.bd, fg-tonet så den står ud fra den
      svage fremtidsflade) med komfortgrænsen i bunden som tynd linje (.bdl). Kurverne er jævne

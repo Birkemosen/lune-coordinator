@@ -3580,6 +3580,8 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float pre_lift_c = 0.0f;
   int pre_peak_in_h = -1;
   float pre_share = NAN;
+  float coldest = NAN, house_c = NAN, band_floor_c = NAN;
+  int charge_need_in_h = -1;
   // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
   float price_rel[24];
   std::fill(std::begin(price_rel), std::end(price_rel), NAN);
@@ -3613,7 +3615,20 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
     cold_call = cold_room_call_.engaged;
+    coldest = coldest_deficit_c_;
     lagging_share = strategy.lagging_share;
+    house_c = strategy.has_physical_temperature ? strategy.physical_temperature_c : NAN;
+    // The band's floor this hour before any lift: Odin's schedule as Touch keeps it, else
+    // the house target less the comfort band.
+    if (odin_owner_.has_user || odin_owner_.sync.on) {
+      const lune_touch_odin::Profile base = lune_touch_odin::apply_sync(odin_owner_.user, odin_owner_.sync);
+      if (base.count > 0) {
+        const lune_touch_odin::Block b = lune_touch_odin::block_at(base, now_hour);
+        band_floor_c = b.sp + b.min;
+      }
+    }
+    if (!std::isfinite(band_floor_c) && strategy.has_house_target)
+      band_floor_c = strategy.house_target_c - COMFORT_BAND_C;
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
       const auto rz = model_.resolve_room(strategy.driver_room_id);
@@ -3633,6 +3648,8 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
         energy += d.charge_deficit_kwh;
       start = std::min<int>(start, d.charge_start_in_h);
       end = std::max<int>(end, d.charge_end_in_h);
+      if (d.charge_episode_in_h >= 0)
+        charge_need_in_h = charge_need_in_h < 0 ? d.charge_episode_in_h : std::min<int>(charge_need_in_h, d.charge_episode_in_h);
     }
     // Weather preload: rooms V6 raises ahead of wind or cold (a charge covers its own room).
     weather_preload_(&pre_lift_c, &pre_peak_in_h, &pre_share);
@@ -3652,10 +3669,19 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // by the full allowed lift from this hour, so Odin must heat; a slab charge moves it all.
   const float floor_share =
       (charge.active() || cold_call) ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
+  // A cold-room call lifts by what the house and the room need (cold_call_lift_c), from
+  // this hour when the room is well behind (COLD_URGENT_BANDS), else from the cheapest
+  // start within a few hours (cold_call_start_in_h).
+  const bool urgent = cold_call && std::isfinite(coldest) && coldest >= lune_touch_odin::COLD_URGENT_BANDS * COMFORT_BAND_C;
   lune_touch_odin::Lift lag{};
-  if (cold_call)
-    lag = lune_touch_odin::lag_lift(now_hour, params.max_lift_c, lag_floor_h, params, 1.0f, 0);
-  else if (held > 0.0f)
+  if (cold_call) {
+    const float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
+    const int len = lune_touch_odin::lag_end_in_h(lag_floor_h);
+    const int s0 = urgent ? 0 : lune_touch_odin::cold_call_start_in_h(price_rel, 24, len);
+    lag = lune_touch_odin::make_lift(now_hour, s0, s0 + len, c, params);
+    if (lag.active())
+      lag.floor_share = 1.0f;
+  } else if (held > 0.0f)
     lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
   // only what the house would have had anyway. The band opens from now through the
@@ -3670,9 +3696,26 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       now_hour, lune_touch_odin::merge_lifts(now_hour, charge, lag, params), pre, params);
   if (out.active()) {
     lune_touch_odin::Lift lifted = out;
-    // A dear hour stays lifted unless heating earlier is cheaper, heat loss included.
+    // A dear hour stays lifted unless heating at another lifted hour is cheaper, heat loss
+    // included: earlier, or later but still before the heat is needed (the end of a lag
+    // window, a preload's peak, a charge's deficit). An urgent cold call heats now.
+    int need_in_h = 0;
+    if (!urgent) {
+      need_in_h = 24;
+      const auto rel_end = [&](const lune_touch_odin::Lift &l) {
+        return static_cast<int>((l.start_hour + 24 - now_hour) % 24) + l.hours;
+      };
+      if (lag.active())
+        need_in_h = std::min(need_in_h, rel_end(lag));
+      if (pre.active())
+        need_in_h = std::min(need_in_h, std::max(0, pre_peak_in_h));
+      if (charge.active())
+        need_in_h = std::min(need_in_h, charge_need_in_h >= 0 ? charge_need_in_h : rel_end(charge));
+      if (!lag.active() && !pre.active() && !charge.active())
+        need_in_h = 0;
+    }
     lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
-                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss));
+                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h);
     if (reason != nullptr)
       *reason = lift_reason_(charge.active(), lag.active(), pre.active());
     // Which source wants each lifted hour (a skipped hour has none).
@@ -6559,16 +6602,20 @@ void LuneTouchCoordinator::apply_preload_outcome_learning_() {
     const auto *live = model_.zone_live(zone_index);
     if (live == nullptr || !live->fresh || !live->has_temperature)
       continue;
+    // A sync group is judged as V6 runs it: on the members' mean.
+    const float room_c = model_.group_mean_temperature_c(zone_index);
+    if (!std::isfinite(room_c))
+      continue;
     const auto effective =
         ::lune_touch::HouseModel::effective_comfort(*zone, time_valid, day_index, minute_of_day);
     hv6fc::PreloadOutcome outcome{};
     outcome.preload_was_active = true;
     const float band_lo = effective.setpoint_c - COMFORT_BAND_C;
     const float band_hi = effective.setpoint_c + COMFORT_BAND_C;
-    if (live->temperature_c < band_lo)
-      outcome.undershoot_c = band_lo - live->temperature_c;
-    if (live->temperature_c > band_hi)
-      outcome.overshoot_c = live->temperature_c - band_hi;
+    if (room_c < band_lo)
+      outcome.undershoot_c = band_lo - room_c;
+    if (room_c > band_hi)
+      outcome.overshoot_c = room_c - band_hi;
     if (outcome.undershoot_c <= 0.0f && outcome.overshoot_c <= 0.0f)
       continue;
     const hv6fc::LearningUpdate update = hv6fc::update_preload_learning(
@@ -6618,8 +6665,12 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
                      forecast_decision_count_ < ::lune_touch::MAX_HOUSE_ZONES; i++) {
     const auto *zone = model_.zone(i);
     const auto *live = model_.zone_live(i);
-    if (zone == nullptr || !zone->enabled)
+    // A V6 sync group (fx Stue + Stue Repo) is one room: V6 controls it on the members'
+    // mean, so it gets one decision, on the primary, never one per member.
+    if (zone == nullptr || !zone->enabled || zone->is_group_secondary)
       continue;
+    const bool grouped = live != nullptr && live->group_members_mask != 0 &&
+                         (live->group_members_mask & (live->group_members_mask - 1)) != 0;
 
     ForecastDecisionState &out = forecast_decisions_[forecast_decision_count_++];
     std::strncpy(out.room_id, zone->room_id, sizeof(out.room_id) - 1);
@@ -6668,9 +6719,12 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     params.comfort_band_c = COMFORT_BAND_C;
     params.enable_horizon = true;
     params.floor_lag_h = live->floor_lag_h;
-    if (live->has_temperature && std::isfinite(live->temperature_c)) {
-      params.has_current_temp = true;
-      params.current_temp_c = live->temperature_c;
+    {
+      const float t = model_.group_mean_temperature_c(i);
+      if (std::isfinite(t)) {
+        params.has_current_temp = true;
+        params.current_temp_c = t;
+      }
     }
 
     const hv6fc::PreloadDecision decision =
@@ -6705,6 +6759,13 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
       room_in.area_m2 = zone->served_area_m2 > 0.0f ? zone->served_area_m2 : zone->v6_area_m2;
       room_in.ua_w_per_k = zone->ua_effective_w_per_k > 0.0f ? zone->ua_effective_w_per_k
                                                              : zone->ua_prior_w_per_k;
+      // A group: the room's totals (all members' loops and walls), as V6 runs them together.
+      if (grouped && room != nullptr) {
+        if (room->total_area_m2 > room_in.area_m2)
+          room_in.area_m2 = room->total_area_m2;
+        if (room->ua_effective_w_per_k > 0.0f)
+          room_in.ua_w_per_k = room->ua_effective_w_per_k;
+      }
       if (!zone->floor.unset && zone->floor.r_m2k_per_w > 0.0f)
         room_in.floor_r_m2k_per_w = zone->floor.r_m2k_per_w;
       if (!zone->floor.unset && zone->floor.c_slab_kwh_per_k > 0.0f)

@@ -381,8 +381,10 @@ inline Lift preload_lift(uint8_t now_hour, float lift_c, int peak_in_h, const Li
   return l;
 }
 
-/// One lift covering both: the union of the windows (relative to now), the larger
-/// lift and the larger floor share.
+/// One lift covering both: the union of the windows (relative to now), the larger lift,
+/// and a floor share that moves the floor by the larger of the two floors (lift × share):
+/// a preload that opens only the top by 1.5 K and a call that moves the floor 1.3 K give a
+/// 1.5 K lift whose floor moves 1.3 K, not 1.5 K.
 inline Lift merge_lifts(uint8_t now_hour, const Lift &a, const Lift &b, const LiftParams &p) {
   if (!a.active())
     return b;
@@ -392,8 +394,10 @@ inline Lift merge_lifts(uint8_t now_hour, const Lift &a, const Lift &b, const Li
   const int sb = static_cast<int>((b.start_hour + 24 - now_hour) % 24);
   Lift l = make_lift(now_hour, std::min(sa, sb), std::max(sa + a.hours, sb + b.hours),
                      std::max(a.lift_c, b.lift_c), p);
-  if (l.active())
-    l.floor_share = std::max(a.floor_share, b.floor_share);
+  if (l.active()) {
+    const float floor_c = std::max(a.lift_c * a.floor_share, b.lift_c * b.floor_share);
+    l.floor_share = l.lift_c > 0.0f ? std::clamp(floor_c / l.lift_c, 0.0f, 1.0f) : 1.0f;
+  }
   return l;
 }
 
@@ -428,12 +432,59 @@ struct ColdRoomCall {
   }
 };
 
-/// Leaves a dear hour of the window unlifted only when heating earlier costs less,
-/// heat loss included. Heat stored j hours before it is needed loses about j / tau of
-/// itself (tau = the house's time constant, C / UA), so hour k is skipped when
+/// A cold-room call well behind (three bands or more) heats from this hour whatever the
+/// price; one less behind may wait a few hours for cheaper heat (cold_call_start_in_h).
+static constexpr float COLD_URGENT_BANDS = 3.0f;
+static constexpr int COLD_DEFER_MAX_H = 4;
+
+/// How far a cold-room call lifts the band: enough to put its floor above the house as
+/// it is now (so Odin must heat), plus what the room needs to get back into its band,
+/// at least the minimum lift and never more than the maximum. A room 1.1 K behind in a
+/// house 0.7 K above its floor got the full 1.5 K before (2026-11-16, Stue).
+inline float cold_call_lift_c(float house_c, float band_floor_c, float deficit_c, float band_c, const LiftParams &p) {
+  if (!std::isfinite(house_c) || !std::isfinite(band_floor_c) || !std::isfinite(deficit_c))
+    return p.max_lift_c;
+  const float need = std::max(0.0f, house_c - band_floor_c) + std::max(0.0f, deficit_c - band_c);
+  return std::clamp(need, p.min_lift_c, p.max_lift_c);
+}
+
+/// When a cold-room call that is not urgent starts: the hour s in 0..max_defer_h whose
+/// `len` hours cost least on average, each hour of waiting counted `penalty_per_h` dearer
+/// (the room stays behind meanwhile). 0 when a price in the span is unknown.
+inline int cold_call_start_in_h(const float *price_rel, size_t n, int len, int max_defer_h = COLD_DEFER_MAX_H,
+                                float penalty_per_h = 0.03f) {
+  if (price_rel == nullptr || len <= 0)
+    return 0;
+  int best = 0;
+  float best_cost = INFINITY;
+  for (int s = 0; s <= max_defer_h; s++) {
+    if (static_cast<size_t>(s + len) > n)
+      break;
+    float sum = 0.0f;
+    for (int k = s; k < s + len; k++) {
+      if (!std::isfinite(price_rel[k]))
+        return 0;
+      sum += price_rel[k];
+    }
+    const float cost = sum / static_cast<float>(len) * (1.0f + penalty_per_h * static_cast<float>(s));
+    if (cost < best_cost) {
+      best_cost = cost;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/// Leaves a dear hour of the window unlifted when heating at another lifted hour costs
+/// less, heat loss included. Heat stored j hours before it is needed loses about j / tau
+/// of itself (tau = the house's time constant, C / UA), so hour k is skipped when
 ///   price[k] > min over earlier lifted hours i of price[i] × (1 + (k − i) / tau).
-/// A dear hour with no cheaper earlier hour in the window (the first, or one after
-/// dearer hours) stays lifted: not heating then would let the room fall behind.
+/// With `defer_before` > 0 a later lifted hour j < defer_before counts too (the heat comes
+/// a little later, at price[j] × (1 + (j − k) / tau)): a window that starts in the day's
+/// dearest hours then leaves them to the cheaper ones after. The caller sets it to when
+/// the heat is needed (the end of a lag window, a preload's peak, a charge's deficit);
+/// 0 for an urgent call. Without it a dear hour with no cheaper earlier hour (the first,
+/// or one after dearer hours) stays lifted.
 /// The largest saving goes first, up to a third of the window's hours (rounded down),
 /// since the lift stores only so much. `price_rel[k]` is the price k hours from now
 /// (k < n); any unknown price in the window, or no tau, leaves it whole.
@@ -444,7 +495,7 @@ inline float house_tau_h(float thermal_mass_kwh_per_k, float heat_loss_kw_per_k)
   return TAU_DEFAULT_H;
 }
 inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size_t n,
-                         float tau_h = TAU_DEFAULT_H) {
+                         float tau_h = TAU_DEFAULT_H, int defer_before = 0) {
   l.skip_mask = 0;
   if (!l.active() || price_rel == nullptr || !(tau_h > 0.0f))
     return;
@@ -458,14 +509,19 @@ inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size
   for (size_t left = l.hours / 3U; left > 0; left--) {
     size_t pick = n;
     float best = 0.0f;
-    for (size_t k = start + 1; k < start + l.hours; k++) {
+    const size_t end = start + l.hours;
+    const size_t later_end = std::min<size_t>(end, defer_before > 0 ? static_cast<size_t>(defer_before) : 0);
+    for (size_t k = start; k < end; k++) {
       if (skipped(k))
         continue;
-      float earlier = INFINITY;
+      float other = INFINITY;
       for (size_t i = start; i < k; i++)
         if (!skipped(i))
-          earlier = std::min(earlier, price_rel[i] * (1.0f + static_cast<float>(k - i) / tau_h));
-      const float saving = price_rel[k] - earlier;
+          other = std::min(other, price_rel[i] * (1.0f + static_cast<float>(k - i) / tau_h));
+      for (size_t j = k + 1; j < later_end; j++)
+        if (!skipped(j))
+          other = std::min(other, price_rel[j] * (1.0f + static_cast<float>(j - k) / tau_h));
+      const float saving = price_rel[k] - other;
       if (saving > best) {
         best = saving;
         pick = k;
