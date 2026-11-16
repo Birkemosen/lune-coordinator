@@ -4,6 +4,7 @@
 //
 //   floor (screed + floor circuit):  Cs · dTs/dt = Q − H · (Ts − T)
 //   rooms (air, furniture, walls):   Ca · dT/dt  = H · (Ts − T) + g · sun + P(hour) − UA · (1 + kw · wind) · (T − Tout)
+//                                                 + Knb · (T_neighbours − T)   (a room only)
 //
 // P(hour) = P + Pc·cos + Ps·sin of the local hour: people, cooking, appliances and any
 // setback follow the clock, and without it a 24 h forecast is no better than persistence.
@@ -34,6 +35,7 @@ struct HouseParams {
   float kw_per_ms{0.02f};         // extra loss per m/s of wind, fraction of UA
   float p_cos_kw{0.0f};           // daily rhythm of the internal gain: cos/sin of the local hour
   float p_sin_kw{0.0f};
+  float k_nb_kw_per_k{0.0f};      // exchange with neighbouring rooms (a room's model; 0 for the house)
   bool valid{false};
 };
 
@@ -43,6 +45,7 @@ struct HourIn {
   float sun_wm2{0};
   float wind_ms{0};
   float hour_local{0};   // 0–23, for the daily rhythm
+  float nb_c{NAN};       // neighbours' temperature (the house average for a room); NAN = none
 };
 
 struct HouseState {
@@ -57,7 +60,8 @@ inline HouseState house_step(const HouseParams &p, HouseState s, const HourIn &i
   n.ts_c = s.ts_c + (in.q_kw - flow) / p.cs_kwh_per_k;
   const float ph = in.hour_local * (6.2831853f / 24.0f);
   const float gain = p.p_int_kw + p.p_cos_kw * std::cos(ph) + p.p_sin_kw * std::sin(ph);
-  n.t_c = s.t_c + (flow + p.g_kw_per_100wm2 * in.sun_wm2 / 100.0f + gain - loss) / p.ca_kwh_per_k;
+  const float nb = std::isfinite(in.nb_c) ? p.k_nb_kw_per_k * (in.nb_c - s.t_c) : 0.0f;
+  n.t_c = s.t_c + (flow + p.g_kw_per_100wm2 * in.sun_wm2 / 100.0f + gain + nb - loss) / p.ca_kwh_per_k;
   return n;
 }
 
@@ -88,12 +92,14 @@ inline float house_room_heat_needed(const HouseParams &p, float t0_c, float t1_c
 // Jacobian accumulated window by window (no residual vector is stored).
 class HouseFitter {
  public:
-  static constexpr int NP = 9;
+  static constexpr int NP = 10;
   static constexpr int HORIZON = 24;
   static constexpr size_t MAX_HOURS = 24 * 21;
 
-  explicit HouseFitter(const HouseParams &prior = HouseParams{}, float prior_weight = 0.05f)
-      : prior_(prior), prior_w_(prior_weight) {}
+  // size: 1 for the whole house; a room uses its share (e.g. 0.1) so the bounds on the
+  // extensive parameters (loss, masses, coupling, gains) scale with it.
+  explicit HouseFitter(const HouseParams &prior = HouseParams{}, float prior_weight = 0.05f, float size = 1.0f)
+      : prior_(prior), prior_w_(prior_weight), size_(size) {}
 
   bool fit(const float *t_meas, const HourIn *in, size_t n, HouseParams *p, int stride = 6, int iters = 30) {
     if (n < 4 * HORIZON || n > MAX_HOURS) return false;
@@ -101,7 +107,7 @@ class HouseFitter {
     float x[NP], x0[NP];
     to_vec_(*p, x);
     to_vec_(prior_, x0);
-    for (int i = 0; i < NP; i++) x[i] = clamp_(i, x[i]);
+    for (int i = 0; i < NP; i++) x[i] = clamp_(i, x[i], size_);
     double lam = 1e-2;
     double cost = cost_(x, x0);
     if (!std::isfinite(cost)) return false;
@@ -119,7 +125,7 @@ class HouseFitter {
         double dx[NP];
         if (!solve_(m, dx)) { lam *= 10; continue; }
         float xn[NP];
-        for (int i = 0; i < NP; i++) xn[i] = clamp_(i, x[i] + static_cast<float>(dx[i]));
+        for (int i = 0; i < NP; i++) xn[i] = clamp_(i, x[i] + static_cast<float>(dx[i]), size_);
         const double c = cost_(xn, x0);
         if (std::isfinite(c) && c < cost) {
           const double gain = cost - c;
@@ -146,19 +152,21 @@ class HouseFitter {
  private:
   static void to_vec_(const HouseParams &p, float x[NP]) {
     x[0] = p.ua_kw_per_k; x[1] = p.ca_kwh_per_k; x[2] = p.cs_kwh_per_k; x[3] = p.h_kw_per_k;
-    x[4] = p.g_kw_per_100wm2; x[5] = p.p_int_kw; x[6] = p.kw_per_ms; x[7] = p.p_cos_kw; x[8] = p.p_sin_kw;
+    x[4] = p.g_kw_per_100wm2; x[5] = p.p_int_kw; x[6] = p.kw_per_ms; x[7] = p.p_cos_kw; x[8] = p.p_sin_kw; x[9] = p.k_nb_kw_per_k;
   }
   static void from_vec_(const float x[NP], HouseParams *p) {
     p->ua_kw_per_k = x[0]; p->ca_kwh_per_k = x[1]; p->cs_kwh_per_k = x[2]; p->h_kw_per_k = x[3];
-    p->g_kw_per_100wm2 = x[4]; p->p_int_kw = x[5]; p->kw_per_ms = x[6]; p->p_cos_kw = x[7]; p->p_sin_kw = x[8];
+    p->g_kw_per_100wm2 = x[4]; p->p_int_kw = x[5]; p->kw_per_ms = x[6]; p->p_cos_kw = x[7]; p->p_sin_kw = x[8]; p->k_nb_kw_per_k = x[9];
   }
-  static float clamp_(int i, float v) {
-    static constexpr float lo[NP] = {0.03f, 0.5f, 3.0f, 0.1f, 0.0f, 0.0f, 0.0f, -2.0f, -2.0f};
-    static constexpr float hi[NP] = {1.0f, 60.0f, 400.0f, 20.0f, 5.0f, 3.0f, 0.15f, 2.0f, 2.0f};
-    return v < lo[i] ? lo[i] : (v > hi[i] ? hi[i] : v);
+  static float clamp_(int i, float v, float size) {
+    static constexpr float lo[NP] = {0.03f, 0.5f, 3.0f, 0.1f, 0.0f, 0.0f, 0.0f, -2.0f, -2.0f, 0.0f};
+    static constexpr float hi[NP] = {1.0f, 60.0f, 400.0f, 20.0f, 5.0f, 3.0f, 0.15f, 2.0f, 2.0f, 5.0f};
+    const float k = i == 6 ? 1.0f : size;   // the wind factor is a fraction, not a size
+    const float l = lo[i] * k, h = hi[i] * k;
+    return v < l ? l : (v > h ? h : v);
   }
   // Typical size of each parameter: the prior's pull and the Jacobian step use it.
-  static constexpr float scale_[NP] = {0.1f, 5.0f, 30.0f, 1.0f, 0.5f, 0.3f, 0.02f, 0.3f, 0.3f};
+  static constexpr float scale_[NP] = {0.1f, 5.0f, 30.0f, 1.0f, 0.5f, 0.3f, 0.02f, 0.3f, 0.3f, 0.5f};
 
   // Forecast residuals for one parameter set, window by window, through a callback.
   template <typename F> void residuals_(const float x[NP], float *track, F &&each) {
@@ -184,7 +192,7 @@ class HouseFitter {
     sq_last_ = c;
     count_ = k;
     for (int i = 0; i < NP; i++) {
-      const double pr = prior_w_ * (x[i] - x0[i]) / scale_[i];
+      const double pr = prior_w_ * (x[i] - x0[i]) / (scale_[i] * (i == 6 ? 1.0f : size_));
       c += k * pr * pr / NP;
     }
     return c;
@@ -199,7 +207,7 @@ class HouseFitter {
     for (int a = 0; a < NP; a++) {
       float xp[NP];
       for (int k = 0; k < NP; k++) xp[k] = x[k];
-      dx[a] = 1e-3f * scale_[a] * 10.0f;
+      dx[a] = 1e-2f * scale_[a] * (a == 6 ? 1.0f : size_);
       xp[a] += dx[a];
       residuals_(xp, track_[1], [&](int i, float r) { jac_[a][i] = r; });
     }
@@ -221,7 +229,7 @@ class HouseFitter {
     }
     // The prior's pull: residual sqrt(k/NP)·w·(x − x0)/scale per parameter.
     for (int a = 0; a < NP; a++) {
-      const double wa = std::sqrt(static_cast<double>(k) / NP) * prior_w_ / scale_[a];
+      const double wa = std::sqrt(static_cast<double>(k) / NP) * prior_w_ / (scale_[a] * (a == 6 ? 1.0f : size_));
       jtr[a] += wa * wa * (x[a] - x0[a]);
       jtj[a][a] += wa * wa;
     }
@@ -248,6 +256,7 @@ class HouseFitter {
   static constexpr int MAX_RES = static_cast<int>((MAX_HOURS / 6 + 1) * HORIZON);
   HouseParams prior_;
   float prior_w_;
+  float size_;
   const float *t_{nullptr};
   const HourIn *in_{nullptr};
   size_t n_{0};

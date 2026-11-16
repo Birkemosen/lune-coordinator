@@ -157,6 +157,7 @@ def main():
     odin = read_hourly_csv(a.odin, "hour_start_utc") if a.odin else {}
     weather = read_hourly_csv(a.weather, "time_utc") if a.weather else {}
     rooms = read_rooms(a.rooms) if a.rooms else {}
+    meta = {}
     if a.room_meta:
         meta = {r["index"]: r for r in json.load(open(a.room_meta))["rooms"]}
         for per_hour in rooms.values():
@@ -194,9 +195,22 @@ def main():
                 if r.get("temp_c") is not None and r.get("target_c") is not None]
         v["coldest_dev_k"] = min(devs) if devs else None
         house_rows.append((h, v))
-        for idx, r in sorted(rooms.get(h, {}).items()):
+        # Split the hour's space heating over the rooms by what their loops can take:
+        # valve opening × loop area × (zone feed − room). Needs the room metadata.
+        hr = rooms.get(h, {})
+        feed = v.get("z1_feed_c") if v.get("z1_feed_c") is not None else v.get("hp_feed_c")
+        weights = {}
+        if a.room_meta and feed is not None:
+            for idx, r in hr.items():
+                m = meta.get(idx) or {}
+                area = m.get("loop_area_m2") or m.get("area_m2") or 0
+                if r.get("valve_pct") is not None and r.get("temp_c") is not None:
+                    weights[idx] = max(0.0, r["valve_pct"]) / 100 * area * max(0.0, feed - r["temp_c"])
+        wsum = sum(weights.values())
+        for idx, r in sorted(hr.items()):
+            heat = sh * weights[idx] / wsum if wsum > 0 and idx in weights else (0.0 if sh < 0.05 else None)
             room_rows.append((h, {"room_index": idx, "temp_c": r.get("temp_c"), "target_c": r.get("target_c"),
-                                  "valve_pct": r.get("valve_pct")}))
+                                  "valve_pct": r.get("valve_pct"), "heat_kwh": heat}))
 
     os.makedirs(a.out_dir, exist_ok=True)
     lh.write(os.path.join(a.out_dir, "house.bin"), lh.KIND_HOUSE, house_rows)

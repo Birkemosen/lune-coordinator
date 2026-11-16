@@ -64,6 +64,7 @@ enum RoomCol : uint8_t {
   R_TARGET_C,             // °C × 100
   R_VALVE_PCT,            // mean valve opening, %
   R_FLOOR_LAG_H,          // V6 floor response time, h × 100
+  R_HEAT_KWH,             // the house's space heating split by valve × area × (feed − room), kWh × 100
   R_COL_COUNT
 };
 
@@ -93,7 +94,7 @@ inline float house_scale(uint8_t col) {
 
 inline float room_scale(uint8_t col) {
   switch (col) {
-    case R_TEMP_C: case R_TARGET_C: case R_FLOOR_LAG_H: return 100.0f;
+    case R_TEMP_C: case R_TARGET_C: case R_FLOOR_LAG_H: case R_HEAT_KWH: return 100.0f;
     default: return 1.0f;
   }
 }

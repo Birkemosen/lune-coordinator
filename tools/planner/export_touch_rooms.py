@@ -33,6 +33,9 @@ def main():
             "setpoint_c": z.get("setpoint_c"),
             "schedule": sched if sched.get("enabled") else None,
             "area_m2": room.get("total_area_m2"),
+            "loop_area_m2": z.get("loop_area_m2"),     # this zone's own loop; a room may have several
+            "group_primary_zone": z.get("group_primary_zone"),
+            "is_group_secondary": z.get("is_group_secondary"),
             "exterior_walls": fc.get("exterior_walls"),   # bit 1 N, 2 E, 4 S, 8 W
             "wind_exposure": fc.get("wind_exposure"),
             "solar_gain": fc.get("solar_gain"),

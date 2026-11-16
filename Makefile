@@ -357,6 +357,7 @@ test-planner:
 	$(PLANNER_OUT)-settings
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_house.cpp -o $(PLANNER_REPLAY)-house
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_rooms.cpp -o $(PLANNER_REPLAY)-rooms
 
 # Build HISTORY/house.bin from exported CSVs (docs/planner_history_format.md):
 #   make planner-history ASGARD=asgard.csv ODIN=odin.csv ROOMS=rooms.csv WEATHER=weather.csv
@@ -367,6 +368,7 @@ planner-history:
 planner-replay: test-planner
 	$(PLANNER_REPLAY) $(HISTORY)/house.bin $(wildcard $(HISTORY)/rooms.bin)
 	$(PLANNER_REPLAY)-house $(HISTORY)/house.bin
+	$(if $(wildcard $(HISTORY)/rooms.bin),$(PLANNER_REPLAY)-rooms $(HISTORY)/house.bin $(HISTORY)/rooms.bin)
 
 # Same replay in a container: docker run --rm -v $$PWD/$(HISTORY):/data lune-planner
 planner-docker:

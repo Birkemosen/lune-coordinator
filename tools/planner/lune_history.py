@@ -28,6 +28,7 @@ HOUSE_COLS = [
 ]
 ROOM_COLS = [
     ("room_index", 1), ("temp_c", 100), ("target_c", 100), ("valve_pct", 1), ("floor_lag_h", 100),
+    ("heat_kwh", 100),
 ]
 
 MODE_SPACE_HEATING = 1 << 0
