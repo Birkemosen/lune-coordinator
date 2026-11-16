@@ -41,7 +41,7 @@ static const char *HOUSE_NAMES[H_COL_COUNT] = {
     "solar_wm2", "price_eur_kwh", "sched_sp_c", "sched_min_c", "sched_max_c", "run_min", "starts",
     "hp_feed_c", "hp_return_c", "z1_feed_c", "z1_return_c", "flow_target_c", "flow_target_max_c",
     "output_max_kw", "defrost_min", "dhw_tank_c", "mode_flags", "room_expected_c", "coldest_dev_k",
-    "humidity_pct"};
+    "humidity_pct", "sun_s_wm2", "sun_w_wm2", "sun_e_wm2"};
 
 int main(int argc, char **argv) {
   if (argc < 2) {

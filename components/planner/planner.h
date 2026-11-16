@@ -20,6 +20,7 @@ static constexpr uint8_t HORIZON_H = 48;
 inline bool forecastable(uint8_t col) {
   switch (col) {
     case H_OUTDOOR_C: case H_WIND_MS: case H_WIND_DIR_DEG: case H_SOLAR_WM2: case H_HUMIDITY_PCT:
+    case H_SUN_S_WM2: case H_SUN_W_WM2: case H_SUN_E_WM2:
     case H_PRICE_EUR_KWH: case H_SCHED_SP_C: case H_SCHED_MIN_C: case H_SCHED_MAX_C:
       return true;
     default:

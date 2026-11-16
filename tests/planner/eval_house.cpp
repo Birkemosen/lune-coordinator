@@ -84,13 +84,15 @@ int main(int argc, char **argv) {
     track_floor(p, &t[from], &in[from], ts.size(), t[from] + 2.0f, ts.data());
     for (size_t s = day; s < day + 24 && s + 25 < n; s++) {
       if (!std::isfinite(t[s])) continue;
-      HouseState st{t[s], ts[s - from]};
+      const float t0 = t[s] - (s ? p.sensor_sun_k * in[s - 1].sun_wm2 / 100.0f : 0.0f);
+      HouseState st{t0, ts[s - from]};
       for (int k = 1, j = 0; k <= 24; k++) {
         st = house_step(p, st, in[s + k - 1]);
         if (k == HZ[j]) {
           const float m = t[s + k];
           if (std::isfinite(m)) {
-            se[j] += (st.t_c - m) * (st.t_c - m);
+            const float shown = sensor_reading(p, st.t_c, in[s + k - 1]);
+            se[j] += (shown - m) * (shown - m);
             sp[j] += (t[s] - m) * (t[s] - m);
             cnt[j]++;
           }

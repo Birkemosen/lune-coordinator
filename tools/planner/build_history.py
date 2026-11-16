@@ -189,6 +189,7 @@ def main():
             o.get("outdoor_c") if o.get("outdoor_c") is not None else out)
         v["wind_ms"], v["wind_dir_deg"] = w.get("wind_ms"), w.get("wind_dir_deg")
         v["solar_wm2"], v["humidity_pct"] = w.get("solar_wm2"), w.get("humidity_pct")
+        v["sun_s_wm2"], v["sun_w_wm2"], v["sun_e_wm2"] = w.get("poa_s_wm2"), w.get("poa_w_wm2"), w.get("poa_e_wm2")
         v["price_eur_kwh"] = o.get("price_eur_kwh")
         v["sched_sp_c"], v["sched_min_c"], v["sched_max_c"] = o.get("sched_setpoint_c"), o.get("sched_min_c"), o.get("sched_max_c")
         devs = [r["temp_c"] - r["target_c"] for r in rooms.get(h, {}).values()

@@ -36,6 +36,12 @@ static float z(float v) { return std::isfinite(v) ? v : 0.0f; }
 
 // Loop areas of this install's zones (Touch /zones loop_area_m2), m². A real planner
 // reads them from Touch; the replay keeps them here to stay free of personal data files.
+// Exterior walls per zone (Touch forecast.exterior_walls: 1 N, 2 E, 4 S, 8 W).
+static int room_walls(int idx) {
+  static const int w[12] = {9, 3, 0, 4, 12, 8, 3, 9, 8, 12, 12, 6};
+  return idx >= 0 && idx < 12 ? w[idx] : 0;
+}
+
 static float room_area(int idx) {
   static const float a[12] = {18, 12.5f, 28, 32, 37.5f, 14.5f, 21.5f, 21.5f, 6, 24.5f, 24.5f, 24.5f};
   return idx >= 0 && idx < 12 ? a[idx] : 20.0f;
@@ -87,14 +93,24 @@ int main(int argc, char **argv) {
   static HouseFitter fitter;
   const int HZ[] = {3, 6, 12};
   const size_t win = static_cast<size_t>(window_days) * 24;
-  std::printf("room  UA W/K  floors kWh/K  rooms kWh/K  sun  nb W/K | RMSE model/persistence  3 h        6 h        12 h\n");
+  std::printf("room  UA W/K  floors kWh/K  rooms kWh/K  sun  sensor K/100W | RMSE model/persistence  3 h        6 h        12 h\n");
   double tse[3] = {}, tsp[3] = {};
   size_t tcnt[3] = {};
   for (auto &kv : temp) {
     const int idx = kv.first;
     const auto &t = kv.second;
     std::vector<HourIn> in = base;
-    for (size_t i = 0; i < n; i++) in[i].q_kw = heat[idx][i];
+    const int walls = room_walls(idx);
+    for (size_t i = 0; i < n; i++) {
+      in[i].q_kw = heat[idx][i];
+      // The sun on the room's own facades; a room with none gets the global value.
+      const Record &r = house[i];
+      float sun = 0;
+      if (walls & 4) sun += z(r.get(Kind::HOUSE, H_SUN_S_WM2));
+      if (walls & 8) sun += z(r.get(Kind::HOUSE, H_SUN_W_WM2));
+      if (walls & 2) sun += z(r.get(Kind::HOUSE, H_SUN_E_WM2));
+      in[i].sun_wm2 = (walls & 14) ? sun : base[i].sun_wm2;
+    }
     // The house's defaults scaled to the room's share of the floor area.
     const float size = room_area(idx) / 280.0f;
     HouseParams p;
@@ -111,21 +127,23 @@ int main(int argc, char **argv) {
       track_floor(p, &t[from], &in[from], ts.size(), std::isfinite(t[from]) ? t[from] + 2.0f : 22.0f, ts.data());
       for (size_t s = day; s < day + 24 && s + 13 < n; s++) {
         if (!std::isfinite(t[s])) continue;
-        HouseState st{t[s], ts[s - from]};
+        const float t0 = t[s] - (s ? p.sensor_sun_k * in[s - 1].sun_wm2 / 100.0f : 0.0f);
+        HouseState st{t0, ts[s - from]};
         for (int k = 1, j = 0; k <= 12; k++) {
           st = house_step(p, st, in[s + k - 1]);
           if (k == HZ[j]) {
             const float m = t[s + k];
             if (std::isfinite(m)) {
-              se[j] += (st.t_c - m) * (st.t_c - m); sp[j] += (t[s] - m) * (t[s] - m); cnt[j]++;
+              const float shown = sensor_reading(p, st.t_c, in[s + k - 1]);
+            se[j] += (shown - m) * (shown - m); sp[j] += (t[s] - m) * (t[s] - m); cnt[j]++;
             }
             j++;
           }
         }
       }
     }
-    std::printf("%4d  %6.1f  %12.1f  %11.1f  %4.2f %6.0f |", idx, 1000.0f * p.ua_kw_per_k, p.cs_kwh_per_k, p.ca_kwh_per_k,
-                p.g_kw_per_100wm2, 1000.0f * p.k_nb_kw_per_k);
+    std::printf("%4d  %6.1f  %12.1f  %11.1f  %4.2f %13.2f |", idx, 1000.0f * p.ua_kw_per_k, p.cs_kwh_per_k, p.ca_kwh_per_k,
+                p.g_kw_per_100wm2, p.sensor_sun_k);
     for (int j = 0; j < 3; j++) {
       std::printf("  %.2f/%.2f", cnt[j] ? std::sqrt(se[j] / cnt[j]) : NAN, cnt[j] ? std::sqrt(sp[j] / cnt[j]) : NAN);
       tse[j] += se[j]; tsp[j] += sp[j]; tcnt[j] += cnt[j];

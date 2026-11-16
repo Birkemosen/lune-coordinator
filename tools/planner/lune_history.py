@@ -25,6 +25,7 @@ HOUSE_COLS = [
     ("z1_feed_c", 10), ("z1_return_c", 10), ("flow_target_c", 10), ("flow_target_max_c", 10),
     ("output_max_kw", 100), ("defrost_min", 1), ("dhw_tank_c", 10), ("mode_flags", 1),
     ("room_expected_c", 100), ("coldest_dev_k", 100), ("humidity_pct", 1),
+    ("sun_s_wm2", 1), ("sun_w_wm2", 1), ("sun_e_wm2", 1),
 ]
 ROOM_COLS = [
     ("room_index", 1), ("temp_c", 100), ("target_c", 100), ("valve_pct", 1), ("floor_lag_h", 100),

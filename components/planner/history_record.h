@@ -55,6 +55,9 @@ enum HouseCol : uint8_t {
   H_ROOM_EXPECTED_C,      // the running planner's expected house temperature, °C × 100
   H_COLDEST_DEV_K,        // coldest room − its target, K × 100
   H_HUMIDITY_PCT,         // relative humidity, %
+  H_SUN_S_WM2,            // sun on a vertical south facade, W/m²
+  H_SUN_W_WM2,            // … west
+  H_SUN_E_WM2,            // … east (north gets diffuse light only and is left out)
   H_COL_COUNT
 };
 

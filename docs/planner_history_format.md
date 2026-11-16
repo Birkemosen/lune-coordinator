@@ -55,6 +55,7 @@ Ids are never reused.
 | 24 | room_expected_c | °C × 100 | the running planner's expected house temperature (Odin today) |
 | 25 | coldest_dev_k | K × 100 | coldest room − its target |
 | 26 | humidity_pct | % | Open-Meteo |
+| 27–29 | sun_s_wm2, sun_w_wm2, sun_e_wm2 | W/m² | sun on a vertical S / W / E facade, from Open-Meteo's direct-normal and diffuse irradiance and the sun's position (fetch_weather.py) |
 
 ## Room columns
 
