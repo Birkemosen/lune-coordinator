@@ -17,3 +17,4 @@ tests/dashboard/.stamp_version_tmp.yaml
 __pycache__/
 .env
 dist/
+planner-history/

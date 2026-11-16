@@ -2,6 +2,9 @@
 
 ## Unreleased (for v1.0.0)
 
+### Shadow planner, F0: history format and replay
+- Groundwork for Touch's own planner, which will run in shadow (computes and logs, commands nothing). History is one 64-byte record per hour in Odin's layout (Unix time + 30 scaled int16, -32768 = none), with the hour's start as the stamp and a header naming the column in each slot (`components/planner/history_record.h`, docs/planner_history_format.md).
+- Tools build a history from Home Assistant, Odin's hourly export and Open-Meteo (`tools/planner/`), and a replay runs a planner hour by hour over it, on the host (`make planner-replay`) or in Docker (`make planner-docker`). The planner sees only forecastable columns for the next 48 hours; the replay reports any measured value that leaks. F0 runs a placeholder planner: 1,091 hours (2 Oct–16 Nov 2026), 12 rooms, no gaps, no leaks.
 ### Preheating counts on the floor's response time
 - V6 now learns each loop's floor response time (how long the room takes to turn after heat starts or stops; about 1 h on 1. sal's timber floors, 2 h in the stueetage) and sends it with the zones (`floor_lag_h`, from the floor's build until learned). Weather preload and slab charging assumed an immediate floor. Preload now ramps up the response time earlier towards a wind/cold peak, and its horizon lets an offset reach the room only after it. Slab charging starts the response time before the shortfall instead of a fixed 1 h. Shown per room as `decisions[].floor_lag_h` in `/forecast`.
 
