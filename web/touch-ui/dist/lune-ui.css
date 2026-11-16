@@ -1207,9 +1207,14 @@
        forventet temperatur som trappekurve; timer under båndet er en tyk kant i bunden (.lo, varm
        kant = mangler varme). Opladning/forvarmning før vind og kulde står som .plan-seg bag kurven
        (samme skravering som Plan-arket). Farve er aldrig eneste signal: forklaringen står under. */
-  .plan-lane--flow { height: 56px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
-  .plan-lab--y.plan-lab--flow { height: 56px; margin-bottom: 0; }
-  .plan-lane--flow svg, .plan-lane--room svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .plan-lane--flow { height: 80px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
+  .plan-lab--y.plan-lab--flow { height: 80px; margin-bottom: 0; }
+  /* Hus: Odins bånd time for time og husets forventede temperatur; højt nok til at aflæse tiendedele. */
+  .plan-lane--house { height: 112px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
+  .plan-lab--y.plan-lab--house { height: 112px; margin-bottom: 0; }
+  .plan-lane--house .rb { fill: var(--seg-off); }
+  .plan-lane--house .exp { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linejoin: round; }
+  .plan-lane--flow svg, .plan-lane--room svg, .plan-lane--house svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   .plan-lane--flow .fl { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .plan-lane--flow .max { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
   .plan-lane--room { height: 28px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
@@ -1218,13 +1223,65 @@
   .plan-lane--room .exp { fill: none; stroke: var(--fg); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
   .plan-lane--room .lo { fill: var(--heat-fill); }
   /* vector-effect arves ikke: kurverne er polylines i en gruppe (.fl / .exp), så stregen sættes på dem. */
-  .plan-lane--flow .fl > *, .plan-lane--room .exp > * { vector-effect: non-scaling-stroke; }
+  .plan-lane--flow .fl > *, .plan-lane--room .exp > *, .plan-lane--house .exp > * { vector-effect: non-scaling-stroke; }
   .plan-lab.plan-lab--room { display: flex; flex-direction: column; justify-content: center; height: 28px; line-height: 1.15; }
   .plan-lab--room small { font-size: 10px; color: var(--faint); }
   .fc-legend .lflow { border-top: 2px solid var(--accent); }
   .fc-legend .lmax  { border-top: 1px dashed var(--muted); }
   .fc-legend .lrb   { height: 10px; border-radius: 2px; background: var(--seg-off); border-top: 2px solid var(--fg); }
   .fc-legend .llo   { height: 4px; border-radius: 1px; background: var(--heat-fill); }
+  /* Touch mod Odin (.hchart--vs) og et rums graf (.hchart--room): fortid (24 t målt) og 48 t frem i
+     samme graf (.hchart--ahead). Komfortbåndet er en neutral flade pr. time (.bd), målt fuld linje (.t),
+     Touch' forventning stiplet (.tf), Odins prikket (.od, dæmpet). Varme pr. time: leveret før nu og
+     Touch' plan efter nu (.ac), Odins plan som grå søjle ved siden af (.odb) — side om side, aldrig
+     oven på hinanden. Opladning/forvarmning i et rum: skraveret bag kurven (.heat). */
+  .trend .bd  { fill: var(--seg-off); }
+  .trend .od  { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 1 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .trend .odb { fill: var(--seg-off); stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .hchart--vs .trend .tf, .hchart--room .trend .tf { stroke: var(--violet); opacity: 1; }   /* Touch' forventning: planlæggerens violet */
+  .hchart--vs .hchart-panel.pair .trend { height: 220px; }
+  .hchart--vs .hchart-panel.pair + .hchart-panel .trend { height: 120px; }
+  .hchart--room .trend { height: 160px; }
+  .hchart--vs .hchart-head .metrics { grid-template-columns: repeat(auto-fit, minmax(10rem, max-content)); }
+  .hchart--vs .metric dd { white-space: nowrap; }
+  @media (max-width: 599px) {
+    .hchart--vs .hchart-head .metric dd { font-size: var(--fs-xl); }
+    .axis.at span.h6 { display: none; }   /* 72 t på en telefon: mærker hver 12. time */
+  }
+  .chart-legend .lbd  { width: 14px; height: 10px; border-top: 0; background: var(--seg-off); }
+  .chart-legend .lod  { border-top: 2px dotted var(--muted); }
+  .hchart--vs .chart-legend .ltf, .hchart--room .chart-legend .ltf { border-top-color: var(--violet); }
+  .chart-legend .lodb { width: 14px; height: 10px; border-top: 0; background: var(--seg-off); box-shadow: inset 0 0 0 1px var(--muted); }
+  .chart-legend .lheat { width: 14px; height: 10px; border-top: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 70%, transparent) 0 1.5px, transparent 1.5px 4px); }
+
+  /* Rumtabel (.rfc-list): én række pr. rum (navn med mål, nu, laveste og højeste de næste 24 t, timer
+     under båndet, Touch' opladning/forvarmning som badge). Rækken er en <details name> — kun ét rum
+     åbent ad gangen, uden JS — og åbner rummets graf. Laveste under båndet: .lo (fed + varm kant;
+     tallet og «Under båndet» siger det også). Mobil: Højeste skjules (.opt). */
+  .rfc-list { display: grid; }
+  .rfc-head, .rfc > summary, .rfc--none { display: grid; grid-template-columns: minmax(8rem, 1fr) repeat(4, 5.5rem) 11rem 1rem;
+    align-items: center; gap: var(--space-3); padding-inline: var(--space-2); }
+  .rfc-head { font-size: var(--fs-xs); color: var(--faint); padding-block: 0 var(--space-2); border-bottom: 1px solid var(--border); }
+  .rfc-head::after { content: ""; }
+  .rfc { border-bottom: 1px solid var(--border); }
+  .rfc > summary { min-height: var(--row-h); cursor: pointer; list-style: none; font-variant-numeric: tabular-nums; border-radius: var(--r-field); }
+  .rfc > summary::-webkit-details-marker { display: none; }
+  .rfc > summary::after { content: "›"; color: var(--faint); justify-self: end; transition: none; }
+  .rfc[open] > summary::after { transform: rotate(90deg); }
+  .rfc > summary:hover { background: var(--raised); }
+  .rfc > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .rfc-list .num { text-align: right; }
+  .rfc .num.lo { font-weight: 600; text-decoration: underline 2px var(--heat-fill); text-underline-offset: 4px; }
+  .rfc-name { display: flex; flex-direction: column; line-height: 1.2; }
+  .rfc-name small { font-size: var(--fs-xs); color: var(--faint); }
+  .rfc-tag { justify-self: start; }
+  .rfc--none { min-height: var(--row-h); border-bottom: 1px solid var(--border); }
+  .rfc-empty { grid-column: 2 / -1; color: var(--faint); }
+  .rfc > .hchart { padding: var(--space-3) var(--space-2) var(--space-4); }
+  @media (max-width: 599px) {
+    .rfc-head, .rfc > summary, .rfc--none { grid-template-columns: minmax(5rem, 1fr) repeat(3, 3.5rem) 0.75rem; gap: var(--space-2); }
+    .rfc .opt, .rfc-head .opt, .rfc-tag, .rfc-head > span:nth-last-child(1) { display: none; }
+  }
   /* Sidehoved: titel og statuslinje til venstre, handlingen («Indstillinger») til højre. */
   .view-head > .vh-end { margin-left: auto; align-self: center; }
   .view-head .badge { align-self: center; }

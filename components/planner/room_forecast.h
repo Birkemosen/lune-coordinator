@@ -14,7 +14,8 @@
 // each did out of sample over the last days (yesterday's model on today's hours, at 3,
 // 6, 12 and 24 h). Some rooms are driven more by doors, people and sun on the sensor
 // than by anything the model sees, and a day later most rooms are back where they are
-// now, so the model earns its weight in hours where it beats that.
+// now, so the model earns its weight in hours where it beats that. A fresh model (Touch
+// keeps no models across a restart) is scored on its own last days until real days come.
 // Pure C++, host-testable.
 
 #include <cmath>

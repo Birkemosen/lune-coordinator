@@ -1071,6 +1071,8 @@ it planned with and the shadow flow controller:
             "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
             "cop_outdoor_c": 5.0},
   "flow": {"our_target_c": 29.6, "odin_target_c": 35.0, "measured_kw": 10.0, "plan_kw": 4.4},
+  "odin": {"available": true, "n": 24, "heat_kw": [0.00, 5.80, "..."], "expected_c": [22.41, "..."],
+           "elec_kwh": [0.00, 1.42, "..."], "mode": [0, 2, "..."]},
   "learning": {"source": "learned", "refit_ts": 1794885600, "refit_ms": 2400, "days": 41, "hours": 336,
                "energy": true, "dynamics": true, "rmse_k": 0.286, "hp_hours": 263, "heat_pump": true,
                "floor_c": 25.1, "floor_tracked": true,
@@ -1081,7 +1083,7 @@ it planned with and the shadow flow controller:
               "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."]},
   "room_fit": {"ts": 1794884400, "ms": 19400, "fitted": 12, "rooms": 12},
   "rooms": [{"room_id": "room-10", "name": "Stue", "target_c": 22.0, "now_c": 22.4, "share": 0.191,
-             "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "expected_c": [22.41, "..."],
+             "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "past_c": [22.1, "..."], "expected_c": [22.41, "..."],
              "preload": null, "charge": {"from": 6, "to": 11, "store_c": 0.8, "insufficient": false}}]
 }
 ```
@@ -1117,6 +1119,10 @@ it planned with and the shadow flow controller:
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
   to the zone-1 flow target Odin commands. It is never sent.
+- `odin` is Odin's own plan for the same hours as Touch keeps it (`GET /plan`; index 0 =
+  the current hour, up to 24 h): planned heat, expected house temperature, electricity
+  (all modes) and operation mode (1 hot water, 6 legionella). The page compares the two
+  on space heating only. `{"available": false}` without an Odin plan.
 - `rooms`: the expected temperature per room for each plan hour
   (components/planner/room_forecast.h). Each room runs the house's two-mass model on
   Touch's week of room history (hour-mean temperature and valve opening), with its share
@@ -1127,6 +1133,7 @@ it planned with and the shadow flow controller:
   `expected_c` blends the model with the room staying at `now_c`, per horizon, by how
   each forecast the room out of sample over the last days (`weight_6h` is the model's
   weight 6 h ahead; 1 until a day is scored); `null` until the room has a model.
+  `past_c` is the room's last 24 closed hours (hour means, oldest first).
   `preload` / `charge` are Touch's own lift ahead of wind and cold for that room (hours
   from the plan's first hour, as in `GET /plan`). Replay 2 Oct–16 Nov 2026 (12 rooms):
   RMSE 0.40 / 0.52 / 0.64 / 0.69 K at 3 / 6 / 12 / 24 h against 0.60 / 0.90 / 1.12 /

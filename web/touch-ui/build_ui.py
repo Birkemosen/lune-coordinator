@@ -953,8 +953,6 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
     pl_legend = "".join(lg(c, k) for c, k in (("lprice", "planner.lPrice"), ("lbar", "planner.lOut"), ("ldhw", "plan.lDhw"),
                                              ("lleg", "planner.lLeg"), ("lflow", "planner.lFlow"), ("lmax", "planner.lMax"),
                                              ("lrb", "planner.lHouse")))
-    room_legend = "".join(lg(c, k) for c, k in (("lrb", "planner.lRoomBand"), ("llo", "planner.lBelow"), ("lch", "plan.charge"),
-                                               ("lpre", "plan.preload"), ("lins", "plan.insufficient")))
     model_keys = (("loss", "planner.mLoss"), ("mass", "planner.mMass"), ("floor", "planner.mFloor"),
                   ("solar", "planner.mSolar"), ("wind", "planner.mWind"), ("dhw", "planner.mDhw"))
     model_tbl = ('<div class="table-wrap"><table class="table"><thead><tr>'
@@ -984,9 +982,13 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           <header class="panel-head"><h3 id="h-pl48">{T("planner.plan48")}</h3>{pl_help("pl48", T("planner.plan48"), "planner.plan48Help", "planner-plan")}<p>{T("planner.plan48Sub")}</p></header>
           {pl_empty("pl48", "planner.emptyPlan", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{pl_legend}</div>')}
         </section>
+        <section class="panel" aria-labelledby="h-plvs">
+          <header class="panel-head"><h3 id="h-plvs">{T("planner.vs")}</h3>{pl_help("plvs", T("planner.vs"), "planner.vsHelp", "planner-odin")}<p>{T("planner.vsSub")}</p></header>
+          {pl_empty("plvs", "planner.emptyVs", '<div data-f="chart"></div>')}
+        </section>
         <section class="panel" aria-labelledby="h-plrooms">
           <header class="panel-head"><h3 id="h-plrooms">{T("planner.rooms")}</h3>{pl_help("plrooms", T("planner.rooms"), "planner.roomsHelp", "planner-rooms")}<p data-bind="planner.roomsSub">{T("planner.roomsSubEmpty")}</p></header>
-          {pl_empty("plrooms", "planner.emptyRooms", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{room_legend}</div>')}
+          {pl_empty("plrooms", "planner.emptyRooms", '<div data-f="chart"></div>')}
         </section>
         <section class="panel c5" aria-labelledby="h-plmodel">
           <header class="panel-head"><h3 id="h-plmodel">{T("planner.model")}</h3>{pl_help("plmodel", T("planner.model"), "planner.modelHelp", "planner-model")}</header>
@@ -1121,6 +1123,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "planner.laneFlow", "planner.laneHouse", "planner.perMs", "planner.confSeed", "planner.confLearning", "planner.cop",
         "planner.copAt", "planner.copOut", "planner.copZone", "planner.copHp", "planner.roomsSub", "planner.roomsSubEmpty",
         "planner.roomTarget", "planner.roomNoData", "planner.roomsAria", "plan.charge", "plan.preload", "plan.insufficient",
+        "planner.vsHeat", "planner.vsCost", "planner.vsBelow", "planner.vsTempAria", "planner.vsHeatAria", "planner.vsNoOdin",
+        "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lMeasured",
+        "planner.rRoom", "planner.rNow", "planner.rLow", "planner.rHigh", "planner.rBelow", "planner.rBelowVal", "planner.roomChartAria",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

@@ -11,6 +11,7 @@
 #include "room_forecast.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <vector>
@@ -90,6 +91,7 @@ int main(int argc, char **argv) {
     double se[4] = {}, sp[4] = {};
     size_t cnt[4] = {}, used = 0, shown = 0;
     float share = 0;
+    int first_day = 0; bool fresh = true; double fse = 0, fsp = 0; int fn = 0;
     for (size_t now = W + 24; now + 25 < n; now++) {
       const size_t from = now - W;
       for (size_t i = 0; i <= W; i++) tw[i] = t[from + i];
@@ -101,11 +103,18 @@ int main(int argc, char **argv) {
         double qr = 0, qh = 0;
         for (size_t i = now - 72; i < now; i++) { qr += heat[idx][i]; qh += base[i].q_kw; }
         share = qh > 0.5 ? static_cast<float>(qr / qh) : share;
+        if (m.fitted && m.scored == 0) {   // a fresh model: scored on its own last 3 days (in sample) until days come
+          for (size_t i = 0; i < W; i++) hq[i] = base[from + i].q_kw;
+          score_room(&m, tw.data(), win.data(), hq.data(), share, W, W - 72, track.data());
+        }
+        first_day = 24;
       }
       if (!m.fitted || !std::isfinite(t[now])) continue;
       for (int k = 0; k < 24; k++) { fut[k] = base[now + k]; fut[k].q_kw = base[now + k].q_kw * share; }
       const bool model = forecast_room(m, tw.data(), win.data(), W, fut.data(), 24, track.data(), out.data());
       used += model && m.weight(6) > 0.5f; shown++;
+      if (fresh && first_day > 0 && std::isfinite(t[now + 6])) { fse += (out[5] - t[now + 6]) * (out[5] - t[now + 6]); fsp += (t[now] - t[now + 6]) * (t[now] - t[now + 6]); fn++; }
+      if (first_day > 0 && --first_day == 0) fresh = false;
       for (int j = 0; j < 4; j++) {
         const float meas = t[now + HZ[j]];
         if (!std::isfinite(meas)) continue;
@@ -119,7 +128,7 @@ int main(int argc, char **argv) {
       std::printf("  %.2f/%.2f", cnt[j] ? std::sqrt(se[j] / cnt[j]) : NAN, cnt[j] ? std::sqrt(sp[j] / cnt[j]) : NAN);
       ts[j] += se[j]; tp[j] += sp[j]; tc[j] += cnt[j];
     }
-    std::printf("  | %3.0f %%\n", shown ? 100.0 * used / shown : 0.0);
+    std::printf("  | %3.0f %%  first day 6 h %.2f/%.2f\n", shown ? 100.0 * used / shown : 0.0, fn ? std::sqrt(fse / fn) : NAN, fn ? std::sqrt(fsp / fn) : NAN);
   }
   std::printf(" all        |");
   for (int j = 0; j < 4; j++) std::printf("  %.2f/%.2f", std::sqrt(ts[j] / tc[j]), std::sqrt(tp[j] / tc[j]));

@@ -2902,13 +2902,24 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('planner.sub', ok
       ? t('planner.sub', { e: num(plan.heat_kwh, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' })
       : t('planner.subEmpty'));
+    var vb = qs('[data-f="plvs"]');
+    if (vb) {
+      vb.toggleAttribute('data-empty', !ok);
+      var vc = vb.querySelector('[data-f="chart"]');
+      if (vc) vc.innerHTML = ok ? plannerVsChart(d) : '';
+    }
     var rb2 = qs('[data-f="plrooms"]');
     var rooms = ok && Array.isArray(d.rooms) ? d.rooms : [];
     var rok = rooms.some(function (r) { return r && Array.isArray(r.expected_c); });
     if (rb2) {
       rb2.toggleAttribute('data-empty', !rok);
       var rc = rb2.querySelector('[data-f="chart"]');
-      if (rc) rc.innerHTML = rok ? plannerRoomsChart(rooms, plan) : '';
+      // Keep the room the user opened (or closed all) across refreshes.
+      var was = rc && rc.querySelector('details.rfc[open]');
+      var hadRows = rc && rc.querySelector('details.rfc');
+      var openId = was ? was.getAttribute('data-room') : (hadRows ? '' : null);
+      if (rc) rc.innerHTML = rok ? plannerRoomsTable(rooms, plan, openId) : '';
+      if (rc && openId === '') rc.querySelectorAll('details.rfc[open]').forEach(function (x) { x.open = false; });
     }
     setText('planner.roomsSub', rok
       ? t('planner.roomsSub', { n: rooms.filter(function (r) { return r.charge || r.preload; }).length })
@@ -3065,37 +3076,149 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return x;
   }
 
-  // Room expectation (LDS 15.11): a lane per room with its band (target ± band), the
-  // expected temperature as a step line (axis target ± 1.5 °C), hours below the band as a
-  // warm edge, and Touch's charge / preload ahead of wind and cold behind the line.
-  function plannerRoomsChart(rooms, plan) {
-    var n = plan.heat_kw.length, band = plan.band_c != null ? Number(plan.band_c) : 0.5;
-    var rows = '';
-    rooms.forEach(function (r) {
-      var tgt = r.target_c != null ? Number(r.target_c) : null;
-      rows += '<div class="plan-lab plan-lab--room">' + esc(r.name) + '<small>' +
-        (tgt != null ? esc(t('planner.roomTarget', { t: num(tgt) })) : '—') + '</small></div>';
-      if (r.now_c == null) { rows += '<div class="plan-empty-lane">' + esc(t('planner.roomNoData')) + '</div>'; return; }
-      var mid = tgt != null ? tgt : Number(r.now_c), lo = mid - 1.5, hi = mid + 1.5;
-      var y = function (v) { return ((hi - v) / (hi - lo) * 100).toFixed(1); };
-      var exp = (r.expected_c || []).map(function (v) { return v == null ? v : Math.max(lo, Math.min(hi, v)); });
-      var svg = tgt != null ? '<rect class="rb" x="0" y="' + y(tgt + band) + '" width="' + n + '" height="' + (y(tgt - band) - y(tgt + band)).toFixed(1) + '"/>' : '';
-      if (tgt != null) (r.expected_c || []).forEach(function (v, k) {
-        if (v != null && v < tgt - band) svg += '<rect class="lo" x="' + (k + 0.06).toFixed(2) + '" y="88" width=".88" height="12"/>';
-      });
-      var seg = function (s2, kind, extra, tip) {
-        var a = Math.max(0, Math.min(n, s2.from)), b = Math.max(0, Math.min(n, s2.to));
-        return b > a ? '<span class="plan-seg" data-kind="' + kind + '"' + extra + ' style="--a:' + a + ';--b:' + b + '" title="' + esc(tip) + '"></span>' : '';
-      };
-      var segs = '';
-      if (r.preload) segs += seg(r.preload, 'preload', '', t('plan.preload'));
-      if (r.charge) segs += seg(r.charge, 'charge', r.charge.insufficient ? ' data-insufficient' : '',
-        t(r.charge.insufficient ? 'plan.insufficient' : 'plan.charge'));
-      rows += '<div class="plan-lane plan-lane--room">' + segs + '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true">' +
-        svg + '<g class="exp">' + planStair(exp, lo, hi) + '</g></svg></div>';
+  // Past day + 48 h in one chart (LDS 15.11 Touch vs Odin and the room charts): x in hours
+  // 0–72, now at 24. Axis marks every 6 h (every 12 h under 600 px, .h6), weekday at midnight.
+  var VS_H = 72, VS_PAST = 24;
+  function vsAxis(from_ts) {
+    var lang = (i18n._lang || document.documentElement.lang || 'en'), x = '';
+    for (var k = 0; k <= VS_H; k += 6) {
+      var d = new Date((from_ts + (k - VS_PAST) * 3600) * 1000), hr = d.getHours();
+      var cls = k === 0 ? 's' : k === VS_H ? 'e' : (k % 12 ? 'h6' : '');
+      var text = k === VS_PAST ? esc(t('trend.now')) : hr === 0 ? '<b>' + esc(d.toLocaleDateString(lang, { weekday: 'short' })) + '</b>'
+        : String(hr).padStart(2, '0');
+      x += '<span' + (cls ? ' class="' + cls + '"' : '') + ' style="--x:' + (k / VS_H * 100).toFixed(2) + '">' + text + '</span>';
+    }
+    return '<div class="axis at" aria-hidden="true">' + x + '</div>';
+  }
+
+  // Step line over hours starting at x0 on a lo–hi axis (null breaks the line).
+  function vsLine(cls, x0, vals, lo, hi) {
+    var segs = [], cur = [];
+    (vals || []).forEach(function (v, k) {
+      if (v == null || !isFinite(v)) { if (cur.length) segs.push(cur); cur = []; return; }
+      var y = ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1);
+      cur.push((x0 + k) + ',' + y, (x0 + k + 1) + ',' + y);
     });
-    return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.roomsAria')) + '" style="--now:0">' + rows +
-      '<span></span><div class="plan-x">' + planX(plan.from_ts, n) + '</div></div>';
+    if (cur.length) segs.push(cur);
+    return segs.map(function (s2) { return '<polyline class="' + cls + '" points="' + s2.join(' ') + '"/>'; }).join('');
+  }
+
+  // Temperature panel: past (24), band per future hour, Touch's forecast, Odin's (24 h).
+  function vsTemp(o) {
+    var vals = [].concat(o.past, o.ahead, o.odin || [], o.lo, o.hi).filter(function (v) { return v != null && isFinite(v); });
+    if (!vals.length) return '';
+    var lo = o.min != null ? o.min : Math.floor(Math.min.apply(null, vals) - 0.2);
+    var hi = o.max != null ? o.max : Math.ceil(Math.max.apply(null, vals) + 0.2);
+    if (hi - lo < 3) { lo = Math.floor((lo + hi) / 2 - 1.5); hi = lo + 3; }
+    var y = function (v) { return ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1); };
+    var band = '';
+    o.lo.forEach(function (b, k) {
+      var top = o.hi[k];
+      if (b == null || top == null) return;
+      band += '<rect class="bd" x="' + (VS_PAST + k) + '" y="' + y(top) + '" width="1" height="' + Math.max(0, y(b) - y(top)).toFixed(1) + '"/>';
+    });
+    var segs = (o.segs || []).map(function (sg) {
+      var a = Math.max(0, Math.min(48, sg.from)), b = Math.max(0, Math.min(48, sg.to));
+      return b > a ? '<rect class="heat" x="' + (VS_PAST + a) + '" y="0" width="' + (b - a) + '" height="100"/>' : '';
+    }).join('');
+    var grid = ['0.5', '50', '99.5'].map(function (g) { return '<line class="grid" x1="0" x2="' + VS_H + '" y1="' + g + '" y2="' + g + '"/>'; }).join('');
+    return '<div class="hchart-panel' + (o.pair ? ' pair' : '') + '"><div class="hchart-y" aria-hidden="true"><span>' + num(hi) + '°</span><span>' +
+      num((hi + lo) / 2) + '°</span><span>' + num(lo) + '°</span></div><svg class="trend" viewBox="0 0 ' + VS_H + ' 100" preserveAspectRatio="none" role="img" aria-label="' +
+      esc(o.aria) + '"><rect class="future" x="' + VS_PAST + '" y="0" width="' + (VS_H - VS_PAST) + '" height="100"/>' + grid + segs + band +
+      vsLine('t', 0, o.past, lo, hi) + vsLine('tf', VS_PAST, o.ahead, lo, hi) + (o.odin ? vsLine('od', VS_PAST, o.odin, lo, hi) : '') +
+      '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(o.from_ts) + '</div>';
+  }
+
+  // The last 24 values of a history array (hours before now), null where missing.
+  function lastDay(arr) {
+    var a = arr || [], out = [];
+    for (var k = a.length - 24; k < a.length; k++) out.push(k >= 0 && a[k] != null ? Number(a[k]) : null);
+    return out;
+  }
+
+  // Touch vs Odin (LDS 15.11): the next 24 h as Touch / Odin (space heat only, Odin's hot
+  // water and legionella hours left out), then house temperature and heat per hour.
+  function plannerVsChart(d) {
+    var plan = d.plan, odin = d.odin && d.odin.available ? d.odin : null, n = plan.heat_kw.length;
+    var h = d.history || {}, price = plan.price || [], bmin = plan.band_min_c || [], bmax = plan.band_max_c || [];
+    var om = odin ? (odin.mode || []) : [], space = function (k) { var m = Number(om[k]); return m !== 1 && m !== 6; };
+    var sum = function (f, N) { var s2 = 0; for (var k = 0; k < N; k++) s2 += f(k) || 0; return s2; };
+    var N = Math.min(24, n), ON = odin ? Math.min(24, odin.n || 0) : 0;
+    var heatT = sum(function (k) { return plan.heat_kw[k]; }, N);
+    var costT = sum(function (k) { return (plan.elec_kwh || [])[k] * (price[k] || 0); }, N);
+    var belowT = sum(function (k) { return bmin[k] != null && plan.t_end_c[k] != null ? Math.max(0, bmin[k] - plan.t_end_c[k]) : 0; }, N);
+    var heatO = odin ? sum(function (k) { return space(k) ? odin.heat_kw[k] : 0; }, ON) : null;
+    var costO = odin ? sum(function (k) { return space(k) ? odin.elec_kwh[k] * (price[k] || 0) : 0; }, ON) : null;
+    var belowO = odin ? sum(function (k) { return bmin[k] != null && odin.expected_c[k] != null ? Math.max(0, bmin[k] - odin.expected_c[k]) : 0; }, ON) : null;
+    var pair = function (a, b, dec) { return (a == null ? '—' : num(a, dec)) + ' / ' + (b == null ? '—' : num(b, dec)); };
+    var priced = price.slice(0, N).some(function (v) { return v != null; });
+    if (!priced) { costT = null; costO = null; }
+    var metric_ = function (label, val, unit) { return '<div class="metric"><dt>' + esc(label) + '</dt><dd>' + val + ' <small>' + unit + '</small></dd></div>'; };
+    var temp = vsTemp({ past: lastDay(h.temp_c), ahead: plan.t_end_c, odin: odin ? odin.expected_c : null, lo: bmin, hi: bmax,
+      aria: t('planner.vsTempAria'), pair: true, from_ts: plan.from_ts });
+    // Heat per hour: delivered before now; Touch's plan and Odin's side by side after.
+    var top = 6, past = lastDay(h.heat_kwh), bars = '';
+    plan.heat_kw.concat(past).forEach(function (v) { if (v > top) top = Math.ceil(v); });
+    if (odin) odin.heat_kw.forEach(function (v) { if (v > top) top = Math.ceil(v); });
+    var bar = function (cls, x, w, v) { var hh = Math.max(0, v || 0) / top * 100; return hh > 0 ? '<rect class="' + cls + '" x="' + x.toFixed(2) + '" y="' + (100 - hh).toFixed(1) + '" width="' + w + '" height="' + hh.toFixed(1) + '"/>' : ''; };
+    past.forEach(function (v, k) { bars += bar('ac', k + 0.12, 0.76, v); });
+    plan.heat_kw.forEach(function (v, k) {
+      bars += bar('ac', VS_PAST + k + 0.1, 0.4, v);
+      if (odin && k < ON && space(k)) bars += bar('odb', VS_PAST + k + 0.5, 0.4, odin.heat_kw[k]);
+    });
+    var heat = '<div class="hchart-panel"><div class="hchart-y" aria-hidden="true"><span>' + num(top, 0) + ' kW</span><span>0</span></div>' +
+      '<svg class="trend" viewBox="0 0 ' + VS_H + ' 100" preserveAspectRatio="none" role="img" aria-label="' + esc(t('planner.vsHeatAria')) + '">' +
+      '<rect class="future" x="' + VS_PAST + '" y="0" width="' + (VS_H - VS_PAST) + '" height="100"/><line class="grid" x1="0" x2="' + VS_H + '" y1="99.5" y2="99.5"/>' + bars +
+      '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(plan.from_ts) + '</div>';
+    var lg_ = function (c, k) { return '<span><i class="' + c + '"></i>' + esc(t(k)) + '</span>'; };
+    return '<div class="hchart hchart--ahead hchart--vs"><div class="hchart-head"><dl class="metrics">' +
+      metric_(t('planner.vsHeat'), pair(heatT, heatO, 0), 'kWh') + metric_(t('planner.vsCost'), pair(costT, costO, 2), '€') +
+      metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
+      (odin ? '' : '<p class="note">' + esc(t('planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
+      '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lt', 'planner.lMeasured') + lg_('ltf', 'planner.lTouch') +
+      (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
+  }
+
+  // Rooms (LDS 15.11): a row per room (now, lowest and highest over the next 24 h, hours
+  // below the band, Touch's charge / preload), opening the room's chart. One room open at a
+  // time (details name); the open room is kept across refreshes, else the one furthest below.
+  function plannerRoomsTable(rooms, plan, openId) {
+    var band = plan.band_c != null ? Number(plan.band_c) : 0.5, worst = null, worstDev = 0;
+    var info = rooms.map(function (r) {
+      var e = (r.expected_c || []).slice(0, 24).filter(function (v) { return v != null; });
+      var tgt = r.target_c != null ? Number(r.target_c) : null;
+      var o = { r: r, tgt: tgt, lo: e.length ? Math.min.apply(null, e) : null, hi: e.length ? Math.max.apply(null, e) : null,
+        below: tgt == null ? 0 : e.filter(function (v) { return v < tgt - band; }).length };
+      if (o.lo != null && tgt != null && (worst == null || o.lo - (tgt - band) < worstDev)) { worst = r.room_id; worstDev = o.lo - (tgt - band); }
+      return o;
+    });
+    var open = openId && rooms.some(function (r) { return r.room_id === openId && r.expected_c; }) ? openId : worst;
+    var head = '<div class="rfc-head" aria-hidden="true"><span>' + esc(t('planner.rRoom')) + '</span><span class="num">' + esc(t('planner.rNow')) +
+      '</span><span class="num">' + esc(t('planner.rLow')) + '</span><span class="num opt">' + esc(t('planner.rHigh')) + '</span><span class="num">' +
+      esc(t('planner.rBelow')) + '</span><span></span></div>';
+    var rows = info.map(function (o) {
+      var r = o.r, name = '<span class="rfc-name">' + esc(r.name) + '<small>' + (o.tgt != null ? esc(t('planner.roomTarget', { t: num(o.tgt) })) : '—') + '</small></span>';
+      if (r.now_c == null) return '<div class="rfc rfc--none">' + name + '<span class="rfc-empty">' + esc(t('planner.roomNoData')) + '</span></div>';
+      var badge = r.charge ? '<span class="badge warn">' + esc(t(r.charge.insufficient ? 'plan.insufficient' : 'plan.charge')) + '</span>'
+        : r.preload ? '<span class="badge info">' + esc(t('plan.preload')) + '</span>' : '';
+      var deg = function (v) { return v == null ? '—' : num(v) + '°'; };
+      var segs = [];
+      if (r.charge) segs.push(r.charge);
+      if (r.preload) segs.push(r.preload);
+      var chart = r.expected_c ? vsTemp({ past: r.past_c || [], ahead: r.expected_c, odin: null,
+        lo: r.expected_c.map(function () { return o.tgt != null ? o.tgt - band : null; }),
+        hi: r.expected_c.map(function () { return o.tgt != null ? o.tgt + band : null; }),
+        segs: segs,
+        aria: t('planner.roomChartAria', { room: r.name }), pair: false, from_ts: plan.from_ts }) : '';
+      var lg_ = function (c, k) { return '<span><i class="' + c + '"></i>' + esc(t(k)) + '</span>'; };
+      return '<details class="rfc" name="plroom" data-room="' + esc(r.room_id) + '"' + (r.room_id === open ? ' open' : '') + '><summary>' + name +
+        '<span class="num">' + deg(r.now_c) + '</span><span class="num' + (o.below ? ' lo' : '') + '">' + deg(o.lo) + '</span><span class="num opt">' +
+        deg(o.hi) + '</span><span class="num">' + (o.below ? esc(t('planner.rBelowVal', { n: o.below })) : '—') + '</span><span class="rfc-tag">' + badge +
+        '</span></summary>' + (chart ? '<div class="hchart hchart--ahead hchart--room">' + chart + '<p class="chart-legend" aria-hidden="true">' +
+        lg_('lbd', 'planner.lBand') + lg_('lt', 'planner.lMeasured') + lg_('ltf', 'planner.lTouch') +
+        (segs.length ? lg_('lheat', r.charge ? 'plan.charge' : 'plan.preload') : '') + '</p></div>' : '') + '</details>';
+    }).join('');
+    return '<div class="rfc-list">' + head + rows + '</div>';
   }
 
   function plannerChart(plan, st) {
@@ -3139,8 +3262,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.planAria')) + '" style="--now:0">' +
       lane(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, 2), '0']) + '<div class="plan-lane plan-lane--price">' + cells + '</div>' +
       lane('', t('planner.laneOut'), ['8 kW', '4', '0']) + '<div class="plan-lane plan-lane--out">' + bars + '</div>' +
-      lane('', t('planner.laneFlow'), [num(fhi, 0) + '°', num(flo, 0) + '°']) + '<div class="plan-lane plan-lane--flow">' + flow + '</div>' +
-      lane('', t('planner.laneHouse'), [num(hhi, 0) + '°', num(hlo, 0) + '°']) + '<div class="plan-lane plan-lane--room">' + house + '</div>' +
+      lane(' plan-lab--flow', t('planner.laneFlow'), [num(fhi, 0) + '°', num(flo, 0) + '°']) + '<div class="plan-lane plan-lane--flow">' + flow + '</div>' +
+      lane(' plan-lab--house', t('planner.laneHouse'), [num(hhi, 0) + '°', num(hlo, 0) + '°']) + '<div class="plan-lane plan-lane--house">' + house + '</div>' +
       '<span></span><div class="plan-x">' + x + '</div></div>';
   }
 

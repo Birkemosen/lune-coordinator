@@ -15626,6 +15626,10 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       }
       if (qh > 0.5f)
         pr.share = qr / qh;
+      // A fresh model (after a restart) is scored on its own last 3 days until real days come:
+      // in sample, but a room the model does not suit leans on "as it is" from the start.
+      if (pr.model.fitted && pr.model.scored == 0)
+        lp::score_room(&pr.model, rt.room_t, rt.room_in, rt.room_hq, pr.share, W, W - 72, rt.room_track);
     }
     fitted += pr.model.fitted;
     pr.forecast = false;
@@ -15905,6 +15909,42 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   char d[16];
   planner_num_(d, sizeof(d), rt->plan_kw_now, 2);
   put("\"flow\":{\"our_target_c\":%s,\"odin_target_c\":%s,\"measured_kw\":%s,\"plan_kw\":%s},", a, b, c, d);
+  // Odin's plan for the same hours (index 0 = the current hour, as plan's), for the page's
+  // Touch vs Odin comparison: its space heat, expected house temperature, electricity and mode.
+  {
+    struct OdinCopy { bool ok; uint8_t n; float heat[24], exp[24], el[24]; int mode[24]; };
+    OdinCopy *oc = static_cast<OdinCopy *>(heap_caps_calloc(1, sizeof(OdinCopy), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (oc != nullptr && take_state_lock_(100)) {
+      oc->ok = odin_plan_.available && odin_plan_.heat_production_count > 0;
+      oc->n = std::min<uint8_t>(odin_plan_.heat_production_count, 24);
+      for (int i = 0; i < oc->n; i++) {
+        oc->heat[i] = odin_plan_.heat_production_horizon[i];
+        oc->exp[i] = odin_plan_.expected_temp_horizon[i];
+        oc->el[i] = odin_plan_.energy_horizon[i];
+        oc->mode[i] = odin_plan_.operation_mode_horizon[i];
+      }
+      give_state_lock_();
+    }
+    if (oc != nullptr && oc->ok) {
+      put("\"odin\":{\"available\":true,\"n\":%u", static_cast<unsigned>(oc->n));
+      const char *on[3] = {"heat_kw", "expected_c", "elec_kwh"};
+      for (int f = 0; f < 3; f++) {
+        put(",\"%s\":[", on[f]);
+        for (int i = 0; i < oc->n; i++) {
+          planner_num_(a, sizeof(a), f == 0 ? oc->heat[i] : f == 1 ? oc->exp[i] : oc->el[i], 2);
+          put("%s%s", i ? "," : "", a);
+        }
+        put("]");
+      }
+      put(",\"mode\":[");
+      for (int i = 0; i < oc->n; i++)
+        put("%s%d", i ? "," : "", oc->mode[i]);
+      put("]},");
+    } else {
+      put("\"odin\":{\"available\":false},");
+    }
+    heap_caps_free(oc);
+  }
   // What Touch has learned from its own hours.
   const lp::LearnReport &L = rt->learn;
   planner_num_(a, sizeof(a), L.rmse_k, 3);
@@ -16000,8 +16040,15 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
     planner_num_(c, sizeof(c), r.model.fitted ? r.model.weight(6) : NAN, 2);
     planner_num_(d, sizeof(d), r.model.rmse_k, 2);
     put("%s{\"room_id\":\"%s\",\"name\":\"%s\",\"target_c\":%s,\"now_c\":%s,\"share\":%.3f,\"model\":%s,"
-        "\"weight_6h\":%s,\"rmse_k\":%s,\"expected_c\":",
+        "\"weight_6h\":%s,\"rmse_k\":%s,\"past_c\":[",
         k ? "," : "", id, name, a, b, static_cast<double>(r.share), r.model.fitted ? "true" : "false", c, d);
+    // The last 24 closed hours (hour means), oldest first.
+    for (size_t i = PlannerRuntime::RW - 24; i < PlannerRuntime::RW; i++) {
+      const int16_t t = rt->room_temp[k][i];
+      planner_num_(a, sizeof(a), t == room_history::NONE ? NAN : t / 10.0f, 1);
+      put("%s%s", i > PlannerRuntime::RW - 24 ? "," : "", a);
+    }
+    put("],\"expected_c\":");
     if (rooms_now && r.forecast) {
       put("[");
       for (int i = 0; i < p.n; i++) {
