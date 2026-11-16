@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
     const uint32_t ts = h[i].hour_start;
     const int off = ts < 1792890000u ? 2 : 1;   // 25 Oct 2026 01:00 UTC
     in[i].hour_local = static_cast<float>((ts / 3600 + off) % 24);
+    in[i].sun_lag_wm2 = i ? sun_lag_filter(in[i - 1].sun_lag_wm2, in[i].sun_wm2) : 0.0f;
   }
   // Outdoor gaps: carry the last value so the simulation can run.
   for (size_t i = 1; i < n; i++)

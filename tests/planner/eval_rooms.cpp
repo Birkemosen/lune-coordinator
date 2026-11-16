@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
   static HouseFitter fitter;
   const int HZ[] = {3, 6, 12};
   const size_t win = static_cast<size_t>(window_days) * 24;
-  std::printf("room  UA W/K  floors kWh/K  rooms kWh/K  sun  sensor K/100W | RMSE model/persistence  3 h        6 h        12 h\n");
+  std::printf("room  UA W/K  floors kWh/K  rooms kWh/K  sun  late sun | RMSE model/persistence  3 h        6 h        12 h\n");
   double tse[3] = {}, tsp[3] = {};
   size_t tcnt[3] = {};
   for (auto &kv : temp) {
@@ -110,6 +110,10 @@ int main(int argc, char **argv) {
       if (walls & 8) sun += z(r.get(Kind::HOUSE, H_SUN_W_WM2));
       if (walls & 2) sun += z(r.get(Kind::HOUSE, H_SUN_E_WM2));
       in[i].sun_wm2 = (walls & 14) ? sun : base[i].sun_wm2;
+      // Upstairs lies under a mansard roof of black glazed tiles; adding the global sun for
+      // its flat top did not improve any room (2 Oct-16 Nov), so the walls' sun is used and
+      // the roof's delay is left to the late-sun term.
+      in[i].sun_lag_wm2 = i ? sun_lag_filter(in[i - 1].sun_lag_wm2, in[i].sun_wm2) : 0.0f;
     }
     // The house's defaults scaled to the room's share of the floor area.
     const float size = room_area(idx) / 280.0f;
@@ -142,8 +146,8 @@ int main(int argc, char **argv) {
         }
       }
     }
-    std::printf("%4d  %6.1f  %12.1f  %11.1f  %4.2f %13.2f |", idx, 1000.0f * p.ua_kw_per_k, p.cs_kwh_per_k, p.ca_kwh_per_k,
-                p.g_kw_per_100wm2, p.sensor_sun_k);
+    std::printf("%4d  %6.1f  %12.1f  %11.1f  %4.2f %8.2f |", idx, 1000.0f * p.ua_kw_per_k, p.cs_kwh_per_k, p.ca_kwh_per_k,
+                p.g_kw_per_100wm2, p.g_lag_kw_per_100wm2);
     for (int j = 0; j < 3; j++) {
       std::printf("  %.2f/%.2f", cnt[j] ? std::sqrt(se[j] / cnt[j]) : NAN, cnt[j] ? std::sqrt(sp[j] / cnt[j]) : NAN);
       tse[j] += se[j]; tsp[j] += sp[j]; tcnt[j] += cnt[j];
