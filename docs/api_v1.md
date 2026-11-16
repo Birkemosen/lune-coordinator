@@ -29,6 +29,8 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 - [`POST /forecast/settings`](#post-forecastsettings)
 - [`POST /forecast/estimate-location`](#post-forecastestimate-location)
 - [`POST /weather/settings`](#post-weathersettings)
+- [`GET /planner`](#get-planner)
+- [`POST /planner/settings`](#post-plannersettings)
 - [`POST /settings`](#post-settings)
 - [`POST /display/wake`](#post-displaywake)
 - [`POST /heat-source/settings`](#post-heat-sourcesettings)
@@ -1027,6 +1029,43 @@ Touch sends expiring commands to V6. If no Touch value has been stored yet,
 first V6 import seeds this from legacy V6 zone `max_offset_c` values using a
 conservative minimum aggregate. V6 still applies its local per-zone command
 clamps, absolute setpoint limits, expiry, and safety validation.
+
+### `GET /planner`
+
+The shadow planner's state for the Opvarmningsplan page. The planner computes and logs
+only; nothing here commands the heat source, Odin or Asgard. Until the planner runs,
+every result is `null` and the page shows its empty states.
+
+```json
+{
+  "mode": "shadow",
+  "running": false,
+  "strategy": "comfort",
+  "settings": {"strategy": "comfort", "comfort_weight_eur": 0.50, "min_output_kw": 3.2,
+               "max_output_kw": 8.0, "max_flow_c": 35.0},
+  "solved_ts": null,
+  "plan": null,
+  "rooms": null,
+  "model": null,
+  "history": null
+}
+```
+
+`plan`, `rooms`, `model` and `history` get their shape when the planner fills them
+(docs/planner_history_format.md, phases F1–F3).
+
+### `POST /planner/settings`
+
+Absent fields keep their value. Values are clamped and stored as one blob (`planner`)
+in the settings namespace; the response is the `GET /planner` body.
+
+| Field | Range | Meaning |
+| --- | --- | --- |
+| `strategy` | `comfort`, `weighted`, `price` | Comfort first (default), weighted, or price first |
+| `comfort_weight_eur` | 0–5 | EUR per K·h below the band (weighted only) |
+| `min_output_kw` | 0–10 (≤ max) | Lowest stable output |
+| `max_output_kw` | 1–16 | Highest output the planner may plan |
+| `max_flow_c` | 25–55 | Highest flow temperature the planner may send |
 
 ### `POST /settings`
 

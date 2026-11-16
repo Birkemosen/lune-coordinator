@@ -110,6 +110,25 @@ int main() {
     assert(near(block_at(one, 14).sp, 22.0f) && near(block_at(one, 14).max, 1.5f));
     assert(lift_changed(Lift{15, 3, 1.5f, 0.2f}, Lift{15, 3, 1.5f, 1.0f}));
   }
+  // --- a room more than twice the comfort band behind calls for heat now -----
+  {
+    ColdRoomCall call;
+    assert(!call.update(0.9f, 0.5f));                 // within twice the band: top only
+    assert(!call.update(1.0f, 0.5f));                 // exactly 2 × band: not yet
+    assert(call.update(1.1f, 0.5f));                  // more than 2 × band: call on
+    assert(call.update(0.6f, 0.5f));                  // holds while outside the band
+    assert(!call.update(0.5f, 0.5f));                 // back within the band: off
+    assert(call.update(2.3f, 0.5f));                  // 2026-11-14: Laura 2.3 °C behind
+    assert(!call.update(NAN, 0.5f));                  // no reading: no call
+    // The call moves the whole band by the full lift from this hour (floor lag 1 h).
+    const Lift l = lag_lift(3, p.max_lift_c, 1, p, 1.0f, 0);
+    assert(l.start_hour == 3 && l.hours == 1 + 1 + 2 && near(l.floor_share, 1.0f));
+    assert(near(l.lift_c, p.max_lift_c));
+    const Profile cold = apply_lift(user, l);
+    assert(near(block_at(cold, 3).sp, block_at(user, 3).sp + p.max_lift_c));  // floor up by the full lift
+    // The ordinary lag window still starts next hour.
+    assert(lag_lift(3, 0.6f, 1, p).start_hour == 4);
+  }
 
   // --- a dear hour is skipped only when heating earlier is cheaper -----------
   {

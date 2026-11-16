@@ -115,6 +115,7 @@ Når dette dokument og koden er uenige, er det en fejl i et af dem. Ret den ene,
 - `15.8` [Hvordan information præsenteres](#158-hvordan-information-præsenteres)
 - `15.9` [Markup: ark, faner, gem-bjælke, underside og System](#159-markup-ark-faner-gem-bjælke-underside-og-system)
 - `15.10` [Hjem: hovedsektion, termostat-ring, felter og varmekort](#1510-hjem-hovedsektion-termostat-ring-felter-og-varmekort)
+- `15.11` [Opvarmningsplan: planlæggerens side (Touch)](#1511-opvarmningsplan-planlæggerens-side-touch)
 <!-- /toc -->
 
 ---
@@ -1273,7 +1274,7 @@ Testen for, hvor en indstilling hører til: *Hører den til en ting, der har et 
 
 ### 15.2 Navbar
 
-Midten har altid de samme to punkter: **Hjem** og **System** (på Touch og i HA kan der komme flere visninger, fx Energi). Zonestrimlen/manifold-felterne vælger omfang på Hjem; de vises ikke på System.
+Midten har altid **Hjem** og **System**. Touch har desuden **Opvarmningsplan** imellem dem (planlæggerens side, 15.11); med tre tilstande viser tablet (768–1023 px) de inaktive som ikon og kun den aktive med tekst, så brand, pille og værktøjer kan stå på én linje (teksten bliver i labelen til skærmlæsere); i HA kan der komme flere visninger, fx Energi. Zonestrimlen/manifold-felterne vælger omfang på Hjem; de vises ikke på System.
 
 ### 15.3 Arket
 
@@ -1356,7 +1357,7 @@ Ingen kontrol strækkes for at fylde rækken. På mobil (< 600 px) må en kontro
 
 ### 15.9 Markup: ark, faner, gem-bjælke, underside og System
 
-**Tilstande i config.** `"modes": ["home", "sys"]`. `home` har en visning pr. omfang (`#v-home-{omfang}`, som før); `sys` har **én** visning, `#v-sys`, uanset omfang, og strimlen skjules på System. Radioerne er `#m-home` / `#m-sys` i navbarens pille («Hjem» / «System»). `systemCategories` (liste af id'er) genererer System-sidens kategoriregler. Configs med `dash`/`conf` bygger stadig, men `lds_build.py` advarer.
+**Tilstande i config.** `"modes": ["home", "sys"]`, på Touch `["home", "plan", "sys"]` (rækkefølgen er navbarens). `home` og `plan` har en visning pr. omfang (`#v-home-{omfang}`, `#v-plan-{omfang}`); `sys` har **én** visning, `#v-sys`, uanset omfang, og strimlen skjules på System. Radioerne er `#m-home` / `#m-plan` / `#m-sys` i navbarens pille («Hjem» / «Opvarmningsplan» / «System»); `plan` kræver `home`. `systemCategories` (liste af id'er) genererer System-sidens kategoriregler. Configs med `dash`/`conf` bygger stadig, men `lds_build.py` advarer.
 
 **Ark (`.sheet`).** Native `popover` (auto): Esc og klik udenfor lukker. Åbnes af ethvert element med `popovertarget`. Desktop: fast i højre side (`--sheet-w` 520 px, `--sheet-inset` 12 px fra kanterne, `--r-sheet` 24, `--float`-skygge, `::backdrop` 35 % sort). Under 600 px: ark fra bunden, maks. 92vh, safe-area nederst. Arket selv scroller; hoved og gem-bjælke klæber.
 
@@ -1421,7 +1422,7 @@ Ingen kontrol strækkes for at fylde rækken. På mobil (< 600 px) må en kontro
 </div>
 ```
 
-**Deep links** (progressiv, `lune-forms.js`). `data-hash` på ark, faneradioer, `#m-sys` og kategoriradioer bestemmer adressen: `#z3` åbner arket, `#z3/indstillinger` på fanen, `#system/varmekilde` System på kategorien. Adressen opdateres ved navigation (`history.replaceState`). Skift væk fra System eller en kategori med ugemte ændringer advarer.
+**Deep links** (progressiv, `lune-forms.js`). `data-hash` på ark, faneradioer, tilstandsradioer (`#m-plan`, `#m-sys`) og kategoriradioer bestemmer adressen (`#opvarmningsplan` åbner Opvarmningsplan): `#z3` åbner arket, `#z3/indstillinger` på fanen, `#system/varmekilde` System på kategorien. Adressen opdateres ved navigation (`history.replaceState`). Skift væk fra System eller en kategori med ugemte ændringer advarer.
 
 ### 15.10 Hjem: hovedsektion, termostat-ring, felter og varmekort
 
@@ -1444,3 +1445,13 @@ Touch' Hjem (15.7) bygges af disse komponenter (`@only touch` i CSS'en):
 
 Rum-arket på Touch viser kun det, Touch ejer (medregn i hustemperaturen, vægt, vind, sol). V6' egne felter, som Touch' API leverer (areal, ydervægge), står som læseværdier (`.setting-value`) i gruppen «Fra V6 (<styring>, Z<n>)» med «Redigér på V6 ›» (ny fane, `http://<v6>/#z<n>/indstillinger`); er V6'en offline, er gruppen dæmpet (`.setting-group[data-offline]`) med samme note.
 
+### 15.11 Opvarmningsplan: planlæggerens side (Touch)
+
+Touch' planlægger (skyggeplanlæggeren) har sin egen side mellem Hjem og System (`#m-plan`, `#v-plan-house`). Den er ikke et ark, fordi den viser 48 timer for hele huset og alle rum på én gang. Siden viser kun planlæggerens egne tal; sammenligning med Odin hører til Home Assistant.
+
+- **Hoved:** `.view-head` med titel («Opvarmningsplan»), en `.badge` for driften («Skyggedrift», violet = læring, så længe planlæggeren kun regner og logger), én sætning om de næste 48 timer (energi og pris) og én handling til højre (`.vh-end`): «Åbn indstillinger» åbner planlæggerens ark på Indstillinger (`popovertarget="sheet-planner" data-tab="settings"`). Indstillingerne ligger i arket, ikke på siden (15.3: faner og gem-bjælke hører til ark).
+- **Plan for 48 timer** (panel, fuld bredde): `.plan.plan--48` (`--plan-h: 48`; alle spor, segmenter, nu-linje og aflæsning regnes i timer af `--plan-h`). Spor: Pris (`.plan-lane--price`), Varme (`.plan-lane--out`: planlagt varme pr. time som Odin-sporets søjler — husvarme solid, varmt vand skraveret, legionella krydsskraveret) og Fremløb (`.plan-lane--flow`: fremløbsmålet som trappekurve i varmens farve og maks. fremløb stiplet, `.max`). x-aksen har mærker hver 3. time (hver 12. altid, 6. fra 300 px, 3. fra 520 px) og ugedagen ved midnat.
+- **Rum-forventning** (panel, fuld bredde): samme `.plan--48` med ét `.plan-lane--room` pr. rum: rummets komfortbånd (mål ± bånd) som neutral flade (`.rb`), forventet temperatur som trappekurve (`.exp`, akse mål ± 1,5 °C = 3 °C) og timer under båndet som varm kant i bunden (`.lo`). Opladning og forvarmning før vind og kulde står bag kurven som `.plan-seg` (`data-kind="charge|preload"`, gul `data-insufficient` når gulvet ikke kan dække). Spornavnet (`.plan-lab--room`) har rummets mål i `<small>`. Rum uden måling: `.plan-empty-lane` («— Ingen måling»).
+- **Lært model** (`c5`): `.table` med størrelse, værdi (enhed i `<small>`) og sikkerhed som `.badge` (ok «Sikker», violet «Lærer», neutral «For lidt data») + grundlaget i `<small>`; under den en `.table` med COP efter effekt og udetemperatur. Manglende værdi «—».
+- **Plan mod faktisk** (`c7`): `.hchart` med 24 t / 7 d, tal øverst (afvigelse i temperatur, varme leveret/planlagt, pris faktisk/planlagt), øverste panel målt (`.t`) mod forudsagt (`.tf`) husets temperatur med mål (`.sp`), nederste panel planlagt (`.pl`) mod leveret (`.ac`) varme.
+- **Planlæggerens ark** (`sheet-planner`, `data-tone="violet"`): Overblik (næste opvarmning, varme og pris de næste 24 t, `.kv` med drift, seneste og næste planlægning og datakilder) og Indstillinger (ingen Historik — den står på siden): Strategi som `.seg` med typegruppen `st` (`comfort` / `weighted` / `price`; kun Vægtet har et felt: pris for afvigelse i €/K·t), Varmepumpe (mindste og største effekt, maks. fremløb) og Drift som læseværdi («Skyggedrift»), én gem-bjælke.

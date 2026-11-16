@@ -31,6 +31,11 @@
 
 namespace lune_touch_charge {
 
+/// Extra loss per unit wind exposure at 10 m/s head-on (exposure 1 → +60 %).
+static constexpr float WIND_LOSS_FACTOR = 0.6f;
+/// A learned exposure may exceed the presets' 0..1: 2.0 / 0.6 ≈ 3.33 → ×3 at 10 m/s.
+static constexpr float WIND_EXPOSURE_MAX = 2.0f / WIND_LOSS_FACTOR;
+
 struct Hour {
   float temp_c = 0.0f;         ///< Outdoor temperature
   float wind_ms = 0.0f;        ///< Wind speed
@@ -44,10 +49,11 @@ struct Room {
   float floor_r_m2k_per_w = 0.0f; ///< Covering + slab resistance above the pipes (0 → default)
   float c_slab_kwh_per_k = 0.0f;  ///< Storage mass of slab + room (0 → area default)
   uint8_t exterior_walls = 0;     ///< N=1|E=2|S=4|W=8
-  float wind_exposure = 0.5f;     ///< 0..1 facade exposure (shelter, terrain)
+  float wind_exposure = 0.5f;     ///< Facade exposure: presets 0..1, learned up to WIND_EXPOSURE_MAX
   float solar_gain = 0.3f;        ///< 0..1 passive solar gain through glazing
   float setpoint_c = 21.0f;
   float temp_c = NAN;             ///< Current room temperature (NaN = unknown)
+  float floor_lag_h = 0.0f;       ///< Floor response time from V6 (0 → Params::margin_h)
 };
 
 struct Params {
@@ -59,14 +65,14 @@ struct Params {
   float default_floor_r_m2k_per_w = 0.10f;
   /// Extra infiltration/convection loss per unit exposure at 10 m/s head-on
   /// (0.6 → +60 % for a fully exposed facade). Calibration constant.
-  float wind_loss_factor = 0.6f;
+  float wind_loss_factor = WIND_LOSS_FACTOR;
   /// Share of horizontal irradiance on the floor area that reaches the room.
   float solar_aperture = 0.10f;
   /// Storage when V6 reports no slab mass: kWh/K per m² (≈ 60 mm screed + room).
   float default_c_kwh_per_k_m2 = 0.008f;
   /// Never plan more than this above setpoint (comfort ceiling).
   float max_store_c = 1.5f;
-  /// Safety margin before the deficit begins (hours).
+  /// Margin before the deficit begins (hours) when the room has no floor response time.
   float margin_h = 1.0f;
   /// Shortfall below this energy is ignored (kWh) — noise, not an episode.
   float min_deficit_kwh = 0.15f;
@@ -116,7 +122,8 @@ inline float hour_loss_w(const Hour &h, const Room &room, const Params &p) {
   if (!(dt > 0.0f) || !(room.ua_w_per_k > 0.0f))
     return 0.0f;
   const float wind = std::max(0.0f, h.wind_ms) / 10.0f;
-  const float wind_mult = 1.0f + p.wind_loss_factor * std::clamp(room.wind_exposure, 0.0f, 1.0f) *
+  // Manual presets are 0..1; a learned exposure (exposure_learning.h) may go to WIND_EXPOSURE_MAX.
+  const float wind_mult = 1.0f + p.wind_loss_factor * std::clamp(room.wind_exposure, 0.0f, WIND_EXPOSURE_MAX) *
                                      wind_alignment(room.exterior_walls, h.wind_dir_deg) * wind;
   const float solar = std::clamp(room.solar_gain, 0.0f, 1.0f) * std::max(0.0f, h.shortwave_wm2) *
                       room.area_m2 * p.solar_aperture;
@@ -180,7 +187,9 @@ inline Decision plan(const Hour *hours, size_t count, size_t now_index, const Ro
     got_wh += std::max(0.0f, spare);
   }
   d.charge_hours = static_cast<float>(ep_start - k);
-  const float start_h = static_cast<float>(ep_start) - d.charge_hours - p.margin_h -
+  // The charge reaches the room one floor response time after it goes into the loop.
+  const float margin_h = room.floor_lag_h > 0.0f ? std::min(room.floor_lag_h, 5.0f) : p.margin_h;
+  const float start_h = static_cast<float>(ep_start) - d.charge_hours - margin_h -
                         static_cast<float>(now_index);
   d.start_in_h = static_cast<int16_t>(std::floor(start_h));
   d.charge_now = d.start_in_h <= 0 && d.episode_end_in_h > 0;

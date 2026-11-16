@@ -3,7 +3,7 @@
   "id": "v6",
   "note": "6-zoners manifold-controller. Hjem viser manifolden; zoner og manifold åbner ark (DESIGN.md 15). Zoneomfangene bestemmer strimlens bredde.",
   "modes": ["home", "sys"],
-  "systemCategories": ["device", "manifold", "connections", "firmware", "service", "motorlab"],
+  "systemCategories": ["device", "motors", "connections", "firmware", "service", "motorlab"],
   "scopes": [
     {"id": "sys", "kind": "system", "label": "Manifold"},
     {"id": "z1", "kind": "zone"}, {"id": "z2", "kind": "zone"}, {"id": "z3", "kind": "zone"},

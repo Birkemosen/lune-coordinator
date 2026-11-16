@@ -234,6 +234,8 @@ struct ZoneLiveState {
   bool headroom{false};
   HeatRecommendation recommendation{HeatRecommendation::HOLD};
   bool heat_demand_fresh{false};
+  // Runtime-only floor response time from V6 (learned, else its build prior); 0 = unknown.
+  float floor_lag_h{0.0f};
 };
 
 struct NodeHeatDemand {
@@ -379,6 +381,9 @@ struct StrategySnapshot {
   /// Share of the house (by weight) in rooms that lag beyond the band and may drive:
   /// one or two such rooms only open the top of Odin's band (odin_comfort.h).
   float lagging_share{0.0f};
+  /// Largest deficit (target − temp) of any contributing room, whether or not it may
+  /// drive: a room this far behind may call for heat on its own (odin_comfort.h ColdRoomCall).
+  float coldest_deficit_c{0.0f};
   // T2: Odin UA-prior calibration status.
   char ua_calibration_status[16]{"uncalibrated"};  // calibrated | uncalibrated | blocked
   char ua_calibration_reason[32]{"unknown"};
@@ -682,6 +687,7 @@ class HouseModel {
                                    bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
                                    bool has_valve = false);
   // Apply V6 group membership for a zone binding. Secondary members are detached from rooms.
+  bool update_zone_floor_lag(size_t node_index, size_t zone_index, float floor_lag_h);
   bool update_zone_group_membership(size_t node_index, size_t zone_index,
                                     uint8_t group_primary_zone_1based, uint8_t members_mask,
                                     bool is_primary);

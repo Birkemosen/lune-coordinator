@@ -31,7 +31,8 @@ Kopiér denne fil ind i projektets `CLAUDE.md` / `AGENTS.md`, eller henvis til d
 - Hjem / Ark / System. Alt, der hører til et ark, indstilles i arket (fane Indstillinger) — også tingens forbindelse som underside «Forbindelse ›». System har kun det, der ikke hører til et ark (enhed, styringer, netværk, firmware, service). Ingen indstilling begge steder, ingen links fra et ark til dets egne indstillinger på System.
 - Indstillinger er grupperede lister (maks. 6 rækker pr. gruppe, 5 grupper pr. side), ikke kort. Kontrolbredder efter tabellen i 15.6.
 - Hjem: én hovedsektion, maks. 4 felter pr. række, ét hovedtal og én visualisering pr. felt.
-- Config: `"modes": ["home", "sys"]` + `systemCategories`. `dash`/`conf` er udfaset.
+- Config: `"modes": ["home", "sys"]` (Touch: `["home", "plan", "sys"]`) + `systemCategories`. `dash`/`conf` er udfaset.
+- Touch' Opvarmningsplan (`#v-plan-house`, DESIGN.md 15.11): planlæggerens side mellem Hjem og System; kun planlæggerens egne tal, indstillinger i `sheet-planner`.
 - Ark: `div.sheet[popover]` med `.sheet-head` (ikonbrik, titel, én statuslinje, luk), åbnes med `popovertarget`. Ét ark pr. ting; aldrig ark i ark.
 - Faner: radioer `input.state.tab` (value `overview|history|settings`) først i arket + `.tabs`-labels + `.tab-panel[data-tab]`. Ingen JS til at skifte fane.
 - Gem-bjælke: én `.savebar` sidst i formularen pr. fane/kategori, med `.save-status`, Fortryd og Gem. Hjem autogemmer.

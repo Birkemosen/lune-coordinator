@@ -7,6 +7,7 @@
 #include "room_reached.h"
 #include "coordinator_model.h"
 #include "energy_price.h"
+#include "planner_settings.h"
 #include "exposure_learning.h"
 #include "flow_trim.h"
 #include "hp_history.h"
@@ -58,6 +59,7 @@ struct ForecastDecisionState {
   uint8_t configured_thermal_lead_h{4};
   uint8_t learned_thermal_lead_h{0};
   uint8_t active_thermal_lead_h{4};
+  float floor_lag_h{0.0f};  ///< V6 floor response time used for preload and charge (0 = unknown)
   float timing_scale{0.0f};
   float heuristic_offset_c{0.0f};
   float min_temp_c{0.0f};
@@ -764,6 +766,11 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_heat_source_control_json(char *buffer, size_t capacity) const;
   /// Touch's heating plan for the next 24 h (dashboard plan graph).
   void write_plan_json(char *buffer, size_t capacity) const;
+  /// Shadow planner (GET /planner): settings, and null results until a planner runs.
+  void write_planner_json(char *buffer, size_t capacity) const;
+  /// Planner settings; absent fields keep their value. Shadow only: commands nothing.
+  bool set_planner_settings(const planner_settings::Settings &settings);
+  planner_settings::Settings get_planner_settings() const { return planner_settings_; }
   /// Odin comfort control + generic levers. Null strings / NAN = unchanged.
   bool set_heat_source_control(bool has_odin_enabled, bool odin_enabled, float odin_max_lift_c,
                                const char *forwarder_entity, const char *target_url_template,
@@ -982,7 +989,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool run_heat_source_test_read_(char *response, size_t capacity);
   bool run_heat_source_test_push_(char *response, size_t capacity);
   void apply_odin_timing_bias_(ForecastDecisionState *decision);
-  void maybe_dispatch_absorb_arm_();
+  void maybe_dispatch_absorb_arm_(bool requested = false);
   void maybe_dispatch_absorb_disarm_(const char *reason);
   bool send_v6_absorb_arm_(const ::lune_touch::PairedNode &node, uint8_t zone_index, uint32_t ttl_s,
                            ::lune_touch::CommandRecord *result, const char *decision_reason = nullptr);
@@ -1105,6 +1112,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void dispatch_charge_arms_();
   uint32_t charge_last_arm_ms_[::lune_touch::MAX_NODES][6]{};
   bool charge_armed_[::lune_touch::MAX_NODES][6]{};
+  bool odin_armed_[::lune_touch::MAX_HOUSE_ZONES]{};  ///< Absorb band armed by an Odin pre-buffer (by model zone)
   /// Current lift of the Asgard comfort target above the real house target (°C).
   float demand_target_uplift_c_{0.0f};
   /// Where house demand goes: "virtual_thermostat" | "odin_schedule" | "generic" | "none".
@@ -1112,6 +1120,9 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Hysteresis/hold on the house demand signal (lagging room / slab charge).
   lune_touch_house::DemandHold demand_hold_{};
   float demand_held_c_{0.0f};
+  /// A room more than twice the comfort band behind: Odin's band floor moves (odin_comfort.h).
+  lune_touch_odin::ColdRoomCall cold_room_call_{};
+  float coldest_deficit_c_{0.0f};
   OdinControlState odin_control_{};
   GenericLeverState generic_levers_{};
   lune_touch_odin::OwnerState odin_owner_{};
@@ -1255,6 +1266,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool circulation_poll_requested_{false};
   float weather_max_boost_c_{1.5f};
   bool solar_holdoff_enabled_{true};
+  planner_settings::Settings planner_settings_{};
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};

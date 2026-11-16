@@ -356,9 +356,11 @@ inline int lag_end_in_h(uint8_t floor_lag_h, float floor_share = 1.0f) {
   const int end = LAG_LEAD_IN_H + lag + LAG_EXTRA_H;
   return floor_share < 1.0f ? std::max(end, LAG_LEAD_IN_H + LAG_CHOICE_H) : end;
 }
+/// `lead_in_h` 0 starts the window this hour (a cold room's call: ColdRoomCall).
 inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const LiftParams &p,
-                     float floor_share = 1.0f) {
-  Lift l = make_lift(now_hour, LAG_LEAD_IN_H, lag_end_in_h(floor_lag_h, floor_share), lift_c, p);
+                     float floor_share = 1.0f, int lead_in_h = LAG_LEAD_IN_H) {
+  const int lead = std::clamp(lead_in_h, 0, LAG_LEAD_IN_H);
+  Lift l = make_lift(now_hour, lead, lag_end_in_h(floor_lag_h, floor_share), lift_c, p);
   if (l.active())
     l.floor_share = floor_share;
   return l;
@@ -405,6 +407,26 @@ inline float floor_share_for(float lagging_share) {
     return 1.0f;
   return std::clamp(2.0f * lagging_share, FLOOR_SHARE_MIN, 1.0f);
 }
+
+/// A room more than twice the comfort band below its target calls for heat now, however
+/// small its share of the house (user rule 2026-11-14: Laura 2.3 °C behind with its loop
+/// fully open, the house 0.4 °C above target, Odin off from 03 to 08). While the call is
+/// on, the lag lift moves the whole band (floor share 1) by the full allowed lift from
+/// this hour, so Odin must heat; it ends when the room is back within the band.
+/// Below twice the band a lagging room still only opens the band's top (floor_share_for).
+static constexpr float COLD_CALL_BANDS = 2.0f;
+struct ColdRoomCall {
+  bool engaged = false;
+  bool update(float deficit_c, float band_c) {
+    if (!std::isfinite(deficit_c) || !(band_c > 0.0f))
+      return engaged = false;
+    if (!engaged && deficit_c > COLD_CALL_BANDS * band_c)
+      engaged = true;
+    else if (engaged && deficit_c <= band_c)
+      engaged = false;
+    return engaged;
+  }
+};
 
 /// Leaves a dear hour of the window unlifted only when heating earlier costs less,
 /// heat loss included. Heat stored j hours before it is needed loses about j / tau of

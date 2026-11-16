@@ -1,11 +1,11 @@
 {
   "project": "Lune Touch",
   "id": "touch",
-  "note": "Koordinator for 1–4 V6-boards. Hjem er huset (hovedsektion, felter, varmekort); rum, manifolds og husets ting åbner ark (DESIGN.md 15). Varmekildetyper sættes ved build; første er standard. Type-id'er matcher UI/CSS; API bruger generic_http for http. Den hierarkiske strimmel (feature tiers-strip) er forældet.",
-  "modes": ["home", "sys"],
+  "note": "Koordinator for 1–4 V6-boards. Hjem er huset (hovedsektion, felter, varmekort); Plan er planlæggerens side (48 t plan, rum, lært model, plan mod faktisk); rum, manifolds og husets ting åbner ark (DESIGN.md 15). Varmekildetyper sættes ved build; første er standard. Type-id'er matcher UI/CSS; API bruger generic_http for http. Den hierarkiske strimmel (feature tiers-strip) er forældet.",
+  "modes": ["home", "plan", "sys"],
   "systemCategories": ["device", "controllers", "heatsource", "prices", "pump", "weather", "network", "firmware", "service"],
   "heat_source_types": ["http", "asgard"],
-  "typed_groups": {"pm": ["odin", "touch"], "om": ["dynamic", "fixed"], "ss": ["eds", "energy_charts", "entsoe", "fixed"], "gt": ["datahub", "schedule", "none"], "en": ["datahub", "fixed"]},
+  "typed_groups": {"pm": ["odin", "touch"], "om": ["dynamic", "fixed"], "ss": ["eds", "energy_charts", "entsoe", "fixed"], "gt": ["datahub", "schedule", "none"], "en": ["datahub", "fixed"], "st": ["comfort", "weighted", "price"]},
   "scopes": [
     {"id": "house", "kind": "system", "label": "Hus"}
   ]

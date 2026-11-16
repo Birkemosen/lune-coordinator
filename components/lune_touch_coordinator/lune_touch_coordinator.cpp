@@ -2032,7 +2032,7 @@ void LuneTouchCoordinator::run_mqtt_followups_() {
   const uint8_t action = mqtt_absorb_action_;
   mqtt_absorb_action_ = 0;
   if (action == 1)
-    maybe_dispatch_absorb_arm_();
+    maybe_dispatch_absorb_arm_(true);  // odin_mqtt checked Odin's reason (pre-buffering)
   else if (action == 2)
     maybe_dispatch_absorb_disarm_(mqtt_absorb_reason_[0] != '\0' ? mqtt_absorb_reason_ : "mqtt");
 }
@@ -3398,6 +3398,11 @@ float LuneTouchCoordinator::update_demand_hold_(const ::lune_touch::StrategySnap
   if (take_state_lock_(100)) {
     held = demand_hold_.update(required, esphome::millis());
     demand_held_c_ = held;
+    coldest_deficit_c_ = strategy.has_physical_temperature ? strategy.coldest_deficit_c : 0.0f;
+    const bool was = cold_room_call_.engaged;
+    if (cold_room_call_.update(coldest_deficit_c_, COMFORT_BAND_C) != was)
+      ESP_LOGI(TAG, "Cold room call %s (coldest room %.1f C behind, band %.1f C)",
+               cold_room_call_.engaged ? "on" : "off", coldest_deficit_c_, COMFORT_BAND_C);
     give_state_lock_();
   }
   return held;
@@ -3462,6 +3467,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float thermal_mass = NAN;
   float heat_loss = NAN;
   float held = 0.0f;
+  bool cold_call = false;
   float energy = 0.0f;
   int start = INT16_MAX;
   int end = -1;
@@ -3502,6 +3508,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
+    cold_call = cold_room_call_.engaged;
     lagging_share = strategy.lagging_share;
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
@@ -3536,10 +3543,15 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // room's floor lag + 2 h (odin_comfort.h lag_lift), so Odin has at least an hour
   // to plan heat that reaches the room. Re-evaluated every cycle.
   // One or two lagging rooms open only the band's top over a wider window, so Odin
-  // chooses the hours (odin_comfort.h floor_share_for); a slab charge moves it all.
-  const float floor_share = charge.active() ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
+  // chooses the hours (odin_comfort.h floor_share_for), unless the room is well behind
+  // (ColdRoomCall: more than twice the comfort band behind), which moves the whole band
+  // by the full allowed lift from this hour, so Odin must heat; a slab charge moves it all.
+  const float floor_share =
+      (charge.active() || cold_call) ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
   lune_touch_odin::Lift lag{};
-  if (held > 0.0f)
+  if (cold_call)
+    lag = lune_touch_odin::lag_lift(now_hour, params.max_lift_c, lag_floor_h, params, 1.0f, 0);
+  else if (held > 0.0f)
     lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
   // only what the house would have had anyway. The band opens from now through the
@@ -5941,6 +5953,8 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
                                           static_cast<uint8_t>(fields.group_primary_zone),
                                           fields.group_members_mask, primary);
     }
+    if (!zone["floor_lag_h"].isNull())
+      model_.update_zone_floor_lag(node_index, zone_index, zone["floor_lag_h"] | 0.0f);
     if (fields.has_heat_demand) {
       model_.update_zone_heat_demand(
           node_index, zone_index, fields.demand_state, fields.opening_ratio, fields.saturated_s,
@@ -6518,6 +6532,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     out.learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
     const uint8_t house_active_lead = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
     out.active_thermal_lead_h = house_active_lead;
+    out.floor_lag_h = live != nullptr ? live->floor_lag_h : 0.0f;
     if (live == nullptr || !live->fresh)
       continue;
 
@@ -6548,6 +6563,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     params.scheduled_setpoint_c = out.comfort_setpoint_c;
     params.comfort_band_c = COMFORT_BAND_C;
     params.enable_horizon = true;
+    params.floor_lag_h = live->floor_lag_h;
     if (live->has_temperature && std::isfinite(live->temperature_c)) {
       params.has_current_temp = true;
       params.current_temp_c = live->temperature_c;
@@ -6595,6 +6611,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
       room_in.setpoint_c = out.comfort_setpoint_c;
       if (params.has_current_temp)
         room_in.temp_c = params.current_temp_c;
+      room_in.floor_lag_h = live->floor_lag_h;
       lune_touch_charge::Params cp{};
       cp.max_store_c = weather_max_boost_c_ > 0.0f ? weather_max_boost_c_ : 1.5f;
       const auto c = lune_touch_charge::plan(ch, hour_count, now_index, room_in, cp);
@@ -6802,7 +6819,7 @@ void LuneTouchCoordinator::apply_odin_timing_bias_(ForecastDecisionState *decisi
   decision->active = decision->offset_c > 0.01f;
 }
 
-void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
+void LuneTouchCoordinator::maybe_dispatch_absorb_arm_(bool requested) {
   if (!odin_plan_active_() || !odin_plan_.absorb_arm_enabled || !odin_plan_.available)
     return;
   if (odin_defrost_blocks_arm_()) {
@@ -6816,8 +6833,11 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
   const uint32_t now = esphome::millis();
   if (odin_plan_.last_absorb_arm_ms != 0 && now - odin_plan_.last_absorb_arm_ms < 30UL * 60UL * 1000UL)
     return;
-  bool upcoming = odin_plan_.heat_window_active;
-  char reason_buf[48]{"odin_plan heat window"};
+  // Pre-buffering only: Odin asked for it (MQTT) or its plan says so for this or the next
+  // hour. A heat hour alone is heating for rooms below target, not a reason to let every
+  // room run past its target (heat_window_active armed them all, 2026-11-13).
+  bool upcoming = requested;
+  char reason_buf[48]{"odin_plan preload"};
   if (odin_plan_.current_decision_reason[0] != '\0' &&
       std::strcmp(odin_plan_.current_decision_reason, "unknown") != 0) {
     std::snprintf(reason_buf, sizeof(reason_buf), "%s", odin_plan_.current_decision_reason);
@@ -6850,6 +6870,33 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
     const auto *node = model_.node(zone->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
       continue;
+    // A room already a comfort band over its target has stored its share: skip it, and
+    // take back an arm this sent earlier (a weather charge from slab_charge stays).
+    const auto *live = model_.zone_live(zi);
+    const bool known = live != nullptr && live->fresh && live->has_temperature && live->has_setpoint;
+    if (!plan_source::absorb_room_has_headroom(known, known ? live->temperature_c : NAN,
+                                               known ? live->setpoint_c : NAN, COMFORT_BAND_C)) {
+      if (zi < ::lune_touch::MAX_HOUSE_ZONES && odin_armed_[zi] &&
+          !charge_armed_[zone->node_index][zone->zone_index]) {
+        ::lune_touch::CommandRecord record{};
+        snprintf(record.request_id, sizeof(record.request_id), "ad-%lu-%02u",
+                 static_cast<unsigned long>(now), static_cast<unsigned>(zi));
+        std::strncpy(record.source, "absorb_arm", sizeof(record.source) - 1);
+        std::strncpy(record.reason, "room_above_band", sizeof(record.reason) - 1);
+        record.node_index = zone->node_index;
+        record.zone_index = zone->zone_index;
+        stamp_command_timing_(&record, now, 0);
+        const auto target = model_.resolve_room(zone->room_id);
+        stamp_command_target_(&record, target.node, target.binding);
+        ::lune_touch::CommandRecord final_record = record;
+        send_v6_absorb_disarm_(*node, zone->zone_index, &final_record, "room_above_band");
+        ledger_.append(final_record);
+        any = true;
+      }
+      if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+        odin_armed_[zi] = false;
+      continue;
+    }
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "aa-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(zi));
@@ -6864,6 +6911,8 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
     ::lune_touch::CommandRecord final_record = record;
     send_v6_absorb_arm_(*node, zone->zone_index, 3600, &final_record, reason_buf);
     ledger_.append(final_record);
+    if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+      odin_armed_[zi] = true;
     any = true;
   }
   if (any) {
@@ -6890,6 +6939,10 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_disarm_(const char *reason) {
     const auto *node = model_.node(zone->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
       continue;
+    if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+      odin_armed_[zi] = false;
+    if (charge_armed_[zone->node_index][zone->zone_index])
+      continue;  // a weather charge (slab_charge) keeps its arm
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "ad-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(zi));
@@ -8179,6 +8232,11 @@ void LuneTouchCoordinator::load_settings_() {
       asgard_enabled_ = asgard_enabled != 0;
     len = sizeof(asgard_mode_);
     nvs_get_str(handle, "asgard_mode", asgard_mode_, &len);
+    planner_settings::Settings planner{};
+    len = sizeof(planner);
+    if (nvs_get_blob(handle, "planner", &planner, &len) == ESP_OK && len == sizeof(planner) &&
+        planner.version == planner_settings::BLOB_VERSION)
+      planner_settings_ = planner_settings::sanitize(planner);
     len = sizeof(authority_leader_node_id_);
     nvs_get_str(handle, "auth_leader", authority_leader_node_id_, &len);
     len = sizeof(authority_coordinator_id_);
@@ -14353,7 +14411,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              h.wind_dir_deg, h.shortwave_wm2, h.precipitation_mm, h.cloud_cover_pct);
   }
   appendf_(buffer, capacity, off, "],\"decisions\":[");
-  for (size_t i = 0; i < forecast_decision_count_ && off + 420 < capacity; i++) {
+  for (size_t i = 0; i < forecast_decision_count_ && off + 440 < capacity; i++) {
     const ForecastDecisionState &d = forecast_decisions_[i];
     char room_id[48];
     char room_name[80];
@@ -14363,7 +14421,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
              "\"comfort_setpoint_c\":%.1f,\"priority\":%u,\"offset_c\":%.2f,"
              "\"peak_load\":%.2f,\"peak_in_h\":%d,\"configured_thermal_lead_h\":%u,"
-             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,"
+             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,\"floor_lag_h\":%.2f,"
              "\"timing_scale\":%.2f,\"heuristic_offset_c\":%.2f,\"min_temp_c\":%.2f,"
              "\"horizon_ok\":%s,\"used_horizon\":%s,\"used_thermal_sizing\":%s,"
              "\"preload_start_h\":%u,\"preload_end_h\":%u,\"active\":%s,\"odin_timing_bias\":%s,"
@@ -14377,7 +14435,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              static_cast<int>(d.peak_in_h),
              static_cast<unsigned>(d.configured_thermal_lead_h),
              static_cast<unsigned>(d.learned_thermal_lead_h),
-             static_cast<unsigned>(d.active_thermal_lead_h), d.timing_scale,
+             static_cast<unsigned>(d.active_thermal_lead_h), d.floor_lag_h, d.timing_scale,
              d.heuristic_offset_c, d.min_temp_c, d.horizon_ok ? "true" : "false",
              d.used_horizon ? "true" : "false", d.used_thermal_sizing ? "true" : "false",
              static_cast<unsigned>(d.preload_start_h), static_cast<unsigned>(d.preload_end_h),
@@ -15057,6 +15115,27 @@ void LuneTouchCoordinator::write_odin_mqtt_json(char *buffer, size_t capacity) c
       mqtt.http_fallback_active ? "true" : "false", thermal, flow_rate, ret, feed, err);
 }
 
+void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) const {
+  planner_settings::write_api_json(planner_settings_, buffer, capacity);
+}
+
+bool LuneTouchCoordinator::set_planner_settings(const planner_settings::Settings &settings) {
+  const planner_settings::Settings clean = planner_settings::sanitize(settings);
+  if (!take_state_lock_(100))
+    return false;
+  planner_settings_ = clean;
+  give_state_lock_();
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return false;
+  esp_err_t err = nvs_set_blob(handle, "planner", &clean, sizeof(clean));
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  log_event_("info", "settings", "planner settings saved");
+  return err == ESP_OK;
+}
+
 void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const {
   // Snapshot under the lock; format outside it. Hours are relative to now
   // (index 0 = the current local hour), 24 h ahead.
@@ -15235,6 +15314,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const char *route = "none";
   float held = 0.0f;
   float uplift = 0.0f;
+  bool cold_call = false;
+  float coldest = 0.0f;
   char type[24]{};
   if (take_state_lock_(50)) {
     c = odin_control_;
@@ -15243,6 +15324,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
     yielded = odin_owner_.yielded;
     route = demand_route_;
     held = demand_held_c_;
+    cold_call = cold_room_call_.engaged;
+    coldest = coldest_deficit_c_;
     uplift = demand_target_uplift_c_;
     std::strncpy(type, heat_source_.type, sizeof(type) - 1);
     give_state_lock_();
@@ -15283,7 +15366,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const char *hpmax_src = hp_max_odin ? "odin" : hp_max_user ? "user" : "none";
   std::snprintf(
       buffer, capacity,
-      "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
+      "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f,"
+      "\"cold_room_call\":%s,\"coldest_deficit_c\":%.2f},"
       "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
@@ -15301,8 +15385,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"generic\":{\"applies\":%s,\"target_url_template\":\"%s\",\"heat_request_url_template\":\"%s\","
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
-      route, static_cast<double>(held), static_cast<double>(uplift),
-      c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
+      route, static_cast<double>(held), static_cast<double>(uplift), cold_call ? "true" : "false",
+      static_cast<double>(coldest), c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
       c.sync_enabled ? "true" : "false",
       static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),
       static_cast<double>(c.sync_above_c), sync_target,
@@ -16820,7 +16904,7 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
 // Exposure learning: solar and wind factors per room (exposure_learning.h)
 // -----------------------------------------------------------------------------
 namespace {
-constexpr uint32_t EXPOSURE_SAVE_MS = 6UL * 60UL * 60UL * 1000UL;
+constexpr uint32_t EXPOSURE_SAVE_MS = 60UL * 60UL * 1000UL;  // a restart loses at most an hour of fitting
 }  // namespace
 
 LuneTouchCoordinator::ExposureLearnSlot *LuneTouchCoordinator::exposure_slot_(const char *room_id, bool create) {
@@ -16856,8 +16940,11 @@ void LuneTouchCoordinator::effective_exposure_(const char *room_id, float *solar
   const auto learned = lune_touch_learn::result(slot->state);
   if (solar_gain != nullptr && learned.solar_valid && std::fabs(*solar_gain - 0.3f) < 0.005f)
     *solar_gain = learned.solar;
+  // The learned factor is the extra loss at 10 m/s head-on; exposure is on the presets'
+  // scale (exposure × WIND_LOSS_FACTOR = extra loss), so 1.0 learned → 1.67, not 1.0.
   if (wind_exposure != nullptr && learned.wind_valid && std::fabs(*wind_exposure - 0.5f) < 0.005f)
-    *wind_exposure = learned.wind;
+    *wind_exposure = std::min(learned.wind / ::lune_touch_charge::WIND_LOSS_FACTOR,
+                              ::lune_touch_charge::WIND_EXPOSURE_MAX);
 }
 
 void LuneTouchCoordinator::run_exposure_learning_() {
