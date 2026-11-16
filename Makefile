@@ -359,12 +359,15 @@ test-planner:
 	$(PLANNER_OUT)-solver
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_hour_log.cpp -o $(PLANNER_OUT)-hourlog
 	$(PLANNER_OUT)-hourlog
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_room_forecast.cpp -o $(PLANNER_OUT)-rooms
+	$(PLANNER_OUT)-rooms
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/planner/test_planner_settings.cpp -o $(PLANNER_OUT)-settings
 	$(PLANNER_OUT)-settings
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_house.cpp -o $(PLANNER_REPLAY)-house
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_learn.cpp -o $(PLANNER_REPLAY)-learn
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_rooms.cpp -o $(PLANNER_REPLAY)-rooms
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_room_forecast.cpp -o $(PLANNER_REPLAY)-roomfc
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_heat_pump.cpp -o $(PLANNER_REPLAY)-hp
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_plan.cpp -o $(PLANNER_REPLAY)-plan
 
@@ -381,6 +384,7 @@ planner-replay: test-planner
 	$(PLANNER_REPLAY)-learn $(HISTORY)/house.bin | tail -4
 	$(PLANNER_REPLAY)-plan $(HISTORY)/house.bin --target 22.5 | tail -3
 	$(if $(wildcard $(HISTORY)/rooms.bin),$(PLANNER_REPLAY)-rooms $(HISTORY)/house.bin $(HISTORY)/rooms.bin)
+	$(if $(wildcard $(HISTORY)/rooms.bin),$(PLANNER_REPLAY)-roomfc $(HISTORY)/house.bin $(HISTORY)/rooms.bin)
 
 # Same replay in a container: docker run --rm -v $$PWD/$(HISTORY):/data lune-planner
 planner-docker:

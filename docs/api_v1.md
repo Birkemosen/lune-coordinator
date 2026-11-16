@@ -1079,7 +1079,10 @@ it planned with and the shadow flow controller:
               "plan_kw": [0.0, "..."], "plan_elec_kwh": [0.00, "..."], "heat_kwh": [0.00, "..."],
               "elec_kwh": [0.02, "..."], "price": [0.2875, "..."], "target_c": [22.0, "..."],
               "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."]},
-  "rooms": null
+  "room_fit": {"ts": 1794884400, "ms": 19400, "fitted": 12, "rooms": 12},
+  "rooms": [{"room_id": "room-10", "name": "Stue", "target_c": 22.0, "now_c": 22.4, "share": 0.191,
+             "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "expected_c": [22.41, "..."],
+             "preload": null, "charge": {"from": 6, "to": 11, "store_c": 0.8, "insufficient": false}}]
 }
 ```
 
@@ -1114,7 +1117,20 @@ it planned with and the shadow flow controller:
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
   to the zone-1 flow target Odin commands. It is never sent.
-- `rooms` stays `null` until the room expectation is in.
+- `rooms`: the expected temperature per room for each plan hour
+  (components/planner/room_forecast.h). Each room runs the house's two-mass model on
+  Touch's week of room history (hour-mean temperature and valve opening), with its share
+  of each hour's metered space heat by valve × loop area × (zone feed − room). Ahead it
+  gets the plan's heat × `share` (its part of the house's heat over the 72 h before the
+  last refit). Rooms are refitted with the house at 03 local, and a room with 4 days of
+  history and no model as soon as it has them (`room_fit`: when, how long, how many).
+  `expected_c` blends the model with the room staying at `now_c`, per horizon, by how
+  each forecast the room out of sample over the last days (`weight_6h` is the model's
+  weight 6 h ahead; 1 until a day is scored); `null` until the room has a model.
+  `preload` / `charge` are Touch's own lift ahead of wind and cold for that room (hours
+  from the plan's first hour, as in `GET /plan`). Replay 2 Oct–16 Nov 2026 (12 rooms):
+  RMSE 0.40 / 0.52 / 0.64 / 0.69 K at 3 / 6 / 12 / 24 h against 0.60 / 0.90 / 1.12 /
+  0.75 K for the room staying as it is.
 
 ### `POST /planner/history`
 

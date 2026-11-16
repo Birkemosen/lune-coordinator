@@ -350,7 +350,8 @@ bool learn_house(const HistoryStore<N> &st, uint32_t now_hour, const HouseParams
   const uint32_t freeze = rep->energy ? (1u << HouseFitter::UA) | (1u << HouseFitter::PINT) | (1u << HouseFitter::SUN) |
                                             (1u << HouseFitter::WIND)
                                       : 0u;
-  // The seed's score on this window, then the fit's.
+  // The seed's score on this window, then the fit's (the fitter may have fitted a room last).
+  w->fitter.reset(seed, 0.05f, 1.0f);
   HouseParams base = p;
   w->fitter.fit(w->t, w->in, n, &base, 6, 0, ~0u);
   const float seed_rmse = w->fitter.rmse();

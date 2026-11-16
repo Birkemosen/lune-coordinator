@@ -985,7 +985,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
           {pl_empty("pl48", "planner.emptyPlan", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{pl_legend}</div>')}
         </section>
         <section class="panel" aria-labelledby="h-plrooms">
-          <header class="panel-head"><h3 id="h-plrooms">{T("planner.rooms")}</h3>{pl_help("plrooms", T("planner.rooms"), "planner.roomsHelp", "planner-rooms")}<p>{T("planner.roomsSubEmpty")}</p></header>
+          <header class="panel-head"><h3 id="h-plrooms">{T("planner.rooms")}</h3>{pl_help("plrooms", T("planner.rooms"), "planner.roomsHelp", "planner-rooms")}<p data-bind="planner.roomsSub">{T("planner.roomsSubEmpty")}</p></header>
           {pl_empty("plrooms", "planner.emptyRooms", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{room_legend}</div>')}
         </section>
         <section class="panel c5" aria-labelledby="h-plmodel">
@@ -1119,7 +1119,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "hpd.overStrong", "hpd.underStrong", "hpd.mixStrong", "hpd.dev", "hpd.mix", "hpd.shortStrong", "hpd.short", "pump.chargingVal", "pump.shortBody", "pump.shortAdvice", "pump.balanceVal", "pump.balanceInOnly", "tile.pumpShort", "pump.hpMaxVal",
         "planner.shadow", "planner.sub", "planner.subEmpty", "planner.planAria", "planner.lPrice", "planner.laneOut",
         "planner.laneFlow", "planner.laneHouse", "planner.perMs", "planner.confSeed", "planner.confLearning", "planner.cop",
-        "planner.copAt", "planner.copOut", "planner.copZone", "planner.copHp",
+        "planner.copAt", "planner.copOut", "planner.copZone", "planner.copHp", "planner.roomsSub", "planner.roomsSubEmpty",
+        "planner.roomTarget", "planner.roomNoData", "planner.roomsAria", "plan.charge", "plan.preload", "plan.insufficient",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

@@ -17,6 +17,7 @@
 #include "esphome/components/planner/seed_params.h"
 #include "esphome/components/planner/solver.h"
 #include "esphome/components/planner/hour_log.h"
+#include "esphome/components/planner/room_forecast.h"
 #include "esp_timer.h"
 #include "esphome/core/application.h"
 #ifdef USE_API
@@ -1840,7 +1841,49 @@ struct PlannerRuntime {
   struct Expect { uint32_t hour; float t_c; } expect[8]{};   // 6 h-ahead forecast per hour
   float floor_c{NAN};
   bool floor_tracked{false};
+  // Room expectation: the house's model per room on Touch's week of room history
+  // (room_forecast.h), refitted with the house; a forecast per room for each plan.
+  static constexpr int ROOMS = 24;
+  static constexpr size_t RW = ::lune_planner::ROOM_WINDOW;
+  struct Room {
+    char id[32]{};
+    char name[48]{};
+    float area_m2{1.0f};
+    float share{0.0f};     // of the house's heat over the 72 h before the last refit
+    float target_c{NAN};
+    float now_c{NAN};
+    ::lune_planner::RoomModel model{};
+    float expected[::lune_planner::PLAN_H]{};
+    bool forecast{false};  // expected holds a forecast for rooms_ts
+  } rooms[ROOMS]{};
+  uint8_t room_n{0};
+  uint32_t rooms_ts{0};        // solved_ts the room forecasts belong to
+  uint32_t rooms_fit_hour{0};  // now-hour of the last room refit (attempt)
+  uint32_t rooms_fit_ms{0};
+  uint8_t rooms_fitted{0};
+  // Scratch for the rooms' windows: their week (temperature, valve), the house's hours.
+  int16_t room_temp[ROOMS][RW + 1];
+  uint8_t room_valve[ROOMS][RW + 1];
+  int16_t room_target[RW + 1];
+  float room_t[RW + 1];
+  float room_track[RW + 1];
+  float room_hq[RW];
+  float room_feed[RW];
+  float room_wsum[RW];
+  ::lune_planner::HourIn room_base[RW];
+  ::lune_planner::HourIn room_in[RW];
+  ::lune_planner::HourIn room_fut[::lune_planner::PLAN_H];
 };
+
+// Let the idle task (watchdog) and the web server in about every 50 ms of fitting.
+static int64_t planner_last_yield_us_ = 0;
+static void planner_fit_yield_() {
+  const int64_t now_us = esp_timer_get_time();
+  if (now_us - planner_last_yield_us_ > 50000) {
+    vTaskDelay(1);
+    planner_last_yield_us_ = esp_timer_get_time();
+  }
+}
 
 
 void LuneTouchCoordinator::setup() {
@@ -1948,7 +1991,7 @@ void LuneTouchCoordinator::start_worker_tasks_() {
          &odin_task_handle_);
   create(circulation_task_func_, "lune_touch_circ", INTEGRATION_STACK_SIZE, this, INTEGRATION_PRIORITY,
          &circulation_task_handle_);
-  create(heat_source_task_func_, "lune_touch_heat", INTEGRATION_STACK_SIZE, this, INTEGRATION_PRIORITY,
+  create(heat_source_task_func_, "lune_touch_heat", HEAT_STACK_SIZE, this, INTEGRATION_PRIORITY,
          &heat_source_task_handle_);
   create(lan_scan_task_func_, "lune_touch_lan", INTEGRATION_STACK_SIZE, this, INTEGRATION_PRIORITY,
          &lan_scan_task_handle_);
@@ -15444,17 +15487,9 @@ void LuneTouchCoordinator::planner_tick_() {
     std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
     rt.seeded = 0;
     give_state_lock_();
-    static int64_t last_yield_us = 0;
-    rt.scratch->fitter.set_yield([]() {
-      // Let the idle task (watchdog) and the web server in about every 50 ms of fitting.
-      const int64_t now_us = esp_timer_get_time();
-      if (now_us - last_yield_us > 50000) {
-        vTaskDelay(1);
-        last_yield_us = esp_timer_get_time();
-      }
-    });
+    rt.scratch->fitter.set_yield(planner_fit_yield_);
     const int64_t t0 = esp_timer_get_time();
-    last_yield_us = t0;
+    planner_last_yield_us_ = t0;
     lp::LearnReport rep{};
     lp::HouseParams house = lp::seed_house_params();
     lp::HeatPumpParams pump = lp::seed_heat_pump_params();
@@ -15477,9 +15512,144 @@ void LuneTouchCoordinator::planner_tick_() {
       give_state_lock_();
     }
   }
+  // Rooms: a forecast for each new plan; refitted with the house at 03, and as soon as a
+  // room has 4 days of history without a model (at most once an hour).
+  if (rt.solved_ts != 0 && rt.from_ts == hour0 && (rt.rooms_ts != rt.solved_ts || (local_h == 3 && rt.rooms_fit_hour != hour0)))
+    planner_rooms_(hour0, now_ts, local_h == 3 && rt.rooms_fit_hour != hour0);
   // Save every 3 hours (two slots in turn, like the room history).
   if (rt.save_due && hour0 >= rt.saved_hour + 3u * 3600u)
     planner_save_store_();
+}
+
+void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool refit) {
+  namespace lp = ::lune_planner;
+  PlannerRuntime &rt = *planner_rt_;
+  constexpr size_t W = PlannerRuntime::RW;
+  if (rt.store == nullptr || rt.snapshot == nullptr || rt.scratch == nullptr || room_history_store_ == nullptr)
+    return;
+  // The rooms and their week, and the house's hours, under the lock. A room keeps its
+  // model across calls by id.
+  if (!take_state_lock_(100))
+    return;
+  uint8_t n = 0;
+  for (size_t r = 0; r < model_.room_count() && n < PlannerRuntime::ROOMS; r++) {
+    const auto *room = model_.room(r);
+    if (room == nullptr || room->room_id[0] == '\0')
+      continue;
+    int j = -1;
+    for (int k = n; k < rt.room_n && j < 0; k++)
+      if (std::strncmp(rt.rooms[k].id, room->room_id, sizeof(rt.rooms[k].id)) == 0)
+        j = k;
+    if (j < 0) {
+      j = rt.room_n < PlannerRuntime::ROOMS ? rt.room_n++ : rt.room_n - 1;
+      if (j < n)
+        continue;
+      rt.rooms[j] = PlannerRuntime::Room{};
+      std::strncpy(rt.rooms[j].id, room->room_id, sizeof(rt.rooms[j].id) - 1);
+    }
+    if (j != n)
+      std::swap(rt.rooms[j], rt.rooms[n]);
+    PlannerRuntime::Room &pr = rt.rooms[n];
+    std::strncpy(pr.name, room->room_name[0] != '\0' ? room->room_name : room->room_id, sizeof(pr.name) - 1);
+    pr.area_m2 = room->total_area_m2 > 0.0f ? room->total_area_m2 : 1.0f;
+    room_history_.series(pr.id, now_ts, W + 1, rt.room_temp[n], rt.room_target, rt.room_valve[n]);
+    pr.target_c = NAN;
+    for (size_t i = W + 1; i > 0 && !std::isfinite(pr.target_c); i--)
+      if (rt.room_target[i - 1] != room_history::NONE)
+        pr.target_c = rt.room_target[i - 1] / 10.0f;
+    n++;
+  }
+  rt.room_n = n;
+  std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+  give_state_lock_();
+  if (n == 0)
+    return;
+
+  // The house's week: weather, heat and the zone feed per hour.
+  const uint32_t from = hour0 - static_cast<uint32_t>(W) * 3600u;
+  lp::history_window(*rt.snapshot, from, W, planner_local_hour_, rt.room_t, rt.room_base);
+  float area = 0.0f;
+  for (int k = 0; k < n; k++)
+    area += rt.rooms[k].area_m2;
+  for (size_t i = 0; i < W; i++) {
+    const lp::Record *r = rt.snapshot->at(from + static_cast<uint32_t>(i) * 3600u);
+    rt.room_hq[i] = rt.room_base[i].q_kw;
+    rt.room_feed[i] = r != nullptr ? r->get(lp::Kind::HOUSE, lp::H_Z1_FEED_C) : NAN;
+    float sum = 0.0f;
+    for (int k = 0; k < n; k++) {
+      const int16_t t = rt.room_temp[k][i];
+      const uint8_t v = rt.room_valve[k][i];
+      sum += lp::room_heat_weight(v == room_history::NO_VALVE ? NAN : static_cast<float>(v), rt.rooms[k].area_m2,
+                                  rt.room_feed[i], t == room_history::NONE ? NAN : t / 10.0f);
+    }
+    rt.room_wsum[i] = sum;
+  }
+
+  const int64_t t0 = esp_timer_get_time();
+  planner_last_yield_us_ = t0;
+  rt.scratch->fitter.set_yield(planner_fit_yield_);
+  const bool planned = rt.plan.n > 0 && rt.from_ts == hour0;
+  const bool retry = rt.rooms_fit_hour != hour0;   // a room without a model: at most once an hour
+  bool fit_ran = false;
+  uint8_t fitted = 0;
+  for (int k = 0; k < n; k++) {
+    PlannerRuntime::Room &pr = rt.rooms[k];
+    // The room's week: hour-mean temperature (the last one the hour in progress) and its
+    // share of each hour's heat by valve × area × (feed − room).
+    size_t have = 0;
+    for (size_t i = 0; i <= W; i++) {
+      const int16_t t = rt.room_temp[k][i];
+      rt.room_t[i] = t == room_history::NONE ? NAN : t / 10.0f;
+      have += t != room_history::NONE;
+      if (i == W)
+        break;
+      const uint8_t v = rt.room_valve[k][i];
+      const float w = lp::room_heat_weight(v == room_history::NO_VALVE ? NAN : static_cast<float>(v), pr.area_m2,
+                                           rt.room_feed[i], rt.room_t[i]);
+      rt.room_in[i] = rt.room_base[i];
+      rt.room_in[i].q_kw = rt.room_wsum[i] > 0.0f ? rt.room_hq[i] * w / rt.room_wsum[i] : 0.0f;
+    }
+    pr.now_c = rt.room_t[W];
+    for (size_t i = W; !std::isfinite(pr.now_c) && i > W - 3; i--)
+      pr.now_c = rt.room_t[i - 1];
+    // Refit: yesterday's model scored on the last day, then fitted again; and a room with
+    // four days and no model yet.
+    if ((refit || (retry && !pr.model.fitted)) && have >= 4 * 24) {
+      fit_ran = true;
+      if (refit)
+        lp::score_room(&pr.model, rt.room_t, rt.room_in, rt.room_hq, pr.share, W, W - 24, rt.room_track);
+      lp::fit_room(&pr.model, &rt.scratch->fitter, rt.room_t, rt.room_in, W, pr.area_m2 / area);
+      float qr = 0.0f, qh = 0.0f;
+      for (size_t i = W - 72; i < W; i++) {
+        qr += rt.room_in[i].q_kw;
+        qh += rt.room_hq[i];
+      }
+      if (qh > 0.5f)
+        pr.share = qr / qh;
+    }
+    fitted += pr.model.fitted;
+    pr.forecast = false;
+    if (planned && pr.model.fitted) {
+      for (int h = 0; h < rt.plan.n; h++) {
+        rt.room_fut[h] = rt.hours[h].weather;
+        rt.room_fut[h].q_kw = rt.plan.kw[h] * pr.share;
+      }
+      lp::forecast_room(pr.model, rt.room_t, rt.room_in, W, rt.room_fut, rt.plan.n, rt.room_track, pr.expected);
+      pr.forecast = std::isfinite(pr.expected[0]);
+    }
+  }
+  rt.rooms_fitted = fitted;
+  rt.rooms_ts = rt.solved_ts;
+  if (refit || fit_ran)
+    rt.rooms_fit_hour = hour0;
+  if (fit_ran) {
+    rt.rooms_fit_ms = static_cast<uint32_t>((esp_timer_get_time() - t0) / 1000);
+    char msg[96];
+    std::snprintf(msg, sizeof(msg), "planner rooms: %u of %u fitted in %lu ms", fitted, n,
+                  static_cast<unsigned long>(rt.rooms_fit_ms));
+    log_event_("info", "planner", msg);
+    ESP_LOGI(TAG, "%s", msg);
+  }
 }
 
 namespace {
@@ -15792,7 +15962,70 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
     put("\"history\":null,");
   }
   heap_caps_free(rows);
-  put("\"rooms\":null}");
+  // Rooms: expected temperature per plan hour, and Touch's charge/preload ahead of wind
+  // and cold for the same room (hours from the current one, as the plan's).
+  struct Seg { bool pre; uint8_t pre_from, pre_to; float pre_c; bool ch; int16_t ch_from, ch_to; float ch_c; bool ins; };
+  Seg *segs = static_cast<Seg *>(heap_caps_calloc(PlannerRuntime::ROOMS, sizeof(Seg), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (segs != nullptr && take_state_lock_(100)) {
+    for (int k = 0; k < rt->room_n; k++)
+      for (size_t i = 0; i < forecast_decision_count_; i++) {
+        const auto &fd = forecast_decisions_[i];
+        if (std::strncmp(fd.room_id, rt->rooms[k].id, sizeof(fd.room_id)) != 0)
+          continue;
+        Seg &g = segs[k];
+        g.pre = fd.active && fd.offset_c > 0.01f && fd.preload_end_h > fd.preload_start_h;
+        g.pre_from = fd.preload_start_h;
+        g.pre_to = fd.preload_end_h;
+        g.pre_c = fd.offset_c;
+        g.ch = fd.charge_episode && fd.charge_end_in_h > 0;
+        g.ch_from = static_cast<int16_t>(std::max<int>(0, fd.charge_start_in_h));
+        g.ch_to = fd.charge_end_in_h;
+        g.ch_c = fd.charge_store_c;
+        g.ins = fd.charge_insufficient;
+        break;
+      }
+    give_state_lock_();
+  }
+  put("\"room_fit\":{\"ts\":%lu,\"ms\":%lu,\"fitted\":%u,\"rooms\":%u},\"rooms\":[",
+      static_cast<unsigned long>(rt->rooms_fit_hour), static_cast<unsigned long>(rt->rooms_fit_ms),
+      static_cast<unsigned>(rt->rooms_fitted), static_cast<unsigned>(rt->room_n));
+  const bool rooms_now = rt->rooms_ts == rt->solved_ts;
+  for (int k = 0; k < rt->room_n; k++) {
+    const PlannerRuntime::Room &r = rt->rooms[k];
+    char id[64], name[96];
+    json_escape_(r.id, id, sizeof(id));
+    json_escape_(r.name, name, sizeof(name));
+    planner_num_(a, sizeof(a), r.target_c, 1);
+    planner_num_(b, sizeof(b), r.now_c, 1);
+    planner_num_(c, sizeof(c), r.model.fitted ? r.model.weight(6) : NAN, 2);
+    planner_num_(d, sizeof(d), r.model.rmse_k, 2);
+    put("%s{\"room_id\":\"%s\",\"name\":\"%s\",\"target_c\":%s,\"now_c\":%s,\"share\":%.3f,\"model\":%s,"
+        "\"weight_6h\":%s,\"rmse_k\":%s,\"expected_c\":",
+        k ? "," : "", id, name, a, b, static_cast<double>(r.share), r.model.fitted ? "true" : "false", c, d);
+    if (rooms_now && r.forecast) {
+      put("[");
+      for (int i = 0; i < p.n; i++) {
+        planner_num_(a, sizeof(a), r.expected[i], 2);
+        put("%s%s", i ? "," : "", a);
+      }
+      put("]");
+    } else {
+      put("null");
+    }
+    const Seg g = segs != nullptr ? segs[k] : Seg{};
+    if (g.pre)
+      put(",\"preload\":{\"from\":%u,\"to\":%u,\"offset_c\":%.1f}", static_cast<unsigned>(g.pre_from),
+          static_cast<unsigned>(g.pre_to), static_cast<double>(g.pre_c));
+    else
+      put(",\"preload\":null");
+    if (g.ch)
+      put(",\"charge\":{\"from\":%d,\"to\":%d,\"store_c\":%.1f,\"insufficient\":%s}}", g.ch_from, g.ch_to,
+          static_cast<double>(g.ch_c), g.ins ? "true" : "false");
+    else
+      put(",\"charge\":null}");
+  }
+  put("]}");
+  heap_caps_free(segs);
   heap_caps_free(rt);
 }
 

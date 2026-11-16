@@ -225,6 +225,13 @@ class HouseFitter {
     return cost < cost0;
   }
 
+  // Start again from another prior (a device reuses one fitter for the house and each room).
+  void reset(const HouseParams &prior, float prior_weight, float size) {
+    prior_ = prior;
+    prior_w_ = prior_weight;
+    size_ = size;
+  }
+
   // RMS of the hourly forecast errors (1–24 h) of the last fit, K.
   float rmse() const { return static_cast<float>(rmse24_); }
   // Called once per forecast window on a device, so a fit lets other tasks run.
@@ -257,7 +264,11 @@ class HouseFitter {
     int w = 0;
     for (size_t s = HORIZON; s + HORIZON < n_; s += stride_, w++) {
       if (yield_) yield_();
-      if (!std::isfinite(t_[s])) continue;
+      if (!std::isfinite(t_[s])) {
+        // A window with no start is no residuals (not the last call's values in its slots).
+        for (int h = 0; h < HORIZON; h++) each(w * HORIZON + h, NAN);
+        continue;
+      }
       const float t0 = t_[s] - (s ? p.sensor_sun_k * in_[s - 1].sun_wm2 / 100.0f : 0.0f);
       HouseState st{t0, track[s]};
       for (int h = 0; h < HORIZON; h++) {
@@ -283,7 +294,9 @@ class HouseFitter {
 
   void accumulate_(const float x[NP], const float x0[NP], double jtj[NP][NP], double jtr[NP]) {
     // Residuals of the base and of each perturbed parameter set, all indexed alike.
-    const int nres = static_cast<int>(((n_ - 2 * HORIZON) / stride_ + 1) * HORIZON);
+    // Windows start at HORIZON while start + HORIZON < n (as residuals_ runs them): only
+    // slots a window writes, never ones a fresh (uninitialised) fitter never filled.
+    const int nres = static_cast<int>(((n_ - 2 * HORIZON - 1) / stride_ + 1) * HORIZON);
     if (nres > MAX_RES) return;
     float dx[NP];
     residuals_(x, track_[0], [&](int i, float r) { base_[i] = r; });

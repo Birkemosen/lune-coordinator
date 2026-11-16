@@ -1047,6 +1047,9 @@ class LuneTouchCoordinator : public esphome::Component {
   // Keep large per-call buffers in PSRAM (psram_scratch_), not on these stacks:
   // bigger stacks cost internal RAM that TLS handshakes need.
   static constexpr uint32_t INTEGRATION_STACK_SIZE = 12288;
+  // The heat-source task also runs the shadow planner: the house and room fits (Levenberg–
+  // Marquardt, a few KiB of normal equations) on top of planner_tick_'s own frame.
+  static constexpr uint32_t HEAT_STACK_SIZE = 16384;
   static constexpr UBaseType_t POLL_PRIORITY = 2;
   static constexpr UBaseType_t INTEGRATION_PRIORITY = 1;
   // Run beside the ESPHome loop on APP_CPU. Core 0 hosts Wi-Fi/lwIP; pinning
@@ -1293,6 +1296,8 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Shadow planner history: load/save its two-slot file on SPIFFS (/hist/planner.a|b).
   void planner_load_store_();
   void planner_save_store_();
+  // Not inlined into planner_tick_: its frame and the fits' must not stack on the tick's.
+  __attribute__((noinline)) void planner_rooms_(uint32_t hour0, uint32_t now_ts, bool refit);
   bool mount_history_fs_();
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};

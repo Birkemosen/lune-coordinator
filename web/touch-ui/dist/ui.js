@@ -2903,7 +2903,16 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       ? t('planner.sub', { e: num(plan.heat_kwh, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' })
       : t('planner.subEmpty'));
     var rb2 = qs('[data-f="plrooms"]');
-    if (rb2) rb2.toggleAttribute('data-empty', true);   // room expectation comes later
+    var rooms = ok && Array.isArray(d.rooms) ? d.rooms : [];
+    var rok = rooms.some(function (r) { return r && Array.isArray(r.expected_c); });
+    if (rb2) {
+      rb2.toggleAttribute('data-empty', !rok);
+      var rc = rb2.querySelector('[data-f="chart"]');
+      if (rc) rc.innerHTML = rok ? plannerRoomsChart(rooms, plan) : '';
+    }
+    setText('planner.roomsSub', rok
+      ? t('planner.roomsSub', { n: rooms.filter(function (r) { return r.charge || r.preload; }).length })
+      : t('planner.roomsSubEmpty'));
     applyPlannerHistory(d.history);
     // Learned model: start values fitted on this house's history until Touch learns (F3).
     var m = d.model;
@@ -3027,6 +3036,68 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
 
   // 48 h plan: price, planned heat, the flow target to the floors (stair, max flow
   // dashed) and the house temperature the plan expects against the comfort band.
+  // Step line(s) through hourly values on a 0–100 y axis (gaps break the line).
+  function planStair(vals, lo, hi) {
+    var segs = [], cur = [];
+    vals.forEach(function (v, k) {
+      if (v == null || !isFinite(v)) { if (cur.length) segs.push(cur); cur = []; return; }
+      var y = ((hi - v) / (hi - lo) * 100).toFixed(1);
+      cur.push(k + ',' + y, (k + 1) + ',' + y);
+    });
+    if (cur.length) segs.push(cur);
+    return segs.map(function (s2) { return '<polyline points="' + s2.join(' ') + '"/>'; }).join('');
+  }
+
+  // The 48 h plan's hour axis: «Now», then every 3rd hour, the weekday at midnight.
+  function planX(from_ts, n) {
+    var lang = (i18n._lang || document.documentElement.lang || 'en');
+    var x = '';
+    for (var k = 0; k < n; k++) {
+      var hr = new Date((from_ts + k * 3600) * 1000).getHours();
+      var left = (k / n * 100).toFixed(2) + '%';
+      if (k === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
+      if (hr % 3) continue;
+      var cls = hr % 12 === 0 ? '' : hr % 6 === 0 ? 'h3' : 'h2';
+      x += hr === 0
+        ? '<span class="d" style="left:' + left + '">' + esc(new Date((from_ts + k * 3600) * 1000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
+        : '<span' + (cls ? ' class="' + cls + '"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
+    }
+    return x;
+  }
+
+  // Room expectation (LDS 15.11): a lane per room with its band (target ± band), the
+  // expected temperature as a step line (axis target ± 1.5 °C), hours below the band as a
+  // warm edge, and Touch's charge / preload ahead of wind and cold behind the line.
+  function plannerRoomsChart(rooms, plan) {
+    var n = plan.heat_kw.length, band = plan.band_c != null ? Number(plan.band_c) : 0.5;
+    var rows = '';
+    rooms.forEach(function (r) {
+      var tgt = r.target_c != null ? Number(r.target_c) : null;
+      rows += '<div class="plan-lab plan-lab--room">' + esc(r.name) + '<small>' +
+        (tgt != null ? esc(t('planner.roomTarget', { t: num(tgt) })) : '—') + '</small></div>';
+      if (r.now_c == null) { rows += '<div class="plan-empty-lane">' + esc(t('planner.roomNoData')) + '</div>'; return; }
+      var mid = tgt != null ? tgt : Number(r.now_c), lo = mid - 1.5, hi = mid + 1.5;
+      var y = function (v) { return ((hi - v) / (hi - lo) * 100).toFixed(1); };
+      var exp = (r.expected_c || []).map(function (v) { return v == null ? v : Math.max(lo, Math.min(hi, v)); });
+      var svg = tgt != null ? '<rect class="rb" x="0" y="' + y(tgt + band) + '" width="' + n + '" height="' + (y(tgt - band) - y(tgt + band)).toFixed(1) + '"/>' : '';
+      if (tgt != null) (r.expected_c || []).forEach(function (v, k) {
+        if (v != null && v < tgt - band) svg += '<rect class="lo" x="' + (k + 0.06).toFixed(2) + '" y="88" width=".88" height="12"/>';
+      });
+      var seg = function (s2, kind, extra, tip) {
+        var a = Math.max(0, Math.min(n, s2.from)), b = Math.max(0, Math.min(n, s2.to));
+        return b > a ? '<span class="plan-seg" data-kind="' + kind + '"' + extra + ' style="--a:' + a + ';--b:' + b + '" title="' + esc(tip) + '"></span>' : '';
+      };
+      var segs = '';
+      if (r.preload) segs += seg(r.preload, 'preload', '', t('plan.preload'));
+      if (r.charge) segs += seg(r.charge, 'charge', r.charge.insufficient ? ' data-insufficient' : '',
+        t(r.charge.insufficient ? 'plan.insufficient' : 'plan.charge'));
+      rows += '<div class="plan-lane plan-lane--room">' + segs + '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true">' +
+        svg + '<g class="exp">' + planStair(exp, lo, hi) + '</g></svg></div>';
+    });
+    return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.roomsAria')) + '" style="--now:0">' + rows +
+      '<span></span><div class="plan-x">' + planX(plan.from_ts, n) + '</div></div>';
+  }
+
   function plannerChart(plan, st) {
     var n = plan.heat_kw.length;
     var price = plan.price || [], est = plan.price_est || [];
@@ -3036,16 +3107,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       return '<div class="plan-lab plan-lab--y' + cls + '"><b>' + esc(name) + '</b><span class="plan-y">' +
         ticks.map(function (v) { return '<i>' + esc(v) + '</i>'; }).join('') + '</span></div>';
     };
-    var stair = function (vals, lo, hi) {
-      var segs = [], cur = [];
-      vals.forEach(function (v, k) {
-        if (v == null || !isFinite(v)) { if (cur.length) segs.push(cur); cur = []; return; }
-        var y = ((hi - v) / (hi - lo) * 100).toFixed(1);
-        cur.push(k + ',' + y, (k + 1) + ',' + y);
-      });
-      if (cur.length) segs.push(cur);
-      return segs.map(function (s2) { return '<polyline points="' + s2.join(' ') + '"/>'; }).join('');
-    };
+    var stair = planStair;
     var cells = '', bars = '';
     for (var i = 0; i < n; i++) {
       // Colour = rank among the published hours (cheap → dear); an estimated hour (same
@@ -3073,18 +3135,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var house = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true">' + rb + '<g class="exp">' + stair((plan.t_end_c || []).map(function (v) {
         return v == null ? v : Math.max(hlo, Math.min(hhi, v));
       }), hlo, hhi) + '</g></svg>';
-    var lang = (i18n._lang || document.documentElement.lang || 'en');
-    var x = '';
-    for (var k = 0; k < n; k++) {
-      var hr = new Date((plan.from_ts + k * 3600) * 1000).getHours();
-      var left = (k / n * 100).toFixed(2) + '%';
-      if (k === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
-      if (hr % 3) continue;
-      var cls = hr % 12 === 0 ? '' : hr % 6 === 0 ? 'h3' : 'h2';
-      x += hr === 0
-        ? '<span class="d" style="left:' + left + '">' + esc(new Date((plan.from_ts + k * 3600) * 1000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
-        : '<span' + (cls ? ' class="' + cls + '"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
-    }
+    var x = planX(plan.from_ts, n);
     return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.planAria')) + '" style="--now:0">' +
       lane(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, 2), '0']) + '<div class="plan-lane plan-lane--price">' + cells + '</div>' +
       lane('', t('planner.laneOut'), ['8 kW', '4', '0']) + '<div class="plan-lane plan-lane--out">' + bars + '</div>' +
