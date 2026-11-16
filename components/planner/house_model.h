@@ -23,12 +23,15 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "heat_pump_model.h"   // EwLeastSquares
+
 namespace lune_planner {
 
 struct HouseParams {
   float ua_kw_per_k{0.18f};       // loss in calm weather
   float ca_kwh_per_k{10.0f};      // rooms
-  float cs_kwh_per_k{35.0f};      // floors
+  float cs_kwh_per_k{10.0f};      // floors (screed ≈ 6–7 kWh/K per 5 cm × 280 m²; bounded to 30 so the
+                                  // fit cannot let the house coast for days on its floors)
   float h_kw_per_k{1.5f};         // floor → rooms
   float g_kw_per_100wm2{0.5f};    // sun, per 100 W/m² global irradiance
   float p_int_kw{0.4f};           // internal gain
@@ -104,6 +107,51 @@ inline float house_room_heat_needed(const HouseParams &p, float t0_c, float t1_c
   return p.ca_kwh_per_k * (t1_c - t0_c) + loss - p.g_kw_per_100wm2 * in.sun_wm2 / 100.0f - p.p_int_kw;
 }
 
+// The house's long-run energy balance from whole days: heat ≈ UA·Σ(T − Tout)·(1 + kw·wind)
+// − g·Σsun − 24·P. Fitted on daily sums (exponentially weighted over days, ridge toward
+// the prior), it pins loss, internal gain and useful sun to the heat actually metered;
+// the hourly fit then only shapes the dynamics. Without it, sun on a room sensor in a
+// sunny room passes for heat and the model's house needs a quarter of the real heat.
+class EnergyBalance {
+ public:
+  explicit EnergyBalance(const HouseParams &prior = HouseParams{}, float lambda = 0.97f) : prior_(prior), ls_(lambda) {}
+  // One whole day (24 hours from local midnight): t[0..24], in[0..23].
+  void add_day(const float *t, const HourIn *in) {
+    double d = 0, dw = 0, sun = 0, q = 0;
+    for (int i = 0; i < 24; i++) {
+      if (!std::isfinite(t[i]) || !std::isfinite(in[i].out_c)) return;
+      d += t[i] - in[i].out_c;
+      dw += (t[i] - in[i].out_c) * in[i].wind_ms;
+      sun += in[i].sun_wm2 / 100.0f;
+      q += in[i].q_kw;
+    }
+    if (q < 5) return;   // a day the pump hardly ran says little about the loss
+    // Scaled so each coefficient is of order 1: UA·100, UA·kw·1000, P·10, g·10.
+    const float x[4] = {static_cast<float>(d / 100), static_cast<float>(dw / 1000), -2.4f, -static_cast<float>(sun / 10)};
+    ls_.add(x, static_cast<float>(q));
+  }
+  uint32_t days() const { return ls_.samples(); }
+  // Writes UA, wind factor, P and sun into p when there are enough days; true if it did.
+  bool apply(HouseParams *p) const {
+    if (ls_.samples() < 7) return false;
+    const float pr[4] = {prior_.ua_kw_per_k * 100, prior_.ua_kw_per_k * prior_.kw_per_ms * 1000,
+                         prior_.p_int_kw * 10, prior_.g_kw_per_100wm2 * 10};
+    float th[4];
+    if (!ls_.solve(pr, 3.0f, th)) return false;
+    const float ua = th[0] / 100;
+    if (!(ua > 0.03f && ua < 1.0f)) return false;
+    p->ua_kw_per_k = ua;
+    p->kw_per_ms = std::fmax(0.0f, std::fmin(0.15f, th[1] / 1000 / ua));
+    p->p_int_kw = std::fmax(0.0f, std::fmin(3.0f, th[2] / 10));
+    p->g_kw_per_100wm2 = std::fmax(0.0f, std::fmin(2.0f, th[3] / 10));
+    return true;
+  }
+
+ private:
+  HouseParams prior_;
+  EwLeastSquares<4> ls_;
+};
+
 // Batch fit over a window of hours. t_meas[i] is the room temperature at the start of
 // hour i (n + 1 values), in[i] the hour's inputs. Residuals are the hourly errors of 24 h
 // forecasts started every `stride` hours, plus a weak pull toward the prior so poorly
@@ -120,7 +168,12 @@ class HouseFitter {
   explicit HouseFitter(const HouseParams &prior = HouseParams{}, float prior_weight = 0.05f, float size = 1.0f)
       : prior_(prior), prior_w_(prior_weight), size_(size) {}
 
-  bool fit(const float *t_meas, const HourIn *in, size_t n, HouseParams *p, int stride = 6, int iters = 30) {
+  // Parameter indices for `freeze`: what the fit must leave as it is.
+  enum Param { UA = 0, CA, CS, H, SUN, PINT, WIND, PCOS, PSIN, NB, SENSOR, SUNFLOOR, SUNLATE };
+
+  bool fit(const float *t_meas, const HourIn *in, size_t n, HouseParams *p, int stride = 6, int iters = 30,
+           uint32_t freeze = 0) {
+    freeze_ = freeze;
     if (n < 4 * HORIZON || n > MAX_HOURS) return false;
     t_ = t_meas; in_ = in; n_ = n; stride_ = stride;
     float x[NP], x0[NP];
@@ -141,6 +194,12 @@ class HouseFitter {
           for (int j = 0; j < NP; j++) m[i][j] = jtj[i][j] + (i == j ? lam * (jtj[i][i] + 1e-9) : 0.0);
           m[i][NP] = -jtr[i];
         }
+        for (int i = 0; i < NP; i++)
+          if (freeze_ & (1u << i)) {
+            for (int j = 0; j <= NP; j++) m[i][j] = 0;
+            for (int j = 0; j < NP; j++) m[j][i] = 0;
+            m[i][i] = 1;
+          }
         double dx[NP];
         if (!solve_(m, dx)) { lam *= 10; continue; }
         float xn[NP];
@@ -179,7 +238,7 @@ class HouseFitter {
   }
   static float clamp_(int i, float v, float size) {
     static constexpr float lo[NP] = {0.03f, 0.5f, 3.0f, 0.1f, 0.0f, 0.0f, 0.0f, -2.0f, -2.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    static constexpr float hi[NP] = {1.0f, 60.0f, 400.0f, 20.0f, 5.0f, 3.0f, 0.15f, 2.0f, 2.0f, 5.0f, 3.0f, 1.0f, 5.0f};
+    static constexpr float hi[NP] = {1.0f, 60.0f, 30.0f, 20.0f, 5.0f, 3.0f, 0.15f, 2.0f, 2.0f, 5.0f, 3.0f, 1.0f, 5.0f};
     const float k = (i == 6 || i == 10 || i == 11) ? 1.0f : size;   // wind factor, sensor offset and sun split are not sizes
     const float l = lo[i] * k, h = hi[i] * k;
     return v < l ? l : (v > h ? h : v);
@@ -277,6 +336,7 @@ class HouseFitter {
   HouseParams prior_;
   float prior_w_;
   float size_;
+  uint32_t freeze_{0};
   const float *t_{nullptr};
   const HourIn *in_{nullptr};
   size_t n_{0};

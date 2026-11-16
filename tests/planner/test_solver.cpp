@@ -1,0 +1,76 @@
+// Host tests for planner/solver.h.
+#include "solver.h"
+
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+
+using namespace lune_planner;
+
+static void day(PlanHour h[PLAN_H], float out, float cheap_from, float cheap_to) {
+  for (int i = 0; i < PLAN_H; i++) {
+    h[i] = PlanHour{};
+    h[i].weather.out_c = out;
+    h[i].weather.hour_local = static_cast<float>(i % 24);
+    const int hr = i % 24;
+    h[i].price_eur_kwh = (hr >= cheap_from && hr < cheap_to) ? 0.15f : 0.40f;
+    h[i].band_min_c = 21.5f;
+    h[i].band_max_c = 23.0f;
+  }
+}
+
+int main() {
+  HouseParams hp;            // defaults: a house losing ~2.5 kW at 22 °C / 8 °C
+  HeatPumpParams pump;
+  HouseState start{22.0f, 24.0f};
+  PlanHour h[PLAN_H];
+  day(h, 5.0f, 0, 6);
+  SolverSettings cfg;
+  HeatPlan p;
+
+  // Comfort first: no hour ends below the floor, no hour above the top.
+  solve_plan(hp, pump, start, h, PLAN_H, cfg, &p);
+  float tmin = 99, tmax = -99;
+  for (int i = 0; i < PLAN_H; i++) { tmin = std::fmin(tmin, p.t_end_c[i]); tmax = std::fmax(tmax, p.t_end_c[i]); }
+  std::printf("comfort: %.1f kWh, %.2f EUR, %.2f..%.2f C, below %.2f Kh\n", p.heat_kwh, p.cost_eur, tmin, tmax, p.below_kh);
+  assert(p.below_kh < 0.05f && tmax <= 23.1f);   // a step may overshoot the top slightly
+  // Every hour is off or within the pump's range.
+  for (int i = 0; i < PLAN_H; i++) assert(p.kw[i] == 0 || (p.kw[i] >= pump.min_kw - 1e-3f && p.kw[i] <= pump.max_kw + 1e-3f));
+  // Cheap hours carry more of the heat than their share of the day.
+  float cheap = 0;
+  for (int i = 0; i < PLAN_H; i++) if (i % 24 < 6) cheap += p.kw[i];
+  assert(cheap > p.heat_kwh * 6.0f / 24.0f);
+  // Planned zone feed follows the floor curve.
+  for (int i = 0; i < PLAN_H; i++)
+    if (p.kw[i] > 0) assert(std::fabs(p.zone_feed_c[i] - zone_feed_for(pump, p.kw[i], cfg.room_c)) < 1e-3f);
+
+  // Price first is never dearer than comfort first and stays within its dip; weighted
+  // lies between the two.
+  SolverSettings pc = cfg;
+  pc.strategy = Strategy::PRICE;
+  HeatPlan q;
+  solve_plan(hp, pump, start, h, PLAN_H, pc, &q);
+  float qmin = 99;
+  for (int i = 0; i < PLAN_H; i++) qmin = std::fmin(qmin, q.t_end_c[i]);
+  std::printf("price:   %.1f kWh, %.2f EUR, min %.2f C, below %.2f Kh\n", q.heat_kwh, q.cost_eur, qmin, q.below_kh);
+  assert(q.cost_eur <= p.cost_eur + 1e-3f && qmin >= 21.0f - 0.02f && q.heat_kwh > 0);
+  SolverSettings wc = cfg;
+  wc.strategy = Strategy::WEIGHTED;
+  wc.penalty_eur_per_kh = 0.3f;
+  HeatPlan w;
+  solve_plan(hp, pump, start, h, PLAN_H, wc, &w);
+  std::printf("weighted:%.1f kWh, %.2f EUR, below %.2f Kh\n", w.heat_kwh, w.cost_eur, w.below_kh);
+  assert(w.cost_eur >= q.cost_eur - 1e-3f && w.cost_eur <= p.cost_eur + 1e-3f);
+
+  // Flow controller: on plan, the curve's feed; overdelivery trims down, never past bounds.
+  FlowController fc;
+  const float base = fc.update(pump, 4.5f, 4.5f, 22.0f);
+  assert(std::fabs(base - zone_feed_for(pump, 4.5f, 22.0f)) < 1e-3f);
+  float t = base;
+  for (int k = 0; k < 20; k++) t = fc.update(pump, 4.5f, 10.0f, 22.0f);   // the 16 Nov runaway
+  assert(t < base && t >= base - 3.0f - 1e-3f);
+  assert(std::isnan(fc.update(pump, 0.0f, 0.0f, 22.0f)));               // no plan, no target
+
+  std::printf("planner solver: all assertions passed\n");
+  return 0;
+}

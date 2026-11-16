@@ -355,12 +355,15 @@ test-planner:
 	$(PLANNER_OUT)-house
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_heat_pump_model.cpp -o $(PLANNER_OUT)-hp
 	$(PLANNER_OUT)-hp
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_solver.cpp -o $(PLANNER_OUT)-solver
+	$(PLANNER_OUT)-solver
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/planner/test_planner_settings.cpp -o $(PLANNER_OUT)-settings
 	$(PLANNER_OUT)-settings
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_house.cpp -o $(PLANNER_REPLAY)-house
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_rooms.cpp -o $(PLANNER_REPLAY)-rooms
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_heat_pump.cpp -o $(PLANNER_REPLAY)-hp
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_plan.cpp -o $(PLANNER_REPLAY)-plan
 
 # Build HISTORY/house.bin from exported CSVs (docs/planner_history_format.md):
 #   make planner-history ASGARD=asgard.csv ODIN=odin.csv ROOMS=rooms.csv WEATHER=weather.csv
@@ -372,6 +375,7 @@ planner-replay: test-planner
 	$(PLANNER_REPLAY) $(HISTORY)/house.bin $(wildcard $(HISTORY)/rooms.bin)
 	$(PLANNER_REPLAY)-house $(HISTORY)/house.bin
 	$(PLANNER_REPLAY)-hp $(HISTORY)/house.bin
+	$(PLANNER_REPLAY)-plan $(HISTORY)/house.bin --target 22.5 | tail -3
 	$(if $(wildcard $(HISTORY)/rooms.bin),$(PLANNER_REPLAY)-rooms $(HISTORY)/house.bin $(HISTORY)/rooms.bin)
 
 # Same replay in a container: docker run --rm -v $$PWD/$(HISTORY):/data lune-planner

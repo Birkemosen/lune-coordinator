@@ -71,6 +71,8 @@ int main(int argc, char **argv) {
 
   static HouseFitter fitter;
   HouseParams p;   // defaults are the prior
+  EnergyBalance eb;
+  size_t eb_to = 0;
   const int HZ[] = {1, 3, 6, 12, 24};
   double se[5] = {}, sp[5] = {};
   size_t cnt[5] = {};
@@ -78,7 +80,14 @@ int main(int argc, char **argv) {
   const size_t win = static_cast<size_t>(window_days) * 24;
   for (size_t day = static_cast<size_t>(warmup_days) * 24; day + 25 < n; day += 24) {
     const size_t from = day > win ? day - win : 0;
-    fitter.fit(&t[from], &in[from], day - from, &p);
+    for (size_t k = eb_to; k + 24 <= day; k++) {
+      if (static_cast<int>(in[k].hour_local) != 0) continue;
+      eb.add_day(&t[k], &in[k]);
+      eb_to = k + 1;
+    }
+    const bool energy = eb.apply(&p);
+    fitter.fit(&t[from], &in[from], day - from, &p, 6, 30,
+               energy ? (1u << HouseFitter::UA) | (1u << HouseFitter::PINT) | (1u << HouseFitter::SUN) | (1u << HouseFitter::WIND) : 0u);
     fits++;
     // Floor track up to each forecast start, using the window's start as the anchor.
     std::vector<float> ts(day + 24 - from);

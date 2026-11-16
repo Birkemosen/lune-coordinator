@@ -13,7 +13,7 @@ int main() {
   HouseParams truth;
   truth.ua_kw_per_k = 0.17f;
   truth.ca_kwh_per_k = 9.0f;
-  truth.cs_kwh_per_k = 45.0f;
+  truth.cs_kwh_per_k = 20.0f;
   truth.h_kw_per_k = 1.4f;
   truth.g_kw_per_100wm2 = 0.6f;
   truth.p_int_kw = 0.4f;
