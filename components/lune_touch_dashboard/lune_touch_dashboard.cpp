@@ -1264,6 +1264,17 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     else
       snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     send_write_result_(api, accepted, 503);
+  } else if (strcmp(path, "/planner/history") == 0) {
+    // Seed the shadow planner's hourly history: {"hex": "<LUNH house records>"}, at most
+    // 30 records a request (the POST body limit). Fills only hours Touch does not have.
+    const char *hex = api.json_body != nullptr ? (*api.json_body)["hex"].as<const char *>() : nullptr;
+    const int taken = coordinator_->seed_planner_history(hex);
+    if (taken < 0) {
+      send_error_(api, 400, "invalid_param", "hex must be whole history records, and the planner must be running");
+      return;
+    }
+    snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"stored\",\"seeded\":%d}", taken);
+    send_write_result_(api, true, 400);
   } else if (strcmp(path, "/weather/settings") == 0) {
     // Either field alone is a valid save (the solar switch saves on its own).
     float max_boost_c = 1.5f;

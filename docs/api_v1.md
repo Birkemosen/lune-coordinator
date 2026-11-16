@@ -30,6 +30,7 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 - [`POST /forecast/estimate-location`](#post-forecastestimate-location)
 - [`POST /weather/settings`](#post-weathersettings)
 - [`GET /planner`](#get-planner)
+- [`POST /planner/history`](#post-plannerhistory)
 - [`POST /planner/settings`](#post-plannersettings)
 - [`POST /settings`](#post-settings)
 - [`POST /display/wake`](#post-displaywake)
@@ -1070,7 +1071,15 @@ it planned with and the shadow flow controller:
             "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
             "cop_outdoor_c": 5.0},
   "flow": {"our_target_c": 29.6, "odin_target_c": 35.0, "measured_kw": 10.0, "plan_kw": 4.4},
-  "rooms": null, "history": null
+  "learning": {"source": "learned", "refit_ts": 1794885600, "refit_ms": 2400, "days": 41, "hours": 336,
+               "energy": true, "dynamics": true, "rmse_k": 0.286, "hp_hours": 263, "heat_pump": true,
+               "floor_c": 25.1, "floor_tracked": true,
+               "store": {"boot": "restored", "hours": 1080, "saves": 3, "last_save": "ok"}},
+  "history": {"from_ts": 1794283200, "n": 168, "temp_c": [22.41, "..."], "expected_c": [22.35, "..."],
+              "plan_kw": [0.0, "..."], "plan_elec_kwh": [0.00, "..."], "heat_kwh": [0.00, "..."],
+              "elec_kwh": [0.02, "..."], "price": [0.2875, "..."], "target_c": [22.0, "..."],
+              "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."]},
+  "rooms": null
 }
 ```
 
@@ -1083,15 +1092,37 @@ it planned with and the shadow flow controller:
   `band_source` `odin` the band is Odin's comfort schedule as Touch keeps it: the user's
   schedule or the synced setpoint, with Touch's lifted copy for the coming 24 h while one
   is on Odin. With `target` (no schedule known) it is `target_c − band_c` to `target_c + 1.0`.
-- `model_source` is `seed`: start values fitted on this house's 2 Oct–16 Nov 2026
-  history (components/planner/seed_params.h). Touch does not learn them yet (F3); with no
-  floor tracker on Touch yet, the floors start where they would stand if the house were
-  holding its temperature at the current weather.
-  Sun is the global irradiance from Touch's forecast (no facade values on Touch yet).
+- `model_source` is `learned` once Touch has refitted on its own hourly history, else
+  `seed` (start values fitted on this house's 2 Oct–16 Nov 2026 history,
+  components/planner/seed_params.h). Sun is the global irradiance from Touch's forecast.
+- `learning`: Touch keeps one record per hour (components/planner/hour_log.h: house
+  temperature at the hour's start, weather, price, band, run minutes, starts, feeds, the
+  heat pump's own space-heating heat and electricity from its daily meters, the planner's
+  6 h-ahead forecast, the plan's output and the shadow flow target) for 60 days on SPIFFS
+  (`/hist/planner.a|b`, saved every 3 hours). Once a day at 03 local, once there are 4
+  days, and after a seed, it refits from the seed: the energy balance over whole days
+  (`energy`: loss, internal gain, sun and wind pinned to the metered heat), the hourly
+  dynamics over the last 14 days (`dynamics`, kept only when it forecasts better than
+  the seed; `rmse_k` is its 1–24 h error), and the heat pump from full space-heating
+  hours (`hp_hours`; `heat_pump` from 24). `floor_c` is the floors' temperature the
+  plan starts from: tracked through the last 72 stored hours (`floor_tracked`), else
+  where they would stand if the house were holding its temperature now.
+- `history` covers the 168 hours before `plan.from_ts`, per hour: the house at the
+  hour's end as measured and as forecast 6 h before, the planned output and its
+  electricity with today's model, the delivered space heat and electricity, price, band
+  setpoint, Odin's flow target and the shadow flow target. `null` until a stored hour.
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
   to the zone-1 flow target Odin commands. It is never sent.
-- `rooms` and `history` stay `null` until F3.
+- `rooms` stays `null` until the room expectation is in.
+
+### `POST /planner/history`
+
+Seeds the planner's hourly history with recorded hours: `{"hex": "…"}`, whole LUNH house
+records (64 bytes, default column order, docs/planner_history_format.md) as hex, at most
+30 a request. Touch takes only hours it does not have, saves soon and refits on the next
+poll. `tools/planner/seed_touch.py http://touch planner-history/house.bin` sends a file.
+Response: `{"result": "stored", "seeded": n}`.
 
 ### `POST /planner/settings`
 

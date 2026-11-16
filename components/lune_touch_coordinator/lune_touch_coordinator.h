@@ -195,6 +195,11 @@ struct HeatSourceState {
   float hp_sec_feed_c{NAN};      // secondary feed/return: Asgard's 1-wire probes mapped to Zone 1
   float hp_sec_return_c{NAN};    // (ow_role_z1_feed / ow_role_z1_return), NAN when not mapped
   bool hp_status_defrost{false}; // status_defrost
+  // The heat pump's daily meters (kWh since local midnight): space-heating heat and
+  // electricity, hot-water electricity. The shadow planner's hourly history takes their steps.
+  float hp_sh_heat_kwh{NAN};
+  float hp_sh_elec_kwh{NAN};
+  float hp_dhw_elec_kwh{NAN};
   uint32_t hp_telemetry_ms{0};
 };
 
@@ -779,6 +784,10 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_planner_json(char *buffer, size_t capacity) const;
   /// Planner settings; absent fields keep their value. Shadow only: commands nothing.
   bool set_planner_settings(const planner_settings::Settings &settings);
+  /// Seed the shadow planner's hourly history with recorded hours (LUNH house records in
+  /// the default column order, hex). Fills only hours it does not have. Returns the
+  /// number taken, or -1 when the store is not ready or the text is not records.
+  int seed_planner_history(const char *hex);
   planner_settings::Settings get_planner_settings() const { return planner_settings_; }
   /// Odin comfort control + generic levers. Null strings / NAN = unchanged.
   bool set_heat_source_control(bool has_odin_enabled, bool odin_enabled, float odin_max_lift_c,
@@ -1281,6 +1290,10 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Shadow planner: re-plans each hour (or on new settings/prices/weather) and runs the
   /// shadow flow controller on each telemetry poll. Heat-source task. Commands nothing.
   void planner_tick_();
+  /// Shadow planner history: load/save its two-slot file on SPIFFS (/hist/planner.a|b).
+  void planner_load_store_();
+  void planner_save_store_();
+  bool mount_history_fs_();
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};

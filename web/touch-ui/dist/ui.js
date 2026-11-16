@@ -2902,10 +2902,9 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     setText('planner.sub', ok
       ? t('planner.sub', { e: num(plan.heat_kwh, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' })
       : t('planner.subEmpty'));
-    ['plrooms', 'plpa'].forEach(function (k) {
-      var b = qs('[data-f="' + k + '"]');
-      if (b) b.toggleAttribute('data-empty', true);   // rooms and history come with F3
-    });
+    var rb2 = qs('[data-f="plrooms"]');
+    if (rb2) rb2.toggleAttribute('data-empty', true);   // room expectation comes later
+    applyPlannerHistory(d.history);
     // Learned model: start values fitted on this house's history until Touch learns (F3).
     var m = d.model;
     var seed = d.model_source === 'seed';
@@ -2935,6 +2934,95 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
             num(r.hp_feed_c, 1) + '°</td><td class="num">' + num(r.cop, 2) + '</td></tr>';
         }).join('') + '</tbody></table></div>' : '';
     }
+  }
+
+  // Plan vs actual (GET /planner history, last 168 h): the house at each hour's end as
+  // measured and as forecast 6 h before, planned against delivered heat; 24 h hourly or
+  // 7 d (temperature hourly, heat per day). Metrics cover the last 24 h.
+  function applyPlannerHistory(h) {
+    var box = qs('[data-f="plpa"]');
+    if (!box) return;
+    var n = h && Array.isArray(h.temp_c) ? h.temp_c.length : 0;
+    var have = n && h.heat_kwh.some(function (v) { return v != null; });
+    box.toggleAttribute('data-empty', !have);
+    var setM = function (key, html) { qsa('[data-bind="' + key + '"]').forEach(function (el) { el.innerHTML = html; }); };
+    if (!have) {
+      ['planner.pa.tempErr', 'planner.pa.energy', 'planner.pa.cost'].forEach(function (k, i) { setM(k, '— <small>' + ['K', 'kWh', '€'][i] + '</small>'); });
+      return;
+    }
+    var sum = function (a, from) {
+      var s2 = 0, any = false;
+      for (var i = from; i < n; i++) if (a[i] != null) { s2 += a[i]; any = true; }
+      return any ? s2 : null;
+    };
+    var d24 = n - 24, se = 0, ce = 0;
+    for (var i = d24; i < n; i++) if (h.temp_c[i] != null && h.expected_c[i] != null) { se += Math.pow(h.temp_c[i] - h.expected_c[i], 2); ce++; }
+    var cost = function (el) {
+      var c2 = 0, any = false;
+      for (var k = d24; k < n; k++) if (el[k] != null && h.price[k] != null) { c2 += el[k] * h.price[k]; any = true; }
+      return any ? c2 : null;
+    };
+    var q24 = sum(h.heat_kwh, d24), p24 = sum(h.plan_kw, d24), ca = cost(h.elec_kwh), cp = cost(h.plan_elec_kwh);
+    setM('planner.pa.tempErr', (ce ? '±' + esc(num(Math.sqrt(se / ce), 2)) : '—') + ' <small>K</small>');
+    setM('planner.pa.energy', esc(q24 != null ? num(q24, 0) : '—') + ' / ' + esc(p24 != null ? num(p24, 0) : '—') + ' <small>kWh</small>');
+    setM('planner.pa.cost', esc(ca != null ? num(ca, 2) : '—') + ' / ' + esc(cp != null ? num(cp, 2) : '—') + ' <small>€</small>');
+    var chart = qs('[data-f="pachart"]', box);
+    if (!chart) return;
+    qsa('.hchart-panel', chart).forEach(function (p) { p.remove(); });
+    var legend = qs('.chart-legend', chart);
+    var html = paPanels(h, '24h', 24) + paPanels(h, '7d', 168);
+    if (legend) legend.insertAdjacentHTML('beforebegin', html); else chart.insertAdjacentHTML('beforeend', html);
+  }
+
+  function paPanels(h, rng, span) {
+    var W = 240, n = h.temp_c.length, from = n - span;
+    var pick = function (a) { return a.slice(from); };
+    var tm = pick(h.temp_c), te = pick(h.expected_c), sp = pick(h.target_c);
+    var all = tm.concat(te).filter(function (v) { return v != null; });
+    var mid = all.length ? (Math.max.apply(null, all) + Math.min.apply(null, all)) / 2 : 22;
+    var half = Math.max(1.5, all.length ? (Math.max.apply(null, all) - Math.min.apply(null, all)) / 2 + 0.3 : 1.5);
+    var lo = Math.floor((mid - half) * 2) / 2, hi = Math.ceil((mid + half) * 2) / 2;
+    var X = function (k) { return (k * W / (span - 1)).toFixed(1); };
+    var Y = function (v) { return ((hi - v) / (hi - lo) * 100).toFixed(1); };
+    var path = function (vals, cls, step) {
+      var d = '', pen = false;
+      vals.forEach(function (v, k) {
+        if (v == null) { pen = false; return; }
+        if (step) { d += (pen ? ' L' : ' M') + X(k) + ',' + Y(v) + ' L' + X(Math.min(span - 1, k + 1)) + ',' + Y(v); }
+        else d += (pen ? ' L' : ' M') + X(k) + ',' + Y(v);
+        pen = true;
+      });
+      return d ? '<path class="' + cls + '" d="' + d.trim() + '"/>' : '';
+    };
+    var temp = '<div class="hchart-panel pair" data-range="' + rng + '"><div class="hchart-y" aria-hidden="true"><span>' + num(hi, 1) + '°</span><span>' +
+      num(lo, 1) + '°</span></div><svg class="trend" viewBox="0 0 ' + W + ' 100" preserveAspectRatio="none" role="img" aria-label="' + esc(t('planner.paTempAria')) +
+      '"><line class="grid" x1="0" x2="' + W + '" y1="0.5" y2="0.5"/><line class="grid" x1="0" x2="' + W + '" y1="50" y2="50"/><line class="grid" x1="0" x2="' + W +
+      '" y1="99.5" y2="99.5"/>' + path(sp, 'sp', true) + path(tm, 't') + path(te, 'tf') + '</svg><div class="axis" aria-hidden="true"></div></div>';
+    // Heat: hourly over 24 h, per day over 7 d.
+    var plan = pick(h.plan_kw), act = pick(h.heat_kwh), groups = rng === '24h' ? 24 : 7, per = span / groups;
+    var pv = [], av = [];
+    for (var g = 0; g < groups; g++) {
+      var ps2 = 0, as2 = 0, pa = false, aa = false;
+      for (var k = g * per; k < (g + 1) * per; k++) {
+        if (plan[k] != null) { ps2 += plan[k]; pa = true; }
+        if (act[k] != null) { as2 += act[k]; aa = true; }
+      }
+      pv.push(pa ? ps2 : null); av.push(aa ? as2 : null);
+    }
+    var top = niceTop(Math.max.apply(null, pv.concat(av).filter(function (v) { return v != null; }).concat([1])));
+    var bw = W / groups, bars = '';
+    for (var b = 0; b < groups; b++) {
+      var hp = pv[b] != null ? pv[b] / top * 100 : 0, ha = av[b] != null ? av[b] / top * 100 : 0;
+      if (pv[b] != null) bars += '<rect class="pl" x="' + (b * bw + bw * 0.12).toFixed(1) + '" y="' + (100 - hp).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + hp.toFixed(1) + '"/>';
+      if (av[b] != null) bars += '<rect class="ac" x="' + (b * bw + bw * 0.52).toFixed(1) + '" y="' + (100 - ha).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + ha.toFixed(1) + '"/>';
+    }
+    var H = t('_h'), ax = rng === '24h'
+      ? ['−24 ' + H, '−18 ' + H, '−12 ' + H, '−6 ' + H, t('trend.now')]
+      : [7, 5, 3, 1].map(function (d2) { return '−' + d2 + ' ' + t('planner.dayShort'); }).concat([t('trend.now')]);
+    var energy = '<div class="hchart-panel" data-range="' + rng + '"><div class="hchart-y" aria-hidden="true"><span>' + num(top, 0) + ' kWh</span><span>0</span></div>' +
+      '<svg class="trend" viewBox="0 0 ' + W + ' 100" preserveAspectRatio="none" role="img" aria-label="' + esc(t('planner.paEnergyAria')) + '"><line class="grid" x1="0" x2="' + W +
+      '" y1="99.5" y2="99.5"/>' + bars + '</svg><div class="axis" aria-hidden="true">' + ax.map(function (a2) { return '<span>' + esc(a2) + '</span>'; }).join('') + '</div></div>';
+    return temp + energy;
   }
 
   // 48 h plan: price, planned heat, the flow target to the floors (stair, max flow

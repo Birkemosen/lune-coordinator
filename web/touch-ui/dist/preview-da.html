@@ -2684,7 +2684,7 @@
             <div class="metric"><dt>Varme, leveret / planlagt</dt><dd data-bind="planner.pa.energy">— <small>kWh</small></dd></div>
             <div class="metric"><dt>Pris, faktisk / planlagt</dt><dd data-bind="planner.pa.cost">— <small>€</small></dd></div>
           </dl>
-          <div class="sub" data-empty data-f="plpa"><p class="empty">Ingen historik endnu — planen skal have kørt et døgn.</p><div data-f="chart"></div></div>
+          <div class="sub" data-empty data-f="plpa"><p class="empty">Ingen historik endnu — planen skal have kørt et døgn.</p><div class="hchart" data-f="pachart"><input class="state" type="radio" name="pa-range" id="pa-24h" value="24h" checked aria-label="24 t"><input class="state" type="radio" name="pa-range" id="pa-7d" value="7d" aria-label="7 d"><div class="hchart-range" aria-hidden="true"><label for="pa-24h" data-range="24h">24 t</label><label for="pa-7d" data-range="7d">7 d</label></div><p class="chart-legend" aria-hidden="true"><span><i class="lt"></i>målt</span><span><i class="ltf"></i>forudsagt</span><span><i class="lsp"></i>Mål</span><span><i class="lpl"></i>planlagt</span><span><i class="lac"></i>leveret</span></p></div></div>
         </section>
       </section>
       <section class="view" id="v-sys" aria-labelledby="h-sys">

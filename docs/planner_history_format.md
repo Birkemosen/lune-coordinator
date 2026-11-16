@@ -36,7 +36,7 @@ Ids are never reused.
 | 0 | heat_sh_kwh | kWh × 100 | Asgard output by mode, scaled to Odin's metered heat |
 | 1 | heat_dhw_kwh | kWh × 100 | same, hot water and legionella minutes |
 | 2 | elec_kwh | kWh × 100 | Odin hourly export |
-| 3 | room_c | °C × 100 | Odin's room (the virtual thermostat input), else Asgard |
+| 3 | room_c | °C × 100 | Odin's room (the virtual thermostat input), else Asgard; Touch's own hours: the house at the hour's start (its first 15 min), which the model reads as t[i] |
 | 4 | outdoor_c | °C × 100 | Open-Meteo, else Odin, else Asgard |
 | 5 | wind_ms | m/s × 10 | Open-Meteo |
 | 6 | wind_dir_deg | ° | Open-Meteo (direction the wind comes from) |

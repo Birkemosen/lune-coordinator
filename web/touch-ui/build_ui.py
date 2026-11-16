@@ -962,6 +962,16 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                  + "".join(f'<tr><td>{T(k)}</td><td class="num" data-bind="planner.model.{m}">{DASH}</td>'
                            f'<td data-bind="planner.model.{m}Conf">{DASH}</td></tr>' for m, k in model_keys)
                  + '</tbody></table></div>')
+    # Plan mod faktisk (LDS examples/touch pa_chart): intervalvalg som radioer; binderen
+    # indsætter de to par .hchart-panel (24 t / 7 d) foran forklaringen.
+    pa_chart = (f'<div class="hchart" data-f="pachart">'
+                f'<input class="state" type="radio" name="pa-range" id="pa-24h" value="24h" checked aria-label="{T("planner.r24")}">'
+                f'<input class="state" type="radio" name="pa-range" id="pa-7d" value="7d" aria-label="{T("planner.r7")}">'
+                f'<div class="hchart-range" aria-hidden="true"><label for="pa-24h" data-range="24h">{T("planner.r24")}</label>'
+                f'<label for="pa-7d" data-range="7d">{T("planner.r7")}</label></div>'
+                f'<p class="chart-legend" aria-hidden="true"><span><i class="lt"></i>{T("planner.lMeasured")}</span>'
+                f'<span><i class="ltf"></i>{T("planner.lForecast")}</span><span><i class="lsp"></i>{T("legend.target")}</span>'
+                f'<span><i class="lpl"></i>{T("planner.lPlanned")}</span><span><i class="lac"></i>{T("planner.lDelivered")}</span></p></div>')
     planner_view = f'''
       <section class="view" id="v-plan-house" aria-labelledby="h-plan">
         <header class="view-head">
@@ -990,7 +1000,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
             {metric(T("planner.paEnergy"), "kWh", "planner.pa.energy")}
             {metric(T("planner.paCost"), "€", "planner.pa.cost")}
           </dl>
-          {pl_empty("plpa", "planner.emptyHistory", '<div data-f="chart"></div>')}
+          {pl_empty("plpa", "planner.emptyHistory", pa_chart)}
         </section>
       </section>'''
 

@@ -16,6 +16,7 @@
 #include "problem_texts.h"
 #include "esphome/components/planner/seed_params.h"
 #include "esphome/components/planner/solver.h"
+#include "esphome/components/planner/hour_log.h"
 #include "esp_timer.h"
 #include "esphome/core/application.h"
 #ifdef USE_API
@@ -1788,6 +1789,11 @@ uint8_t wifi_display_bars_() {
 
 // Shadow planner (components/planner/): the models it plans with, its last plan and the
 // shadow flow controller. Nothing here commands the heat source.
+using PlannerStore = ::lune_planner::HistoryStore<24 * 60>;   // 60 days of hours, ~96 KB
+
+// The local wall-clock hour of a UTC timestamp, for the house model's daily rhythm.
+static int planner_local_hour_(uint32_t ts) { return ESPTime::from_epoch_local(static_cast<time_t>(ts)).hour; }
+
 struct PlannerRuntime {
   ::lune_planner::HouseParams house{};
   ::lune_planner::HeatPumpParams pump{};
@@ -1815,6 +1821,25 @@ struct PlannerRuntime {
   float odin_flow_c{NAN};
   float measured_kw{NAN};
   float plan_kw_now{NAN};
+  // F3: the hourly history Touch keeps and what it learns from it.
+  ::lune_planner::HourAccumulator acc{};
+  PlannerStore *store{nullptr};
+  PlannerStore *snapshot{nullptr};          // copy the refit and the save work on, off the lock
+  ::lune_planner::LearnScratch *scratch{nullptr};
+  ::lune_planner::LearnReport learn{};
+  bool learned{false};                      // models come from this house's own hours
+  uint32_t learned_hour{0};                 // now-hour of the last refit
+  uint32_t learn_ms{0};
+  uint32_t saved_hour{0};
+  uint16_t seeded{0};                       // hours taken from a seed since the last refit
+  bool save_due{false};
+  uint8_t next_slot{0};
+  uint16_t saves{0};
+  const char *store_boot{"pending"};
+  const char *last_save{"none"};
+  struct Expect { uint32_t hour; float t_c; } expect[8]{};   // 6 h-ahead forecast per hour
+  float floor_c{NAN};
+  bool floor_tracked{false};
 };
 
 
@@ -2676,12 +2701,14 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
   float sec_feed = NAN, sec_ret = NAN;
   bool defrost = false;
   int mode = -1;
+  float sh_heat = NAN, sh_elec = NAN, dhw_elec = NAN;
   if (ok) {
     JsonDocument filter;
     for (const char *k : {"hp_feed_temp", "hp_return_temp", "outside_temp", "z1_flow_temp_target",
                           "compressor_frequency", "status_compressor", "operation_mode",
                           "flow_rate", "status_water_pump", "computed_output_power", "status_defrost",
-                          "ow_role_z1_feed", "ow_role_z1_return"})
+                          "ow_role_z1_feed", "ow_role_z1_return", "heating_produced", "heating_consumed",
+                          "dhw_consumed"})
       filter[k] = true;
     JsonDocument doc;
     ok = !deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -2700,6 +2727,9 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       defrost = doc["status_defrost"] | false;
       sec_feed = f("ow_role_z1_feed");
       sec_ret = f("ow_role_z1_return");
+      sh_heat = f("heating_produced");
+      sh_elec = f("heating_consumed");
+      dhw_elec = f("dhw_consumed");
       ok = std::isfinite(feed) || std::isfinite(ret);
     }
   }
@@ -2718,6 +2748,9 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     heat_source_.hp_status_defrost = defrost;
     heat_source_.hp_sec_feed_c = sec_feed;
     heat_source_.hp_sec_return_c = sec_ret;
+    heat_source_.hp_sh_heat_kwh = sh_heat;
+    heat_source_.hp_sh_elec_kwh = sh_elec;
+    heat_source_.hp_dhw_elec_kwh = dhw_elec;
     heat_source_.hp_telemetry_ms = esphome::millis();
     // Balance sample: Alpha2 secondary flow against the heat pump's primary flow, and the
     // heat on each side of the tank where the temperatures are known.
@@ -2889,17 +2922,8 @@ void LuneTouchCoordinator::load_room_history_() {
     return;
   }
   if (!spiffs_mounted_) {
-    esp_vfs_spiffs_conf_t conf{};
-    conf.base_path = "/hist";
-    conf.partition_label = "spiffs";
-    conf.max_files = 2;
-    conf.format_if_mount_failed = true;
-    const esp_err_t err = esp_vfs_spiffs_register(&conf);
-    spiffs_mounted_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
-    st.mount_err = spiffs_mounted_ ? 0 : static_cast<int>(err);
-    if (!spiffs_mounted_)
-      ESP_LOGW(TAG, "Room history: SPIFFS mount failed (%s); history lives in RAM only", esp_err_to_name(err));
-    else
+    st.mount_err = mount_history_fs_() ? 0 : -1;
+    if (spiffs_mounted_)
       esp_spiffs_info("spiffs", &st.fs_total, &st.fs_used);
   }
   bool loaded = false;
@@ -15155,9 +15179,10 @@ void LuneTouchCoordinator::write_odin_mqtt_json(char *buffer, size_t capacity) c
 // ---- Shadow planner --------------------------------------------------------------
 // Runs on the heat-source task after each telemetry poll. Plans 48 h from the current
 // hour with Touch's own weather forecast, the €/kWh array it pushes to Odin and the
-// house target ± comfort band, using start values fitted on this house's history
-// (seed_params.h; live learning is F3). The flow controller runs on every poll so its
-// target can be read next to the one Odin sends. Nothing is written to Asgard or Odin.
+// comfort band Odin plans against, with the models learned from Touch's own hourly history
+// (hour_log.h; the seed values from seed_params.h until there is enough). Each poll also
+// goes into that history, which is refitted once a day. The flow controller runs on every
+// poll so its target can be read next to the one Odin sends. Nothing is written to Asgard or Odin.
 void LuneTouchCoordinator::planner_tick_() {
   namespace lp = ::lune_planner;
   if (time_ == nullptr || !time_->now().is_valid())
@@ -15173,6 +15198,8 @@ void LuneTouchCoordinator::planner_tick_() {
     planner_rt_->pump = lp::seed_heat_pump_params();
   }
   PlannerRuntime &rt = *planner_rt_;
+  if (rt.store == nullptr)
+    planner_load_store_();
   const uint32_t now_ts = static_cast<uint32_t>(time_->now().timestamp);
   const uint32_t hour0 = now_ts - now_ts % 3600;
 
@@ -15186,6 +15213,8 @@ void LuneTouchCoordinator::planner_tick_() {
   int eur_ymd = 0;
   float house_t = NAN, target = NAN, out_kw = NAN, odin_flow = NAN, outside = NAN;
   bool pending = false;
+  lp::PollSample ps{};
+  ps.ts = now_ts;
   // Odin's comfort band as Touch keeps it: the user's schedule (or the synced setpoint)
   // and, while one is on Odin, the lifted copy Touch wrote. The plan is held to the
   // same band Odin plans against, lifts included.
@@ -15224,6 +15253,19 @@ void LuneTouchCoordinator::planner_tick_() {
     out_kw = space ? heat_source_.hp_output_kw : 0.0f;
     odin_flow = heat_source_.hp_flow_target_c;
     outside = heat_source_.hp_outside_c;
+    ps.compressor_on = heat_source_.hp_compressor_on;
+    ps.hot_water = mode == 1 || mode == 6;
+    ps.legionella = mode == 6;
+    ps.defrost = heat_source_.hp_status_defrost;
+    ps.output_kw = heat_source_.hp_output_kw;
+    ps.hp_feed_c = heat_source_.hp_feed_c;
+    ps.hp_return_c = heat_source_.hp_return_c;
+    ps.zone_feed_c = heat_source_.hp_sec_feed_c;
+    ps.zone_return_c = heat_source_.hp_sec_return_c;
+    ps.flow_target_c = odin_flow;
+    ps.sh_heat_kwh = heat_source_.hp_sh_heat_kwh;
+    ps.sh_elec_kwh = heat_source_.hp_sh_elec_kwh;
+    ps.dhw_elec_kwh = heat_source_.hp_dhw_elec_kwh;
   }
   pending = planner_solve_pending_;
   planner_solve_pending_ = false;
@@ -15297,15 +15339,24 @@ void LuneTouchCoordinator::planner_tick_() {
       cfg.penalty_eur_per_kh = set.comfort_weight_eur;
       cfg.room_c = target;
       cfg.yield = []() { vTaskDelay(1); };   // let the idle task (watchdog) run between steps
-      // Floors: no tracker on Touch yet. Start them where they would stand if the house
-      // were holding its temperature now: high enough above the rooms to cover the loss.
+      // Floors: tracked through the stored hours when there are enough; else where they
+      // would stand if the house were holding its temperature now (high enough above the
+      // rooms to cover the loss).
+      float tracked = NAN;
+      if (rt.store != nullptr && rt.scratch != nullptr && rt.snapshot != nullptr && take_state_lock_(100)) {
+        std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+        give_state_lock_();
+        tracked = lp::floor_now(*rt.snapshot, hour0, rt.house, planner_local_hour_, rt.scratch);
+      }
       const lp::HourIn &w0 = rt.hours[0].weather;
       const float ph = w0.hour_local * (6.2831853f / 24.0f);
       const float need = rt.house.ua_kw_per_k * (1.0f + rt.house.kw_per_ms * w0.wind_ms) * (house_t - w0.out_c) -
                          rt.house.p_int_kw - rt.house.p_cos_kw * std::cos(ph) - rt.house.p_sin_kw * std::sin(ph) -
                          rt.house.g_kw_per_100wm2 * w0.sun_wm2 / 100.0f;
       const float lift = std::clamp(need / rt.house.h_kw_per_k, 0.0f, 8.0f);
-      const lp::HouseState start{house_t, house_t + lift};
+      rt.floor_tracked = std::isfinite(tracked);
+      rt.floor_c = rt.floor_tracked ? tracked : house_t + lift;
+      const lp::HouseState start{house_t, rt.floor_c};
       const int64_t t0 = esp_timer_get_time();
       lp::solve_plan(rt.house, rt.pump, start, rt.hours, n, cfg, &rt.plan);
       rt.solve_us = static_cast<uint32_t>(esp_timer_get_time() - t0);
@@ -15318,6 +15369,11 @@ void LuneTouchCoordinator::planner_tick_() {
       rt.start_t_c = house_t;
       rt.target_c = target;
       rt.band_odin = has_base || has_lifted;
+      // The 6 h-ahead forecast for hour0 + 5, scored against what happened (plan vs actual).
+      if (n > 5) {
+        const uint32_t h5 = hour0 + 5u * 3600u;
+        rt.expect[(h5 / 3600u) % 8] = {h5, rt.plan.t_end_c[5]};
+      }
       rt.out_now_c = rt.hours[0].weather.out_c;
       if (!rt.logged_runtime) {
         rt.logged_runtime = true;
@@ -15339,6 +15395,255 @@ void LuneTouchCoordinator::planner_tick_() {
   rt.our_flow_c = std::isfinite(plan_kw) && std::isfinite(room) ? rt.flow.update(rt.pump, plan_kw, out_kw, room) : NAN;
   if (std::isfinite(outside))
     rt.out_now_c = outside;
+
+  // ---- F3: this poll into the hourly history.
+  if (rt.store == nullptr)
+    return;
+  {
+    int best = -1;
+    int64_t best_d = 1800;
+    for (uint8_t i = 0; i < fc_n; i++) {
+      const int64_t d = std::llabs(fc[i].timestamp_s - static_cast<int64_t>(hour0));
+      if (d < best_d) { best_d = d; best = i; }
+    }
+    ps.house_c = house_t;
+    ps.out_c = std::isfinite(outside) ? outside : (best >= 0 ? fc[best].temp_c : NAN);
+    if (best >= 0) {
+      ps.wind_ms = fc[best].wind_speed_ms;
+      ps.sun_wm2 = fc[best].shortwave_wm2;
+    }
+    if (rt.from_ts == hour0 && rt.plan.n > 0) {
+      ps.price_eur_kwh = rt.price[0];
+      ps.band_min_c = rt.band_min[0];
+      ps.band_max_c = rt.band_max[0];
+    }
+    ps.band_sp_c = target;
+    const auto &e = rt.expect[(hour0 / 3600u) % 8];
+    ps.expected_c = e.hour == hour0 ? e.t_c : NAN;
+    ps.plan_kw = plan_kw;
+    ps.shadow_flow_c = rt.our_flow_c;
+    lp::Record rec;
+    lp::HourExtra extra;
+    if (rt.acc.add(ps, &rec, &extra) && take_state_lock_(100)) {
+      rt.store->put(rec, extra);
+      rt.save_due = true;
+      give_state_lock_();
+    }
+  }
+
+  // Daily refit at 03 local (and once as soon as there are 4 days, or after a seed): from
+  // the seed again, on a copy of the store so the lock is held only for the copy.
+  const int local_h = planner_local_hour_(hour0);
+  const bool have_days = rt.store->count_since(hour0 - 14u * 86400u) >= 4 * 24;
+  const bool refit = have_days && rt.scratch != nullptr && rt.snapshot != nullptr &&
+                     (rt.learned_hour == 0 || (rt.seeded > 0 && rt.learned_hour != hour0) ||
+                      (local_h == 3 && rt.learned_hour != hour0));
+  if (refit && take_state_lock_(100)) {
+    std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+    rt.seeded = 0;
+    give_state_lock_();
+    static int64_t last_yield_us = 0;
+    rt.scratch->fitter.set_yield([]() {
+      // Let the idle task (watchdog) and the web server in about every 50 ms of fitting.
+      const int64_t now_us = esp_timer_get_time();
+      if (now_us - last_yield_us > 50000) {
+        vTaskDelay(1);
+        last_yield_us = esp_timer_get_time();
+      }
+    });
+    const int64_t t0 = esp_timer_get_time();
+    last_yield_us = t0;
+    lp::LearnReport rep{};
+    lp::HouseParams house = lp::seed_house_params();
+    lp::HeatPumpParams pump = lp::seed_heat_pump_params();
+    lp::learn_house(*rt.snapshot, hour0, lp::seed_house_params(), planner_local_hour_, rt.scratch, &house, &rep);
+    lp::learn_heat_pump(*rt.snapshot, hour0, lp::seed_heat_pump_params(), &pump, &rep);
+    rt.learn_ms = static_cast<uint32_t>((esp_timer_get_time() - t0) / 1000);
+    rt.learn = rep;
+    rt.learned_hour = hour0;
+    rt.house = house;
+    rt.pump = pump;
+    rt.learned = rep.energy || rep.dynamics || rep.heat_pump;
+    char msg[128];
+    std::snprintf(msg, sizeof(msg), "planner refit in %lu ms: %u days, %u h, rmse %.2f K, UA %.3f, %lu pump hours",
+                  static_cast<unsigned long>(rt.learn_ms), rep.days, rep.hours, static_cast<double>(rep.rmse_k),
+                  static_cast<double>(house.ua_kw_per_k), static_cast<unsigned long>(rep.hp_hours));
+    log_event_("info", "planner", msg);
+    ESP_LOGI(TAG, "%s", msg);
+    if (take_state_lock_(100)) {
+      planner_solve_pending_ = true;   // re-plan with what was learned
+      give_state_lock_();
+    }
+  }
+  // Save every 3 hours (two slots in turn, like the room history).
+  if (rt.save_due && hour0 >= rt.saved_hour + 3u * 3600u)
+    planner_save_store_();
+}
+
+namespace {
+constexpr const char *PLANNER_STORE_SLOTS[2] = {"/hist/planner.a", "/hist/planner.b"};
+}  // namespace
+
+bool LuneTouchCoordinator::mount_history_fs_() {
+  if (spiffs_mounted_)
+    return true;
+  esp_vfs_spiffs_conf_t conf{};
+  conf.base_path = "/hist";
+  conf.partition_label = "spiffs";
+  conf.max_files = 4;
+  conf.format_if_mount_failed = true;
+  const esp_err_t err = esp_vfs_spiffs_register(&conf);
+  spiffs_mounted_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
+  if (!spiffs_mounted_)
+    ESP_LOGW(TAG, "History: SPIFFS mount failed (%s)", esp_err_to_name(err));
+  return spiffs_mounted_;
+}
+
+void LuneTouchCoordinator::planner_load_store_() {
+  namespace lp = ::lune_planner;
+  PlannerRuntime &rt = *planner_rt_;
+  if (rt.store != nullptr)
+    return;
+  auto alloc = [](size_t n) {
+    void *m = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return m;
+  };
+  void *a = alloc(sizeof(PlannerStore)), *b = alloc(sizeof(PlannerStore)), *s = alloc(sizeof(lp::LearnScratch));
+  if (a == nullptr || b == nullptr || s == nullptr) {
+    heap_caps_free(a);
+    heap_caps_free(b);
+    heap_caps_free(s);
+    rt.store_boot = "no_psram";
+    return;
+  }
+  PlannerStore *store = static_cast<PlannerStore *>(a);
+  PlannerStore *cand = static_cast<PlannerStore *>(b);
+  rt.scratch = new (s) lp::LearnScratch(lp::seed_house_params());
+  store->magic = 0;
+  int best = -1;
+  bool any_file = false;
+  if (!mount_history_fs_()) {
+    rt.store_boot = "no_spiffs";
+  } else {
+    for (int i = 0; i < 2; i++) {
+      FILE *f = std::fopen(PLANNER_STORE_SLOTS[i], "rb");
+      if (f == nullptr)
+        continue;
+      any_file = true;
+      const bool full = std::fread(cand, sizeof(PlannerStore), 1, f) == 1;
+      std::fclose(f);
+      if (!full || !cand->valid())
+        continue;
+      if (best < 0 || cand->newest_hour > store->newest_hour) {
+        std::memcpy(static_cast<void *>(store), cand, sizeof(PlannerStore));
+        best = i;
+      }
+    }
+    rt.store_boot = best >= 0 ? "restored" : (any_file ? "bad_file" : "no_file");
+  }
+  if (best < 0)
+    store->clear();
+  rt.next_slot = best == 0 ? 1 : 0;
+  rt.snapshot = cand;
+  if (take_state_lock_(200)) {
+    rt.store = store;
+    give_state_lock_();
+  }
+  ESP_LOGI(TAG, "Planner history: %s, %u hours", rt.store_boot,
+           static_cast<unsigned>(store->count_since(1)));
+}
+
+void LuneTouchCoordinator::planner_save_store_() {
+  PlannerRuntime &rt = *planner_rt_;
+  if (rt.store == nullptr || rt.snapshot == nullptr || !mount_history_fs_())
+    return;
+  if (!take_state_lock_(200))
+    return;
+  std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+  rt.save_due = false;
+  give_state_lock_();
+  const uint8_t slot = rt.next_slot & 1U;
+  // Through an internal-RAM bounce buffer in 4 KiB pieces: SPIFFS writes the store from
+  // PSRAM unreliably in one call.
+  static char why[40];
+  std::remove(PLANNER_STORE_SLOTS[slot]);
+  FILE *f = std::fopen(PLANNER_STORE_SLOTS[slot], "wb");
+  bool ok = f != nullptr;
+  int err = ok ? 0 : errno;
+  size_t done = 0;
+  char *bounce = ok ? static_cast<char *>(heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) : nullptr;
+  ok = ok && bounce != nullptr;
+  const char *src = reinterpret_cast<const char *>(rt.snapshot);
+  while (ok && done < sizeof(PlannerStore)) {
+    const size_t n = std::min<size_t>(4096, sizeof(PlannerStore) - done);
+    std::memcpy(bounce, src + done, n);
+    if (std::fwrite(bounce, 1, n, f) != n) {
+      ok = false;
+      err = errno;
+      break;
+    }
+    done += n;
+    vTaskDelay(1);
+  }
+  heap_caps_free(bounce);
+  if (f != nullptr && std::fclose(f) != 0 && ok) {
+    ok = false;
+    err = errno;
+  }
+  const uint32_t now_ts = static_cast<uint32_t>(time_->now().timestamp);
+  rt.saved_hour = now_ts - now_ts % 3600;
+  if (!ok) {
+    std::snprintf(why, sizeof(why), "%s errno %d at %u", f == nullptr ? "open_failed" : "write_failed", err,
+                  static_cast<unsigned>(done));
+    rt.last_save = why;
+    ESP_LOGW(TAG, "Planner history: save failed (%s)", why);
+    return;
+  }
+  rt.next_slot = slot ^ 1U;
+  rt.saves++;
+  rt.last_save = "ok";
+}
+
+int LuneTouchCoordinator::seed_planner_history(const char *hex) {
+  namespace lp = ::lune_planner;
+  if (hex == nullptr || planner_rt_ == nullptr || planner_rt_->store == nullptr)
+    return -1;
+  const size_t len = std::strlen(hex);
+  const size_t rec_hex = 2 * lp::RECORD_SIZE;
+  if (len == 0 || len % rec_hex != 0)
+    return -1;
+  auto nib = [](char ch) -> int {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+  };
+  const lp::Header hdr = lp::default_header(lp::Kind::HOUSE);
+  int taken = 0;
+  for (size_t off = 0; off < len; off += rec_hex) {
+    uint8_t raw[lp::RECORD_SIZE];
+    for (size_t i = 0; i < lp::RECORD_SIZE; i++) {
+      const int hi = nib(hex[off + 2 * i]), lo = nib(hex[off + 2 * i + 1]);
+      if (hi < 0 || lo < 0)
+        return -1;
+      raw[i] = static_cast<uint8_t>(hi << 4 | lo);
+    }
+    lp::Record r;
+    lp::read_record(hdr, raw, &r);
+    if (r.hour_start == 0 || r.hour_start % 3600 != 0)
+      continue;
+    if (!take_state_lock_(100))
+      return -1;
+    if (planner_rt_->store->seed(r)) {
+      planner_rt_->saved_hour = 0;   // save soon
+      taken++;
+      planner_rt_->save_due = true;
+      if (planner_rt_->seeded < 65535)
+        planner_rt_->seeded++;
+    }
+    give_state_lock_();
+  }
+  return taken;
 }
 
 static void planner_num_(char *out, size_t cap, float v, int dec) {
@@ -15379,9 +15684,9 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   const lp::HeatPlan &p = rt->plan;
   char a[16], b[16], c[16];
   put("{\"mode\":\"shadow\",\"running\":true,\"strategy\":\"%s\",\"settings\":%s,\"solved_ts\":%lu,"
-      "\"model_source\":\"seed\",\"solve_ms\":%lu,",
+      "\"model_source\":\"%s\",\"solve_ms\":%lu,",
       planner_settings::strategy_name(set.strategy), settings, static_cast<unsigned long>(rt->solved_ts),
-      static_cast<unsigned long>(rt->solve_us / 1000));
+      rt->learned ? "learned" : "seed", static_cast<unsigned long>(rt->solve_us / 1000));
   planner_num_(a, sizeof(a), rt->start_t_c, 2);
   planner_num_(b, sizeof(b), rt->target_c, 1);
   put("\"plan\":{\"from_ts\":%lu,\"n\":%d,\"start_c\":%s,\"target_c\":%s,\"band_c\":%.1f,\"heat_kwh\":%.1f,"
@@ -15425,7 +15730,63 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   char d[16];
   planner_num_(d, sizeof(d), rt->plan_kw_now, 2);
   put("\"flow\":{\"our_target_c\":%s,\"odin_target_c\":%s,\"measured_kw\":%s,\"plan_kw\":%s},", a, b, c, d);
-  put("\"rooms\":null,\"history\":null}");
+  // What Touch has learned from its own hours.
+  const lp::LearnReport &L = rt->learn;
+  planner_num_(a, sizeof(a), L.rmse_k, 3);
+  planner_num_(b, sizeof(b), rt->floor_c, 2);
+  put("\"learning\":{\"source\":\"%s\",\"refit_ts\":%lu,\"refit_ms\":%lu,\"days\":%u,\"hours\":%u,\"energy\":%s,"
+      "\"dynamics\":%s,\"rmse_k\":%s,\"hp_hours\":%lu,\"heat_pump\":%s,\"floor_c\":%s,\"floor_tracked\":%s,"
+      "\"store\":{\"boot\":\"%s\",\"hours\":%u,\"saves\":%u,\"last_save\":\"%s\"}},",
+      rt->learned ? "learned" : "seed", static_cast<unsigned long>(rt->learned_hour), static_cast<unsigned long>(rt->learn_ms),
+      L.days, L.hours, L.energy ? "true" : "false", L.dynamics ? "true" : "false", a, static_cast<unsigned long>(L.hp_hours),
+      L.heat_pump ? "true" : "false", b, rt->floor_tracked ? "true" : "false", rt->store_boot,
+      static_cast<unsigned>(rt->store != nullptr ? rt->store->count_since(1) : 0), rt->saves, rt->last_save);
+  // Plan vs actual: the last 168 hours from the store. Per hour: the house at its end
+  // (measured) and as forecast 6 h before, planned and delivered heat, electricity, price.
+  static constexpr int HIST_H = 168;
+  struct HistRow { float t, e, pkw, pel, q, el, pr, sp, of, sf; };
+  HistRow *rows = static_cast<HistRow *>(heap_caps_malloc(sizeof(HistRow) * HIST_H, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  const uint32_t h_from = rt->from_ts - static_cast<uint32_t>(HIST_H) * 3600u;
+  int have = 0;
+  if (rows != nullptr && rt->store != nullptr && take_state_lock_(100)) {
+    const PlannerStore &S = *rt->store;
+    for (int i = 0; i < HIST_H; i++) {
+      const uint32_t hr = h_from + static_cast<uint32_t>(i) * 3600u;
+      const lp::Record *r = S.at(hr), *nx = S.at(hr + 3600u);
+      const auto g = [r](uint8_t col) { return r ? r->get(lp::Kind::HOUSE, col) : NAN; };
+      // The planned hour's electricity with today's model at that hour's weather.
+      const float pkw = S.plan_kw(hr), sp = g(lp::H_SCHED_SP_C), out = g(lp::H_OUTDOOR_C);
+      const float pel = std::isfinite(pkw) && std::isfinite(out)
+                            ? lp::elec_for(rt->pump, pkw, std::isfinite(sp) ? sp : 22.0f, out) : NAN;
+      rows[i] = {nx ? nx->get(lp::Kind::HOUSE, lp::H_ROOM_C) : NAN, g(lp::H_ROOM_EXPECTED_C), pkw, pel,
+                 g(lp::H_HEAT_SH_KWH), g(lp::H_ELEC_KWH), g(lp::H_PRICE_EUR_KWH), g(lp::H_SCHED_SP_C),
+                 g(lp::H_FLOW_TARGET_C), S.shadow_flow(hr)};
+      have += r != nullptr;
+    }
+    give_state_lock_();
+  }
+  if (rows != nullptr && have > 0) {
+    put("\"history\":{\"from_ts\":%lu,\"n\":%d", static_cast<unsigned long>(h_from), HIST_H);
+    const char *hn[10] = {"temp_c", "expected_c", "plan_kw", "plan_elec_kwh", "heat_kwh", "elec_kwh", "price", "target_c",
+                          "odin_flow_c", "shadow_flow_c"};
+    const int hd[10] = {2, 2, 1, 2, 2, 2, 4, 1, 1, 1};
+    for (int f = 0; f < 10; f++) {
+      put(",\"%s\":[", hn[f]);
+      for (int i = 0; i < HIST_H; i++) {
+        const HistRow &q = rows[i];
+        const float v = f == 0 ? q.t : f == 1 ? q.e : f == 2 ? q.pkw : f == 3 ? q.pel : f == 4 ? q.q : f == 5 ? q.el
+                        : f == 6 ? q.pr : f == 7 ? q.sp : f == 8 ? q.of : q.sf;
+        planner_num_(a, sizeof(a), v, hd[f]);
+        put("%s%s", i ? "," : "", a);
+      }
+      put("]");
+    }
+    put("},");
+  } else {
+    put("\"history\":null,");
+  }
+  heap_caps_free(rows);
+  put("\"rooms\":null}");
   heap_caps_free(rt);
 }
 

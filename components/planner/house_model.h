@@ -220,12 +220,15 @@ class HouseFitter {
     }
     from_vec_(x, p);
     p->valid = true;
+    cost_(x, x0);   // the score of the kept parameters, not of the last rejected trial
     rmse24_ = std::sqrt(sq_last_ / (count_ > 0 ? count_ : 1));
     return cost < cost0;
   }
 
   // RMS of the hourly forecast errors (1–24 h) of the last fit, K.
   float rmse() const { return static_cast<float>(rmse24_); }
+  // Called once per forecast window on a device, so a fit lets other tasks run.
+  void set_yield(void (*y)()) { yield_ = y; }
 
  private:
   static void to_vec_(const HouseParams &p, float x[NP]) {
@@ -253,6 +256,7 @@ class HouseFitter {
     track_floor(p, t_, in_, n_, std::isfinite(t_[0]) ? t_[0] + 2.0f : 22.0f, track);
     int w = 0;
     for (size_t s = HORIZON; s + HORIZON < n_; s += stride_, w++) {
+      if (yield_) yield_();
       if (!std::isfinite(t_[s])) continue;
       const float t0 = t_[s] - (s ? p.sensor_sun_k * in_[s - 1].sun_wm2 / 100.0f : 0.0f);
       HouseState st{t0, track[s]};
@@ -344,6 +348,7 @@ class HouseFitter {
   double sq_last_{0};
   long count_{0};
   double rmse24_{NAN};
+  void (*yield_)() = nullptr;
   float track_[2][MAX_HOURS + 1];
   float base_[MAX_RES];
   float jac_[NP][MAX_RES];
