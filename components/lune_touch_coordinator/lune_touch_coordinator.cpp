@@ -15227,8 +15227,10 @@ void LuneTouchCoordinator::planner_tick_() {
     base = lune_touch_odin::apply_sync(odin_owner_.user, odin_owner_.sync);
     has_base = base.count > 0;
   }
-  if (odin_owner_.applied && odin_owner_.written.count > 0) {
-    lifted = odin_owner_.written;
+  // The lifted copy rebuilt from the base and the lift on Odin (what `written` encodes;
+  // `written` itself is not restored after a restart).
+  if (odin_owner_.applied && odin_owner_.lift.active() && has_base) {
+    lifted = lune_touch_odin::apply_lift(base, odin_owner_.lift);
     has_lifted = true;
   }
   fc_n = forecast_hours_count_ > 72 ? 72 : forecast_hours_count_;
@@ -15561,6 +15563,11 @@ void LuneTouchCoordinator::planner_save_store_() {
     return;
   std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
   rt.save_due = false;
+  {
+    // Under the lock: a seed arriving during the write resets it and is saved next.
+    const uint32_t now_ts = static_cast<uint32_t>(time_->now().timestamp);
+    rt.saved_hour = now_ts - now_ts % 3600;
+  }
   give_state_lock_();
   const uint8_t slot = rt.next_slot & 1U;
   // Through an internal-RAM bounce buffer in 4 KiB pieces: SPIFFS writes the store from
@@ -15590,8 +15597,6 @@ void LuneTouchCoordinator::planner_save_store_() {
     ok = false;
     err = errno;
   }
-  const uint32_t now_ts = static_cast<uint32_t>(time_->now().timestamp);
-  rt.saved_hour = now_ts - now_ts % 3600;
   if (!ok) {
     std::snprintf(why, sizeof(why), "%s errno %d at %u", f == nullptr ? "open_failed" : "write_failed", err,
                   static_cast<unsigned>(done));
