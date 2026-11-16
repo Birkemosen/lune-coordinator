@@ -63,7 +63,9 @@ int main() {
     Record a;
     a.hour_start = T0;
     a.set(Kind::HOUSE, H_ROOM_C, 21.0f);
+    a.set(Kind::HOUSE, H_ROOM_EXPECTED_C, 21.2f);
     assert(st->seed(a));
+    assert(!st->at(T0)->has(H_ROOM_EXPECTED_C));
     Record b = a;
     b.set(Kind::HOUSE, H_ROOM_C, 21.5f);
     assert(!st->seed(b));                       // already there

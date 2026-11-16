@@ -228,6 +228,7 @@ template <size_t N> struct HistoryStore {
     const size_t i = slot(r.hour_start);
     if (rec[i].hour_start >= r.hour_start) return false;
     rec[i] = r;
+    rec[i].v[H_ROOM_EXPECTED_C] = NONE;   // another planner's forecast is not ours to score
     plan_kw_x10[i] = 255;
     shadow_flow_x10[i] = NONE;
     if (r.hour_start > newest_hour) newest_hour = r.hour_start;
