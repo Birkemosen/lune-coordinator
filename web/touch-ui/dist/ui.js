@@ -2111,7 +2111,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     qsa('[data-hp-dhw]').forEach(function (n) { n.hidden = !tank; });
     setText('heat.dhwBadge', t(opm === 6 ? 'heat.legionellaBadge' : 'heat.dhwBadge'));
     var alert = qs('[data-bind-alert="heat"]');
-    if (alert) alert.hidden = !(hs.enabled !== false && st === 'unreachable');
+    // Before the first write after a boot there is no result yet: waiting, not offline.
+    if (alert) alert.hidden = !(hs.enabled !== false && hs.push && hs.push.has_result !== false && st === 'unreachable');
   }
 
   // Navbar: what Touch is doing now, one state in priority order (LDS 5.1 .badge.activity).
@@ -2130,7 +2131,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (fl.active) {
       key = 'flush';
       detail = loopName(fl.node, fl.zone) + t('activity.minutesLeft', { m: Math.max(1, Math.ceil((fl.left_s || 0) / 60)) });
-    } else if (hs && hs.enabled !== false && hs.push && hs.push.status === 'unreachable') {
+    } else if (hs && hs.enabled !== false && hs.push && hs.push.has_result !== false && hs.push.status === 'unreachable') {
       key = 'offline'; cls = 'bad';
     } else if (hp.available && hp.compressor_on && (opm === 1 || opm === 6)) {
       key = opm === 6 ? 'legionella' : 'dhw'; cls = 'hot';
@@ -3781,6 +3782,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var coord = s.coordinator || {};
     var name = coord.name || s.device_name || s.name || 'Lune Touch';
     var place = coord.site_label || s.location || s.place || name;
+    // The firmware's default site label is the English word; show it in the page's language.
+    if (place === 'House') place = t('scope.house');
     setText('device.about.name', name);
     setText('device.about.place', place);
     var df = qs('form[data-save="settings"]');

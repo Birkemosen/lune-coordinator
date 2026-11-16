@@ -10,6 +10,8 @@ in the linked docs.
 
 - [House temperature](#house-temperature)
 
+**[Heating Plan](#heating-plan)**
+
 **[Sheets](#sheets)**
 
 - [Heating](#heating)
@@ -104,6 +106,45 @@ at least 30 minutes), from the next hour for the room's floor lag + 2 h (3–6 h
 least an hour to plan heat that reaches the room. Raising the whole house for a room whose valve
 still has room to open would only overheat the others. The dashboard still shows the real average. Authority is Touch when it holds the lease.
 **How is it calculated?** in the Heat sheet shows each room's weight.
+
+---
+
+## Heating Plan
+
+**Opvarmningsplan** / **Heating Plan** in the menu between Home and System is the page of
+Touch's own planner. It runs in **shadow mode**: it computes and logs what it would do and
+sends nothing to the heat pump or Odin. Odin keeps controlling the heat pump. The page fills in
+as the planner gets data; until then each panel says so, and missing values show «—».
+
+<a id="planner-plan"></a>
+**48-hour plan.** The heat the planner would order per hour (bars) and the flow temperature it
+would send (line), over the electricity price. Hot water and legionella hours are hatched. It
+spreads the house's heat over the cheapest hours it can while every room stays in its comfort
+band, and prefers longer runs at lower output when that pays (lower flow temperature, better COP).
+
+<a id="planner-rooms"></a>
+**Room forecast.** The temperature the planner expects per room, hour by hour, against the room's
+comfort band. Hatched hours are a charge before wind or cold from the room's exposed side; an edge
+at the bottom means the room is expected below its band.
+
+<a id="planner-model"></a>
+**Learned model.** What the planner has learned from measurements: the house's heat loss (kW/K,
+more in wind), its thermal capacity (kWh/K), how much heat the floor circuit takes per degree of
+flow temperature, the heat pump's COP by output and outdoor temperature, the solar and wind
+factors and hot-water use. **Learning** means the value still moves; the plan uses it with care.
+It starts from the heat pump's and Odin's history and then learns on its own.
+
+<a id="planner-accuracy"></a>
+**Plan vs actual.** The planner measured against what happened: forecast against measured house
+temperature, planned against delivered heat, and planned against actual cost. Only the planner's
+own numbers are here; the comparison with Odin is built in Home Assistant.
+
+<a id="planner-settings"></a>
+**Settings** (Open settings): the strategy — **Comfort first** (default: no room below target −
+comfort band, then the cheapest plan), **Weighted** (a degree below the band for an hour costs the
+amount you set, so the plan may trade a little comfort for price) or **Price first** (only the
+house average is kept in the band) — and the heat pump's lowest and highest output and highest
+flow temperature. Saving changes the shadow plan only.
 
 ---
 
