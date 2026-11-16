@@ -13,7 +13,7 @@ Odin's own export. Three things are changed:
 
 | Odin | Lune |
 | --- | --- |
-| The epoch stamps the end of the hour | The epoch is the start of the hour (UTC) |
+| The epoch is the hour's start in local wall-clock time, written as if it were UTC | The epoch is the start of the hour in real UTC |
 | No header; column meaning is known only from firmware | A 64-byte header names the file kind and the column in each slot |
 | Scales implicit | A fixed scale per column, listed below and in `history_record.h` |
 
@@ -93,4 +93,4 @@ measured value that leaks into the future.
 - Room targets are not in Home Assistant history, so `target_c` and `coldest_dev_k` are
   empty. F1 takes them from Touch.
 - The hot-water tank temperature was not exported for the first build (`dhw_tank_c`).
-- Odin's export has 1,042 of 1,091 hours; the rest have no metered electricity or price.
+- Odin's export has 1,042 of 1,091 hours; the rest have no metered electricity or price. The repeated hour when summer time ends (25 Oct 2026, 02:00 local) appears once.
