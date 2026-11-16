@@ -351,6 +351,8 @@ test-planner:
 	$(PLANNER_OUT)-record
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_planner_context.cpp -o $(PLANNER_OUT)-context
 	$(PLANNER_OUT)-context
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_house_model.cpp -o $(PLANNER_OUT)-house
+	$(PLANNER_OUT)-house
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/planner/test_planner_settings.cpp -o $(PLANNER_OUT)-settings
 	$(PLANNER_OUT)-settings
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)
@@ -364,7 +366,7 @@ planner-history:
 
 planner-replay: test-planner
 	$(PLANNER_REPLAY) $(HISTORY)/house.bin $(wildcard $(HISTORY)/rooms.bin)
-	$(PLANNER_REPLAY)-house $(HISTORY)/house.bin --tau 5
+	$(PLANNER_REPLAY)-house $(HISTORY)/house.bin
 
 # Same replay in a container: docker run --rm -v $$PWD/$(HISTORY):/data lune-planner
 planner-docker:
