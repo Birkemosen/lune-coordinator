@@ -1274,5 +1274,10 @@
   "planner.emptyRooms": "No room forecast yet.",
   "planner.emptyCop": "COP by output and outdoor temperature: no measurements yet.",
   "planner.emptyHistory": "No history yet — the plan must run for a day first.",
-  "planner.lPrice": "electricity price (cheap → expensive)"
+  "planner.lPrice": "electricity price (cheap → expensive)",
+  "planner.confSeed": "Start value",
+  "planner.copZone": "Flow to floors",
+  "planner.copHp": "Flow from heat pump",
+  "planner.laneHouse": "House",
+  "planner.lHouse": "expected house against comfort band"
 }

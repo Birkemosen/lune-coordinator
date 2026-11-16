@@ -951,7 +951,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         return f'<div class="sub" data-empty data-f="{f}"><p class="empty">{T(key)}</p>{body}</div>'
 
     pl_legend = "".join(lg(c, k) for c, k in (("lprice", "planner.lPrice"), ("lbar", "planner.lOut"), ("ldhw", "plan.lDhw"),
-                                             ("lleg", "planner.lLeg"), ("lflow", "planner.lFlow"), ("lmax", "planner.lMax")))
+                                             ("lleg", "planner.lLeg"), ("lflow", "planner.lFlow"), ("lmax", "planner.lMax"),
+                                             ("lrb", "planner.lHouse")))
     room_legend = "".join(lg(c, k) for c, k in (("lrb", "planner.lRoomBand"), ("llo", "planner.lBelow"), ("lch", "plan.charge"),
                                                ("lpre", "plan.preload"), ("lins", "plan.insufficient")))
     model_keys = (("loss", "planner.mLoss"), ("mass", "planner.mMass"), ("floor", "planner.mFloor"),

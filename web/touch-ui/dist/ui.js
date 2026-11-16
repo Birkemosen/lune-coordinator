@@ -2897,41 +2897,103 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     if (box) {
       box.toggleAttribute('data-empty', !ok);
       var chart = box.querySelector('[data-f="chart"]');
-      if (chart) chart.innerHTML = ok ? plannerChart(plan) : '';
+      if (chart) chart.innerHTML = ok ? plannerChart(plan, st) : '';
     }
-    if (ok) {
-      var e = plan.heat_kw.reduce(function (a, v) { return a + (v || 0); }, 0);
-      setText('planner.sub', t('planner.sub', { e: num(e, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' }));
-    } else {
-      setText('planner.sub', t('planner.subEmpty'));
-    }
-    ['plrooms', 'plcop', 'plpa'].forEach(function (k) {
+    setText('planner.sub', ok
+      ? t('planner.sub', { e: num(plan.heat_kwh, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' })
+      : t('planner.subEmpty'));
+    ['plrooms', 'plpa'].forEach(function (k) {
       var b = qs('[data-f="' + k + '"]');
-      if (b) b.toggleAttribute('data-empty', true);   // filled when the planner reports them (F1–F3)
+      if (b) b.toggleAttribute('data-empty', true);   // rooms and history come with F3
     });
-    var m = d.model || {};
+    // Learned model: start values fitted on this house's history until Touch learns (F3).
+    var m = d.model;
+    var seed = d.model_source === 'seed';
+    var vals = m ? {
+      loss: num(m.ua_kw_per_k, 3) + ' kW/K',
+      mass: num((m.ca_kwh_per_k || 0) + (m.cs_kwh_per_k || 0), 1) + ' kWh/K',
+      floor: num(m.floor_kw_per_k, 2) + ' kW/K',
+      solar: num(m.sun_kw_per_100wm2, 2) + ' kW · 100 W/m²',
+      wind: '+' + num(m.wind_pct_per_ms, 1) + ' % ' + t('planner.perMs'),
+      dhw: '—'
+    } : {};
     ['loss', 'mass', 'floor', 'solar', 'wind', 'dhw'].forEach(function (k) {
-      setText('planner.model.' + k, m[k] != null ? num(m[k], k === 'mass' ? 1 : 3) : '—');
-      setText('planner.model.' + k + 'Conf', '—');
+      setText('planner.model.' + k, vals[k] || '—');
+      setText('planner.model.' + k + 'Conf', m && k !== 'dhw' ? t(seed ? 'planner.confSeed' : 'planner.confLearning') : '—');
     });
+    var cb = qs('[data-f="plcop"]');
+    var cop = m && Array.isArray(m.cop) ? m.cop : [];
+    if (cb) {
+      cb.toggleAttribute('data-empty', !cop.length);
+      var tb = cb.querySelector('[data-f="table"]');
+      if (tb) tb.innerHTML = cop.length ? '<div class="table-wrap"><table class="table"><caption>' +
+        esc(t('planner.cop')) + ' · ' + esc(t('planner.copAt', { t: num(m.cop_outdoor_c, 0) })) + '</caption><thead><tr><th>' +
+        esc(t('planner.copOut')) + '</th><th class="num">' + esc(t('planner.copZone')) + '</th><th class="num">' +
+        esc(t('planner.copHp')) + '</th><th class="num">COP</th></tr></thead><tbody>' +
+        cop.map(function (r) {
+          return '<tr><td>' + num(r.kw, 0) + ' kW</td><td class="num">' + num(r.zone_feed_c, 1) + '°</td><td class="num">' +
+            num(r.hp_feed_c, 1) + '°</td><td class="num">' + num(r.cop, 2) + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '';
+    }
   }
 
-  // 48 h plan: price cells, planned heat bars (hot water / legionella marked). Flow comes
-  // with the planner's flow controller (F2).
-  function plannerChart(plan) {
+  // 48 h plan: price, planned heat, the flow target to the floors (stair, max flow
+  // dashed) and the house temperature the plan expects against the comfort band.
+  function plannerChart(plan, st) {
     var n = plan.heat_kw.length;
     var price = plan.price || [];
-    var ptop = Math.max.apply(null, price.concat([0.0001]));
+    var known = price.filter(function (v) { return v != null; });
+    var ptop = Math.max.apply(null, known.concat([0.0001]));
+    var lane = function (cls, name, ticks) {
+      return '<div class="plan-lab plan-lab--y' + cls + '"><b>' + esc(name) + '</b><span class="plan-y">' +
+        ticks.map(function (v) { return '<i>' + esc(v) + '</i>'; }).join('') + '</span></div>';
+    };
+    var stair = function (vals, lo, hi) {
+      var segs = [], cur = [];
+      vals.forEach(function (v, k) {
+        if (v == null || !isFinite(v)) { if (cur.length) segs.push(cur); cur = []; return; }
+        var y = ((hi - v) / (hi - lo) * 100).toFixed(1);
+        cur.push(k + ',' + y, (k + 1) + ',' + y);
+      });
+      if (cur.length) segs.push(cur);
+      return segs.map(function (s2) { return '<polyline points="' + s2.join(' ') + '"/>'; }).join('');
+    };
     var cells = '', bars = '';
     for (var i = 0; i < n; i++) {
       var pv = price[i];
       cells += pv == null ? '<i class="plan-cell"></i>' : '<i class="plan-cell" style="--v:' + Math.round(pv / ptop * 100) + '"></i>';
-      var mode = plan.dhw && plan.dhw[i] === 2 ? ' data-mode="legionella"' : (plan.dhw && plan.dhw[i] === 1 ? ' data-mode="dhw"' : '');
-      bars += '<i class="plan-bar"' + mode + ' style="--v:' + Math.round(Math.min(1, (plan.heat_kw[i] || 0) / 6) * 100) + '"></i>';
+      bars += '<i class="plan-bar" style="--v:' + Math.round(Math.min(1, (plan.heat_kw[i] || 0) / 8) * 100) + '"></i>';
     }
-    return '<div class="plan plan--48" role="img" aria-label="' + t('planner.planAria') + '">' +
-      '<div class="plan-lab plan-lab--sm"><b>' + t('planner.lPrice') + '</b></div><div class="plan-lane plan-lane--price">' + cells + '</div>' +
-      '<div class="plan-lab"><b>' + t('planner.laneOut') + '</b></div><div class="plan-lane plan-lane--out">' + bars + '</div><span></span></div>';
+    var fmax = st && st.max_flow_c ? Number(st.max_flow_c) : 35;
+    var flo = 20, fhi = Math.max(fmax + 2, 30);
+    var fy = ((fhi - fmax) / (fhi - flo) * 100).toFixed(1);
+    var flow = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true"><line class="max" x1="0" x2="' + n +
+      '" y1="' + fy + '" y2="' + fy + '"/><g class="fl">' + stair(plan.zone_feed_c || [], flo, fhi) + '</g></svg>';
+    var tgt = plan.target_c != null ? Number(plan.target_c) : 22, band = plan.band_c != null ? Number(plan.band_c) : 0.5;
+    var hlo = tgt - 1.5, hhi = tgt + 1.5;   // temperature axis 3 °C
+    var yy = function (v) { return ((hhi - v) / (hhi - hlo) * 100).toFixed(1); };
+    var house = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true"><rect class="rb" x="0" y="' + yy(tgt + 1) +
+      '" width="' + n + '" height="' + (yy(tgt - band) - yy(tgt + 1)).toFixed(1) + '"/>' + stair((plan.t_end_c || []).map(function (v) {
+        return v == null ? v : Math.max(hlo, Math.min(hhi, v));
+      }), hlo, hhi) + '</svg>';
+    var lang = (i18n._lang || document.documentElement.lang || 'en');
+    var x = '';
+    for (var k = 0; k < n; k++) {
+      var hr = new Date((plan.from_ts + k * 3600) * 1000).getHours();
+      var left = (k / n * 100).toFixed(2) + '%';
+      if (k === 0) { x += '<span style="left:0%">' + esc(t('fc.now')) + '</span>'; continue; }
+      if (hr % 3) continue;
+      var cls = hr % 12 === 0 ? '' : hr % 6 === 0 ? 'h3' : 'h2';
+      x += hr === 0
+        ? '<span class="d" style="left:' + left + '">' + esc(new Date((plan.from_ts + k * 3600) * 1000).toLocaleDateString(lang, { weekday: 'short' })) + '</span>'
+        : '<span' + (cls ? ' class="' + cls + '"' : '') + ' style="left:' + left + '">' + String(hr).padStart(2, '0') + '</span>';
+    }
+    return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.planAria')) + '" style="--now:0">' +
+      lane(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, 2), '0']) + '<div class="plan-lane plan-lane--price">' + cells + '</div>' +
+      lane('', t('planner.laneOut'), ['8 kW', '4', '0']) + '<div class="plan-lane plan-lane--out">' + bars + '</div>' +
+      lane(' plan-lab--flow', t('planner.laneFlow'), [num(fhi, 0) + '°', num(flo, 0) + '°']) + '<div class="plan-lane plan-lane--flow">' + flow + '</div>' +
+      lane(' plan-lab--flow', t('planner.laneHouse'), [num(hhi, 0) + '°', num(hlo, 0) + '°']) + '<div class="plan-lane plan-lane--room">' + house + '</div>' +
+      '<span></span><div class="plan-x">' + x + '</div></div>';
   }
 
   function applyWifi(w) {

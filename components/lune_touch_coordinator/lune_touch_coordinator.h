@@ -32,6 +32,10 @@
 namespace esphome {
 namespace lune_touch_coordinator {
 
+// Shadow planner state (models, last plan, flow controller); defined in the .cpp so the
+// planner headers stay out of this one. Lives in PSRAM.
+struct PlannerRuntime;
+
 struct ForecastHourState {
   int64_t timestamp_s{0};
   float temp_c{0.0f};
@@ -486,6 +490,11 @@ struct PriceRuntime {
   lune_touch_price::DayPrices next_tomorrow{};
   lune_touch_price::SpotSample samples[lune_touch_price::MAX_SPOT_SAMPLES]{};
   char payload[640]{};
+  // The €/kWh array last pushed to Odin (today from 00:00, then tomorrow), kept for
+  // the shadow planner: eur_n values from local day eur_ymd.
+  float eur[48]{};
+  uint8_t eur_n{0};
+  int eur_ymd{0};
 };
 
 /// POST /prices/settings: null / empty / NAN / has_* false = unchanged.
@@ -1267,6 +1276,11 @@ class LuneTouchCoordinator : public esphome::Component {
   float weather_max_boost_c_{1.5f};
   bool solar_holdoff_enabled_{true};
   planner_settings::Settings planner_settings_{};
+  PlannerRuntime *planner_rt_{nullptr};
+  volatile bool planner_solve_pending_{true};
+  /// Shadow planner: re-plans each hour (or on new settings/prices/weather) and runs the
+  /// shadow flow controller on each telemetry poll. Heat-source task. Commands nothing.
+  void planner_tick_();
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};

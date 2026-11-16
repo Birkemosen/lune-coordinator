@@ -1274,5 +1274,10 @@
   "planner.emptyRooms": "Ingen rumforventning endnu.",
   "planner.emptyCop": "COP efter effekt og udetemperatur: ingen målinger endnu.",
   "planner.emptyHistory": "Ingen historik endnu — planen skal have kørt et døgn.",
-  "planner.lPrice": "elpris (billig → dyr)"
+  "planner.lPrice": "elpris (billig → dyr)",
+  "planner.confSeed": "Startværdi",
+  "planner.copZone": "Fremløb til gulv",
+  "planner.copHp": "Fremløb fra varmepumpe",
+  "planner.laneHouse": "Hus",
+  "planner.lHouse": "forventet hus mod komfortbånd"
 }

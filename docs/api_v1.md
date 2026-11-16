@@ -1051,8 +1051,41 @@ every result is `null` and the page shows its empty states.
 }
 ```
 
-`plan`, `rooms`, `model` and `history` get their shape when the planner fills them
-(docs/planner_history_format.md, phases F1–F3).
+Once the planner has solved (on the heat-source task, each hour and when settings,
+weather or prices change), `running` is `true` and the body carries the plan, the model
+it planned with and the shadow flow controller:
+
+```json
+{
+  "mode": "shadow", "running": true, "strategy": "comfort", "settings": {"...": "..."},
+  "solved_ts": 1794830400, "model_source": "seed", "solve_ms": 820,
+  "plan": {"from_ts": 1794830400, "n": 48, "start_c": 22.62, "target_c": 22.0, "band_c": 0.5,
+           "heat_kwh": 58.5, "cost_eur": 3.41, "below_kh": 0.00,
+           "heat_kw": [0.0, 3.2, "..."], "zone_feed_c": [null, 26.1, "..."],
+           "t_end_c": [22.55, 22.49, "..."], "price": [0.2875, 0.2810, "..."],
+           "elec_kwh": [0.00, 0.66, "..."]},
+  "model": {"ua_kw_per_k": 0.161, "ca_kwh_per_k": 13.3, "cs_kwh_per_k": 30.0, "h_kw_per_k": 0.70,
+            "sun_kw_per_100wm2": 0.79, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "floor_kw_per_k": 0.441,
+            "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
+            "cop_outdoor_c": 5.0},
+  "flow": {"our_target_c": 29.6, "odin_target_c": 35.0, "measured_kw": 10.0, "plan_kw": 4.4},
+  "rooms": null, "history": null
+}
+```
+
+- `plan` arrays are per hour from `from_ts` (the current hour): planned space-heating
+  output (kW, 0 or between min and max output), the flow to the floors that output needs
+  (`null` when off), the house temperature expected at the hour's end, the €/kWh price
+  Touch pushes to Odin (incl. grid tariffs; `null` beyond the known prices) and the
+  electricity the hour costs. The band is `target_c − band_c` to `target_c + 1.0`.
+- `model_source` is `seed`: start values fitted on this house's 2 Oct–16 Nov 2026
+  history (components/planner/seed_params.h). Touch does not learn them yet (F3); the
+  floors start 1 K above the rooms each solve, as no floor tracker runs on Touch yet.
+  Sun is the global irradiance from Touch's forecast (no facade values on Touch yet).
+- `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
+  floor curve gives for this hour's planned output, trimmed by the measured output, next
+  to the zone-1 flow target Odin commands. It is never sent.
+- `rooms` and `history` stay `null` until F3.
 
 ### `POST /planner/settings`
 

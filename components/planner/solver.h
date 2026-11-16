@@ -45,6 +45,7 @@ struct SolverSettings {
   float dip_k{0.5f};                // price first / weighted: how far below the floor the house may go
   float step_kw{0.5f};
   float room_c{22.0f};              // for the floor curve (zone feed − room)
+  void (*yield)() {nullptr};        // called once per step on a device, so a long plan lets other tasks run
 };
 
 struct HeatPlan {
@@ -107,6 +108,7 @@ inline void fill_plan_(const HouseParams &hp, const HeatPumpParams &pump, const 
   float miss = comfort_miss_(hours, *p, floor_off, &below);
   const int max_steps = p->n * static_cast<int>(pump.max_kw / cfg.step_kw + 2);
   for (int step = 0; step < max_steps; step++) {
+    if (cfg.yield) cfg.yield();
     if (penalty == INFINITY && below <= 0.01f) break;
     int best = -1;
     float best_ratio = INFINITY, best_kw = 0, best_cost = 0, best_gain = 0, best_miss = miss, best_below = below;
@@ -179,6 +181,7 @@ class FlowController {
     return t;
   }
   float trim() const { return trim_; }
+  void set_limits(float min_c, float max_c) { cfg_.min_c = min_c; cfg_.max_c = max_c; }
 
  private:
   Config cfg_{};
