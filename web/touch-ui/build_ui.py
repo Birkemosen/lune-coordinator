@@ -1126,6 +1126,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "planner.vsHeat", "planner.vsCost", "planner.vsBelow", "planner.vsTempAria", "planner.vsHeatAria", "planner.vsNoOdin",
         "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lMeasured",
         "planner.rRoom", "planner.rNow", "planner.rLow", "planner.rHigh", "planner.rBelow", "planner.rBelowVal", "planner.roomChartAria",
+        "planner.lScheduled", "planner.lStrip", "planG.lanePrice", "legend.target",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

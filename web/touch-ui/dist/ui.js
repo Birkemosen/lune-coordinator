@@ -3091,45 +3091,82 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return '<div class="axis at" aria-hidden="true">' + x + '</div>';
   }
 
-  // Line through the hours' midpoints from x0 on a lo–hi axis (null breaks the line).
-  function vsLine(cls, x0, vals, lo, hi) {
+  // Smooth path through points, as Odin draws its curves, but monotone (Fritsch–Carlson): it
+  // never overshoots a step in the data, as a band that is lifted makes.
+  function smoothPath(pts) {
+    var n = pts.length;
+    if (!n) return '';
+    var f = function (v) { return v.toFixed(2); }, d = [], m = [], i;
+    for (i = 0; i < n - 1; i++) d.push((pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0]));
+    for (i = 0; i < n; i++) m.push(0);
+    if (n > 1) { m[0] = d[0]; m[n - 1] = d[n - 2]; }
+    for (i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : 2 / (1 / d[i - 1] + 1 / d[i]);
+    var out = 'M' + f(pts[0][0]) + ',' + f(pts[0][1]);
+    for (i = 0; i < n - 1; i++) {
+      var h = (pts[i + 1][0] - pts[i][0]) / 3;
+      out += ' C' + f(pts[i][0] + h) + ',' + f(pts[i][1] + m[i] * h) + ' ' + f(pts[i + 1][0] - h) + ',' +
+        f(pts[i + 1][1] - m[i + 1] * h) + ' ' + f(pts[i + 1][0]) + ',' + f(pts[i + 1][1]);
+    }
+    return out;
+  }
+
+  // Smooth curve(s) through the hours' midpoints from x0 (null breaks the curve).
+  function vsCurve(cls, x0, vals, y) {
     var segs = [], cur = [];
     (vals || []).forEach(function (v, k) {
       if (v == null || !isFinite(v)) { if (cur.length) segs.push(cur); cur = []; return; }
-      cur.push((x0 + k + 0.5).toFixed(1) + ',' + ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1));
+      cur.push([x0 + k + 0.5, y(v)]);
     });
     if (cur.length) segs.push(cur);
-    return segs.map(function (s2) { return '<polyline class="' + cls + '" points="' + s2.join(' ') + '"/>'; }).join('');
+    return segs.map(function (s2) { return '<path class="' + cls + '" d="' + smoothPath(s2) + '"/>'; }).join('');
   }
 
-  // Temperature panel: past (24), band per future hour, Touch's forecast, Odin's (24 h).
+  // Strips over the chart (LDS .vs-temp): name in the y column, one cell per hour.
+  function vsStrips(rows) {
+    return rows.map(function (r) {
+      return '<span class="vs-lab">' + esc(r.name) + '</span><div class="vs-strip" aria-hidden="true">' + r.cells + '</div>';
+    }).join('');
+  }
+
+  // Temperature panel drawn like Odin's room chart: the band as a smooth area with dashed
+  // edges and the scheduled setpoint over the whole window (lo/hi/sp: VS_H values), measured
+  // with a dot per hour (24 before now), Touch's and Odin's forecasts (24 after).
   function vsTemp(o) {
     var cut = function (a) { return (a || []).slice(0, VS_AHEAD); };
-    var ahead = cut(o.ahead), odin = o.odin ? cut(o.odin) : null, blo = cut(o.lo), bhi = cut(o.hi);
-    var vals = [].concat(o.past, ahead, odin || [], blo, bhi).filter(function (v) { return v != null && isFinite(v); });
+    var ahead = cut(o.ahead), odin = o.odin ? cut(o.odin) : null;
+    var vals = [].concat(o.past, ahead, odin || [], o.lo, o.hi).filter(function (v) { return v != null && isFinite(v); });
     if (!vals.length) return '';
     var lo = Math.floor(Math.min.apply(null, vals) - 0.2), hi = Math.ceil(Math.max.apply(null, vals) + 0.2);
     if (hi - lo < 3) { lo = Math.floor((lo + hi) / 2 - 1.5); hi = lo + 3; }
-    var y = function (v) { return ((hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100).toFixed(1); };
-    // The band hour by hour as one area (steps), the comfort limit as a line at its bottom.
-    var top = [], bot = [], floor = [];
-    blo.forEach(function (b, k) {
-      if (b == null || bhi[k] == null) return;
-      var x0 = VS_PAST + k, x1 = x0 + 1;
-      top.push(x0 + ',' + y(bhi[k]), x1 + ',' + y(bhi[k]));
-      bot.unshift(x1 + ',' + y(b), x0 + ',' + y(b));
-      floor.push(x0 + ',' + y(b), x1 + ',' + y(b));
-    });
-    var band = top.length ? '<polygon class="bd" points="' + top.concat(bot).join(' ') + '"/><polyline class="bdl" points="' + floor.join(' ') + '"/>' : '';
+    var y = function (v) { return (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo) * 100; };
+    // The band where both edges are known, one area per stretch.
+    var band = '', top = [], bot = [];
+    var flush = function () {
+      if (top.length > 1) {
+        var tp = smoothPath(top), bt = smoothPath(bot.slice().reverse());
+        band += '<path class="bd" d="' + tp + ' L' + bt.slice(1) + ' Z"/><path class="bde" d="' + tp + '"/><path class="bde" d="' + smoothPath(bot) + '"/>';
+      }
+      top = []; bot = [];
+    };
+    for (var k = 0; k < VS_H; k++) {
+      var bl = o.lo[k], bh = o.hi[k];
+      if (bl == null || bh == null || !isFinite(bl) || !isFinite(bh)) { flush(); continue; }
+      top.push([k + 0.5, y(bh)]); bot.push([k + 0.5, y(bl)]);
+    }
+    flush();
     var segs = (o.segs || []).map(function (sg) {
       var a = Math.max(0, Math.min(VS_AHEAD, sg.from)), b = Math.max(0, Math.min(VS_AHEAD, sg.to));
       return b > a ? '<rect class="heat" x="' + (VS_PAST + a) + '" y="0" width="' + (b - a) + '" height="100"/>' : '';
     }).join('');
+    var dots = '';
+    (o.past || []).forEach(function (v, k) { if (v != null && isFinite(v)) dots += 'M' + (k + 0.5).toFixed(2) + ',' + y(v).toFixed(2) + 'h0'; });
     var grid = ['0.5', '50', '99.5'].map(function (g) { return '<line class="grid" x1="0" x2="' + VS_H + '" y1="' + g + '" y2="' + g + '"/>'; }).join('');
-    return '<div class="hchart-panel' + (o.pair ? ' pair' : '') + '"><div class="hchart-y" aria-hidden="true"><span>' + num(hi) + '°</span><span>' +
+    var cls = 'hchart-panel' + (o.pair ? ' pair' : '') + (o.strips ? ' vs-temp' : '');
+    return '<div class="' + cls + '">' + (o.strips ? vsStrips(o.strips) : '') + '<div class="hchart-y" aria-hidden="true"><span>' + num(hi) + '°</span><span>' +
       num((hi + lo) / 2) + '°</span><span>' + num(lo) + '°</span></div><svg class="trend" viewBox="0 0 ' + VS_H + ' 100" preserveAspectRatio="none" role="img" aria-label="' +
       esc(o.aria) + '"><rect class="future" x="' + VS_PAST + '" y="0" width="' + VS_AHEAD + '" height="100"/>' + grid + segs + band +
-      vsLine('t', 0, o.past, lo, hi) + (odin ? vsLine('od', VS_PAST, odin, lo, hi) : '') + vsLine('tf', VS_PAST, ahead, lo, hi) +
+      vsCurve('sp', 0, o.sp, y) + (odin ? vsCurve('od', VS_PAST, odin, y) : '') + vsCurve('tf', VS_PAST, ahead, y) +
+      vsCurve('t', 0, o.past, y) + (dots ? '<path class="tdot" d="' + dots + '"/>' : '') +
       '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(o.from_ts) + '</div>';
   }
 
@@ -3158,8 +3195,34 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var priced = price.slice(0, N).some(function (v) { return v != null; });
     if (!priced) { costT = null; costO = null; }
     var metric_ = function (label, val, unit) { return '<div class="metric"><dt>' + esc(label) + '</dt><dd>' + val + ' <small>' + unit + '</small></dd></div>'; };
-    var temp = vsTemp({ past: lastDay(h.temp_c), ahead: plan.t_end_c, odin: odin ? odin.expected_c : null, lo: bmin, hi: bmax,
-      aria: t('planner.vsTempAria'), pair: true, from_ts: plan.from_ts });
+    // The whole window: the last day's band and setpoint from the history (as the plan held
+    // them), the next day's from the plan (Odin's schedule with Touch's lift).
+    var band_c = plan.band_c != null ? Number(plan.band_c) : 0.5;
+    var wlo = lastDay(h.band_min_c).concat(bmin.slice(0, VS_AHEAD)), whi = lastDay(h.band_max_c).concat(bmax.slice(0, VS_AHEAD));
+    var wsp = lastDay(h.target_c).map(function (v, k) { var b = lastDay(h.band_min_c)[k]; return b != null ? b + band_c : v; })
+      .concat(bmin.slice(0, VS_AHEAD).map(function (v) { return v == null ? null : v + band_c; }));
+    // Strips: price by rank (estimated hours uncoloured), Touch's plan after now, Odin's actual
+    // running before now (Odin drives) and its plan after.
+    var pp = lastDay(h.price).concat(price.slice(0, VS_AHEAD)), pest = [];
+    for (var q = 0; q < VS_H; q++) pest.push(q >= VS_PAST && (plan.price_est || [])[q - VS_PAST] ? 1 : 0);
+    var known = pp.filter(function (v, q2) { return v != null && !pest[q2]; });
+    var priceCells = pp.map(function (v, q2) {
+      if (v == null || pest[q2] || !known.length) return '<i></i>';
+      var below = known.filter(function (x) { return x < v; }).length;
+      return '<i data-scale="' + Math.max(1, Math.min(5, 1 + Math.floor(below / known.length * 5))) + '"></i>';
+    }).join('');
+    var cell = function (on, m) { return on ? '<i data-mode="' + (m || 'heat') + '"></i>' : '<i></i>'; };
+    var pastQ = lastDay(h.heat_kwh);
+    var touchCells = '', odinCells = '';
+    for (var q3 = 0; q3 < VS_PAST; q3++) { touchCells += '<i></i>'; odinCells += cell(pastQ[q3] > 0.3); }
+    for (var q4 = 0; q4 < VS_AHEAD; q4++) {
+      touchCells += cell(plan.heat_kw[q4] > 0.05);
+      var m4 = odin ? Number(om[q4]) : -1;
+      odinCells += odin && q4 < ON ? cell((odin.heat_kw[q4] || 0) > 0.05 || (odin.elec_kwh[q4] || 0) > 0.05 && (m4 === 1 || m4 === 6), m4 === 1 ? 'dhw' : m4 === 6 ? 'legionella' : 'heat') : '<i></i>';
+    }
+    var temp = vsTemp({ past: lastDay(h.temp_c), ahead: plan.t_end_c, odin: odin ? odin.expected_c : null, lo: wlo, hi: whi, sp: wsp,
+      aria: t('planner.vsTempAria'), pair: true, from_ts: plan.from_ts,
+      strips: [{ name: t('planG.lanePrice'), cells: priceCells }, { name: 'Touch', cells: touchCells }, { name: 'Odin', cells: odinCells }] });
     // Heat per hour: bars for delivered (before now) and Touch's plan (after); Odin's plan as a
     // dashed step line over them (space heat only).
     var top = 6, past = lastDay(h.heat_kwh), bars = '', ahead = plan.heat_kw.slice(0, VS_AHEAD);
@@ -3183,8 +3246,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       metric_(t('planner.vsHeat'), pair(heatT, heatO, 0), 'kWh') + metric_(t('planner.vsCost'), pair(costT, costO, 2), '€') +
       metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
       (odin ? '' : '<p class="note">' + esc(t('planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
-      '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lt', 'planner.lMeasured') + lg_('ltf', 'planner.lTouch') +
-      (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodl', 'planner.lHeatOdin') : '') + '</p></div>';
+      '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lsp', 'planner.lScheduled') + lg_('lt', 'planner.lMeasured') +
+      lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodl', 'planner.lHeatOdin') : '') + '</p></div>';
   }
 
   // Rooms (LDS 15.11): a row per room (now, lowest and highest over the next 24 h, hours
@@ -3213,17 +3276,16 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       var segs = [];
       if (r.charge) segs.push(r.charge);
       if (r.preload) segs.push(r.preload);
+      var flat = function (v) { var a = []; for (var q = 0; q < VS_H; q++) a.push(o.tgt != null ? o.tgt + v : null); return a; };
       var chart = r.expected_c ? vsTemp({ past: r.past_c || [], ahead: r.expected_c, odin: null,
-        lo: r.expected_c.map(function () { return o.tgt != null ? o.tgt - band : null; }),
-        hi: r.expected_c.map(function () { return o.tgt != null ? o.tgt + band : null; }),
-        segs: segs,
+        lo: flat(-band), hi: flat(band), sp: flat(0), segs: segs,
         aria: t('planner.roomChartAria', { room: r.name }), pair: false, from_ts: plan.from_ts }) : '';
       var lg_ = function (c, k) { return '<span><i class="' + c + '"></i>' + esc(t(k)) + '</span>'; };
       return '<details class="rfc" name="plroom" data-room="' + esc(r.room_id) + '"' + (r.room_id === open ? ' open' : '') + '><summary>' + name +
         '<span class="num">' + deg(r.now_c) + '</span><span class="num' + (o.below ? ' lo' : '') + '">' + deg(o.lo) + '</span><span class="num opt">' +
         deg(o.hi) + '</span><span class="num">' + (o.below ? esc(t('planner.rBelowVal', { n: o.below })) : '—') + '</span><span class="rfc-tag">' + badge +
         '</span></summary>' + (chart ? '<div class="hchart hchart--ahead hchart--room">' + chart + '<p class="chart-legend" aria-hidden="true">' +
-        lg_('lbd', 'planner.lBand') + lg_('lt', 'planner.lMeasured') + lg_('ltf', 'planner.lTouch') +
+        lg_('lbd', 'planner.lBand') + lg_('lsp', 'legend.target') + lg_('lt', 'planner.lMeasured') + lg_('ltf', 'planner.lTouch') +
         (segs.length ? lg_('lheat', r.charge ? 'plan.charge' : 'plan.preload') : '') + '</p></div>' : '') + '</details>';
     }).join('');
     return '<div class="rfc-list">' + head + rows + '</div>';

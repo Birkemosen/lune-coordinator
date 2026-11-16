@@ -1301,5 +1301,7 @@
   "planner.rBelow": "Below band",
   "planner.rBelowVal": "{n} h",
   "planner.roomChartAria": "{room}: measured temperature over the last day and expected over the next 48 hours with comfort band",
-  "planner.emptyVs": "No comparison yet."
+  "planner.emptyVs": "No comparison yet.",
+  "planner.lScheduled": "scheduled setpoint",
+  "planner.lStrip": "operation per hour: actual before now, plan after"
 }

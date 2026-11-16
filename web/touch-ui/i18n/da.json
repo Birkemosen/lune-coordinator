@@ -1301,5 +1301,7 @@
   "planner.rBelow": "Under båndet",
   "planner.rBelowVal": "{n} t",
   "planner.roomChartAria": "{room}: målt temperatur det seneste døgn og forventet de næste 48 timer med komfortbånd",
-  "planner.emptyVs": "Ingen sammenligning endnu."
+  "planner.emptyVs": "Ingen sammenligning endnu.",
+  "planner.lScheduled": "planlagt sætpunkt",
+  "planner.lStrip": "drift pr. time: faktisk før nu, plan efter"
 }

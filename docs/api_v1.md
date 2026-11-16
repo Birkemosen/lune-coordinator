@@ -1080,7 +1080,8 @@ it planned with and the shadow flow controller:
   "history": {"from_ts": 1794283200, "n": 168, "temp_c": [22.41, "..."], "expected_c": [22.35, "..."],
               "plan_kw": [0.0, "..."], "plan_elec_kwh": [0.00, "..."], "heat_kwh": [0.00, "..."],
               "elec_kwh": [0.02, "..."], "price": [0.2875, "..."], "target_c": [22.0, "..."],
-              "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."]},
+              "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."], "band_min_c": [21.5, "..."],
+              "band_max_c": [22.5, "..."]},
   "room_fit": {"ts": 1794884400, "ms": 19400, "fitted": 12, "rooms": 12},
   "rooms": [{"room_id": "room-10", "name": "Stue", "target_c": 22.0, "now_c": 22.4, "share": 0.191,
              "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "past_c": [22.1, "..."], "expected_c": [22.41, "..."],
@@ -1115,7 +1116,8 @@ it planned with and the shadow flow controller:
 - `history` covers the 168 hours before `plan.from_ts`, per hour: the house at the
   hour's end as measured and as forecast 6 h before, the planned output and its
   electricity with today's model, the delivered space heat and electricity, price, band
-  setpoint, Odin's flow target and the shadow flow target. `null` until a stored hour.
+  setpoint and band (as the plan held it that hour, lifts included), Odin's flow target and
+  the shadow flow target. `null` until a stored hour.
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
   to the zone-1 flow target Odin commands. It is never sent.

@@ -16020,7 +16020,7 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   // Plan vs actual: the last 168 hours from the store. Per hour: the house at its end
   // (measured) and as forecast 6 h before, planned and delivered heat, electricity, price.
   static constexpr int HIST_H = 168;
-  struct HistRow { float t, e, pkw, pel, q, el, pr, sp, of, sf; };
+  struct HistRow { float t, e, pkw, pel, q, el, pr, sp, of, sf, bl, bh; };
   HistRow *rows = static_cast<HistRow *>(heap_caps_malloc(sizeof(HistRow) * HIST_H, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   const uint32_t h_from = rt->from_ts - static_cast<uint32_t>(HIST_H) * 3600u;
   int have = 0;
@@ -16037,22 +16037,22 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
       // Our forecast only for hours this planner ran (a seed may carry Odin's).
       rows[i] = {nx ? nx->get(lp::Kind::HOUSE, lp::H_ROOM_C) : NAN, std::isfinite(pkw) ? g(lp::H_ROOM_EXPECTED_C) : NAN, pkw, pel,
                  g(lp::H_HEAT_SH_KWH), g(lp::H_ELEC_KWH), g(lp::H_PRICE_EUR_KWH), g(lp::H_SCHED_SP_C),
-                 g(lp::H_FLOW_TARGET_C), S.shadow_flow(hr)};
+                 g(lp::H_FLOW_TARGET_C), S.shadow_flow(hr), g(lp::H_SCHED_MIN_C), g(lp::H_SCHED_MAX_C)};
       have += r != nullptr;
     }
     give_state_lock_();
   }
   if (rows != nullptr && have > 0) {
     put("\"history\":{\"from_ts\":%lu,\"n\":%d", static_cast<unsigned long>(h_from), HIST_H);
-    const char *hn[10] = {"temp_c", "expected_c", "plan_kw", "plan_elec_kwh", "heat_kwh", "elec_kwh", "price", "target_c",
-                          "odin_flow_c", "shadow_flow_c"};
-    const int hd[10] = {2, 2, 1, 2, 2, 2, 4, 1, 1, 1};
-    for (int f = 0; f < 10; f++) {
+    const char *hn[12] = {"temp_c", "expected_c", "plan_kw", "plan_elec_kwh", "heat_kwh", "elec_kwh", "price", "target_c",
+                          "odin_flow_c", "shadow_flow_c", "band_min_c", "band_max_c"};
+    const int hd[12] = {2, 2, 1, 2, 2, 2, 4, 1, 1, 1, 1, 1};
+    for (int f = 0; f < 12; f++) {
       put(",\"%s\":[", hn[f]);
       for (int i = 0; i < HIST_H; i++) {
         const HistRow &q = rows[i];
         const float v = f == 0 ? q.t : f == 1 ? q.e : f == 2 ? q.pkw : f == 3 ? q.pel : f == 4 ? q.q : f == 5 ? q.el
-                        : f == 6 ? q.pr : f == 7 ? q.sp : f == 8 ? q.of : q.sf;
+                        : f == 6 ? q.pr : f == 7 ? q.sp : f == 8 ? q.of : f == 9 ? q.sf : f == 10 ? q.bl : q.bh;
         planner_num_(a, sizeof(a), v, hd[f]);
         put("%s%s", i ? "," : "", a);
       }
