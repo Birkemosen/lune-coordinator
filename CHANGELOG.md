@@ -2,6 +2,11 @@
 
 ## Unreleased (for v1.0.0)
 
+### No «heat source offline» right after a restart; the place reads in the page's language
+- For the first half minute after a restart, before Touch's first write to the heat source, Home and the navbar said «Varmekilde utilgængelig» / offline. That state is now «waiting» like the heat sheet's badge already was; offline needs a write that failed.
+- The device menu showed the firmware's default site label «House» on Danish pages too; the default now reads in the page's language («Hus»). A label you set yourself is shown as written.
+- The manual has a Heating Plan section, so the page's «Læs mere» links land.
+
 ### Opvarmningsplan: the shadow planner's page
 - A third mode between Hjem and System, «Opvarmningsplan» / «Heating Plan» (`#opvarmningsplan` / `#heating-plan`, LDS 2.5.0): the planner's 48-hour plan, room forecast, learned model and plan vs actual. The planner does not run yet, so every panel shows its empty line and every value «—»; the page fills as the planner reports (F1–F3). The «Skyggedrift» badge says it commands nothing. Odin's own plan stays on Hjem's Plan tile; comparing the two belongs in Home Assistant.
 - Settings in the planner sheet (Indstillinger): strategy (comfort first by default, weighted with a price per K·h, price first), minimum and maximum output and maximum flow. `GET /planner` returns the mode, the settings and `null` results; `POST /planner/settings` stores the settings (blob `planner` in the settings namespace). Nothing is sent to Asgard or Odin.
