@@ -6,6 +6,8 @@ Inputs (all UTC, see docs/planner_history_format.md):
   --odin     Odin hourly CSV (decode_odin_hourly.py): metered heat/elec, price, schedule
   --rooms    optional per-minute room CSV: time_utc,room_index,temp_c,target_c,valve_pct
   --weather  optional hourly weather CSV (fetch_weather.py)
+  --room-meta optional rooms.json (export_touch_rooms.py): fills a room's target from its
+             setpoint when the room CSV has none (rooms without an enabled schedule)
 
 Heat is split into space heating and hot water by Asgard's operation mode and scaled
 to Odin's metered heat for the hour when Odin has it.
@@ -13,6 +15,7 @@ to Odin's metered heat for the hour when Odin has it.
 
 import argparse
 import csv
+import json
 import os
 import sys
 from collections import defaultdict
@@ -25,7 +28,7 @@ import lune_history as lh  # noqa: E402
 ASGARD_ALIASES = {
     "compressor_hz": "hz", "operation_mode": "mode", "output_kw": "kw",
     "hp_feed_c (THW1)": "hp_feed", "hp_feed_c": "hp_feed",
-    "hp_return_c (THW2)": "hp_ret", "hp_return_c": "hp_ret",
+    "hp_return_c (THW2)": "hp_ret", "hp_return_c": "hp_ret", "hp_flow_lpm": "flow",
     "z1_flow_setpoint_c (Odin cmd)": "target", "z1_flow_setpoint_c": "target",
     "z1_feed_c (THW6)": "z1_feed", "z1_feed_c": "z1_feed",
     "z1_return_c (THW7)": "z1_ret", "z1_return_c": "z1_ret",
@@ -146,6 +149,7 @@ def main():
     ap.add_argument("--odin")
     ap.add_argument("--rooms")
     ap.add_argument("--weather")
+    ap.add_argument("--room-meta")
     ap.add_argument("--out-dir", required=True)
     a = ap.parse_args()
 
@@ -153,6 +157,13 @@ def main():
     odin = read_hourly_csv(a.odin, "hour_start_utc") if a.odin else {}
     weather = read_hourly_csv(a.weather, "time_utc") if a.weather else {}
     rooms = read_rooms(a.rooms) if a.rooms else {}
+    if a.room_meta:
+        meta = {r["index"]: r for r in json.load(open(a.room_meta))["rooms"]}
+        for per_hour in rooms.values():
+            for idx, r in per_hour.items():
+                m = meta.get(idx)
+                if r.get("target_c") is None and m and not m.get("schedule") and m.get("setpoint_c") is not None:
+                    r["target_c"] = m["setpoint_c"]
 
     hours = sorted(set(asg) | set(odin))
     house_rows, room_rows = [], []

@@ -5,6 +5,7 @@
     "output_kw": "sensor.ecodan_heatpump_output_power",
     "hp_feed_c": "sensor.ecodan_heatpump_feed_temp",
     "hp_return_c": "sensor.ecodan_heatpump_return_temp",
+    "hp_flow_lpm": "sensor.ecodan_heatpump_flow_rate",
     "z1_flow_setpoint_c": "sensor.ecodan_heatpump_zone_1_setpoint_value",
     "z1_feed_c": "sensor.ecodan_heatpump_z1_feed_temp",
     "z1_return_c": "sensor.ecodan_heatpump_z1_return_temp",
