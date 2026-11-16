@@ -15263,8 +15263,15 @@ void LuneTouchCoordinator::planner_tick_() {
       cfg.penalty_eur_per_kh = set.comfort_weight_eur;
       cfg.room_c = target;
       cfg.yield = []() { vTaskDelay(1); };   // let the idle task (watchdog) run between steps
-      // Floors: no tracker on Touch yet, so they start a degree above the rooms.
-      const lp::HouseState start{house_t, house_t + 1.0f};
+      // Floors: no tracker on Touch yet. Start them where they would stand if the house
+      // were holding its temperature now: high enough above the rooms to cover the loss.
+      const lp::HourIn &w0 = rt.hours[0].weather;
+      const float ph = w0.hour_local * (6.2831853f / 24.0f);
+      const float need = rt.house.ua_kw_per_k * (1.0f + rt.house.kw_per_ms * w0.wind_ms) * (house_t - w0.out_c) -
+                         rt.house.p_int_kw - rt.house.p_cos_kw * std::cos(ph) - rt.house.p_sin_kw * std::sin(ph) -
+                         rt.house.g_kw_per_100wm2 * w0.sun_wm2 / 100.0f;
+      const float lift = std::clamp(need / rt.house.h_kw_per_k, 0.0f, 8.0f);
+      const lp::HouseState start{house_t, house_t + lift};
       const int64_t t0 = esp_timer_get_time();
       lp::solve_plan(rt.house, rt.pump, start, rt.hours, n, cfg, &rt.plan);
       rt.solve_us = static_cast<uint32_t>(esp_timer_get_time() - t0);

@@ -4,7 +4,7 @@
 
 ### Opvarmningsplan shows Touch's own 48 h plan (shadow)
 - Touch now plans the house's heat itself, in shadow: each hour (and when the planner's settings, the weather or the prices change) it plans 48 h from the current hour with its own weather forecast, the €/kWh prices it pushes to Odin and the house target ± comfort band, and shows it on Opvarmningsplan — planned heat over the price, the flow to the floors that heat needs, and the house temperature the plan expects against the band. Nothing is sent to Asgard or Odin.
-- The planner uses the two-mass house model and the heat-pump and floor-circuit model from the replay (components/planner/), with start values fitted on this house's 2 Oct–16 Nov 2026 history; the Lært model panel shows them as «Startværdi» with a COP table by output. Learning on Touch, rooms and plan-versus-actual come later (F3).
+- The planner uses the two-mass house model and the heat-pump and floor-circuit model from the replay (components/planner/), with start values fitted on this house's 2 Oct–16 Nov 2026 history; the Lært model panel shows them as «Startværdi» with a COP table by output. Until Touch tracks its floors, each plan starts with the floors where they would stand if the house held its temperature. Learning on Touch, rooms and plan-versus-actual come later (F3).
 - A shadow flow controller runs on every telemetry poll and keeps its flow target next to the one Odin commands (`GET /planner` → `flow`).
 
 ### No «heat source offline» right after a restart; the place reads in the page's language

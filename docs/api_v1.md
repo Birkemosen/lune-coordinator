@@ -1079,8 +1079,9 @@ it planned with and the shadow flow controller:
   Touch pushes to Odin (incl. grid tariffs; `null` beyond the known prices) and the
   electricity the hour costs. The band is `target_c − band_c` to `target_c + 1.0`.
 - `model_source` is `seed`: start values fitted on this house's 2 Oct–16 Nov 2026
-  history (components/planner/seed_params.h). Touch does not learn them yet (F3); the
-  floors start 1 K above the rooms each solve, as no floor tracker runs on Touch yet.
+  history (components/planner/seed_params.h). Touch does not learn them yet (F3); with no
+  floor tracker on Touch yet, the floors start where they would stand if the house were
+  holding its temperature at the current weather.
   Sun is the global irradiance from Touch's forecast (no facade values on Touch yet).
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
