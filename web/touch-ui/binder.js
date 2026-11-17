@@ -2970,6 +2970,8 @@
 
   // Touch vs Odin (LDS 15.11): the next 24 h as Touch / Odin (space heat only, Odin's hot
   // water and legionella hours left out), then house temperature and heat per hour.
+  // Why Odin's plan is missing (planner odin.reason): Odin without a plan reads differently from Odin out of reach.
+  var NO_ODIN = { no_plan: 'planner.vsNoOdinPlan', unreachable: 'planner.vsNoOdinLink' };
   function plannerVsChart(d) {
     var plan = d.plan, odin = d.odin && d.odin.available ? d.odin : null, n = plan.heat_kw.length;
     var h = d.history || {}, price = plan.price || [], bmin = plan.band_min_c || [], bmax = plan.band_max_c || [];
@@ -3031,7 +3033,7 @@
     return '<div class="hchart hchart--ahead hchart--vs"><div class="hchart-head"><dl class="metrics">' +
       metric_(t('planner.vsHeat'), pair(heatT, heatO, 0), 'kWh') + metric_(t('planner.vsCost'), pair(costT, costO, 2), '€') +
       metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
-      (odin ? '' : '<p class="note">' + esc(t('planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
+      (odin ? '' : '<p class="note">' + esc(t(NO_ODIN[(d.odin || {}).reason] || 'planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
       '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lsp', 'planner.lScheduled') + lg_('lt', 'planner.lMeasured') +
       lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
   }

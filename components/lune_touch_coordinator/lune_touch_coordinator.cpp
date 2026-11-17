@@ -4705,7 +4705,17 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
       plan_last_run_cost = last_run["total_cost"] | NAN;
       plan_has_last_run = std::isfinite(plan_last_run_exec_ms);
     }
-    if (!plan.success)
+    // Odin answered but holds no plan from now on: its solver found none.
+    bool no_plan = false;
+    if (!plan.success && odin2 && !json_error && (response["success"] | false) && current_hour >= 0) {
+      JsonArrayConst heat = response["heat_production"].as<JsonArrayConst>();
+      no_plan = !heat.isNull() && idx_now < heat.size();
+      for (size_t i = idx_now; no_plan && i < heat.size(); ++i)
+        no_plan = heat[i].isNull();
+    }
+    if (no_plan)
+      std::strncpy(error, "no plan", sizeof(error) - 1);
+    else if (!plan.success)
       std::strncpy(error, json_error ? "invalid json" : (odin2 ? "invalid Odin 2 plan" : "invalid Asgard ODIN plan"),
                    sizeof(error) - 1);
   }
@@ -15973,11 +15983,16 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   // Odin's plan for the same hours (index 0 = the current hour, as plan's), for the page's
   // Touch vs Odin comparison: its space heat, expected house temperature, electricity and mode.
   {
-    struct OdinCopy { bool ok; uint8_t n; float heat[24], exp[24], el[24]; int mode[24]; };
+    struct OdinCopy { bool ok; uint8_t n; float heat[24], exp[24], el[24]; int mode[24]; const char *reason; };
     OdinCopy *oc = static_cast<OdinCopy *>(heap_caps_calloc(1, sizeof(OdinCopy), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (oc != nullptr && take_state_lock_(100)) {
       oc->ok = odin_plan_.available && odin_plan_.heat_production_count > 0;
       oc->n = std::min<uint8_t>(odin_plan_.heat_production_count, 24);
+      // Why not, for the page: Odin unreachable, Odin without a plan, or a plan Touch cannot use.
+      oc->reason = odin_plan_.last_fetch_ms == 0                         ? "pending"
+                   : std::strcmp(odin_plan_.last_error, "no plan") == 0 ? "no_plan"
+                   : odin_plan_.last_http_status != 200                ? "unreachable"
+                                                                       : "invalid";
       for (int i = 0; i < oc->n; i++) {
         oc->heat[i] = odin_plan_.heat_production_horizon[i];
         oc->exp[i] = odin_plan_.expected_temp_horizon[i];
@@ -16002,7 +16017,7 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
         put("%s%d", i ? "," : "", oc->mode[i]);
       put("]},");
     } else {
-      put("\"odin\":{\"available\":false},");
+      put("\"odin\":{\"available\":false,\"reason\":\"%s\"},", oc != nullptr && oc->reason ? oc->reason : "pending");
     }
     heap_caps_free(oc);
   }
