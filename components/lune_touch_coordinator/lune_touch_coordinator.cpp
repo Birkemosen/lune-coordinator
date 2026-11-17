@@ -16034,9 +16034,11 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
       const float pkw = S.plan_kw(hr), sp = g(lp::H_SCHED_SP_C), out = g(lp::H_OUTDOOR_C);
       const float pel = std::isfinite(pkw) && std::isfinite(out)
                             ? lp::elec_for(rt->pump, pkw, std::isfinite(sp) ? sp : 22.0f, out) : NAN;
+      // An hour's heat the learners skip (a meter that lumped the day into it) is not shown either.
+      const bool heat_ok = r != nullptr && lp::heat_usable(*r);
       // Our forecast only for hours this planner ran (a seed may carry Odin's).
       rows[i] = {nx ? nx->get(lp::Kind::HOUSE, lp::H_ROOM_C) : NAN, std::isfinite(pkw) ? g(lp::H_ROOM_EXPECTED_C) : NAN, pkw, pel,
-                 g(lp::H_HEAT_SH_KWH), g(lp::H_ELEC_KWH), g(lp::H_PRICE_EUR_KWH), g(lp::H_SCHED_SP_C),
+                 heat_ok ? g(lp::H_HEAT_SH_KWH) : NAN, heat_ok ? g(lp::H_ELEC_KWH) : NAN, g(lp::H_PRICE_EUR_KWH), g(lp::H_SCHED_SP_C),
                  g(lp::H_FLOW_TARGET_C), S.shadow_flow(hr), g(lp::H_SCHED_MIN_C), g(lp::H_SCHED_MAX_C)};
       have += r != nullptr;
     }
