@@ -3252,7 +3252,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     ahead.concat(past).forEach(function (v) { if (v > top) top = Math.ceil(v); });
     if (odin) odin.heat_kw.forEach(function (v) { if (v > top) top = Math.ceil(v); });
     var bar = function (cls, x, w, v) { var hh = Math.max(0, v || 0) / top * 100; return hh > 0 ? '<rect class="' + cls + '" x="' + x.toFixed(2) + '" y="' + (100 - hh).toFixed(1) + '" width="' + w + '" height="' + hh.toFixed(1) + '"/>' : ''; };
-    past.forEach(function (v, k) { bars += bar('ac', k + 0.15, '.7', v); });
+    past.forEach(function (v, k) { bars += bar('dl', k + 0.15, '.7', v); });
     ahead.forEach(function (v, k) { bars += bar('ac', VS_PAST + k + 0.12, '.36', v); });
     for (var k2 = 0; odin && k2 < ON; k2++) if (space(k2)) bars += bar('odb', VS_PAST + k2 + 0.52, '.36', odin.heat_kw[k2]);
     var heat = '<div class="hchart-panel"><div class="hchart-y" aria-hidden="true"><span>' + num(top, 0) + ' kW</span><span>0</span></div>' +
@@ -3265,7 +3265,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
       (odin ? '' : '<p class="note">' + esc(t(NO_ODIN[(d.odin || {}).reason] || 'planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
       '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lsp', 'planner.lScheduled') + lg_('lt', 'planner.lMeasured') +
-      lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
+      lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('ldl', 'planner.lDelivered') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
   }
 
   // Rooms (LDS 15.11): a row per room (now, lowest and highest over the next 24 h, hours

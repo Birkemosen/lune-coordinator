@@ -1124,7 +1124,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "planner.copAt", "planner.copOut", "planner.copZone", "planner.copHp", "planner.roomsSub", "planner.roomsSubEmpty",
         "planner.roomTarget", "planner.roomNoData", "planner.roomsAria", "plan.charge", "plan.preload", "plan.insufficient",
         "planner.vsHeat", "planner.vsCost", "planner.vsBelow", "planner.vsTempAria", "planner.vsHeatAria", "planner.vsNoOdin", "planner.vsNoOdinPlan", "planner.vsNoOdinLink",
-        "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lMeasured",
+        "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lDelivered", "planner.lMeasured",
         "planner.rRoom", "planner.rNow", "planner.rLow", "planner.rHigh", "planner.rBelow", "planner.rBelowVal", "planner.roomChartAria",
         "planner.lScheduled", "planner.lStrip", "planG.lanePrice", "legend.target",
     )
