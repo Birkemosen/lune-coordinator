@@ -969,7 +969,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                 f'<label for="pa-7d" data-range="7d">{T("planner.r7")}</label></div>'
                 f'<p class="chart-legend" aria-hidden="true"><span><i class="lt"></i>{T("planner.lMeasured")}</span>'
                 f'<span><i class="ltf"></i>{T("planner.lForecast")}</span><span><i class="lsp"></i>{T("legend.target")}</span>'
-                f'<span><i class="lpl"></i>{T("planner.lPlanned")}</span><span><i class="lac"></i>{T("planner.lDelivered")}</span></p></div>')
+                f'<span><i class="lpl"></i>{T("planner.lPlanned")}</span><span><i class="ldl"></i>{T("planner.lDelivered")}</span></p></div>')
     planner_view = f'''
       <section class="view" id="v-plan-house" aria-labelledby="h-plan">
         <header class="view-head">
@@ -1124,7 +1124,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "planner.copAt", "planner.copOut", "planner.copZone", "planner.copHp", "planner.roomsSub", "planner.roomsSubEmpty",
         "planner.roomTarget", "planner.roomNoData", "planner.roomsAria", "plan.charge", "plan.preload", "plan.insufficient",
         "planner.vsHeat", "planner.vsCost", "planner.vsBelow", "planner.vsTempAria", "planner.vsHeatAria", "planner.vsNoOdin", "planner.vsNoOdinPlan", "planner.vsNoOdinLink",
-        "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lDelivered", "planner.lMeasured",
+        "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lDelivered", "planner.dayShort", "planner.lMeasured",
         "planner.rRoom", "planner.rNow", "planner.rLow", "planner.rHigh", "planner.rBelow", "planner.rBelowVal", "planner.roomChartAria",
         "planner.lScheduled", "planner.lStrip", "planG.lanePrice", "legend.target",
     )

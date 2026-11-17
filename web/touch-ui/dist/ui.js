@@ -3055,7 +3055,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     for (var b = 0; b < groups; b++) {
       var hp = pv[b] != null ? pv[b] / top * 100 : 0, ha = av[b] != null ? av[b] / top * 100 : 0;
       if (pv[b] != null) bars += '<rect class="pl" x="' + (b * bw + bw * 0.12).toFixed(1) + '" y="' + (100 - hp).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + hp.toFixed(1) + '"/>';
-      if (av[b] != null) bars += '<rect class="ac" x="' + (b * bw + bw * 0.52).toFixed(1) + '" y="' + (100 - ha).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + ha.toFixed(1) + '"/>';
+      if (av[b] != null) bars += '<rect class="dl" x="' + (b * bw + bw * 0.52).toFixed(1) + '" y="' + (100 - ha).toFixed(1) + '" width="' + (bw * 0.36).toFixed(1) + '" height="' + ha.toFixed(1) + '"/>';
     }
     var H = t('_h'), ax = rng === '24h'
       ? ['−24 ' + H, '−18 ' + H, '−12 ' + H, '−6 ' + H, t('trend.now')]
