@@ -52,6 +52,23 @@ struct PollSample {
   float shadow_flow_c{NAN};   // the shadow flow controller's target now
 };
 
+// What one hour can hold. More than this came from a meter that lumped several hours.
+constexpr float HOUR_HEAT_MAX_KWH = 20.0f;
+constexpr float HOUR_ELEC_MAX_KWH = 6.0f;
+
+// Whether an hour's space heat can be trusted: not more than an hour can hold, and not
+// (almost) nothing while the compressor ran on space heating for a quarter of an hour.
+// Hours logged from the daily meter before 17 Nov 2026 fail this; the learners treat them
+// as missing.
+inline bool heat_usable(const Record &r) {
+  const float q = r.get(Kind::HOUSE, H_HEAT_SH_KWH), run = r.get(Kind::HOUSE, H_RUN_MIN);
+  const float flags = r.get(Kind::HOUSE, H_MODE_FLAGS);
+  const bool space = std::isfinite(flags) && (static_cast<uint16_t>(flags) & MODE_SPACE_HEATING);
+  if (std::isfinite(q) && q > HOUR_HEAT_MAX_KWH) return false;
+  if (space && run >= 15.0f && !(q >= 0.5f)) return false;
+  return true;
+}
+
 struct HourExtra {
   float plan_kw{NAN};
   float shadow_flow_c{NAN};
@@ -89,9 +106,14 @@ class HourAccumulator {
     float last{NAN};
     double sum{0};
     bool any{false};
+    bool moved{false};
     void add(float v) {
       if (!std::isfinite(v)) return;
-      if (std::isfinite(last)) { sum += v >= last ? v - last : v; any = true; }
+      if (std::isfinite(last)) {
+        sum += v >= last ? v - last : v;
+        any = true;
+        moved = moved || v != last;
+      }
       last = v;
     }
   };
@@ -106,7 +128,8 @@ class HourAccumulator {
     starts_ = 0;
     flags_ = 0;
     output_kwh_ = 0;
-    for (Meter *m : {&shh_, &she_, &dwh_, &dwe_}) { m->sum = 0; m->any = false; }   // `last` carries over
+    output_n_ = 0;
+    for (Meter *m : {&shh_, &she_, &dwh_, &dwe_}) { m->sum = 0; m->any = m->moved = false; }   // `last` carries over
     expected_ = plan_kw_ = NAN;
   }
 
@@ -127,7 +150,7 @@ class HourAccumulator {
       feed_.add(s.hp_feed_c); ret_.add(s.hp_return_c); zfeed_.add(s.zone_feed_c); zret_.add(s.zone_return_c);
       run_s_ += dt;
       flags_ |= MODE_SPACE_HEATING;
-      if (std::isfinite(s.output_kw)) output_kwh_ += s.output_kw * dt / 3600.0;
+      if (std::isfinite(s.output_kw)) { output_kwh_ += s.output_kw * dt / 3600.0; output_n_++; }
     }
     if (s.compressor_on && !was_on_) starts_++;
     was_on_ = s.compressor_on;
@@ -144,11 +167,20 @@ class HourAccumulator {
     r->clear();
     r->hour_start = hour_;
     const Kind K = Kind::HOUSE;
-    // Heat: the meter when it ticked, else the integrated output.
-    const float sh = shh_.any ? static_cast<float>(shh_.sum) : (run_s_ > 0 ? static_cast<float>(output_kwh_) : 0.0f);
+    // Heat: the integrated output when the pump reports it; the meter only when it moved by
+    // what an hour can hold. The Ecodan's daily meters may tick once a day, which would put
+    // the whole day into one hour and leave the others at 0.
+    float sh = 0.0f;
+    if (output_n_ > 0) sh = static_cast<float>(output_kwh_);
+    else if (shh_.moved && shh_.sum <= HOUR_HEAT_MAX_KWH) sh = static_cast<float>(shh_.sum);
+    else if (run_s_ > 0) sh = NAN;
     r->set(K, H_HEAT_SH_KWH, sh);
-    if (dwh_.any) r->set(K, H_HEAT_DHW_KWH, static_cast<float>(dwh_.sum));
-    if (she_.any || dwe_.any) r->set(K, H_ELEC_KWH, static_cast<float>(she_.sum + dwe_.sum));
+    if (dwh_.moved && dwh_.sum <= HOUR_HEAT_MAX_KWH) r->set(K, H_HEAT_DHW_KWH, static_cast<float>(dwh_.sum));
+    // Electricity has no live reading, only the meters: kept when the hour's COP is plausible.
+    const float el = static_cast<float>(she_.sum + dwe_.sum);
+    const float heat = (std::isfinite(sh) ? sh : 0.0f) + (dwh_.moved ? static_cast<float>(dwh_.sum) : 0.0f);
+    if ((she_.moved || dwe_.moved) && el <= HOUR_ELEC_MAX_KWH && heat >= 1.5f * el && heat <= 8.0f * el)
+      r->set(K, H_ELEC_KWH, el);
     // The house at the hour's start (its first 15 minutes), as the model reads t[i].
     r->set(K, H_ROOM_C, house0_.n ? house0_.get() : house_.get());
     r->set(K, H_OUTDOOR_C, out_.get());
@@ -184,6 +216,7 @@ class HourAccumulator {
   uint16_t starts_{0};
   uint16_t flags_{0};
   double output_kwh_{0};
+  uint16_t output_n_{0};
   bool was_on_{false};
   Meter shh_, she_, dwh_, dwe_;
   float expected_{NAN}, plan_kw_{NAN};
@@ -264,6 +297,7 @@ size_t history_window(const HistoryStore<N> &st, uint32_t from_hour, size_t n, i
   for (size_t i = 0; i <= n; i++) {
     const uint32_t h = from_hour + static_cast<uint32_t>(i) * 3600u;
     const Record *r = st.at(h);
+    if (r && !heat_usable(*r)) r = nullptr;
     t[i] = r ? r->get(Kind::HOUSE, H_ROOM_C) : NAN;
     if (i == n) break;
     HourIn &x = in[i];
@@ -379,7 +413,7 @@ bool learn_heat_pump(const HistoryStore<N> &st, uint32_t now_hour, const HeatPum
   const uint32_t oldest = now_hour > N * 3600u ? now_hour - static_cast<uint32_t>(N) * 3600u : 0;
   for (uint32_t h = oldest; h < now_hour; h += 3600u) {
     const Record *r = st.at(h);
-    if (!r) continue;
+    if (!r || !heat_usable(*r)) continue;
     const auto g = [r](uint8_t c) { return r->get(Kind::HOUSE, c); };
     const float flags = g(H_MODE_FLAGS);
     const uint16_t f = std::isfinite(flags) ? static_cast<uint16_t>(flags) : 0;

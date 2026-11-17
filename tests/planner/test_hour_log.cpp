@@ -47,13 +47,58 @@ int main() {
           assert(near(x.plan_kw, 4.0f, 1e-3f));
           assert(near(r.get(Kind::HOUSE, H_ROOM_EXPECTED_C), 22.3f, 0.01f));
         } else {
-          // 00:00 hour: the reset poll counts from 0, then 9 more running minutes.
-          assert(near(r.get(Kind::HOUSE, H_HEAT_SH_KWH), 9 * 4.0f / 60, 0.05f));
+          // 00:00 hour: heat is the output over its 10 running polls; the electricity meter
+          // counts from 0 at the reset poll, then 9 more running minutes.
+          assert(near(r.get(Kind::HOUSE, H_HEAT_SH_KWH), 10 * 4.0f / 60, 0.05f));
           assert(near(r.get(Kind::HOUSE, H_ELEC_KWH), 9 * 1.0f / 60, 0.02f));
         }
       }
     }
     assert(closed == 2);
+  }
+
+  // --- A daily meter that ticks once a day (the Ecodan's): the hours it does not move get
+  // the integrated output, and the hour it lumps the day into keeps the output too; the
+  // electricity of that hour is dropped.
+  {
+    HourAccumulator acc;
+    Record r;
+    HourExtra x;
+    int closed = 0;
+    for (int m = 0; m <= 180; m++) {
+      PollSample s;
+      s.ts = T0 + 20 * 3600u + m * 60u;   // 20:00 → 23:00
+      s.house_c = 22.0f;
+      s.compressor_on = true;
+      s.output_kw = 4.0f;
+      s.sh_heat_kwh = m < 150 ? 40.0f : 59.8f;   // the day's total lands at 22:30
+      s.sh_elec_kwh = m < 150 ? 9.0f : 13.4f;
+      if (acc.add(s, &r, &x)) {
+        closed++;
+        assert(near(r.get(Kind::HOUSE, H_HEAT_SH_KWH), 4.0f, 0.1f));
+        assert(heat_usable(r));
+        assert(!r.has(H_ELEC_KWH));   // unmoved, or 4.4 kWh against 4 kWh of heat: no COP
+      }
+    }
+    assert(closed == 3);
+  }
+  // --- Hours the learners skip: more heat than an hour holds, or none while running.
+  {
+    Record r;
+    r.hour_start = T0;
+    r.set(Kind::HOUSE, H_ROOM_C, 22.0f);
+    r.set(Kind::HOUSE, H_HEAT_SH_KWH, 59.79f);
+    assert(!heat_usable(r));
+    r.set(Kind::HOUSE, H_HEAT_SH_KWH, 0.0f);
+    r.set(Kind::HOUSE, H_RUN_MIN, 55.0f);
+    r.set(Kind::HOUSE, H_MODE_FLAGS, static_cast<float>(MODE_SPACE_HEATING));
+    assert(!heat_usable(r));
+    r.set(Kind::HOUSE, H_HEAT_SH_KWH, 4.2f);
+    assert(heat_usable(r));
+    r.set(Kind::HOUSE, H_HEAT_SH_KWH, 0.0f);
+    r.set(Kind::HOUSE, H_RUN_MIN, 0.0f);
+    r.set(Kind::HOUSE, H_MODE_FLAGS, 0.0f);
+    assert(heat_usable(r));   // off: no heat is right
   }
 
   // --- Store: live hours replace, seeds only fill.
