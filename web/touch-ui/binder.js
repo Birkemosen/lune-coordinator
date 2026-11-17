@@ -3014,20 +3014,15 @@
     var temp = vsTemp({ past: lastDay(h.temp_c), ahead: plan.t_end_c, odin: odin ? odin.expected_c : null, lo: wlo, hi: whi, sp: wsp,
       aria: t('planner.vsTempAria'), pair: true, from_ts: plan.from_ts,
       strips: [{ name: t('planG.lanePrice'), cells: priceCells }, { name: 'Touch', cells: touchCells }, { name: 'Odin', cells: odinCells }] });
-    // Heat per hour: bars for delivered (before now) and Touch's plan (after); Odin's plan as a
-    // dashed step line over them (space heat only).
+    // Heat per hour: bars for delivered (before now); after now Touch's plan and Odin's (space
+    // heat only) as two narrow bars side by side, never on top of each other.
     var top = 6, past = lastDay(h.heat_kwh), bars = '', ahead = plan.heat_kw.slice(0, VS_AHEAD);
     ahead.concat(past).forEach(function (v) { if (v > top) top = Math.ceil(v); });
     if (odin) odin.heat_kw.forEach(function (v) { if (v > top) top = Math.ceil(v); });
-    var bar = function (x, v) { var hh = Math.max(0, v || 0) / top * 100; return hh > 0 ? '<rect class="ac" x="' + x.toFixed(2) + '" y="' + (100 - hh).toFixed(1) + '" width=".7" height="' + hh.toFixed(1) + '"/>' : ''; };
-    past.forEach(function (v, k) { bars += bar(k + 0.15, v); });
-    ahead.forEach(function (v, k) { bars += bar(VS_PAST + k + 0.15, v); });
-    var odl = [];
-    for (var k2 = 0; odin && k2 < ON; k2++) {
-      var yv = (100 - Math.max(0, space(k2) ? odin.heat_kw[k2] || 0 : 0) / top * 100).toFixed(1);
-      odl.push((VS_PAST + k2) + ',' + yv, (VS_PAST + k2 + 1) + ',' + yv);
-    }
-    if (odl.length) bars += '<polyline class="odl" points="' + odl.join(' ') + '"/>';
+    var bar = function (cls, x, w, v) { var hh = Math.max(0, v || 0) / top * 100; return hh > 0 ? '<rect class="' + cls + '" x="' + x.toFixed(2) + '" y="' + (100 - hh).toFixed(1) + '" width="' + w + '" height="' + hh.toFixed(1) + '"/>' : ''; };
+    past.forEach(function (v, k) { bars += bar('ac', k + 0.15, '.7', v); });
+    ahead.forEach(function (v, k) { bars += bar('ac', VS_PAST + k + 0.12, '.36', v); });
+    for (var k2 = 0; odin && k2 < ON; k2++) if (space(k2)) bars += bar('odb', VS_PAST + k2 + 0.52, '.36', odin.heat_kw[k2]);
     var heat = '<div class="hchart-panel"><div class="hchart-y" aria-hidden="true"><span>' + num(top, 0) + ' kW</span><span>0</span></div>' +
       '<svg class="trend" viewBox="0 0 ' + VS_H + ' 100" preserveAspectRatio="none" role="img" aria-label="' + esc(t('planner.vsHeatAria')) + '">' +
       '<rect class="future" x="' + VS_PAST + '" y="0" width="' + VS_AHEAD + '" height="100"/><line class="grid" x1="0" x2="' + VS_H + '" y1="99.5" y2="99.5"/>' + bars +
@@ -3038,7 +3033,7 @@
       metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
       (odin ? '' : '<p class="note">' + esc(t('planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
       '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lsp', 'planner.lScheduled') + lg_('lt', 'planner.lMeasured') +
-      lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodl', 'planner.lHeatOdin') : '') + '</p></div>';
+      lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
   }
 
   // Rooms (LDS 15.11): a row per room (now, lowest and highest over the next 24 h, hours
