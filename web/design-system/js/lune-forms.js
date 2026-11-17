@@ -2,6 +2,8 @@
 (function(){
 var I={};try{I=JSON.parse((document.getElementById("i18n")||{}).textContent||"{}")}catch(e){}
 function t(k,v){var s=I[k]||k;if(v)for(var n in v)s=s.split("{"+n+"}").join(String(v[n]));return s}
+/* Snapshot-nøglen er navnet (+ ":værdi" for radio/checkbox); navne kan selv indeholde ":" (room:r8:weight). */
+function keyName(f,k){return f.querySelector('[name="'+k+'"]')?k:k.slice(0,k.lastIndexOf(":"))}
 function snap(f){var o={};f.querySelectorAll("input,select,textarea").forEach(function(el){
 if(!el.name||/^(submit|reset|button|file)$/.test(el.type))return;
 var k=el.name+(el.type==="radio"||el.type==="checkbox"?":"+el.value:"");
@@ -40,7 +42,7 @@ if(auto(f)||!track(f)||f.dataset.state==="saving"||f.dataset.state==="saved")ret
 var s=f._snap||{},c=snap(f),n=0,seen={},sid=(st(f)||{}).id;
 f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});
 Object.keys(Object.assign({},s,c)).forEach(function(k){
-if(s[k]===c[k])return;var name=k.split(":")[0];if(seen[name])return;seen[name]=1;n++;
+if(s[k]===c[k])return;var name=keyName(f,k);if(seen[name])return;seen[name]=1;n++;
 var el=f.querySelector('[name="'+name+'"]'),w=el&&wrap(el);
 if(w){w.setAttribute("data-dirty","");if(sid)w.setAttribute("aria-describedby",sid)}});
 f.dataset.changes=String(n);var b=btn(f),sEl=st(f);
@@ -106,7 +108,7 @@ if(isSave&&track(f)&&!auto(f)){f.dataset.state="saving";if(b){b.setAttribute("ar
    key "heat_source.connection" → resource "heat_source", part "connection". */
 var key=f.dataset.save,dot=key.indexOf("."),changed=null;
 if(f.hasAttribute("data-patch")){changed={};var s0=f._snap||{},c0=snap(f);
-Object.keys(Object.assign({},s0,c0)).forEach(function(k){if(s0[k]===c0[k])return;var nm=k.split(":")[0];
+Object.keys(Object.assign({},s0,c0)).forEach(function(k){if(s0[k]===c0[k])return;var nm=keyName(f,k);
 var el=f.querySelector('[name="'+nm+'"]');if(!el)return;
 if(el.type==="radio"){var on=f.querySelector('[name="'+nm+'"]:checked');changed[nm]=on?on.value:null}
 else if(el.type==="checkbox"){changed[nm]=f.querySelectorAll('[name="'+nm+'"]').length>1?[].map.call(f.querySelectorAll('[name="'+nm+'"]:checked'),function(x){return x.value}):el.checked}
