@@ -951,8 +951,9 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         return f'<div class="sub" data-empty data-f="{f}"><p class="empty">{T(key)}</p>{body}</div>'
 
     pl_legend = "".join(lg(c, k) for c, k in (("lprice", "planner.lPrice"), ("lbar", "planner.lOut"), ("ldhw", "plan.lDhw"),
-                                             ("lleg", "planner.lLeg"), ("lflow", "planner.lFlow"), ("lmax", "planner.lMax"),
-                                             ("lrb", "planner.lHouse")))
+                                             ("lleg", "planner.lLeg"), ("lpre", "planner.lPre"), ("lch", "planner.lCharge"),
+                                             ("lflow", "planner.lFlow"), ("lmax", "planner.lMax"), ("lrb", "planner.lHouse")))
+    wx_legend = "".join(lg(c, k) for c, k in (("lt", "planner.lTemp"), ("lwind", "planner.lWind"), ("lsunb", "planner.lSun")))
     model_keys = (("loss", "planner.mLoss"), ("mass", "planner.mMass"), ("floor", "planner.mFloor"),
                   ("solar", "planner.mSolar"), ("wind", "planner.mWind"), ("dhw", "planner.mDhw"))
     model_tbl = ('<div class="table-wrap"><table class="table"><thead><tr>'
@@ -981,6 +982,10 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         <section class="panel" aria-labelledby="h-pl48">
           <header class="panel-head"><h3 id="h-pl48">{T("planner.plan48")}</h3>{pl_help("pl48", T("planner.plan48"), "planner.plan48Help", "planner-plan")}<p>{T("planner.plan48Sub")}</p></header>
           {pl_empty("pl48", "planner.emptyPlan", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{pl_legend}</div>')}
+        </section>
+        <section class="panel" aria-labelledby="h-plwx">
+          <header class="panel-head"><h3 id="h-plwx">{T("planner.wx")}</h3>{pl_help("plwx", T("planner.wx"), "planner.wxHelp", "planner-weather")}<p>{T("planner.wxSub")}</p></header>
+          {pl_empty("plwx", "planner.emptyWx", f'<div data-f="chart"></div><div class="fc-legend" aria-hidden="true">{wx_legend}</div>')}
         </section>
         <section class="panel" aria-labelledby="h-plvs">
           <header class="panel-head"><h3 id="h-plvs">{T("planner.vs")}</h3>{pl_help("plvs", T("planner.vs"), "planner.vsHelp", "planner-odin")}<p>{T("planner.vsSub")}</p></header>
@@ -1127,6 +1132,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "planner.lBand", "planner.lTouch", "planner.lOdin", "planner.lHeatTouch", "planner.lHeatOdin", "planner.lDelivered", "planner.dayShort", "planner.lMeasured",
         "planner.rRoom", "planner.rNow", "planner.rLow", "planner.rHigh", "planner.rBelow", "planner.rBelowVal", "planner.roomChartAria",
         "planner.lScheduled", "planner.lStrip", "planG.lanePrice", "legend.target",
+        "planner.lanePre", "planner.tipPre", "planner.tipCharge", "planner.laneTemp", "planner.laneWind", "planner.laneDir",
+        "planner.laneSun", "planner.wxAria",
     )
     rt = {k: T(k) for k in rt_keys}
     rt["_dec"] = T.meta("_dec")

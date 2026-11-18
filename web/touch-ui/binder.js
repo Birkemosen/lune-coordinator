@@ -2678,7 +2678,15 @@
     if (box) {
       box.toggleAttribute('data-empty', !ok);
       var chart = box.querySelector('[data-f="chart"]');
-      if (chart) setHTML(chart, ok ? plannerChart(plan, st) : '');
+      if (chart) setHTML(chart, ok ? plannerChart(plan, st, Array.isArray(d.rooms) ? d.rooms : []) : '');
+    }
+    // Weather on the plan's hours (Touch's own forecast, matched by timestamp).
+    var wb = qs('[data-f="plwx"]');
+    if (wb) {
+      var wx = ok ? plannerWeather(plan, state.forecast) : '';
+      wb.toggleAttribute('data-empty', !wx);
+      var wc = wb.querySelector('[data-f="chart"]');
+      if (wc) setHTML(wc, wx);
     }
     setText('planner.sub', ok
       ? t('planner.sub', { e: num(plan.heat_kwh, 0), c: plan.cost_eur != null ? num(plan.cost_eur, 2) : '—' })
@@ -3079,7 +3087,76 @@
     return '<div class="rfc-list">' + head + rows + '</div>';
   }
 
-  function plannerChart(plan, st) {
+  // The house's preheating windows on the plan's hours: the rooms' preload and charge windows
+  // (hours from now, as the plan's) joined per kind, the rooms named in the title.
+  function plannerPreSegs(rooms, n) {
+    var out = '';
+    [['preload', 'planner.tipPre'], ['charge', 'planner.tipCharge']].forEach(function (kt) {
+      var on = [], names = [];
+      rooms.forEach(function (r) {
+        var w = r && r[kt[0]];
+        if (!w || !(w.to > w.from)) return;
+        names.push(r.name || r.room_id);
+        for (var h = Math.max(0, w.from); h < Math.min(n, w.to); h++) on[h] = true;
+      });
+      var tip = esc(t(kt[1], { rooms: names.join(', ') }));
+      for (var a = 0; a < n; a++) {
+        if (!on[a]) continue;
+        var b = a;
+        while (b + 1 < n && on[b + 1]) b++;
+        out += '<span class="plan-seg" data-kind="' + kt[0] + '" style="--a:' + a + ';--b:' + (b + 1) + '" title="' + tip + '"></span>';
+        a = b;
+      }
+    });
+    return out;
+  }
+
+  // Weather for the 48 h plan (LDS 15.11 Vejrudsigt): outdoor as a step line (axis ≥ 3 °C),
+  // wind bars, where the wind blows to every 3rd hour, sun bars. '' without a forecast.
+  function plannerWeather(plan, fc) {
+    var n = plan.heat_kw.length, hours = (fc && fc.hours) || [], by = {};
+    hours.forEach(function (h) { if (h && h.timestamp_s) by[h.timestamp_s] = h; });
+    var rows = [], any = false;
+    for (var i = 0; i < n; i++) {
+      var h = by[plan.from_ts + i * 3600] || null;
+      if (h) any = true;
+      rows.push(h);
+    }
+    if (!any) return '';
+    var val = function (h, k) { return h && finite(h[k]) ? Number(h[k]) : null; };
+    var temps = rows.map(function (h) { return val(h, 'temp_c'); });
+    var tv = temps.filter(function (v) { return v != null; });
+    var lo = Math.floor(Math.min.apply(null, tv) - 0.5), hi = Math.ceil(Math.max.apply(null, tv) + 0.5);
+    if (hi - lo < 3) hi = lo + 3;
+    var zy = ((hi / (hi - lo)) * 100).toFixed(1);
+    var temp = '<svg viewBox="0 0 ' + n + ' 100" preserveAspectRatio="none" aria-hidden="true">' +
+      (lo < 0 && hi > 0 ? '<line class="zero" x1="0" x2="' + n + '" y1="' + zy + '" y2="' + zy + '"/>' : '') +
+      '<g class="tl">' + planStair(temps, lo, hi) + '</g></svg>';
+    var winds = rows.map(function (h) { return val(h, 'wind_ms'); });
+    var wtop = niceTop(Math.max(5, Math.max.apply(null, winds.filter(function (v) { return v != null; }).concat([0]))));
+    var sun = rows.map(function (h) { return val(h, 'solar_wm2'); });
+    var stop = niceTop(Math.max(200, Math.max.apply(null, sun.filter(function (v) { return v != null; }).concat([0]))));
+    var cells = function (vals, top) {
+      return vals.map(function (v) { return '<i class="plan-cell" style="--v:' + (v == null ? 0 : Math.round(Math.min(v, top) / top * 100)) + '"></i>'; }).join('');
+    };
+    var dirs = rows.map(function (h, k) {
+      var dg = val(h, 'wind_dir_deg');
+      if (k % 3 !== 1 || dg == null) return '<i></i>';
+      return '<svg class="dir" viewBox="0 0 24 24" style="--deg:' + ((dg + 180) % 360) + 'deg" aria-hidden="true"><use href="#i-arrow"/></svg>';
+    }).join('');
+    var lane = function (cls, name, ticks) {
+      return '<div class="plan-lab plan-lab--y' + cls + '"><b>' + esc(name) + '</b><span class="plan-y">' +
+        ticks.map(function (v) { return '<i>' + esc(v) + '</i>'; }).join('') + '</span></div>';
+    };
+    return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.wxAria')) + '" style="--now:0">' +
+      lane(' plan-lab--temp', t('planner.laneTemp'), [hi + '°', lo + '°']) + '<div class="plan-lane plan-lane--temp">' + temp + '</div>' +
+      lane(' plan-lab--sm', t('planner.laneWind'), [num(wtop, 0), '0']) + '<div class="plan-lane plan-lane--wind">' + cells(winds, wtop) + '</div>' +
+      '<span class="plan-lab">' + esc(t('planner.laneDir')) + '</span><div class="plan-lane plan-dir">' + dirs + '</div>' +
+      lane(' plan-lab--sm', t('planner.laneSun'), [num(stop, 0), '0']) + '<div class="plan-lane plan-lane--sun">' + cells(sun, stop) + '</div>' +
+      '<span></span><div class="plan-x">' + planX(plan.from_ts, n) + '</div></div>';
+  }
+
+  function plannerChart(plan, st, rooms) {
     var n = plan.heat_kw.length;
     var price = plan.price || [], est = plan.price_est || [];
     var known = price.filter(function (v, k) { return v != null && !est[k]; });
@@ -3120,6 +3197,7 @@
     return '<div class="plan plan--48" role="img" aria-label="' + esc(t('planner.planAria')) + '" style="--now:0">' +
       lane(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, 2), '0']) + '<div class="plan-lane plan-lane--price">' + cells + '</div>' +
       lane('', t('planner.laneOut'), ['8 kW', '4', '0']) + '<div class="plan-lane plan-lane--out">' + bars + '</div>' +
+      '<span class="plan-lab">' + esc(t('planner.lanePre')) + '</span><div class="plan-lane">' + plannerPreSegs(rooms || [], n) + '</div>' +
       lane(' plan-lab--flow', t('planner.laneFlow'), [num(fhi, 0) + '°', num(flo, 0) + '°']) + '<div class="plan-lane plan-lane--flow">' + flow + '</div>' +
       lane(' plan-lab--house', t('planner.laneHouse'), [num(hhi, 0) + '°', num(hlo, 0) + '°']) + '<div class="plan-lane plan-lane--house">' + house + '</div>' +
       '<span></span><div class="plan-x">' + x + '</div></div>';

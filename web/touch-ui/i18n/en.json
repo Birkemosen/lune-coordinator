@@ -1305,5 +1305,22 @@
   "planner.roomChartAria": "{room}: measured temperature over the last day and expected over the next 48 hours with comfort band",
   "planner.emptyVs": "No comparison yet.",
   "planner.lScheduled": "scheduled setpoint",
-  "planner.lStrip": "operation per hour: actual before now, plan after"
+  "planner.lStrip": "operation per hour: actual before now, plan after",
+  "planner.lanePre": "Preheat",
+  "planner.lPre": "preheating before wind or cold",
+  "planner.lCharge": "charging the floor before wind or cold",
+  "planner.tipPre": "Touch preheats: {rooms}",
+  "planner.tipCharge": "Touch charges the floor: {rooms}",
+  "planner.wx": "Weather forecast",
+  "planner.wxSub": "Outdoor temperature, wind and sun for the same 48 hours as the plan",
+  "planner.wxHelp": "The forecast Touch plans by (Open-Meteo), hour for hour under the plan above, so you can see what the heat and the preheating answer: cold, wind on the exposed walls and sun. The arrows show where the wind blows to.",
+  "planner.laneTemp": "Outdoor",
+  "planner.laneWind": "Wind",
+  "planner.laneDir": "Direction",
+  "planner.laneSun": "Sun",
+  "planner.lTemp": "outdoor temperature",
+  "planner.lWind": "wind (m/s)",
+  "planner.lSun": "sun (W/m²)",
+  "planner.wxAria": "Weather for the next 48 hours: outdoor temperature, wind speed and direction, and sun per hour",
+  "planner.emptyWx": "No weather forecast yet."
 }

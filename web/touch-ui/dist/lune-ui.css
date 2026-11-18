@@ -1217,6 +1217,24 @@
   .plan-lane--flow .max { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
   /* vector-effect arves ikke: kurverne er polylines i en gruppe (.fl / .exp), så stregen sættes på dem. */
   .plan-lane--flow .fl > *, .plan-lane--house .exp > * { vector-effect: non-scaling-stroke; }
+  /* Vejr (.plan--48 i sit eget panel lige under planen): samme timer og samme labelbredde, så
+     sporene står under planens timer. Ude som trappekurve i udetemperaturens farve, vind som
+     søjler i vejrets blå med retningen (hvor den blæser hen) hver 3. time, sol som søjler. Pilene er vejrets .dir (#i-arrow).
+     Forvarmning (sporet under varmen i planen): Touch' forvarmning og opladning før vind og
+     kulde for hele huset som skraverede segmenter (.plan-seg), de samme som i rumsporene. */
+  .plan.plan--48 { grid-template-columns: 6.5rem minmax(0, 1fr); }
+  .plan-lane--temp { height: 80px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
+  .plan-lab--y.plan-lab--temp { height: 80px; margin-bottom: 0; }
+  .plan-lane--temp svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .plan-lane--temp .tl { fill: none; stroke: var(--data-outdoor); stroke-width: 1.8; stroke-linejoin: round; }
+  .plan-lane--temp .tl > * { vector-effect: non-scaling-stroke; }
+  .plan-lane--temp .zero { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .plan-lane--sun { display: grid; grid-template-columns: repeat(var(--plan-h, 24), 1fr); align-items: end; gap: 1px;
+    height: 36px; border-radius: 0; background-color: transparent; border-bottom: 1px solid var(--border); }
+  .plan-lane--sun .plan-cell { background: var(--data-light); }
+  .fc-legend .lsunb { height: 10px; border-radius: 2px 2px 0 0; background: var(--data-light); }
+  .plan-dir { display: grid; grid-template-columns: repeat(var(--plan-h, 24), 1fr); place-items: center; height: 18px; background: none; border-radius: 0; color: var(--data-return); }
+  .plan-dir .dir { margin: 0; width: 14px; height: 14px; }
   .fc-legend .lflow { border-top: 2px solid var(--accent); }
   .fc-legend .lmax  { border-top: 1px dashed var(--muted); }
   .fc-legend .lrb   { height: 10px; border-radius: 2px; background: var(--seg-off); border-top: 2px solid var(--fg); }

@@ -1305,5 +1305,22 @@
   "planner.roomChartAria": "{room}: målt temperatur det seneste døgn og forventet de næste 48 timer med komfortbånd",
   "planner.emptyVs": "Ingen sammenligning endnu.",
   "planner.lScheduled": "planlagt sætpunkt",
-  "planner.lStrip": "drift pr. time: faktisk før nu, plan efter"
+  "planner.lStrip": "drift pr. time: faktisk før nu, plan efter",
+  "planner.lanePre": "Forvarmning",
+  "planner.lPre": "forvarmning før vind eller kulde",
+  "planner.lCharge": "opladning af gulvet før vind eller kulde",
+  "planner.tipPre": "Touch forvarmer: {rooms}",
+  "planner.tipCharge": "Touch lader gulvet op: {rooms}",
+  "planner.wx": "Vejrudsigt",
+  "planner.wxSub": "Udetemperatur, vind og sol de samme 48 timer som planen",
+  "planner.wxHelp": "Den udsigt, Touch planlægger efter (Open-Meteo), time for time under planen ovenfor, så du kan se, hvad varmen og forvarmningen svarer på: kulde, vind på de udsatte vægge og sol. Pilene viser, hvor vinden blæser hen.",
+  "planner.laneTemp": "Ude",
+  "planner.laneWind": "Vind",
+  "planner.laneDir": "Retning",
+  "planner.laneSun": "Sol",
+  "planner.lTemp": "udetemperatur",
+  "planner.lWind": "vind (m/s)",
+  "planner.lSun": "sol (W/m²)",
+  "planner.wxAria": "Vejret de næste 48 timer: udetemperatur, vindstyrke og -retning og sol pr. time",
+  "planner.emptyWx": "Ingen vejrudsigt endnu."
 }
