@@ -495,7 +495,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         schedule: [{ h: 0, v: 0.077 }, { h: 6, v: 0.231 }, { h: 17, v: 0.692 }, { h: 21, v: 0.231 }] },
       system: { source: 'datahub', fixed: 0.115 },
       energy_tax: 0.008, markup: 0, vat_pct: 25, entsoe_token_set: false, odin_host_set: true,
-      reference_price: 1.52, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720 },
+      reference_price: 1.01, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720, year_all_in: 1.73 },
       odin: { mode: 'dynamic', source: 'energy_charts', fixed_price: 0.25,
         current: { known: true, price_mode: 'dynamic', price_source: 'api', ec_bzn: 'DK1', fixed_price: 0.25, token_set: true, age_s: 60 } },
       status: { state: 'ok', pushes: true, reason: 'day_ahead', odin_source: 'api', odin_write_pending: false,
@@ -3619,14 +3619,15 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
 
   // Price step 1–5 (LDS DESIGN.md 3.2.3): the mean of the hour's rank among the known prices
   // and its level against the last 30 days (a week logged or more) and the yearly average
-  // (/prices, in the price currency; eur: the prices are EUR/kWh, as the planner's). An
+  // made all-in (/prices reference.year_all_in, in the price currency; eur: the prices are
+  // EUR/kWh, as the planner's). An
   // average that is missing is left out; the rank alone without either.
   function priceScale(v, day, eur) {
     var known = day.filter(function (x) { return x != null && isFinite(x); });
     var below = known.filter(function (x) { return x < v; }).length;
     var steps = [Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)))];
     var pr = state.prices || {}, ref = pr.reference || {}, k = eur ? (pr.fx > 0 ? 1 / Number(pr.fx) : NaN) : 1;
-    [ref.month_hours >= 168 ? Number(ref.month_mean) : NaN, Number(pr.reference_price)].forEach(function (a) {
+    [ref.month_hours >= 168 ? Number(ref.month_mean) : NaN, Number(ref.year_all_in)].forEach(function (a) {
       a *= k;
       if (!(a > 0)) return;
       var r = v / a;

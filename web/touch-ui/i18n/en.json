@@ -1329,7 +1329,7 @@
   "planner.sCost": "Cost",
   "planner.sBelow": "Below band",
   "price.normal": "Normal price",
-  "price.reference": "Yearly average",
-  "price.referenceHint": "Your average all-in price over the year. Cheap and dear are judged against the day, the last 30 days and this, so an expensive month still shows. 0 = the last 30 days only.",
+  "price.reference": "Yearly average, spot",
+  "price.referenceHint": "The average spot price over the last 12 months without VAT, taxes and grid tariff, as on your supplier's overview. Touch adds the day's tariff, taxes and VAT. Cheap and dear are judged against the day, the last 30 days and this, so an expensive month still shows. 0 = the last 30 days only.",
   "price.month": "Average, last 30 days"
 }

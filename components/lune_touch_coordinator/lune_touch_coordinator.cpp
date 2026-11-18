@@ -3631,7 +3631,9 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
           price_rel[k] = d->total[h % 24];
       }
     }
-    normal_price = lune_touch_price::reference_price(price_.cfg, price_month_mean_eur_, price_month_hours_, nullptr);
+    normal_price = lune_touch_price::reference_price(
+        price_.cfg, price_month_mean_eur_, price_month_hours_,
+        lune_touch_price::year_all_in(price_.cfg, price_rt_ != nullptr ? &price_rt_->today : nullptr), nullptr);
     // One setting for "how far Touch may raise ahead": Weather › Preload › Max.
     // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
     params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
@@ -17581,11 +17583,13 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
   json_escape_(p.last_error, err, sizeof(err));
   // The price level savings are measured against, and the logged month behind it.
   const char *ref_src = "none";
-  const float ref = reference_price(c, price_month_mean_eur_, price_month_hours_, &ref_src);
+  const float year = year_all_in(c, price_rt_ != nullptr ? &price_rt_->today : nullptr);
+  const float ref = reference_price(c, price_month_mean_eur_, price_month_hours_, year, &ref_src);
   const float month = std::isfinite(price_month_mean_eur_) && c.fx > 0.0f ? price_month_mean_eur_ * c.fx : NAN;
-  char ref_tok[16], month_tok[16];
+  char ref_tok[16], month_tok[16], year_tok[16];
   json_float_token_(ref_tok, sizeof(ref_tok), ref, 3);
   json_float_token_(month_tok, sizeof(month_tok), month, 3);
+  json_float_token_(year_tok, sizeof(year_tok), year, 3);
   size_t off = 0;
   appendf_(buffer, capacity, off,
            "{\"available\":true,\"enabled\":%s,\"model\":\"%s\",\"zone\":\"%s\",\"dk\":%s,"
@@ -17593,7 +17597,7 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
            "\"grid\":{\"source\":\"%s\",\"gln\":\"%s\",\"code\":\"%s\",\"schedule\":%s},"
            "\"system\":{\"source\":\"%s\",\"fixed\":%.4f},"
            "\"energy_tax\":%.4f,\"markup\":%.4f,\"vat_pct\":%.2f,\"entsoe_token_set\":%s,\"odin_host_set\":%s,"
-           "\"reference_price\":%.4f,\"reference\":{\"price\":%s,\"source\":\"%s\",\"month_mean\":%s,\"month_hours\":%lu},",
+           "\"reference_price\":%.4f,\"reference\":{\"price\":%s,\"source\":\"%s\",\"month_mean\":%s,\"month_hours\":%lu,\"year_all_in\":%s},",
            c.enabled ? "true" : "false", model_name(c.model), c.zone, zone_is_dk(c.zone) ? "true" : "false",
            spot_source_name(c.spot_source), static_cast<double>(c.spot_fixed_eur), c.currency,
            static_cast<double>(c.fx), grid_source_name(c.grid_source), c.grid_gln, c.grid_code, sched,
@@ -17601,7 +17605,7 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
            static_cast<double>(c.energy_tax), static_cast<double>(c.markup), static_cast<double>(c.vat_pct),
            entsoe_token_[0] != '\0' ? "true" : "false", odin_plan_.odin_host[0] != '\0' ? "true" : "false",
            static_cast<double>(c.reference_price), ref_tok, ref_src, month_tok,
-           static_cast<unsigned long>(price_month_hours_));
+           static_cast<unsigned long>(price_month_hours_), year_tok);
   char ofp[16];
   json_float_token_(ofp, sizeof(ofp), p.odin.fixed_price, 6);
   char oage[16] = "null";

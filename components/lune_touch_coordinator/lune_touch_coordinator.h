@@ -522,7 +522,7 @@ struct PriceSettingsUpdate {
   float energy_tax{NAN};
   float markup{NAN};
   float vat_pct{NAN};
-  float reference_price{NAN};   ///< yearly average; 0 = unknown
+  float reference_price{NAN};   ///< yearly average spot price; 0 = unknown
   const char *odin_mode{nullptr};
   const char *odin_source{nullptr};
   float odin_fixed_price{NAN};

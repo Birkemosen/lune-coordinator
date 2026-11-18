@@ -86,9 +86,10 @@ struct Config {
   float energy_tax = 0.008f;
   float markup = 0.0f;
   float vat_pct = 25.0f;
-  /// The house's yearly average all-in price (currency/kWh); 0 = unknown. Cheap and dear
-  /// are judged against the day, the last 30 days Touch logged and this (DESIGN.md 3.2.3);
-  /// it stands in for the month until a week is logged (reference_price()).
+  /// The house's yearly average spot price (currency/kWh, without VAT, taxes and grid
+  /// tariff, as on the supplier's overview); 0 = unknown. Touch adds the day's tariffs and
+  /// taxes (year_all_in()); cheap and dear are judged against the day, the last 30 days and
+  /// that (DESIGN.md 3.2.3), and it stands in for the month until a week is logged.
   float reference_price = 0.0f;
   // Odin model (written to Odin's own settings)
   OdinMode odin_mode = OdinMode::DYNAMIC;
@@ -1030,18 +1031,32 @@ inline Due push_due(bool enabled, bool requested, bool time_valid, int ymd, uint
 /// Hours of logged prices before the 30-day mean stands in for the normal price.
 static constexpr uint32_t REFERENCE_MIN_HOURS = 7 * 24;
 
+/// The yearly average spot price as an all-in price, like the hours it is compared with: the
+/// day's mean grid and system tariffs, taxes, markup and VAT added; NaN without a setting or
+/// a day.
+inline float year_all_in(const Config &cfg, const DayPrices *day) {
+  if (!(cfg.reference_price > 0.0f) || day == nullptr || !day->valid) return NAN;
+  double grid = 0.0, system = 0.0;
+  for (size_t h = 0; h < HOURS; h++) {
+    grid += day->grid[h];
+    system += day->system[h];
+  }
+  return all_in(cfg.reference_price, static_cast<float>(grid / HOURS), static_cast<float>(system / HOURS), cfg);
+}
+
 /// The price level decisions measure savings against, in the calculation currency: the mean
 /// of the logged hours (EUR/kWh, converted by fx) once there are a week of them — what prices
-/// are now — else the yearly average setting, else NaN. `source` names which ("month",
-/// "year", "none").
-inline float reference_price(const Config &cfg, float month_mean_eur, uint32_t month_hours, const char **source) {
+/// are now — else the yearly average all-in (year_all_in), else NaN. `source` names which
+/// ("month", "year", "none").
+inline float reference_price(const Config &cfg, float month_mean_eur, uint32_t month_hours, float year_all_in_price,
+                             const char **source) {
   if (std::isfinite(month_mean_eur) && month_hours >= REFERENCE_MIN_HOURS && cfg.fx > 0.0f) {
     if (source != nullptr) *source = "month";
     return month_mean_eur * cfg.fx;
   }
-  if (cfg.reference_price > 0.0f) {
+  if (year_all_in_price > 0.0f) {
     if (source != nullptr) *source = "year";
-    return cfg.reference_price;
+    return year_all_in_price;
   }
   if (source != nullptr) *source = "none";
   return NAN;

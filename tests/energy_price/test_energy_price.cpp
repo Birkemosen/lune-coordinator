@@ -415,15 +415,22 @@ int main() {
     assert(parse_entsoe_xml("", 0, [](int64_t, double) {}) == 0);
   }
 
-  // Reference price: a week or more of the logged month, else the yearly average, else none.
+  // Reference price: a week or more of the logged month, else the yearly average spot price
+  // made all-in with the day's mean tariffs, taxes and VAT, else none.
   {
     Config c{};
     const char *src = nullptr;
-    assert(std::isnan(reference_price(c, 0.25f, 24, &src)) && std::strcmp(src, "none") == 0);
-    assert(near(reference_price(c, 0.25f, 30 * 24, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
-    c.reference_price = 1.52f;
-    assert(near(reference_price(c, 0.25f, 24, &src), 1.52) && std::strcmp(src, "year") == 0);
-    assert(near(reference_price(c, 0.25f, 30 * 24, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
+    assert(std::isnan(year_all_in(c, nullptr)));
+    assert(std::isnan(reference_price(c, 0.25f, 24, NAN, &src)) && std::strcmp(src, "none") == 0);
+    assert(near(reference_price(c, 0.25f, 30 * 24, NAN, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
+    c.reference_price = 1.01f;
+    float spot[HOURS], grid[HOURS], sys[HOURS];
+    for (size_t h = 0; h < HOURS; h++) { spot[h] = 1.0f; grid[h] = h >= 17 && h < 21 ? 0.6f : 0.2f; sys[h] = 0.115f; }
+    const DayPrices day = build_day(20261118, spot, grid, sys, c);
+    const float year = year_all_in(c, &day);
+    assert(near(year, (1.01 + (4 * 0.6 + 20 * 0.2) / 24.0 + 0.115 + c.energy_tax + c.markup) * 1.25));
+    assert(near(reference_price(c, 0.25f, 24, year, &src), year) && std::strcmp(src, "year") == 0);
+    assert(near(reference_price(c, 0.25f, 30 * 24, year, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
   }
 
   std::printf("energy_price: all tests passed\n");

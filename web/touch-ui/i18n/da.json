@@ -1329,7 +1329,7 @@
   "planner.sCost": "Pris",
   "planner.sBelow": "Under båndet",
   "price.normal": "Normalpris",
-  "price.reference": "Årsgennemsnit",
-  "price.referenceHint": "Din gennemsnitspris med alt over året. Billig og dyr vurderes mod døgnet, de sidste 30 dage og den, så en dyr måned stadig ses. 0 = kun de sidste 30 dage.",
+  "price.reference": "Årsgennemsnit, spot",
+  "price.referenceHint": "Gennemsnitlig spotpris de sidste 12 måneder uden moms, afgifter og nettarif, som på elselskabets oversigt. Touch lægger dagens nettarif, afgifter og moms til. Billig og dyr vurderes mod døgnet, de sidste 30 dage og den, så en dyr måned stadig ses. 0 = kun de sidste 30 dage.",
   "price.month": "Gennemsnit, sidste 30 dage"
 }
