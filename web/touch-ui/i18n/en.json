@@ -1330,6 +1330,6 @@
   "planner.sBelow": "Below band",
   "price.normal": "Normal price",
   "price.reference": "Yearly average, spot",
-  "price.referenceHint": "The average spot price over the last 12 months with VAT, without taxes and grid tariff, as on your supplier's overview. Touch adds the day's tariff and taxes. Cheap and dear are judged against the day, the last 30 days and this, so an expensive month still shows. 0 = the last 30 days only.",
+  "price.referenceHint": "The average spot price over the last 12 months with VAT, without taxes and grid tariff, as on your supplier's overview. Each hour's spot price is compared with it, the all-in price with the last 30 days and the day, so an expensive month still shows. 0 = the last 30 days and the day only.",
   "price.month": "Average, last 30 days"
 }

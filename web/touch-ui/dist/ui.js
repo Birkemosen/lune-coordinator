@@ -495,7 +495,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         schedule: [{ h: 0, v: 0.077 }, { h: 6, v: 0.231 }, { h: 17, v: 0.692 }, { h: 21, v: 0.231 }] },
       system: { source: 'datahub', fixed: 0.115 },
       energy_tax: 0.008, markup: 0, vat_pct: 25, entsoe_token_set: false, odin_host_set: true,
-      reference_price: 1.01, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720, year_all_in: 1.48 },
+      reference_price: 1.01, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720, year_all_in: 1.50 },
       odin: { mode: 'dynamic', source: 'energy_charts', fixed_price: 0.25,
         current: { known: true, price_mode: 'dynamic', price_source: 'api', ec_bzn: 'DK1', fixed_price: 0.25, token_set: true, age_s: 60 } },
       status: { state: 'ok', pushes: true, reason: 'day_ahead', odin_source: 'api', odin_write_pending: false,
@@ -2762,7 +2762,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       setText('price.max', t('price.atHour', { v: num(total[hi], 2) + ' ' + cur + '/kWh', h: hh(hi) }));
       setBind('price.peak', esc(num(peak, 2)) + unit);
       // Home › Next heating: the price now as one line with a 5-step good/bad chip.
-      var scale = priceScale(nowV, total.map(Number));
+      var nowTs = Math.floor(Date.now() / 3600000) * 3600;
+      var scale = priceScale(nowV, total.map(Number), false, spotAt(nowTs));
       setText('tile.priceText', t('tile.price', { p: num(nowV, 2), cur: cur }));
       qsa('[data-bind-scale]').forEach(function (c) { c.setAttribute('data-scale', String(scale)); c.textContent = t('price.scale.' + scale); });
       showTile = !!p.enabled;
@@ -3251,7 +3252,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var known = pp.filter(function (v, q2) { return v != null && !pest[q2]; });
     var priceCells = pp.map(function (v, q2) {
       if (v == null || pest[q2] || !known.length) return '<i></i>';
-      return '<i data-scale="' + priceScale(v, known, true) + '"></i>';
+      return '<i data-scale="' + priceScale(v, known, true, spotAt(plan.from_ts + (q2 - VS_PAST) * 3600)) + '"></i>';
     }).join('');
     var cell = function (on, m) { return on ? '<i data-mode="' + (m || 'heat') + '"></i>' : '<i></i>'; };
     var pastQ = lastDay(h.heat_kwh);
@@ -3412,7 +3413,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       // Colour = step among the published hours and against the normal price (priceScale,
       // EUR as the planner's); an estimated hour (same hour of the last known day) keeps its
       // height but no colour.
-      var pv = price[i], sc = priceScale(pv, known, true);
+      var pv = price[i], sc = priceScale(pv, known, true, spotAt(plan.from_ts + i * 3600));
       cells += pv == null ? '<i class="plan-cell"></i>'
         : '<i class="plan-cell"' + (est[i] ? '' : ' data-scale="' + sc + '"') + ' style="--v:' + Math.max(4, Math.round(Math.max(0, pv) / ptop * 100)) + '"></i>';
       bars += '<i class="plan-bar" style="--v:' + Math.round(Math.min(1, (plan.heat_kw[i] || 0) / 8) * 100) + '"></i>';
@@ -3590,11 +3591,14 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       var m = Number(mode[k]);
       var kind = m === 1 ? 'dhw' : (m === 6 ? 'legionella' : 'heat');
       var price = wall < 24 ? today[wall] : tomorrow[wall - 24];
+      var spotDay = wall < 24 ? (pr.today && pr.today.spot) : (pr.tomorrow && pr.tomorrow.spot);
+      var spot = spotDay && finite(spotDay[wall % 24]) ? Number(spotDay[wall % 24]) * (1 + (Number(pr.vat_pct) || 0) / 100) : NaN;
       var f = fh[f0 + k] || {};
       rows.push({
         hour: wall % 24, kind: kind,
         kwh: kind === 'heat' ? (Number(heat[k]) || 0) : (Number(energy[k]) || 0),
         price: finite(price) ? Number(price) : null,
+        spot: spot,
         lo: finite((odin.band_min_c || [])[k]) ? Number(odin.band_min_c[k]) : null,
         hi: finite((odin.band_max_c || [])[k]) ? Number(odin.band_max_c[k]) : null,
         exp: finite((odin.expected_c || [])[k]) ? Number(odin.expected_c[k]) : null,
@@ -3617,24 +3621,35 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return { rows: rows, H: H, start: start, odin: odin, cur: pr.currency || 'DKK' };
   }
 
-  // Price step 1–5 (LDS DESIGN.md 3.2.3): the mean of the hour's rank among the known prices
-  // and its level against the last 30 days (a week logged or more) and the yearly average
-  // made all-in (/prices reference.year_all_in, in the price currency; eur: the prices are
-  // EUR/kWh, as the planner's). An
-  // average that is missing is left out; the rank alone without either.
-  function priceScale(v, day, eur) {
+  // Price step 1–5 (LDS DESIGN.md 3.2.3): the mean of the hour's rank among the known prices,
+  // its level against the last 30 days (all-in against all-in, a week logged or more; eur:
+  // the prices are EUR/kWh, as the planner's) and its spot price with VAT against the yearly
+  // average spot price with VAT (spot against spot: grid tariffs change between winter and
+  // summer, so an all-in year would mislead). A level that is missing is left out.
+  function priceScale(v, day, eur, spot) {
     var known = day.filter(function (x) { return x != null && isFinite(x); });
     var below = known.filter(function (x) { return x < v; }).length;
     var steps = [Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)))];
-    var pr = state.prices || {}, ref = pr.reference || {}, k = eur ? (pr.fx > 0 ? 1 / Number(pr.fx) : NaN) : 1;
-    [ref.month_hours >= 168 ? Number(ref.month_mean) : NaN, Number(ref.year_all_in)].forEach(function (a) {
-      a *= k;
-      if (!(a > 0)) return;
-      var r = v / a;
+    var level = function (x, a) {
+      if (!(a > 0) || !isFinite(x)) return;
+      var r = x / a;
       steps.push(r < 0.6 ? 1 : r < 0.85 ? 2 : r <= 1.15 ? 3 : r <= 1.5 ? 4 : 5);
-    });
+    };
+    var pr = state.prices || {}, ref = pr.reference || {};
+    level(v, ref.month_hours >= 168 ? Number(ref.month_mean) * (eur ? (pr.fx > 0 ? 1 / Number(pr.fx) : NaN) : 1) : NaN);
+    level(spot, Number(pr.reference_price));
     var sum = steps.reduce(function (x, y) { return x + y; }, 0);
     return Math.max(1, Math.min(5, Math.floor(sum / steps.length + 0.5)));
+  }
+
+  // The spot price with VAT of the local hour starting at `ts` (s), from /prices today or
+  // tomorrow; NaN when it is not published.
+  function spotAt(ts) {
+    var pr = state.prices || {}, d = new Date(ts * 1000);
+    var ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    var day = [pr.today, pr.tomorrow].filter(function (x) { return x && x.date === ymd; })[0];
+    var v = day && day.spot ? Number(day.spot[d.getHours()]) : NaN;
+    return isFinite(v) ? v * (1 + (Number(pr.vat_pct) || 0) / 100) : NaN;
   }
 
   // Round an axis up to 1 / 2 / 2.5 / 5 × 10^n.
@@ -3660,7 +3675,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       var ptop = niceTop(Math.max.apply(null, prices));
       var cells = rows.map(function (r) {
         if (r.price == null) return '<i class="plan-cell"></i>';
-        var sc = priceScale(r.price, prices);
+        var sc = priceScale(r.price, prices, false, r.spot);
         return '<i class="plan-cell" data-scale="' + sc + '" style="--v:' + Math.max(4, Math.round(Math.max(0, r.price) / ptop * 100)) + '"></i>';
       }).join('');
       html += lab(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, ptop < 10 ? 1 : 0), '0']) + el('plan-lane plan-lane--price', cells);

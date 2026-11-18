@@ -87,9 +87,9 @@ struct Config {
   float markup = 0.0f;
   float vat_pct = 25.0f;
   /// The house's yearly average spot price (currency/kWh, with VAT, without taxes and grid
-  /// tariff, as on the supplier's overview); 0 = unknown. Touch adds the day's tariffs and
-  /// taxes (year_all_in()); cheap and dear are judged against the day, the last 30 days and
-  /// that (DESIGN.md 3.2.3), and it stands in for the month until a week is logged.
+  /// tariff, as on the supplier's overview); 0 = unknown. The price steps compare each
+  /// hour's spot price with VAT with it (DESIGN.md 3.2.3); made all-in with the day's
+  /// tariffs (year_all_in()) it stands in for the month until a week is logged.
   float reference_price = 0.0f;
   // Odin model (written to Odin's own settings)
   OdinMode odin_mode = OdinMode::DYNAMIC;
@@ -1031,9 +1031,10 @@ inline Due push_due(bool enabled, bool requested, bool time_valid, int ymd, uint
 /// Hours of logged prices before the 30-day mean stands in for the normal price.
 static constexpr uint32_t REFERENCE_MIN_HOURS = 7 * 24;
 
-/// The yearly average spot price as an all-in price, like the hours it is compared with: VAT
-/// taken off the setting, then the day's mean grid and system tariffs, taxes, markup and VAT
-/// added; NaN without a setting or a day.
+/// The yearly average spot price as an all-in price: VAT taken off the setting, then the day's
+/// mean grid and system tariffs, taxes, markup and VAT added; NaN without a setting or a day.
+/// Grid tariffs change between winter and summer, so this is only the fallback for the month
+/// (reference_price); the price steps compare spot with spot.
 inline float year_all_in(const Config &cfg, const DayPrices *day) {
   if (!(cfg.reference_price > 0.0f) || day == nullptr || !day->valid) return NAN;
   double grid = 0.0, system = 0.0;
