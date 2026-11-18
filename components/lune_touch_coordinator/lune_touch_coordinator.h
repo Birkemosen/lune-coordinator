@@ -589,6 +589,16 @@ class LuneTouchCoordinator : public esphome::Component {
   /// history (packages/system/weather.yaml). False when the state is busy.
   bool weather_summary(float *rooms, float *offset_c, float *lift_c, std::string *text,
                        std::string *reason) const;
+  /// Touch's and Odin's plans side by side for Home Assistant's long-term statistics
+  /// (packages/system/plan_compare.yaml): this hour's heat and electricity (kW, so the
+  /// hourly mean is the planned kWh) and the next 24 h, space heat only as the planner
+  /// page's Touch vs Odin table. NAN where a plan is missing. False when the state is busy.
+  struct PlanCompare {
+    float touch_heat_kw{NAN}, touch_elec_kw{NAN}, odin_heat_kw{NAN}, odin_elec_kw{NAN};
+    float touch_heat_kwh{NAN}, touch_elec_kwh{NAN}, touch_cost_eur{NAN}, touch_below_kh{NAN};
+    float odin_heat_kwh{NAN}, odin_elec_kwh{NAN}, odin_cost_eur{NAN}, odin_below_kh{NAN};
+  };
+  bool plan_compare(PlanCompare *out) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
   std::string zone_line_meta_text(uint8_t row) const;

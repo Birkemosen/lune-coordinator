@@ -18605,6 +18605,62 @@ bool LuneTouchCoordinator::weather_summary(float *rooms, float *offset_c, float 
   return true;
 }
 
+bool LuneTouchCoordinator::plan_compare(PlanCompare *out) const {
+  *out = PlanCompare{};
+  if (!take_state_lock_(20))
+    return false;
+  // The same 24 h as the planner page (index 0 = the current hour); Odin's hot water and
+  // legionella hours left out, the comfort floor and prices are Touch's for both.
+  const PlannerRuntime *rt = planner_rt_;
+  const bool touch = rt != nullptr && rt->solved_ts != 0 && rt->plan.n > 0 && std::isfinite(rt->plan_kw_now);
+  const int n = touch ? std::min(24, rt->plan.n) : 0;
+  bool priced = false;
+  for (int k = 0; k < n; k++)
+    priced = priced || (std::isfinite(rt->price[k]) && rt->price[k] > 0.0f);
+  auto price = [&](int k) { return k < n && std::isfinite(rt->price[k]) ? rt->price[k] : 0.0f; };
+  auto below = [&](int k, float t) {
+    return k < n && std::isfinite(rt->band_min[k]) && std::isfinite(t) ? std::max(0.0f, rt->band_min[k] - t) : 0.0f;
+  };
+  if (touch) {
+    const auto &p = rt->plan;
+    float heat = 0, elec = 0, cost = 0, bk = 0;
+    for (int k = 0; k < n; k++) {
+      heat += p.kw[k];
+      elec += p.elec_kwh[k];
+      cost += p.elec_kwh[k] * price(k);
+      bk += below(k, p.t_end_c[k]);
+    }
+    out->touch_heat_kw = p.kw[0];
+    out->touch_elec_kw = p.elec_kwh[0];
+    out->touch_heat_kwh = heat;
+    out->touch_elec_kwh = elec;
+    out->touch_cost_eur = priced ? cost : NAN;
+    out->touch_below_kh = bk;
+  }
+  const auto &o = odin_plan_;
+  if (o.available && !o.plan_stale && o.heat_production_count > 0) {
+    const int on = std::min<int>(24, o.heat_production_count);
+    auto space = [&](int k) { return o.operation_mode_horizon[k] != 1 && o.operation_mode_horizon[k] != 6; };
+    float heat = 0, elec = 0, cost = 0, bk = 0;
+    for (int k = 0; k < on; k++) {
+      if (space(k)) {
+        heat += std::max(0.0f, o.heat_production_horizon[k]);
+        elec += std::max(0.0f, o.energy_horizon[k]);
+        cost += std::max(0.0f, o.energy_horizon[k]) * price(k);
+      }
+      bk += below(k, o.expected_temp_horizon[k]);
+    }
+    out->odin_heat_kw = space(0) ? std::max(0.0f, o.heat_production_horizon[0]) : 0.0f;
+    out->odin_elec_kw = space(0) ? std::max(0.0f, o.energy_horizon[0]) : 0.0f;
+    out->odin_heat_kwh = heat;
+    out->odin_elec_kwh = elec;
+    out->odin_cost_eur = priced ? cost : NAN;
+    out->odin_below_kh = touch ? bk : NAN;
+  }
+  give_state_lock_();
+  return true;
+}
+
 bool LuneTouchCoordinator::problems_summary(float *count, std::string *titles) const {
   if (problems_rt_ == nullptr) {
     *count = 0.0f;
