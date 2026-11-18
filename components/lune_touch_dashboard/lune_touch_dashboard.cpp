@@ -1639,6 +1639,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     num("energy_tax", "elafgift_dkk", &update.energy_tax);
     num("markup", "markup_dkk", &update.markup);
     num("vat_pct", nullptr, &update.vat_pct);
+    num("reference_price", nullptr, &update.reference_price);
     num("odin_fixed_price", nullptr, &update.odin_fixed_price);
     const bool accepted = coordinator_->set_price_settings(update, data_buf_, DATA_BUF_SIZE);
     memset(token, 0, sizeof(token));

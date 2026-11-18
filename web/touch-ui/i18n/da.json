@@ -1327,5 +1327,9 @@
   "planner.sHeat": "Varme",
   "planner.sElec": "El",
   "planner.sCost": "Pris",
-  "planner.sBelow": "Under båndet"
+  "planner.sBelow": "Under båndet",
+  "price.normal": "Normalpris",
+  "price.reference": "Normalpris",
+  "price.referenceHint": "Billig og dyr vurderes mod den og mod døgnet, fx sidste års gennemsnitspris med alt. 0 = gennemsnittet af de sidste 30 dage.",
+  "price.month": "Gennemsnit, sidste 30 dage"
 }

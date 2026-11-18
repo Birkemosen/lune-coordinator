@@ -522,6 +522,7 @@ struct PriceSettingsUpdate {
   float energy_tax{NAN};
   float markup{NAN};
   float vat_pct{NAN};
+  float reference_price{NAN};   ///< 0 = from the logged month
   const char *odin_mode{nullptr};
   const char *odin_source{nullptr};
   float odin_fixed_price{NAN};
@@ -1291,6 +1292,11 @@ class LuneTouchCoordinator : public esphome::Component {
   bool solar_holdoff_enabled_{true};
   planner_settings::Settings planner_settings_{};
   PlannerRuntime *planner_rt_{nullptr};
+  // Mean all-in price of the last 30 days the planner logged (EUR/kWh) and its hours, for
+  // the normal price (energy_price.h reference_price); refreshed each hour.
+  float price_month_mean_eur_{NAN};
+  uint32_t price_month_hours_{0};
+  uint32_t price_month_hour_{0};
   volatile bool planner_solve_pending_{true};
   /// Shadow planner: re-plans each hour (or on new settings/prices/weather) and runs the
   /// shadow flow controller on each telemetry poll. Heat-source task. Commands nothing.

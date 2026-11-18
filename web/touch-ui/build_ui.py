@@ -818,6 +818,8 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
                srow(f'<span>{T("price.model")}</span>', seg_pm) +
                srow(lab("price_zone", T("price.zone")), price_zone_select))}
         {odin_f}{touch_f}
+        {group(T("price.normal"), sstep("reference_price", T("price.reference"), 0.0, 0, 10, 0.01, "DKK", dec=2, unit_attr=unit_cur, hint=T("price.referenceHint")) +
+               rrow(T("price.month"), "price.month"))}
         {savebar("prices", T("price.save"))}
       </form>'''
 

@@ -489,7 +489,9 @@ inline int cold_call_start_in_h(const float *price_rel, size_t n, int len, int m
 /// or one after dearer hours) stays lifted.
 /// The largest saving goes first, up to a third of the window's hours (rounded down),
 /// since the lift stores only so much. `price_rel[k]` is the price k hours from now
-/// (k < n); any unknown price in the window, or no tau, leaves it whole.
+/// (k < n); any unknown price in the window, or no tau, leaves it whole. A saving below
+/// `min_saving` (the caller: a share of the house's normal price) is not worth a gap: on a
+/// day cheap all through, a few øre between hours left holes in the lift.
 static constexpr float TAU_DEFAULT_H = 48.0f;
 inline float house_tau_h(float thermal_mass_kwh_per_k, float heat_loss_kw_per_k) {
   if (thermal_mass_kwh_per_k > 0.5f && heat_loss_kw_per_k > 0.01f)
@@ -497,7 +499,7 @@ inline float house_tau_h(float thermal_mass_kwh_per_k, float heat_loss_kw_per_k)
   return TAU_DEFAULT_H;
 }
 inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size_t n,
-                         float tau_h = TAU_DEFAULT_H, int defer_before = 0) {
+                         float tau_h = TAU_DEFAULT_H, int defer_before = 0, float min_saving = 0.0f) {
   l.skip_mask = 0;
   if (!l.active() || price_rel == nullptr || !(tau_h > 0.0f))
     return;
@@ -524,7 +526,7 @@ inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size
         if (!skipped(j))
           other = std::min(other, price_rel[j] * (1.0f + static_cast<float>(j - k) / tau_h));
       const float saving = price_rel[k] - other;
-      if (saving > best) {
+      if (saving > best && saving >= min_saving) {
         best = saving;
         pick = k;
       }

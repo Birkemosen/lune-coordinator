@@ -495,6 +495,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         schedule: [{ h: 0, v: 0.077 }, { h: 6, v: 0.231 }, { h: 17, v: 0.692 }, { h: 21, v: 0.231 }] },
       system: { source: 'datahub', fixed: 0.115 },
       energy_tax: 0.008, markup: 0, vat_pct: 25, entsoe_token_set: false, odin_host_set: true,
+      reference_price: 0, reference: { price: 1.71, source: 'month', month_mean: 1.71, month_hours: 720 },
       odin: { mode: 'dynamic', source: 'energy_charts', fixed_price: 0.25,
         current: { known: true, price_mode: 'dynamic', price_source: 'api', ec_bzn: 'DK1', fixed_price: 0.25, token_set: true, age_s: 60 } },
       status: { state: 'ok', pushes: true, reason: 'day_ahead', odin_source: 'api', odin_write_pending: false,
@@ -788,7 +789,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (str('grid_schedule')) { try { mp.grid.schedule = JSON.parse(body.grid_schedule); } catch (e) {} }
       if (str('system_source')) mp.system.source = str('system_source');
       if (str('system_fixed')) mp.system.fixed = Number(body.system_fixed);
-      ['energy_tax', 'markup', 'vat_pct'].forEach(function (k) { if (str(k)) mp[k] = Number(body[k]); });
+      ['energy_tax', 'markup', 'vat_pct', 'reference_price'].forEach(function (k) { if (str(k)) mp[k] = Number(body[k]); });
+      if (mp.reference_price > 0) mp.reference = { price: mp.reference_price, source: 'setting', month_mean: 1.71, month_hours: 720 };
       if (str('odin_mode')) mp.odin.mode = str('odin_mode');
       if (str('odin_source')) mp.odin.source = str('odin_source');
       if (str('odin_fixed_price')) mp.odin.fixed_price = Number(body.odin_fixed_price);
@@ -2741,6 +2743,8 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var today = qs('[data-bind-price-today]');
     if (today) today.hidden = !total.length;
     setText('price.inclAll', t('price.inclAll', { cur: cur }));
+    var refm = (p.reference || {}).month_mean;
+    setBind('price.month', finite(refm) ? esc(num(refm, 2)) + ' <small>' + esc(cur) + '/kWh</small>' : '—');
     renderPlan();   // the plan's price lane
     var unit = ' <small>' + esc(cur) + '/kWh</small>';
     var showTile = false;
@@ -2759,8 +2763,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       setText('price.max', t('price.atHour', { v: num(total[hi], 2) + ' ' + cur + '/kWh', h: hh(hi) }));
       setBind('price.peak', esc(num(peak, 2)) + unit);
       // Home › Next heating: the price now as one line with a 5-step good/bad chip.
-      var below = total.filter(function (v) { return Number(v) < nowV; }).length;
-      var scale = Math.max(1, Math.min(5, 1 + Math.floor(below / total.length * 5)));
+      var scale = priceScale(nowV, total.map(Number));
       setText('tile.priceText', t('tile.price', { p: num(nowV, 2), cur: cur }));
       qsa('[data-bind-scale]').forEach(function (c) { c.setAttribute('data-scale', String(scale)); c.textContent = t('price.scale.' + scale); });
       showTile = !!p.enabled;
@@ -2802,6 +2805,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     put('energy_tax', p.energy_tax, 3);
     put('markup', p.markup, 3);
     put('vat_pct', p.vat_pct, 1);
+    put('reference_price', p.reference_price, 2);
     putRadio(f, 'odin_mode', o.mode || 'dynamic');
     put('odin_source', o.source || 'energy_charts');
     put('odin_fixed_price', o.fixed_price, 3);
@@ -3248,8 +3252,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var known = pp.filter(function (v, q2) { return v != null && !pest[q2]; });
     var priceCells = pp.map(function (v, q2) {
       if (v == null || pest[q2] || !known.length) return '<i></i>';
-      var below = known.filter(function (x) { return x < v; }).length;
-      return '<i data-scale="' + Math.max(1, Math.min(5, 1 + Math.floor(below / known.length * 5))) + '"></i>';
+      return '<i data-scale="' + priceScale(v, known, true) + '"></i>';
     }).join('');
     var cell = function (on, m) { return on ? '<i data-mode="' + (m || 'heat') + '"></i>' : '<i></i>'; };
     var pastQ = lastDay(h.heat_kwh);
@@ -3407,10 +3410,10 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     var stair = planStair;
     var cells = '', bars = '';
     for (var i = 0; i < n; i++) {
-      // Colour = rank among the published hours (cheap → dear); an estimated hour (same
-      // hour of the last known day) keeps its height but no colour.
-      var pv = price[i], below = known.filter(function (v) { return v < pv; }).length;
-      var sc = Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)));
+      // Colour = step among the published hours and against the normal price (priceScale,
+      // EUR as the planner's); an estimated hour (same hour of the last known day) keeps its
+      // height but no colour.
+      var pv = price[i], sc = priceScale(pv, known, true);
       cells += pv == null ? '<i class="plan-cell"></i>'
         : '<i class="plan-cell"' + (est[i] ? '' : ' data-scale="' + sc + '"') + ' style="--v:' + Math.max(4, Math.round(Math.max(0, pv) / ptop * 100)) + '"></i>';
       bars += '<i class="plan-bar" style="--v:' + Math.round(Math.min(1, (plan.heat_kw[i] || 0) / 8) * 100) + '"></i>';
@@ -3615,6 +3618,20 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
     return { rows: rows, H: H, start: start, odin: odin, cur: pr.currency || 'DKK' };
   }
 
+  // Price step 1–5 (LDS DESIGN.md 3.2.3): the mean of the hour's rank among the known prices
+  // and its level against the house's normal price (/prices reference, in the price currency;
+  // eur: the prices are EUR/kWh, as the planner's); the rank alone without a normal price.
+  function priceScale(v, day, eur) {
+    var known = day.filter(function (x) { return x != null && isFinite(x); });
+    var below = known.filter(function (x) { return x < v; }).length;
+    var rank = Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)));
+    var pr = state.prices || {}, ref = pr.reference ? Number(pr.reference.price) : NaN;
+    if (eur) ref = pr.fx > 0 ? ref / Number(pr.fx) : NaN;
+    if (!(ref > 0)) return rank;
+    var r = v / ref, level = r < 0.6 ? 1 : r < 0.85 ? 2 : r <= 1.15 ? 3 : r <= 1.5 ? 4 : 5;
+    return Math.max(1, Math.min(5, Math.floor((rank + level) / 2 + 0.5)));
+  }
+
   // Round an axis up to 1 / 2 / 2.5 / 5 × 10^n.
   function niceTop(v) {
     if (!(v > 0)) return 1;
@@ -3631,14 +3648,14 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         ticks.map(function (x) { return '<i>' + esc(x) + '</i>'; }).join('') + '</span>');
     };
     var html = '';
-    // Price: height = price, colour = rank among these hours (cheap → dear, 5 steps).
+    // Price: height = price, colour = step (priceScale: rank among these hours and level
+    // against the normal price, cheap → dear, 5 steps).
     var prices = rows.map(function (r) { return r.price; }).filter(function (v) { return v != null; });
     if (prices.length) {
       var ptop = niceTop(Math.max.apply(null, prices));
       var cells = rows.map(function (r) {
         if (r.price == null) return '<i class="plan-cell"></i>';
-        var below = prices.filter(function (v) { return v < r.price; }).length;
-        var sc = Math.max(1, Math.min(5, 1 + Math.floor(below / prices.length * 5)));
+        var sc = priceScale(r.price, prices);
         return '<i class="plan-cell" data-scale="' + sc + '" style="--v:' + Math.max(4, Math.round(Math.max(0, r.price) / ptop * 100)) + '"></i>';
       }).join('');
       html += lab(' plan-lab--sm', t('planG.lanePrice'), [num(ptop, ptop < 10 ? 1 : 0), '0']) + el('plan-lane plan-lane--price', cells);
@@ -4832,6 +4849,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
           energy_tax: data.energy_tax,
           markup: data.markup,
           vat_pct: data.vat_pct,
+          reference_price: data.reference_price,
           odin_mode: data.odin_mode || 'dynamic',
           odin_source: data.odin_source || 'energy_charts',
           odin_fixed_price: data.odin_fixed_price

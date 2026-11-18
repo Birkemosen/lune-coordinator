@@ -1327,5 +1327,9 @@
   "planner.sHeat": "Heat",
   "planner.sElec": "Electricity",
   "planner.sCost": "Cost",
-  "planner.sBelow": "Below band"
+  "planner.sBelow": "Below band",
+  "price.normal": "Normal price",
+  "price.reference": "Normal price",
+  "price.referenceHint": "Cheap and dear are judged against this as well as against the day, e.g. last year's average all-in price. 0 = the average of the last 30 days.",
+  "price.month": "Average, last 30 days"
 }

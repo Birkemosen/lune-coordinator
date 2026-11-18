@@ -21,6 +21,7 @@ Når dette dokument og koden er uenige, er det en fejl i et af dem. Ret den ene,
 - `3.2.0` [Statusfarver: tekst-tone og fyld-tone](#320-statusfarver-tekst-tone-og-fyld-tone)
 - `3.2.1` [Undgå brunt i mørkt tema](#321-undgå-brunt-i-mørkt-tema)
 - `3.2.2` [Farver i grafer: gradienter og blanding](#322-farver-i-grafer-gradienter-og-blanding)
+- `3.2.3` [Elprisens trin](#323-elprisens-trin)
 - `3.3` [Kontrast](#33-kontrast)
 - `3.4` [Typografi](#34-typografi)
 - `3.5` [Afstand](#35-afstand)
@@ -274,6 +275,10 @@ Mørk orange *er* brun. Varme farver med lav dækning oven på en mørk flade bl
 - **Farvemængde: store flader er neutrale, farve kommer i små, intense doser.** Mængder (ventilåbning, samlet åbning, fremdrift) er neutrale (`--fg`); farve er forbeholdt betydning (varme, afvigelse, status). En væg af farvede felter bliver mat og udvasket; farve virker, når den skiller sig ud fra noget neutralt. Brug farvede chips, kanter (3 px øverst), tal og bjælker frem for farvede felter.
 - **Lyse toner til tekst og linjer, dybe toner til flader.** De lyse domæne-/tekst-toner (L ≈ 0,74 i mørkt) ser pastel ud som store flader. Ikonbrikker og knapper bruger de dybe fyld-toner (domænernes lyse-tema-værdier, statusfarvernes `-fill`) med hvid glyf.
 - **Datapaletten er afstemt** (se `$data` i tokens): samme lyshed og næsten samme farvestyrke, kun kuløren skifter. En ny datafarve skal ligge i samme bånd.
+
+### 3.2.3 Elprisens trin
+
+Elprisen vises i fem trin af `scale-good-bad` (`data-scale="1–5"`, «Meget billig» … «Meget dyr»). Et trin er gennemsnittet (afrundet) af to ting: timens **rang** blandt døgnets kendte timer (femtedele, billig → dyr) og dens **niveau** mod husets normalpris (under 60 %, under 85 %, op til 115 %, op til 150 %, over 150 %). Normalprisen er en indstilling under Elpris (fx sidste års gennemsnitspris med alt); 0 = gennemsnittet af de sidste 30 dage, Touch har logget. Så får en dag, der er billig hele vejen, ingen røde timer, og en dyr dag ingen grønne, mens døgnets udsving stadig ses. Uden normalpris (under en uges log og ingen indstilling) er trinnet rangen alene. Samme trin overalt: prisspor, striber, Hjem-feltets chip og elprisens graf.
 
 ### 3.3 Kontrast
 

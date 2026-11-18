@@ -147,6 +147,19 @@ int main() {
     assert(!hour_in_lift(l, 18) && hour_in_lift(l, 17) && hour_in_lift(l, 14));
     const Profile lifted2 = apply_lift(user, l);
     assert(near(block_at(lifted2, 18).sp, 22.0f) && near(block_at(lifted2, 17).sp, 23.0f));
+    // A saving below the minimum (a tenth of a 1.85 normal price) leaves the hour lifted:
+    // the 18–19 saving of about 1 is kept, a day with 0.1 between hours is left whole.
+    Lift ms{14, 8, 1.0f};
+    skip_dearest(ms, 13, price, 24, TAU_DEFAULT_H, 0, 0.185f);
+    assert(ms.skip_mask == ((1UL << 18) | (1UL << 19)));
+    float cheap[24];
+    for (int k = 0; k < 24; k++)
+      cheap[k] = ((13 + k) % 24 >= 17 && (13 + k) % 24 < 21) ? 1.0f : 0.9f;
+    Lift c2{14, 8, 1.0f};
+    skip_dearest(c2, 13, cheap, 24);
+    assert(c2.skip_mask != 0);
+    skip_dearest(c2, 13, cheap, 24, TAU_DEFAULT_H, 0, 0.185f);
+    assert(c2.skip_mask == 0);
     // Flat prices: nothing skipped.
     float flat[24];
     for (float &f : flat) f = 1.8f;

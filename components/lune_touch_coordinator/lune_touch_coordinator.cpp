@@ -3584,6 +3584,9 @@ float LuneTouchCoordinator::weather_store_c_() const {
   return std::max(store, preload);
 }
 
+// A dear hour is left out of a lift only when that saves a tenth of the normal price.
+static constexpr float SKIP_MIN_SAVING_SHARE = 0.10f;
+
 lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour, float *energy_kwh,
                                                                const char **reason,
                                                                lune_touch_odin::LiftSources *sources) {
@@ -3602,6 +3605,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   int pre_start_in_h = -1;
   float pre_share = NAN;
   float coldest = NAN, house_c = NAN, band_floor_c = NAN;
+  float normal_price = NAN;
   int charge_need_in_h = -1;
   // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
   float price_rel[24];
@@ -3626,6 +3630,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
           price_rel[k] = d->total[h % 24];
       }
     }
+    normal_price = lune_touch_price::reference_price(price_.cfg, price_month_mean_eur_, price_month_hours_, nullptr);
     // One setting for "how far Touch may raise ahead": Weather › Preload › Max.
     // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
     params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
@@ -3738,8 +3743,10 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       if (!lag.active() && !pre.active() && !charge.active())
         need_in_h = 0;
     }
+    // Worth a gap only for a tenth of the normal price or more (energy_price.h reference_price).
     lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
-                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h);
+                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h,
+                                  std::isfinite(normal_price) ? SKIP_MIN_SAVING_SHARE * normal_price : 0.0f);
     if (reason != nullptr)
       *reason = lift_reason_(charge.active(), lag.active(), pre.active());
     // Which source wants each lifted hour (a skipped hour has none).
@@ -15571,6 +15578,25 @@ void LuneTouchCoordinator::planner_tick_() {
       give_state_lock_();
     }
   }
+  // The normal price's month: mean all-in price of the last 30 days logged, once an hour.
+  if (price_month_hour_ != hour0 && take_state_lock_(100)) {
+    double sum = 0.0;
+    uint32_t n = 0;
+    for (uint32_t h = hour0 - 30u * 86400u; h < hour0; h += 3600u) {
+      const lp::Record *r = rt.store->at(h);
+      if (r != nullptr && r->has(lp::H_PRICE_EUR_KWH)) {
+        const float v = r->get(lp::Kind::HOUSE, lp::H_PRICE_EUR_KWH);
+        if (std::isfinite(v)) {
+          sum += v;
+          n++;
+        }
+      }
+    }
+    price_month_mean_eur_ = n > 0 ? static_cast<float>(sum / n) : NAN;
+    price_month_hours_ = n;
+    price_month_hour_ = hour0;
+    give_state_lock_();
+  }
 
   // Daily refit at 03 local (and once as soon as there are 4 days, or after a seed): from
   // the seed again, on a copy of the store so the lock is held only for the copy.
@@ -17304,6 +17330,10 @@ void LuneTouchCoordinator::load_price_settings_() {
     if (std::isfinite(nums2[1])) cfg.spot_fixed_eur = nums2[1];
     if (std::isfinite(nums2[2])) cfg.odin_fixed_price = nums2[2];
   }
+  float ref = 0.0f;
+  len = sizeof(ref);
+  if (nvs_get_blob(handle, "pr_ref", &ref, &len) == ESP_OK && len == sizeof(ref) && std::isfinite(ref) && ref >= 0.0f)
+    cfg.reference_price = ref;
   len = sizeof(entsoe_token_);
   if (nvs_get_str(handle, "pr_etok", entsoe_token_, &len) != ESP_OK || !valid_token_(entsoe_token_))
     entsoe_token_[0] = '\0';
@@ -17349,6 +17379,7 @@ void LuneTouchCoordinator::save_price_settings_() {
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gcode", cfg.grid_code);
   if (err == ESP_OK) err = nvs_set_blob(handle, "pr_nums", nums, sizeof(nums));
   if (err == ESP_OK) err = nvs_set_blob(handle, "pr_nums2", nums2, sizeof(nums2));
+  if (err == ESP_OK) err = nvs_set_blob(handle, "pr_ref", &cfg.reference_price, sizeof(cfg.reference_price));
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_etok", token);
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gsched", sched);
   if (err == ESP_OK) err = nvs_commit(handle);
@@ -17400,7 +17431,7 @@ bool LuneTouchCoordinator::set_price_settings(const PriceSettingsUpdate &u, char
   auto bad = [](float v, float lo, float hi) { return !std::isnan(v) && !(v >= lo && v <= hi); };
   if (bad(u.system_fixed, -100.0f, 500.0f) || bad(u.energy_tax, 0.0f, 500.0f) || bad(u.markup, -100.0f, 500.0f) ||
       bad(u.vat_pct, 0.0f, 50.0f) || bad(u.fx, 0.01f, 10000.0f) || bad(u.spot_fixed_eur, -1.0f, 5.0f) ||
-      bad(u.odin_fixed_price, 0.0f, 5.0f))
+      bad(u.odin_fixed_price, 0.0f, 5.0f) || bad(u.reference_price, 0.0f, 100.0f))
     return reject("invalid_value");
 
   if (!take_state_lock_(200))
@@ -17427,6 +17458,7 @@ bool LuneTouchCoordinator::set_price_settings(const PriceSettingsUpdate &u, char
   if (!std::isnan(u.energy_tax)) cfg.energy_tax = u.energy_tax;
   if (!std::isnan(u.markup)) cfg.markup = u.markup;
   if (!std::isnan(u.vat_pct)) cfg.vat_pct = u.vat_pct;
+  if (!std::isnan(u.reference_price)) cfg.reference_price = u.reference_price;
   if (given(u.odin_mode)) cfg.odin_mode = odin_mode;
   if (given(u.odin_source)) cfg.odin_source = odin_source;
   if (!std::isnan(u.odin_fixed_price)) cfg.odin_fixed_price = u.odin_fixed_price;
@@ -17546,19 +17578,29 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
                                                                       : "waiting";
   char err[96];
   json_escape_(p.last_error, err, sizeof(err));
+  // The normal price cheap and dear are judged against, and the logged month behind it.
+  const char *ref_src = "none";
+  const float ref = reference_price(c, price_month_mean_eur_, price_month_hours_, &ref_src);
+  const float month = std::isfinite(price_month_mean_eur_) && c.fx > 0.0f ? price_month_mean_eur_ * c.fx : NAN;
+  char ref_tok[16], month_tok[16];
+  json_float_token_(ref_tok, sizeof(ref_tok), ref, 3);
+  json_float_token_(month_tok, sizeof(month_tok), month, 3);
   size_t off = 0;
   appendf_(buffer, capacity, off,
            "{\"available\":true,\"enabled\":%s,\"model\":\"%s\",\"zone\":\"%s\",\"dk\":%s,"
            "\"spot\":{\"source\":\"%s\",\"fixed_eur\":%.4f},\"currency\":\"%s\",\"fx\":%.4f,"
            "\"grid\":{\"source\":\"%s\",\"gln\":\"%s\",\"code\":\"%s\",\"schedule\":%s},"
            "\"system\":{\"source\":\"%s\",\"fixed\":%.4f},"
-           "\"energy_tax\":%.4f,\"markup\":%.4f,\"vat_pct\":%.2f,\"entsoe_token_set\":%s,\"odin_host_set\":%s,",
+           "\"energy_tax\":%.4f,\"markup\":%.4f,\"vat_pct\":%.2f,\"entsoe_token_set\":%s,\"odin_host_set\":%s,"
+           "\"reference_price\":%.4f,\"reference\":{\"price\":%s,\"source\":\"%s\",\"month_mean\":%s,\"month_hours\":%lu},",
            c.enabled ? "true" : "false", model_name(c.model), c.zone, zone_is_dk(c.zone) ? "true" : "false",
            spot_source_name(c.spot_source), static_cast<double>(c.spot_fixed_eur), c.currency,
            static_cast<double>(c.fx), grid_source_name(c.grid_source), c.grid_gln, c.grid_code, sched,
            system_source_name(c.system_source), static_cast<double>(c.system_fixed),
            static_cast<double>(c.energy_tax), static_cast<double>(c.markup), static_cast<double>(c.vat_pct),
-           entsoe_token_[0] != '\0' ? "true" : "false", odin_plan_.odin_host[0] != '\0' ? "true" : "false");
+           entsoe_token_[0] != '\0' ? "true" : "false", odin_plan_.odin_host[0] != '\0' ? "true" : "false",
+           static_cast<double>(c.reference_price), ref_tok, ref_src, month_tok,
+           static_cast<unsigned long>(price_month_hours_));
   char ofp[16];
   json_float_token_(ofp, sizeof(ofp), p.odin.fixed_price, 6);
   char oage[16] = "null";
