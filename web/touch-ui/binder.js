@@ -2997,9 +2997,11 @@
     var cellv = function (v, dec) { return '<td>' + (v == null ? '—' : num(v, dec)) + '</td>'; };
     var priced = price.slice(0, N).some(function (v) { return v != null; });
     if (!priced) { costT = null; costO = null; }
-    // The next 24 h as a small table (LDS .vs-sum): a row per figure, Touch and Odin as columns.
-    var row_ = function (key, unit, a, b, dec) {
-      return '<tr><td>' + esc(t(key)) + ' <small>' + unit + '</small></td>' + cellv(a, dec) + cellv(b, dec) + '</tr>';
+    // The next 24 h as a small table (LDS .vs-sum): Touch and Odin as rows, the figures as columns.
+    var sumCols = [['planner.sHeat', 'kWh', heatT, heatO, 0], ['planner.sElec', 'kWh', elecT, elecO, 1],
+      ['planner.sCost', '€', costT, costO, 2], ['planner.sBelow', 'K·t', belowT, belowO, 1]];
+    var sumRow = function (who, i) {
+      return '<tr><td>' + who + '</td>' + sumCols.map(function (c) { return cellv(c[2 + i], c[4]); }).join('') + '</tr>';
     };
     // The whole window: the last day's band and setpoint from the history (as the plan held
     // them), the next day's from the plan (Odin's schedule with Touch's lift).
@@ -3044,9 +3046,8 @@
       '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(plan.from_ts) + '</div>';
     var lg_ = function (c, k) { return '<span><i class="' + c + '"></i>' + esc(t(k)) + '</span>'; };
     return '<div class="hchart hchart--ahead hchart--vs"><div class="hchart-head"><table class="table vs-sum"><thead><tr><th>' +
-      esc(t('planner.sNext')) + '</th><th>Touch</th><th>Odin</th></tr></thead><tbody>' +
-      row_('planner.sHeat', 'kWh', heatT, heatO, 0) + row_('planner.sElec', 'kWh', elecT, elecO, 1) +
-      row_('planner.sCost', '€', costT, costO, 2) + row_('planner.sBelow', 'K·t', belowT, belowO, 1) + '</tbody></table>' +
+      esc(t('planner.sNext')) + '</th>' + sumCols.map(function (c) { return '<th>' + esc(t(c[0])) + ' <small>' + c[1] + '</small></th>'; }).join('') +
+      '</tr></thead><tbody>' + sumRow('Touch', 0) + sumRow('Odin', 1) + '</tbody></table>' +
       (odin ? '' : '<p class="note">' + esc(t(NO_ODIN[(d.odin || {}).reason] || 'planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
       '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lsp', 'planner.lScheduled') + lg_('lt', 'planner.lMeasured') +
       lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('ldl', 'planner.lDelivered') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';
