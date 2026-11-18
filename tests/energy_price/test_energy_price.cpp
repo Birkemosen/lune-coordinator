@@ -428,7 +428,7 @@ int main() {
     for (size_t h = 0; h < HOURS; h++) { spot[h] = 1.0f; grid[h] = h >= 17 && h < 21 ? 0.6f : 0.2f; sys[h] = 0.115f; }
     const DayPrices day = build_day(20261118, spot, grid, sys, c);
     const float year = year_all_in(c, &day);
-    assert(near(year, (1.01 + (4 * 0.6 + 20 * 0.2) / 24.0 + 0.115 + c.energy_tax + c.markup) * 1.25));
+    assert(near(year, (1.01 / 1.25 + (4 * 0.6 + 20 * 0.2) / 24.0 + 0.115 + c.energy_tax + c.markup) * 1.25));   // entered with VAT
     assert(near(reference_price(c, 0.25f, 24, year, &src), year) && std::strcmp(src, "year") == 0);
     assert(near(reference_price(c, 0.25f, 30 * 24, year, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
   }

@@ -86,7 +86,7 @@ struct Config {
   float energy_tax = 0.008f;
   float markup = 0.0f;
   float vat_pct = 25.0f;
-  /// The house's yearly average spot price (currency/kWh, without VAT, taxes and grid
+  /// The house's yearly average spot price (currency/kWh, with VAT, without taxes and grid
   /// tariff, as on the supplier's overview); 0 = unknown. Touch adds the day's tariffs and
   /// taxes (year_all_in()); cheap and dear are judged against the day, the last 30 days and
   /// that (DESIGN.md 3.2.3), and it stands in for the month until a week is logged.
@@ -1031,9 +1031,9 @@ inline Due push_due(bool enabled, bool requested, bool time_valid, int ymd, uint
 /// Hours of logged prices before the 30-day mean stands in for the normal price.
 static constexpr uint32_t REFERENCE_MIN_HOURS = 7 * 24;
 
-/// The yearly average spot price as an all-in price, like the hours it is compared with: the
-/// day's mean grid and system tariffs, taxes, markup and VAT added; NaN without a setting or
-/// a day.
+/// The yearly average spot price as an all-in price, like the hours it is compared with: VAT
+/// taken off the setting, then the day's mean grid and system tariffs, taxes, markup and VAT
+/// added; NaN without a setting or a day.
 inline float year_all_in(const Config &cfg, const DayPrices *day) {
   if (!(cfg.reference_price > 0.0f) || day == nullptr || !day->valid) return NAN;
   double grid = 0.0, system = 0.0;
@@ -1041,7 +1041,8 @@ inline float year_all_in(const Config &cfg, const DayPrices *day) {
     grid += day->grid[h];
     system += day->system[h];
   }
-  return all_in(cfg.reference_price, static_cast<float>(grid / HOURS), static_cast<float>(system / HOURS), cfg);
+  const float spot = static_cast<float>(cfg.reference_price / (1.0 + cfg.vat_pct / 100.0));
+  return all_in(spot, static_cast<float>(grid / HOURS), static_cast<float>(system / HOURS), cfg);
 }
 
 /// The price level decisions measure savings against, in the calculation currency: the mean

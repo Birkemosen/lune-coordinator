@@ -495,7 +495,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         schedule: [{ h: 0, v: 0.077 }, { h: 6, v: 0.231 }, { h: 17, v: 0.692 }, { h: 21, v: 0.231 }] },
       system: { source: 'datahub', fixed: 0.115 },
       energy_tax: 0.008, markup: 0, vat_pct: 25, entsoe_token_set: false, odin_host_set: true,
-      reference_price: 1.01, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720, year_all_in: 1.73 },
+      reference_price: 1.01, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720, year_all_in: 1.48 },
       odin: { mode: 'dynamic', source: 'energy_charts', fixed_price: 0.25,
         current: { known: true, price_mode: 'dynamic', price_source: 'api', ec_bzn: 'DK1', fixed_price: 0.25, token_set: true, age_s: 60 } },
       status: { state: 'ok', pushes: true, reason: 'day_ahead', odin_source: 'api', odin_write_pending: false,
