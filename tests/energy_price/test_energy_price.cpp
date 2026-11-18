@@ -415,14 +415,15 @@ int main() {
     assert(parse_entsoe_xml("", 0, [](int64_t, double) {}) == 0);
   }
 
-  // Normal price: the setting, else a week or more of the logged month, else none.
+  // Reference price: a week or more of the logged month, else the yearly average, else none.
   {
     Config c{};
     const char *src = nullptr;
     assert(std::isnan(reference_price(c, 0.25f, 24, &src)) && std::strcmp(src, "none") == 0);
     assert(near(reference_price(c, 0.25f, 30 * 24, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
-    c.reference_price = 1.85f;
-    assert(near(reference_price(c, 0.25f, 30 * 24, &src), 1.85) && std::strcmp(src, "setting") == 0);
+    c.reference_price = 1.52f;
+    assert(near(reference_price(c, 0.25f, 24, &src), 1.52) && std::strcmp(src, "year") == 0);
+    assert(near(reference_price(c, 0.25f, 30 * 24, &src), 0.25 * c.fx) && std::strcmp(src, "month") == 0);
   }
 
   std::printf("energy_price: all tests passed\n");

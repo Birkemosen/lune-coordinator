@@ -3584,7 +3584,8 @@ float LuneTouchCoordinator::weather_store_c_() const {
   return std::max(store, preload);
 }
 
-// A dear hour is left out of a lift only when that saves a tenth of the normal price.
+// A dear hour is left out of a lift only when that saves a tenth of the price level (the
+// last 30 days, else the yearly average).
 static constexpr float SKIP_MIN_SAVING_SHARE = 0.10f;
 
 lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour, float *energy_kwh,
@@ -3743,7 +3744,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       if (!lag.active() && !pre.active() && !charge.active())
         need_in_h = 0;
     }
-    // Worth a gap only for a tenth of the normal price or more (energy_price.h reference_price).
+    // Worth a gap only for a tenth of what prices are now or more (energy_price.h reference_price).
     lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
                                   lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h,
                                   std::isfinite(normal_price) ? SKIP_MIN_SAVING_SHARE * normal_price : 0.0f);
@@ -17578,7 +17579,7 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
                                                                       : "waiting";
   char err[96];
   json_escape_(p.last_error, err, sizeof(err));
-  // The normal price cheap and dear are judged against, and the logged month behind it.
+  // The price level savings are measured against, and the logged month behind it.
   const char *ref_src = "none";
   const float ref = reference_price(c, price_month_mean_eur_, price_month_hours_, &ref_src);
   const float month = std::isfinite(price_month_mean_eur_) && c.fx > 0.0f ? price_month_mean_eur_ * c.fx : NAN;

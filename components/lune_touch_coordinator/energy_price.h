@@ -86,9 +86,9 @@ struct Config {
   float energy_tax = 0.008f;
   float markup = 0.0f;
   float vat_pct = 25.0f;
-  /// The house's normal all-in price (currency/kWh), e.g. last year's average; 0 = the
-  /// mean of the last 30 days Touch logged. Cheap and dear are judged against it as well as
-  /// against the day (reference_price()).
+  /// The house's yearly average all-in price (currency/kWh); 0 = unknown. Cheap and dear
+  /// are judged against the day, the last 30 days Touch logged and this (DESIGN.md 3.2.3);
+  /// it stands in for the month until a week is logged (reference_price()).
   float reference_price = 0.0f;
   // Odin model (written to Odin's own settings)
   OdinMode odin_mode = OdinMode::DYNAMIC;
@@ -1030,17 +1030,18 @@ inline Due push_due(bool enabled, bool requested, bool time_valid, int ymd, uint
 /// Hours of logged prices before the 30-day mean stands in for the normal price.
 static constexpr uint32_t REFERENCE_MIN_HOURS = 7 * 24;
 
-/// The normal all-in price in the calculation currency: the setting when given, else the
-/// mean of the logged hours (EUR/kWh, converted by fx) once there are a week of them, else
-/// NaN. `source` names which ("setting", "month", "none").
+/// The price level decisions measure savings against, in the calculation currency: the mean
+/// of the logged hours (EUR/kWh, converted by fx) once there are a week of them — what prices
+/// are now — else the yearly average setting, else NaN. `source` names which ("month",
+/// "year", "none").
 inline float reference_price(const Config &cfg, float month_mean_eur, uint32_t month_hours, const char **source) {
-  if (cfg.reference_price > 0.0f) {
-    if (source != nullptr) *source = "setting";
-    return cfg.reference_price;
-  }
   if (std::isfinite(month_mean_eur) && month_hours >= REFERENCE_MIN_HOURS && cfg.fx > 0.0f) {
     if (source != nullptr) *source = "month";
     return month_mean_eur * cfg.fx;
+  }
+  if (cfg.reference_price > 0.0f) {
+    if (source != nullptr) *source = "year";
+    return cfg.reference_price;
   }
   if (source != nullptr) *source = "none";
   return NAN;

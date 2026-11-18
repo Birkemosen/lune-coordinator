@@ -522,7 +522,7 @@ struct PriceSettingsUpdate {
   float energy_tax{NAN};
   float markup{NAN};
   float vat_pct{NAN};
-  float reference_price{NAN};   ///< 0 = from the logged month
+  float reference_price{NAN};   ///< yearly average; 0 = unknown
   const char *odin_mode{nullptr};
   const char *odin_source{nullptr};
   float odin_fixed_price{NAN};
@@ -1293,7 +1293,7 @@ class LuneTouchCoordinator : public esphome::Component {
   planner_settings::Settings planner_settings_{};
   PlannerRuntime *planner_rt_{nullptr};
   // Mean all-in price of the last 30 days the planner logged (EUR/kWh) and its hours, for
-  // the normal price (energy_price.h reference_price); refreshed each hour.
+  // the price steps and the price level (energy_price.h reference_price); refreshed each hour.
   float price_month_mean_eur_{NAN};
   uint32_t price_month_hours_{0};
   uint32_t price_month_hour_{0};

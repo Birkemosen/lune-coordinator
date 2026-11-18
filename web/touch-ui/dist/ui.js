@@ -495,7 +495,7 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
         schedule: [{ h: 0, v: 0.077 }, { h: 6, v: 0.231 }, { h: 17, v: 0.692 }, { h: 21, v: 0.231 }] },
       system: { source: 'datahub', fixed: 0.115 },
       energy_tax: 0.008, markup: 0, vat_pct: 25, entsoe_token_set: false, odin_host_set: true,
-      reference_price: 0, reference: { price: 1.71, source: 'month', month_mean: 1.71, month_hours: 720 },
+      reference_price: 1.52, reference: { price: 2.43, source: 'month', month_mean: 2.43, month_hours: 720 },
       odin: { mode: 'dynamic', source: 'energy_charts', fixed_price: 0.25,
         current: { known: true, price_mode: 'dynamic', price_source: 'api', ec_bzn: 'DK1', fixed_price: 0.25, token_set: true, age_s: 60 } },
       status: { state: 'ok', pushes: true, reason: 'day_ahead', odin_source: 'api', odin_write_pending: false,
@@ -790,7 +790,6 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
       if (str('system_source')) mp.system.source = str('system_source');
       if (str('system_fixed')) mp.system.fixed = Number(body.system_fixed);
       ['energy_tax', 'markup', 'vat_pct', 'reference_price'].forEach(function (k) { if (str(k)) mp[k] = Number(body[k]); });
-      if (mp.reference_price > 0) mp.reference = { price: mp.reference_price, source: 'setting', month_mean: 1.71, month_hours: 720 };
       if (str('odin_mode')) mp.odin.mode = str('odin_mode');
       if (str('odin_source')) mp.odin.source = str('odin_source');
       if (str('odin_fixed_price')) mp.odin.fixed_price = Number(body.odin_fixed_price);
@@ -3619,17 +3618,22 @@ ring.addEventListener("pointermove",mv);ring.addEventListener("pointerup",up);ri
   }
 
   // Price step 1–5 (LDS DESIGN.md 3.2.3): the mean of the hour's rank among the known prices
-  // and its level against the house's normal price (/prices reference, in the price currency;
-  // eur: the prices are EUR/kWh, as the planner's); the rank alone without a normal price.
+  // and its level against the last 30 days (a week logged or more) and the yearly average
+  // (/prices, in the price currency; eur: the prices are EUR/kWh, as the planner's). An
+  // average that is missing is left out; the rank alone without either.
   function priceScale(v, day, eur) {
     var known = day.filter(function (x) { return x != null && isFinite(x); });
     var below = known.filter(function (x) { return x < v; }).length;
-    var rank = Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)));
-    var pr = state.prices || {}, ref = pr.reference ? Number(pr.reference.price) : NaN;
-    if (eur) ref = pr.fx > 0 ? ref / Number(pr.fx) : NaN;
-    if (!(ref > 0)) return rank;
-    var r = v / ref, level = r < 0.6 ? 1 : r < 0.85 ? 2 : r <= 1.15 ? 3 : r <= 1.5 ? 4 : 5;
-    return Math.max(1, Math.min(5, Math.floor((rank + level) / 2 + 0.5)));
+    var steps = [Math.max(1, Math.min(5, 1 + Math.floor(below / Math.max(1, known.length) * 5)))];
+    var pr = state.prices || {}, ref = pr.reference || {}, k = eur ? (pr.fx > 0 ? 1 / Number(pr.fx) : NaN) : 1;
+    [ref.month_hours >= 168 ? Number(ref.month_mean) : NaN, Number(pr.reference_price)].forEach(function (a) {
+      a *= k;
+      if (!(a > 0)) return;
+      var r = v / a;
+      steps.push(r < 0.6 ? 1 : r < 0.85 ? 2 : r <= 1.15 ? 3 : r <= 1.5 ? 4 : 5);
+    });
+    var sum = steps.reduce(function (x, y) { return x + y; }, 0);
+    return Math.max(1, Math.min(5, Math.floor(sum / steps.length + 0.5)));
   }
 
   // Round an axis up to 1 / 2 / 2.5 / 5 × 10^n.

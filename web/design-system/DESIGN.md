@@ -278,7 +278,7 @@ Mørk orange *er* brun. Varme farver med lav dækning oven på en mørk flade bl
 
 ### 3.2.3 Elprisens trin
 
-Elprisen vises i fem trin af `scale-good-bad` (`data-scale="1–5"`, «Meget billig» … «Meget dyr»). Et trin er gennemsnittet (afrundet) af to ting: timens **rang** blandt døgnets kendte timer (femtedele, billig → dyr) og dens **niveau** mod husets normalpris (under 60 %, under 85 %, op til 115 %, op til 150 %, over 150 %). Normalprisen er en indstilling under Elpris (fx sidste års gennemsnitspris med alt); 0 = gennemsnittet af de sidste 30 dage, Touch har logget. Så får en dag, der er billig hele vejen, ingen røde timer, og en dyr dag ingen grønne, mens døgnets udsving stadig ses. Uden normalpris (under en uges log og ingen indstilling) er trinnet rangen alene. Samme trin overalt: prisspor, striber, Hjem-feltets chip og elprisens graf.
+Elprisen vises i fem trin af `scale-good-bad` (`data-scale="1–5"`, «Meget billig» … «Meget dyr»). Et trin er gennemsnittet (afrundet) af timens **rang** blandt døgnets kendte timer (femtedele, billig → dyr) og dens **niveau** mod to gennemsnit: de **sidste 30 dage**, Touch har logget, og husets **årsgennemsnit** (indstilling under Elpris, gennemsnitsprisen med alt). Niveauet er trinvist: under 60 %, under 85 %, op til 115 %, op til 150 %, over 150 % af gennemsnittet. Så får en dag, der er billig hele vejen, ingen røde timer, en dyr måned ses stadig (november mod året), og døgnets udsving ses altid. Et gennemsnit, der mangler (under en uges log, årsgennemsnit 0), udelades; uden begge er trinnet rangen alene. Samme trin overalt: prisspor, striber, Hjem-feltets chip og elprisens graf.
 
 ### 3.3 Kontrast
 

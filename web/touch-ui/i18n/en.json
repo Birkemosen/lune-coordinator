@@ -1329,7 +1329,7 @@
   "planner.sCost": "Cost",
   "planner.sBelow": "Below band",
   "price.normal": "Normal price",
-  "price.reference": "Normal price",
-  "price.referenceHint": "Cheap and dear are judged against this as well as against the day, e.g. last year's average all-in price. 0 = the average of the last 30 days.",
+  "price.reference": "Yearly average",
+  "price.referenceHint": "Your average all-in price over the year. Cheap and dear are judged against the day, the last 30 days and this, so an expensive month still shows. 0 = the last 30 days only.",
   "price.month": "Average, last 30 days"
 }
