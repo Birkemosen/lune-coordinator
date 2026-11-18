@@ -62,79 +62,92 @@ static void fill_calm(ForecastHour *hours, size_t count) {
     hours[i] = ForecastHour{8.0f, 2.0f, 0.0f, 0.0f};
 }
 
+static void test_room_loss() {
+  ZoneExposure zone{};
+  zone.exterior_walls = WALL_WEST;
+  zone.wind_exposure = 0.8f;
+  zone.solar_gain = 0.0f;
+  PreloadParams params{};   // defaults: cooling 0.12 °C/h in typical weather
+  // 21 − 6 = 15 K, 4 m/s half on the wall: the typical weather → the learned rate.
+  expect(near(room_loss_c_per_h(ForecastHour{6.0f, 4.0f, 330.0f, 0.0f}, zone, params), 0.12f, 0.01f),
+         "loss: typical weather = learned cooling");
+  // Twice the temperature difference, calm: twice the rate over the typical wind.
+  expect(near(room_loss_c_per_h(ForecastHour{-9.0f, 0.0f, 0.0f, 0.0f}, zone, params), 0.24f / 1.096f, 0.01f),
+         "loss: calm frost scales with the temperature difference");
+  // −4 °C, 15 m/s head-on: 25/15 × 1.72 / 1.096.
+  expect(near(room_loss_c_per_h(ForecastHour{-4.0f, 15.0f, 270.0f, 0.0f}, zone, params), 0.314f, 0.01f),
+         "loss: storm on the wall");
+  expect(room_loss_c_per_h(ForecastHour{-4.0f, 15.0f, 90.0f, 0.0f}, zone, params) <
+             room_loss_c_per_h(ForecastHour{-4.0f, 15.0f, 270.0f, 0.0f}, zone, params),
+         "loss: wind on the sheltered side counts less");
+  zone.solar_gain = 0.5f;
+  expect(room_loss_c_per_h(ForecastHour{-4.0f, 15.0f, 270.0f, 800.0f}, zone, params) <
+             room_loss_c_per_h(ForecastHour{-4.0f, 15.0f, 270.0f, 0.0f}, zone, params),
+         "loss: sun relieves");
+}
+
 static void test_preload_decision() {
   ForecastHour hours[FORECAST_HOURS];
   PreloadParams params{};
-  params.enable_horizon = false;  // isolate heuristic 2.0
-
   ZoneExposure zone{};
   zone.exterior_walls = WALL_WEST;
   zone.wind_exposure = 0.8f;
   zone.solar_gain = 0.0f;
   zone.thermal_lead_h = 12;
 
-  // Storm load 3.0 at +10h. heuristic base = (3-1)*0.5 = 1.0
-  // timing: urgency = 1 - 10/12 = 0.167 → scale = 0.4 + 0.6*0.167 = 0.5
+  // Storm at +10 (loss 0.31 against usual 0.12 and floor 0.30): start the floor lag (0)
+  // and an hour before it, the least offset that counts.
   fill_calm(hours, FORECAST_HOURS);
   hours[10] = ForecastHour{-4.0f, 15.0f, 270.0f, 0.0f};
   PreloadDecision d = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(near(d.heuristic_offset_c, 0.5f), "preload: storm in 10h, lead 12h → heuristic 0.5");
-  expect(near(d.offset_c, 0.5f), "preload: storm in 10h → offset 0.5");
-  expect(d.peak_in_h == 10, "preload: peak reported at +10h");
-  expect(d.preload_end_h == 11, "preload: bar covers through peak hour");
+  expect(near(d.offset_c, 0.0f) && d.preload_start_h == 9 && d.preload_end_h == 11,
+         "preload: storm in 10 h → nothing yet, planned 9–11");
+  expect(near(d.planned_offset_c, 0.3f) && d.peak_in_h == 10, "preload: planned the least offset, peak at +10");
+  d = compute_zone_preload(hours, FORECAST_HOURS, 9, zone, params);
+  expect(near(d.offset_c, 0.3f) && d.preload_start_h == 0, "preload: on an hour before the storm");
 
   zone.thermal_lead_h = 4;
-  d = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(near(d.offset_c, 0.0f), "preload: storm in 10h, lead 4h → no offset yet");
-
-  // 3 h before storm, lead 4: peak_in_h=3, urgency=1-3/4=0.25 → scale=0.4+0.15=0.55
-  d = compute_zone_preload(hours, FORECAST_HOURS, 7, zone, params);
-  expect(near(d.offset_c, 0.55f), "preload: lead 4h activates 3h before storm");
-
-  zone.thermal_lead_h = 12;
-  hours[10] = ForecastHour{-15.0f, 25.0f, 270.0f, 0.0f};  // load = 7.2, base capped 1.5 * 0.5 scale
-  d = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(near(d.offset_c, 0.75f), "preload: violent storm capped then timing-scaled");
+  for (size_t i = 10; i < 15; i++)
+    hours[i] = ForecastHour{-15.0f, 25.0f, 270.0f, 0.0f};
+  d = compute_zone_preload(hours, FORECAST_HOURS, 9, zone, params);
+  expect(near(d.offset_c, 1.5f), "preload: a violent storm the floor cannot meet is capped");
 
   fill_calm(hours, FORECAST_HOURS);
   d = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(near(d.offset_c, 0.0f), "preload: calm forecast → no offset");
-
+  expect(near(d.offset_c, 0.0f) && near(d.planned_offset_c, 0.0f) && d.preload_end_h == 0,
+         "preload: calm forecast → nothing");
   d = compute_zone_preload(nullptr, 0, 0, zone, params);
   expect(near(d.offset_c, 0.0f) && d.peak_in_h == -1, "preload: null input → empty decision");
   d = compute_zone_preload(hours, FORECAST_HOURS, FORECAST_HOURS + 5, zone, params);
   expect(near(d.offset_c, 0.0f), "preload: now_index out of range → empty decision");
-
-  hours[FORECAST_HOURS - 1] = ForecastHour{-4.0f, 15.0f, 270.0f, 0.0f};
-  d = compute_zone_preload(hours, FORECAST_HOURS, FORECAST_HOURS - 2, zone, params);
-  // peak_in_h=1, lead 12, urgency≈0.917 → scale≈0.95, base 1.0 → ~0.95
-  expect(d.offset_c > 0.9f && d.offset_c <= 1.0f, "preload: window clamped at forecast end");
 }
 
 static void test_priority_and_thermal() {
   ForecastHour hours[FORECAST_HOURS];
   fill_calm(hours, FORECAST_HOURS);
-  hours[2] = ForecastHour{-4.0f, 15.0f, 270.0f, 0.0f};
-
+  for (size_t i = 2; i < 6; i++)
+    hours[i] = ForecastHour{-6.0f, 15.0f, 270.0f, 0.0f};
   ZoneExposure zone{};
   zone.exterior_walls = WALL_WEST;
-  zone.wind_exposure = 0.8f;
+  zone.wind_exposure = 1.5f;
   zone.solar_gain = 0.0f;
   zone.thermal_lead_h = 6;
-
   PreloadParams params{};
-  params.enable_horizon = false;
-  params.priority_gain = 1.2f;  // priority 3
-  PreloadDecision d = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(d.offset_c > 0.5f, "priority: raises offset above base timing scale");
+  params.floor_lag_h = 1.0f;
+  const PreloadDecision base = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
+  params.priority_gain = 1.2f;
+  const PreloadDecision prio = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
+  expect(prio.offset_c > base.offset_c, "priority: raises the offset");
 
+  // A room that heats well rides through what a slow one needs help with.
   params.priority_gain = 1.0f;
   params.thermal_samples = 12;
-  params.learned_heat_gain_c_per_h = 0.10f;
-  params.learned_cool_loss_c_per_h = 0.25f;
-  d = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(d.used_thermal_sizing, "thermal: uses learned rates when confident");
-  expect(d.offset_c > 0.0f, "thermal: still issues positive offset");
+  params.learned_cool_loss_c_per_h = 0.12f;
+  params.learned_heat_gain_c_per_h = 0.30f;
+  const PreloadDecision fast = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
+  params.learned_heat_gain_c_per_h = 0.06f;
+  const PreloadDecision slow = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
+  expect(fast.used_thermal_sizing && slow.offset_c > fast.offset_c, "thermal: a floor that gives less needs more");
 }
 
 static void test_horizon_and_series() {
@@ -173,42 +186,36 @@ static void test_horizon_and_series() {
   expect(series.preload_active[0] == (d.offset_c > 0.01f), "series: preload flag at t0");
 }
 
-// Floor response: heat reaches the room late, so a storm a few hours out needs more
-// (or the same) offset than with an instant floor, never less.
+// Floor response: heat reaches the room late, so preload starts the lag earlier and
+// stores what the room loses meanwhile.
 static void test_floor_lag() {
   ForecastHour hours[FORECAST_HOURS];
   fill_calm(hours, FORECAST_HOURS);
-  for (size_t i = 2; i < 8; i++)
+  for (size_t i = 6; i < 12; i++)
     hours[i] = ForecastHour{-8.0f, 18.0f, 270.0f, 0.0f};
-
   ZoneExposure zone{};
   zone.exterior_walls = WALL_WEST;
   zone.wind_exposure = 1.0f;
   zone.solar_gain = 0.0f;
   zone.thermal_lead_h = 8;
-
   PreloadParams params{};
   params.has_current_temp = true;
   params.current_temp_c = 21.0f;
   params.scheduled_setpoint_c = 21.0f;
   params.max_offset_c = 1.5f;
-  params.thermal_samples = 12;
-  params.learned_heat_gain_c_per_h = 0.15f;
-  params.learned_cool_loss_c_per_h = 0.20f;
 
   const PreloadDecision instant = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
   params.floor_lag_h = 2.0f;
   const PreloadDecision lagged = compute_zone_preload(hours, FORECAST_HOURS, 0, zone, params);
-  expect(lagged.offset_c >= instant.offset_c, "floor lag: offset never smaller than instant");
-  expect(lagged.offset_c > instant.offset_c || lagged.min_temp_c < instant.min_temp_c,
-         "floor lag: late heat costs offset or comfort");
+  expect(instant.preload_start_h == 5 && lagged.preload_start_h == 3, "floor lag: starts the lag earlier");
+  expect(lagged.planned_offset_c > instant.planned_offset_c, "floor lag: stores what the room loses meanwhile");
 
-  // An offset applied now reaches the room only after the lag: until then it coasts
-  // as without the offset.
+  // An offset applied now reaches the room only after the lag: until then it runs as without.
   ForecastHour calm[FORECAST_HOURS];
   fill_calm(calm, FORECAST_HOURS);
   PreloadDecision lift{};
   lift.offset_c = 1.0f;
+  lift.preload_end_h = 24;
   PreloadSeries now_s{}, late_s{}, base_s{};
   params.floor_lag_h = 0.0f;
   fill_preload_series(calm, FORECAST_HOURS, 0, zone, params, lift, &now_s);
@@ -220,18 +227,6 @@ static void test_floor_lag() {
              near(late_s.expected_temp_c[2], base_s.expected_temp_c[2]) &&
              late_s.expected_temp_c[3] > base_s.expected_temp_c[3],
          "floor lag 2: offset felt from hour 2");
-
-  // Preload ramps up the lag earlier: a peak 4 h out is felt as 2 h out.
-  ForecastHour later[FORECAST_HOURS];
-  fill_calm(later, FORECAST_HOURS);
-  later[4] = ForecastHour{-8.0f, 18.0f, 270.0f, 0.0f};
-  params.enable_horizon = false;
-  params.floor_lag_h = 0.0f;
-  const PreloadDecision t0 = compute_zone_preload(later, FORECAST_HOURS, 0, zone, params);
-  params.floor_lag_h = 2.0f;
-  const PreloadDecision t2 = compute_zone_preload(later, FORECAST_HOURS, 0, zone, params);
-  expect(t0.peak_in_h == 4 && t2.peak_in_h == 4, "floor lag: peak hour unchanged");
-  expect(t2.timing_scale > t0.timing_scale, "floor lag: ramp starts earlier");
 }
 
 static void test_learning_update() {
@@ -337,10 +332,10 @@ static void test_inverted_wind_direction() {
          "sign: inverted winddir would fail this pair");
 }
 
-// An evening's wind seen from the morning (Touch forecast 2026-11-18, Laura: north wall,
-// learned exposure about 3, floor lag 0.7 h, learned 0.12 °C/h both ways): 6 °C through
-// the day, a south-west breeze in the morning, north wind from 17 (6–7 m/s from 18). Charging starts a lead before the wind and ramps up; the horizon
-// holds comfort through the evening, not just to 18.
+// An evening's wind seen from the morning (Touch forecast 2026-11-18, Laura: north and west
+// walls, learned exposure 3.0, floor lag 0.7 h, learned 0.12 °C/h both ways): 6 °C through
+// the day, a south-west breeze in the morning, north wind 6–7 m/s from 18. Laura is to keep
+// up, not to be raised: preload from 16 with a small offset, nothing in the morning.
 static void test_evening_episode() {
   static const float T[24] = {3.0f, 3.2f, 3.6f, 4.0f, 4.2f, 4.6f, 5.1f, 5.5f, 5.7f, 6.0f, 6.5f, 6.9f,
                               6.4f, 6.5f, 6.5f, 6.3f, 5.9f, 5.6f, 5.7f, 5.5f, 5.2f, 4.5f, 4.2f, 3.8f};
@@ -356,7 +351,7 @@ static void test_evening_episode() {
   laura.exterior_walls = WALL_NORTH | WALL_WEST;
   laura.wind_exposure = 3.0f;
   laura.solar_gain = 0.0f;
-  laura.thermal_lead_h = 4;
+  laura.thermal_lead_h = 9;   // learned while the old model came late; only a cap now
 
   PreloadParams params{};
   params.indoor_ref_c = 22.0f;
@@ -371,35 +366,19 @@ static void test_evening_episode() {
   params.learned_cool_loss_c_per_h = 0.123f;
 
   const PreloadDecision at9 = compute_zone_preload(hours, FORECAST_HOURS, 9, laura, params);
-  // The morning breeze (SW on the west wall, load just above 1) is its own episode and
-  // must not hide the evening's.
-  expect(near(at9.offset_c, 0.0f) && at9.preload_start_h == 3 && at9.planned_offset_c > 1.0f,
-         "episode: wind from 17, lead 4, lag 1 → nothing at 9, charging planned from 12");
-  expect(at9.peak_in_h >= 9 && at9.preload_end_h == at9.peak_in_h + 1, "episode: bar through the peak");
-
-  const PreloadDecision at13 = compute_zone_preload(hours, FORECAST_HOURS, 13, laura, params);
+  expect(near(at9.offset_c, 0.0f) && at9.preload_start_h == 7 && at9.planned_offset_c >= 0.3f &&
+             at9.planned_offset_c < 0.6f,
+         "episode: north wind from 18 → nothing at 9, a small preload planned from 16");
   const PreloadDecision at16 = compute_zone_preload(hours, FORECAST_HOURS, 16, laura, params);
-  printf("      episode: 13 → %.2f (planned %.2f), 16 → %.2f, min %.2f / %.2f\n", at13.offset_c,
-         at13.planned_offset_c, at16.offset_c, at13.min_temp_c, at16.min_temp_c);
-  expect(at13.offset_c > 0.01f && at13.preload_start_h == 0, "episode: charging at 13");
-  expect(at13.offset_c <= at16.offset_c, "episode: an early start charges gently, later more");
-
-  // A learned lead of 9 h saw 09–18 only: comfort held to 18 and the offset stayed 0.
-  laura.thermal_lead_h = 9;
-  const PreloadDecision lead9 = compute_zone_preload(hours, FORECAST_HOURS, 9, laura, params);
-  expect(lead9.offset_c > 0.01f, "episode: lead 9 at 9 charges for the evening");
-
-  // A mild breeze below the threshold all day plans nothing.
-  ForecastHour calm[FORECAST_HOURS];
-  fill_calm(calm, FORECAST_HOURS);
-  const PreloadDecision none = compute_zone_preload(calm, FORECAST_HOURS, 9, laura, params);
-  expect(near(none.offset_c, 0.0f) && near(none.planned_offset_c, 0.0f) && none.preload_end_h == 0,
-         "episode: none ahead → nothing planned");
+  printf("      episode: 16 → %.2f to +%u h, min %.2f\n", at16.offset_c, at16.preload_end_h, at16.min_temp_c);
+  expect(at16.offset_c >= 0.3f && at16.preload_end_h > 8, "episode: on from 16 through the night");
+  expect(at16.horizon_ok, "episode: the room keeps up");
 }
 
 int main() {
   test_wind_alignment();
   test_zone_hour_load();
+  test_room_loss();
   test_preload_decision();
   test_priority_and_thermal();
   test_horizon_and_series();

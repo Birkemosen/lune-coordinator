@@ -129,11 +129,12 @@ css_gz=$(wc -c < web/touch-ui/dist/lune-ui.css.gz | tr -d ' ')
 en_gz=$(wc -c < web/touch-ui/dist/en/index.html.gz | tr -d ' ')
 da_gz=$(wc -c < web/touch-ui/dist/da/index.html.gz | tr -d ' ')
 pages_total=$((css_gz + en_gz + da_gz))
-# Soft ceiling: 100 KiB for CSS+2 pages (sheets for 4 controllers + 24 rooms in the page).
-# Raised from 80 KiB at 1.0 (history charts, forecast, circulation sheet) and from 96 KiB
-# with the Opvarmningsplan page (48 h plan, Touch vs Odin, rooms, model, plan vs actual);
-# the firmware image uses well under half of its OTA slot.
-if [ "$pages_total" -gt 102400 ]; then
+# Soft ceiling: 104 KiB for CSS+2 pages (sheets for 4 controllers + 24 rooms in the page).
+# Raised from 80 KiB at 1.0 (history charts, forecast, circulation sheet), from 96 KiB
+# with the Opvarmningsplan page (48 h plan, Touch vs Odin, rooms, model, plan vs actual)
+# and from 100 KiB with its weather panel and preheat lane; the firmware image uses well
+# under half of its OTA slot.
+if [ "$pages_total" -gt 106496 ]; then
   echo "gzip CSS+pages too large: $pages_total bytes" >&2
   exit 1
 fi
