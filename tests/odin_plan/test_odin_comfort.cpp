@@ -358,6 +358,12 @@ int main() {
     assert(soon.active() && soon.start_hour == 23 && soon.hours == 3 && std::fabs(soon.floor_share - 1.0f) < 0.01f);
     assert(!preload_lift(14, 1.5f, -1, p).active());   // no peak in the forecast
     assert(!preload_lift(14, 0.2f, 3, p).active());    // below the write threshold
+    // A room that starts charging at 12 for wind peaking at 18 (now 09): the band opens
+    // at 12, so Odin can plan the charge, through 19.
+    Lift ahead = preload_lift(9, 1.3f, 9, p, 0.2f, 3);
+    assert(ahead.active() && ahead.start_hour == 12 && ahead.hours == 8);
+    Lift late = preload_lift(9, 1.3f, 2, p, 1.0f, 5);   // a start past the peak opens at the peak
+    assert(late.active() && late.start_hour == 11 && late.hours == 3);
   }
 
   // ---- Cold-room call: lift by need, start at the cheapest hour unless urgent ----

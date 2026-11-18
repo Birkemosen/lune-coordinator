@@ -75,6 +75,9 @@ struct PreloadDecision {
   uint8_t active_lead_h = 0;      ///< Lead used (configured + bias)
   uint8_t preload_start_h = 0;    ///< Inclusive hour offset for active preload bar
   uint8_t preload_end_h = 0;      ///< Exclusive hour offset for active preload bar
+  /// Full offset the coming episode asks for, before the ramp: set from a lead before it
+  /// (preload_start_h > 0 while offset_c is still 0), so the heat source can plan for it.
+  float planned_offset_c = 0.0f;
 };
 
 /// Optional chart series filled by fill_preload_series (not stored on ESP decisions).
@@ -111,7 +114,9 @@ float zone_hour_load(const ForecastHour &hour, const ZoneExposure &exposure, flo
 /// Effective lead hours: configured thermal_lead_h plus closed-loop bias (never below configured).
 uint8_t active_thermal_lead_h(const ZoneExposure &exposure, const PreloadParams &params);
 
-/// Scan the active lead window and decide the preload offset for this zone.
+/// Find the first weather episode within HORIZON_HOURS and decide the preload offset for
+/// this zone: 0 until a lead (plus the floor lag) before the episode starts, then the least
+/// offset that holds comfort through it.
 PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, size_t now_index,
                                      const ZoneExposure &exposure, const PreloadParams &params);
 

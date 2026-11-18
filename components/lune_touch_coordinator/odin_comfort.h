@@ -366,16 +366,18 @@ inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const 
   return l;
 }
 
-/// Lift window for a weather preload (wind or cold ahead): from now through the hour
-/// after the forecast peak, at least PRELOAD_MIN_H hours. V6 raises the room's
-/// setpoint ahead of the peak; without this the heat source never hears of it and
-/// the room only gets what the house would have had anyway.
+/// Lift window for a weather preload (wind or cold ahead): from `start_in_h` (when the
+/// first room starts charging, a lead before its wind) through the hour after the
+/// forecast peak, at least PRELOAD_MIN_H hours. V6 raises the room's setpoint ahead of
+/// the peak; without this the heat source never hears of it and the room only gets
+/// what the house would have had anyway. A start ahead lets Odin plan the charge.
 static constexpr int PRELOAD_MIN_H = 3;
 inline Lift preload_lift(uint8_t now_hour, float lift_c, int peak_in_h, const LiftParams &p,
-                         float floor_share = 1.0f) {
+                         float floor_share = 1.0f, int start_in_h = 0) {
   if (peak_in_h < 0)
     return Lift{};
-  Lift l = make_lift(now_hour, 0, std::max(peak_in_h + 2, PRELOAD_MIN_H), lift_c, p);
+  const int start = std::clamp(start_in_h, 0, std::max(0, peak_in_h));
+  Lift l = make_lift(now_hour, start, std::max(peak_in_h + 2, start + PRELOAD_MIN_H), lift_c, p);
   if (l.active())
     l.floor_share = floor_share;
   return l;

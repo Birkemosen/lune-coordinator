@@ -19,6 +19,8 @@ static constexpr float MIN_PLAUSIBLE_HEAT_GAIN = 0.05f;
 static constexpr float MAX_PLAUSIBLE_COOL_LOSS = 0.40f;
 static constexpr float MIN_PLAUSIBLE_COOL_LOSS = 0.02f;
 static constexpr float MAX_FLOOR_LAG_H = 5.0f;
+// Hours below the threshold that still belong to the same weather episode.
+static constexpr size_t EPISODE_GAP_H = 2;
 
 // <algorithm> is avoided so the file compiles with the host toolchain too.
 static inline float fmaxf_(float a, float b) { return a > b ? a : b; }
@@ -220,6 +222,56 @@ static float refine_with_horizon_(const ForecastHour *hours, size_t count, size_
   return best;
 }
 
+// One weather episode [onset, ep_end) with its peak: 0 until a lead (plus the floor lag)
+// before it starts, then the least offset that holds comfort from now through its end.
+static PreloadDecision episode_preload_(const ForecastHour *hours, size_t count, size_t now_index,
+                                        const ZoneExposure &exposure, const PreloadParams &params,
+                                        uint8_t lead, size_t onset, size_t ep_end, size_t peak_i,
+                                        float peak_load) {
+  PreloadDecision d;
+  d.active_lead_h = lead;
+  d.peak_load = peak_load;
+  d.peak_in_h = static_cast<int8_t>(peak_i - now_index);
+  const int lag = static_cast<int>(std::round(lag_h_(params)));
+  // Charge from a lead before the wind starts (the floor lag earlier still), so the
+  // loops open a little at a time and are warm when the load comes, instead of all at
+  // once with the heat source behind.
+  const int onset_in_h = static_cast<int>(onset - now_index);
+  const int felt_in_h = onset_in_h > lag ? onset_in_h - lag : 0;
+  const int start_in_h = felt_in_h > lead ? felt_in_h - lead : 0;
+  d.preload_start_h = static_cast<uint8_t>(start_in_h);
+  d.preload_end_h = static_cast<uint8_t>(
+      fminf_(static_cast<float>(HORIZON_HOURS), static_cast<float>(d.peak_in_h) + 1.0f));
+  if (d.preload_end_h <= d.preload_start_h)
+    d.preload_end_h = static_cast<uint8_t>(d.preload_start_h + 1);
+
+  bool used_thermal = false;
+  // The full offset the episode asks for (the heat source plans for it before the ramp
+  // reaches the room).
+  d.planned_offset_c = heuristic_offset_(peak_load, 1.0f, 1.0f, params, &used_thermal);
+  d.used_thermal_sizing = used_thermal;
+  if (start_in_h > 0) {
+    d.horizon_ok = true;
+    d.min_temp_c = params.has_current_temp ? params.current_temp_c : params.scheduled_setpoint_c;
+    return d;
+  }
+  d.timing_scale = timing_scale_for_(static_cast<int8_t>(felt_in_h), lead);
+  const float taper = taper_scale_(hours, count, now_index, exposure, params, peak_load, d.peak_in_h);
+  d.heuristic_offset_c = heuristic_offset_(peak_load, d.timing_scale, taper, params, &used_thermal);
+  // The least offset from now that holds comfort to the episode's end: the further
+  // ahead it starts, the less it needs, so an early start charges gently.
+  d.offset_c = refine_with_horizon_(hours, count, now_index, min_size_(count - 1, ep_end), exposure, params,
+                                    d.heuristic_offset_c, &d);
+  if (d.offset_c > 0.01f) {
+    d.planned_offset_c = fmaxf_(d.planned_offset_c, d.offset_c);
+  } else if (d.used_horizon && d.horizon_ok) {
+    // The room rides through it as it is.
+    d.planned_offset_c = 0.0f;
+    d.preload_end_h = 0;
+  }
+  return d;
+}
+
 PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, size_t now_index,
                                      const ZoneExposure &exposure, const PreloadParams &params) {
   PreloadDecision decision;
@@ -228,8 +280,58 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
 
   const uint8_t lead = active_thermal_lead_h(exposure, params);
   decision.active_lead_h = lead;
-  const size_t last = min_size_(count - 1, now_index + static_cast<size_t>(lead));
 
+  // Weather episodes within the horizon: hours above the threshold, a dip of up to
+  // EPISODE_GAP_H hours inside one. A window of only the lead saw the start of an
+  // evening's wind but not its peak, and the horizon held comfort up to the wind and
+  // stopped there (2026-11-17: Laura behind before preload began). Each episode is
+  // decided on its own; the room takes the largest offset now and the earliest start.
+  const size_t horizon_last = min_size_(count - 1, now_index + HORIZON_HOURS - 1);
+  bool any = false;
+  size_t onset = count, ep_end = count, last_above = count, peak_i = count;
+  float peak = 0.0f;
+  float best_planned = -1.0f;
+  auto take = [&]() {
+    const PreloadDecision e =
+        episode_preload_(hours, count, now_index, exposure, params, lead, onset, ep_end, peak_i, peak);
+    const bool wants = e.planned_offset_c > 0.01f;
+    if (!any || e.offset_c > decision.offset_c ||
+        (wants && (decision.planned_offset_c <= 0.01f || e.preload_start_h < decision.preload_start_h) &&
+         e.offset_c >= decision.offset_c)) {
+      const float planned = fmaxf_(decision.planned_offset_c, e.planned_offset_c);
+      decision = e;
+      decision.planned_offset_c = planned;
+    } else {
+      decision.planned_offset_c = fmaxf_(decision.planned_offset_c, e.planned_offset_c);
+    }
+    best_planned = fmaxf_(best_planned, e.planned_offset_c);
+    any = true;
+    onset = count;
+    peak = 0.0f;
+  };
+  for (size_t i = now_index; i <= horizon_last; i++) {
+    const float load = zone_hour_load(hours[i], exposure, params.indoor_ref_c);
+    if (load <= params.load_threshold) {
+      if (onset != count && i - last_above > EPISODE_GAP_H)
+        take();
+      continue;
+    }
+    if (onset == count)
+      onset = i;
+    last_above = i;
+    ep_end = i + 1;
+    if (load > peak) {
+      peak = load;
+      peak_i = i;
+    }
+  }
+  if (onset != count)
+    take();
+  if (any)
+    return decision;
+
+  // Nothing above the threshold: report the lead window's largest load.
+  const size_t last = min_size_(count - 1, now_index + static_cast<size_t>(lead));
   for (size_t i = now_index; i <= last; i++) {
     const float load = zone_hour_load(hours[i], exposure, params.indoor_ref_c);
     if (load > decision.peak_load) {
@@ -239,31 +341,8 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
   }
   if (decision.peak_in_h < 0)
     decision.peak_in_h = 0;
-
-  bool used_thermal = false;
-  // The floor answers late: ramp towards the peak as if it were the lag closer.
-  const int8_t felt_peak_in_h = static_cast<int8_t>(
-      fmaxf_(0.0f, static_cast<float>(decision.peak_in_h) - std::round(lag_h_(params))));
-  decision.timing_scale = timing_scale_for_(felt_peak_in_h, lead);
-  const float taper =
-      taper_scale_(hours, count, now_index, exposure, params, decision.peak_load, decision.peak_in_h);
-  decision.heuristic_offset_c =
-      heuristic_offset_(decision.peak_load, decision.timing_scale, taper, params, &used_thermal);
-  decision.used_thermal_sizing = used_thermal;
-
-  decision.offset_c = refine_with_horizon_(hours, count, now_index, last, exposure, params,
-                                           decision.heuristic_offset_c, &decision);
-
-  if (decision.offset_c > 0.01f) {
-    // Preload bar: from now through peak (inclusive), at least 1 h when active.
-    decision.preload_start_h = 0;
-    decision.preload_end_h =
-        static_cast<uint8_t>(fmaxf_(1.0f, static_cast<float>(decision.peak_in_h) + 1.0f));
-    if (decision.preload_end_h > lead)
-      decision.preload_end_h = lead;
-    if (decision.preload_end_h == 0)
-      decision.preload_end_h = 1;
-  }
+  decision.horizon_ok = true;
+  decision.min_temp_c = params.has_current_temp ? params.current_temp_c : params.scheduled_setpoint_c;
   return decision;
 }
 

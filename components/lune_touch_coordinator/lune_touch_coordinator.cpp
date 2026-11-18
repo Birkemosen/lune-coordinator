@@ -3518,39 +3518,59 @@ bool LuneTouchCoordinator::odin_in_control_() const {
   return odin_control_.enabled || (odin_control_.forwarder_known && odin_control_.forwarder_active);
 }
 
-bool LuneTouchCoordinator::weather_preload_(float *offset_c, int *peak_in_h, float *share) const {
-  float offset = 0.0f;
-  int peak = -1;
-  unsigned rooms = 0, preloading = 0;
+bool LuneTouchCoordinator::weather_preload_(float *offset_c, int *peak_in_h, float *share, float *planned_c,
+                                            int *start_in_h) const {
+  // Preloading now, or planned: a room whose episode is still more than a lead away
+  // (forecast_model.cpp) tells the heat source from when it will charge and by how much.
+  const auto now_pre = [](const ForecastDecisionState &d) {
+    return d.active && !d.solar_holdoff && !d.charge_episode && d.offset_c > 0.01f && d.peak_in_h >= 0;
+  };
+  const auto plans = [&](const ForecastDecisionState &d) {
+    return now_pre(d) || (!d.solar_holdoff && !d.charge_episode && d.peak_in_h >= 0 &&
+                          d.planned_offset_c > 0.01f && d.preload_end_h > d.preload_start_h);
+  };
+  float offset = 0.0f, planned = 0.0f;
+  int peak = -1, start = -1;
+  unsigned rooms = 0, preloading = 0, planning = 0;
   for (size_t i = 0; i < forecast_decision_count_; i++) {
     const auto &d = forecast_decisions_[i];
     // A room may span zones: count it once, preloading if any of its zones does.
-    bool seen = false;
-    for (size_t j = 0; j < i && !seen; j++)
-      seen = std::strcmp(forecast_decisions_[j].room_id, d.room_id) == 0;
-    const bool pre = d.active && !d.solar_holdoff && !d.charge_episode && d.offset_c > 0.01f &&
-                     d.peak_in_h >= 0;
+    bool seen = false, seen_now = false, seen_plan = false;
+    for (size_t j = 0; j < i; j++) {
+      const auto &e = forecast_decisions_[j];
+      if (std::strcmp(e.room_id, d.room_id) != 0)
+        continue;
+      seen = true;
+      seen_now = seen_now || now_pre(e);
+      seen_plan = seen_plan || plans(e);
+    }
     if (!seen)
       rooms++;
-    if (!pre)
+    if (!plans(d))
       continue;
-    offset = std::max(offset, d.offset_c);
-    peak = std::max<int>(peak, d.peak_in_h);
-    bool counted = false;
-    for (size_t j = 0; j < i && !counted; j++) {
-      const auto &e = forecast_decisions_[j];
-      counted = std::strcmp(e.room_id, d.room_id) == 0 && e.active && !e.solar_holdoff && !e.charge_episode &&
-                e.offset_c > 0.01f && e.peak_in_h >= 0;
+    const bool pre = now_pre(d);
+    if (pre) {
+      offset = std::max(offset, d.offset_c);
+      if (!seen_now)
+        preloading++;
     }
-    if (!counted)
-      preloading++;
+    if (!seen_plan)
+      planning++;
+    planned = std::max(planned, std::max(d.planned_offset_c, pre ? d.offset_c : 0.0f));
+    peak = std::max<int>(peak, d.peak_in_h);
+    const int s = pre ? 0 : d.preload_start_h;
+    start = start < 0 ? s : std::min(start, s);
   }
   if (offset_c != nullptr)
     *offset_c = offset;
   if (peak_in_h != nullptr)
     *peak_in_h = peak;
   if (share != nullptr)
-    *share = rooms > 0 ? static_cast<float>(preloading) / static_cast<float>(rooms) : NAN;
+    *share = rooms > 0 ? static_cast<float>(planning) / static_cast<float>(rooms) : NAN;
+  if (planned_c != nullptr)
+    *planned_c = planned;
+  if (start_in_h != nullptr)
+    *start_in_h = start;
   return preloading > 0;
 }
 
@@ -3579,6 +3599,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float lagging_share = NAN;
   float pre_lift_c = 0.0f;
   int pre_peak_in_h = -1;
+  int pre_start_in_h = -1;
   float pre_share = NAN;
   float coldest = NAN, house_c = NAN, band_floor_c = NAN;
   int charge_need_in_h = -1;
@@ -3652,7 +3673,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
         charge_need_in_h = charge_need_in_h < 0 ? d.charge_episode_in_h : std::min<int>(charge_need_in_h, d.charge_episode_in_h);
     }
     // Weather preload: rooms V6 raises ahead of wind or cold (a charge covers its own room).
-    weather_preload_(&pre_lift_c, &pre_peak_in_h, &pre_share);
+    weather_preload_(nullptr, &pre_peak_in_h, &pre_share, &pre_lift_c, &pre_start_in_h);
     give_state_lock_();
   }
   lune_touch_odin::Lift charge{};
@@ -3684,12 +3705,15 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   } else if (held > 0.0f)
     lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
-  // only what the house would have had anyway. The band opens from now through the
-  // peak, by the largest room offset, its floor by the preloading share of the house.
+  // only what the house would have had anyway. The band opens from when the first room
+  // starts charging (a lead before its wind, so Odin can heat gently and in cheap hours
+  // ahead) through the peak, by the largest planned room offset, its floor by the share
+  // of the house that preloads.
   lune_touch_odin::Lift pre{};
   if (pre_lift_c > 0.0f)
     pre = lune_touch_odin::preload_lift(now_hour, pre_lift_c, pre_peak_in_h, params,
-                                        lune_touch_odin::floor_share_for(pre_share));
+                                        lune_touch_odin::floor_share_for(pre_share),
+                                        std::max(0, pre_start_in_h));
   if (energy_kwh != nullptr)
     *energy_kwh = charge.active() ? energy : 0.0f;
   const lune_touch_odin::Lift out = lune_touch_odin::merge_lifts(
@@ -6751,6 +6775,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     out.used_thermal_sizing = decision.used_thermal_sizing;
     out.preload_start_h = decision.preload_start_h;
     out.preload_end_h = decision.preload_end_h;
+    out.planned_offset_c = decision.planned_offset_c;
     if (decision.active_lead_h > 0)
       out.active_thermal_lead_h = decision.active_lead_h;
     out.active = decision.offset_c > 0.01f;
@@ -14599,8 +14624,8 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,\"floor_lag_h\":%.2f,"
              "\"timing_scale\":%.2f,\"heuristic_offset_c\":%.2f,\"min_temp_c\":%.2f,"
              "\"horizon_ok\":%s,\"used_horizon\":%s,\"used_thermal_sizing\":%s,"
-             "\"preload_start_h\":%u,\"preload_end_h\":%u,\"active\":%s,\"odin_timing_bias\":%s,"
-             "\"solar\":{\"holdoff\":%s,\"peak_wm2\":%.0f,\"peak_in_h\":%d},"
+             "\"preload_start_h\":%u,\"preload_end_h\":%u,\"planned_offset_c\":%.2f,\"active\":%s,"
+             "\"odin_timing_bias\":%s,\"solar\":{\"holdoff\":%s,\"peak_wm2\":%.0f,\"peak_in_h\":%d},"
              "\"charge\":{\"episode\":%s,\"now\":%s,\"insufficient\":%s,\"store_c\":%.2f,"
              "\"deficit_kwh\":%.2f,\"floor_capacity_w\":%.0f,\"peak_loss_w\":%.0f,"
              "\"start_in_h\":%d,\"episode_in_h\":%d,\"end_in_h\":%d}}",
@@ -14614,7 +14639,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              d.heuristic_offset_c, d.min_temp_c, d.horizon_ok ? "true" : "false",
              d.used_horizon ? "true" : "false", d.used_thermal_sizing ? "true" : "false",
              static_cast<unsigned>(d.preload_start_h), static_cast<unsigned>(d.preload_end_h),
-             d.active ? "true" : "false", d.odin_timing_bias ? "true" : "false",
+             d.planned_offset_c, d.active ? "true" : "false", d.odin_timing_bias ? "true" : "false",
              d.solar_holdoff ? "true" : "false", d.solar_peak_wm2, static_cast<int>(d.solar_peak_in_h),
              d.charge_episode ? "true" : "false", d.charge_now ? "true" : "false",
              d.charge_insufficient ? "true" : "false", d.charge_store_c, d.charge_deficit_kwh,
@@ -16091,10 +16116,11 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
         if (std::strncmp(fd.room_id, rt->rooms[k].id, sizeof(fd.room_id)) != 0)
           continue;
         Seg &g = segs[k];
-        g.pre = fd.active && fd.offset_c > 0.01f && fd.preload_end_h > fd.preload_start_h;
+        g.pre = ((fd.active && fd.offset_c > 0.01f) || fd.planned_offset_c > 0.01f) &&
+                fd.preload_end_h > fd.preload_start_h;
         g.pre_from = fd.preload_start_h;
         g.pre_to = fd.preload_end_h;
-        g.pre_c = fd.offset_c;
+        g.pre_c = std::max(fd.offset_c, fd.planned_offset_c);
         g.ch = fd.charge_episode && fd.charge_end_in_h > 0;
         g.ch_from = static_cast<int16_t>(std::max<int>(0, fd.charge_start_in_h));
         g.ch_to = fd.charge_end_in_h;
@@ -16225,7 +16251,8 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
     r.room_id[sizeof(r.room_id) - 1] = '\0';
     std::strncpy(r.name, d.room_name[0] != '\0' ? d.room_name : d.room_id, sizeof(r.name) - 1);
     r.name[sizeof(r.name) - 1] = '\0';
-    r.preload = d.active && d.offset_c > 0.01f && d.preload_end_h > d.preload_start_h;
+    r.preload = ((d.active && d.offset_c > 0.01f) || d.planned_offset_c > 0.01f) &&
+                d.preload_end_h > d.preload_start_h;
     r.pre_from = d.preload_start_h;
     r.pre_to = d.preload_end_h;
     r.offset_c = d.offset_c;

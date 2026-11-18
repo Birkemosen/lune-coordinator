@@ -72,6 +72,7 @@ struct ForecastDecisionState {
   bool used_thermal_sizing{false};
   uint8_t preload_start_h{0};
   uint8_t preload_end_h{0};
+  float planned_offset_c{0.0f};  ///< Episode's full offset, set from a lead before it (forecast_model.h)
   bool active{false};
   bool odin_timing_bias{false};
   // Slab charge (slab_charge.h): capacity shortfall ahead → store heat first.
@@ -1155,7 +1156,8 @@ class LuneTouchCoordinator : public esphome::Component {
                                           lune_touch_odin::LiftSources *sources = nullptr);
   /// Caller holds the state lock. Rooms V6 preloads ahead of wind or cold (not slab
   /// charge, not solar hold-off): largest offset, latest peak, share of the rooms.
-  bool weather_preload_(float *offset_c, int *peak_in_h, float *share) const;
+  bool weather_preload_(float *offset_c, int *peak_in_h, float *share, float *planned_c = nullptr,
+                        int *start_in_h = nullptr) const;
   /// Caller holds the state lock. What a heat source without Odin must keep above the
   /// house temperature for the weather: an open slab charge or a preload (°C).
   float weather_store_c_() const;

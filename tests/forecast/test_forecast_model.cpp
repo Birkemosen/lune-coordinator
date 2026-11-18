@@ -337,6 +337,66 @@ static void test_inverted_wind_direction() {
          "sign: inverted winddir would fail this pair");
 }
 
+// An evening's wind seen from the morning (Touch forecast 2026-11-18, Laura: north wall,
+// learned exposure about 3, floor lag 0.7 h, learned 0.12 °C/h both ways): 6 °C through
+// the day, a south-west breeze in the morning, north wind from 17 (6–7 m/s from 18). Charging starts a lead before the wind and ramps up; the horizon
+// holds comfort through the evening, not just to 18.
+static void test_evening_episode() {
+  static const float T[24] = {3.0f, 3.2f, 3.6f, 4.0f, 4.2f, 4.6f, 5.1f, 5.5f, 5.7f, 6.0f, 6.5f, 6.9f,
+                              6.4f, 6.5f, 6.5f, 6.3f, 5.9f, 5.6f, 5.7f, 5.5f, 5.2f, 4.5f, 4.2f, 3.8f};
+  static const float W[24] = {8.1f, 7.6f, 6.8f, 6.0f, 5.9f, 5.2f, 4.8f, 3.7f, 3.7f, 3.6f, 3.1f, 4.3f,
+                              1.7f, 2.9f, 2.7f, 2.3f, 2.3f, 2.4f, 6.9f, 6.8f, 7.1f, 5.9f, 6.0f, 6.0f};
+  static const float D[24] = {109, 109, 100, 101, 104, 104, 108, 111, 99, 100, 125, 214,
+                              170, 163, 124, 79,  28,  346, 14,  11,  354, 339, 336, 328};
+  ForecastHour hours[FORECAST_HOURS];
+  for (size_t i = 0; i < FORECAST_HOURS; i++)
+    hours[i] = i < 24 ? ForecastHour{T[i], W[i], D[i], 0.0f} : ForecastHour{3.0f, 5.0f, 325.0f, 0.0f};
+
+  ZoneExposure laura{};
+  laura.exterior_walls = WALL_NORTH | WALL_WEST;
+  laura.wind_exposure = 3.0f;
+  laura.solar_gain = 0.0f;
+  laura.thermal_lead_h = 4;
+
+  PreloadParams params{};
+  params.indoor_ref_c = 22.0f;
+  params.scheduled_setpoint_c = 22.0f;
+  params.has_current_temp = true;
+  params.current_temp_c = 22.0f;
+  params.comfort_band_c = 0.5f;
+  params.max_offset_c = 1.5f;
+  params.floor_lag_h = 0.73f;
+  params.thermal_samples = 12;
+  params.learned_heat_gain_c_per_h = 0.12f;
+  params.learned_cool_loss_c_per_h = 0.123f;
+
+  const PreloadDecision at9 = compute_zone_preload(hours, FORECAST_HOURS, 9, laura, params);
+  // The morning breeze (SW on the west wall, load just above 1) is its own episode and
+  // must not hide the evening's.
+  expect(near(at9.offset_c, 0.0f) && at9.preload_start_h == 3 && at9.planned_offset_c > 1.0f,
+         "episode: wind from 17, lead 4, lag 1 → nothing at 9, charging planned from 12");
+  expect(at9.peak_in_h >= 9 && at9.preload_end_h == at9.peak_in_h + 1, "episode: bar through the peak");
+
+  const PreloadDecision at13 = compute_zone_preload(hours, FORECAST_HOURS, 13, laura, params);
+  const PreloadDecision at16 = compute_zone_preload(hours, FORECAST_HOURS, 16, laura, params);
+  printf("      episode: 13 → %.2f (planned %.2f), 16 → %.2f, min %.2f / %.2f\n", at13.offset_c,
+         at13.planned_offset_c, at16.offset_c, at13.min_temp_c, at16.min_temp_c);
+  expect(at13.offset_c > 0.01f && at13.preload_start_h == 0, "episode: charging at 13");
+  expect(at13.offset_c <= at16.offset_c, "episode: an early start charges gently, later more");
+
+  // A learned lead of 9 h saw 09–18 only: comfort held to 18 and the offset stayed 0.
+  laura.thermal_lead_h = 9;
+  const PreloadDecision lead9 = compute_zone_preload(hours, FORECAST_HOURS, 9, laura, params);
+  expect(lead9.offset_c > 0.01f, "episode: lead 9 at 9 charges for the evening");
+
+  // A mild breeze below the threshold all day plans nothing.
+  ForecastHour calm[FORECAST_HOURS];
+  fill_calm(calm, FORECAST_HOURS);
+  const PreloadDecision none = compute_zone_preload(calm, FORECAST_HOURS, 9, laura, params);
+  expect(near(none.offset_c, 0.0f) && near(none.planned_offset_c, 0.0f) && none.preload_end_h == 0,
+         "episode: none ahead → nothing planned");
+}
+
 int main() {
   test_wind_alignment();
   test_zone_hour_load();
@@ -348,6 +408,7 @@ int main() {
   test_taper_after_peak();
   test_absurd_heat_gain_suppresses_horizon();
   test_inverted_wind_direction();
+  test_evening_episode();
 
   if (g_failures > 0) {
     printf("%d test(s) FAILED.\n", g_failures);
