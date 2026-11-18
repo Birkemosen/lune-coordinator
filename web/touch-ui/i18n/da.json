@@ -1322,5 +1322,10 @@
   "planner.lWind": "vind (m/s)",
   "planner.lSun": "sol (W/m²)",
   "planner.wxAria": "Vejret de næste 48 timer: udetemperatur, vindstyrke og -retning og sol pr. time",
-  "planner.emptyWx": "Ingen vejrudsigt endnu."
+  "planner.emptyWx": "Ingen vejrudsigt endnu.",
+  "planner.sNext": "Næste 24 t",
+  "planner.sHeat": "Varme",
+  "planner.sElec": "El",
+  "planner.sCost": "Pris",
+  "planner.sBelow": "Under båndet"
 }

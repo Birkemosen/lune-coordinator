@@ -2989,13 +2989,18 @@
     var heatT = sum(function (k) { return plan.heat_kw[k]; }, N);
     var costT = sum(function (k) { return (plan.elec_kwh || [])[k] * (price[k] || 0); }, N);
     var belowT = sum(function (k) { return bmin[k] != null && plan.t_end_c[k] != null ? Math.max(0, bmin[k] - plan.t_end_c[k]) : 0; }, N);
+    var elecT = sum(function (k) { return (plan.elec_kwh || [])[k]; }, N);
     var heatO = odin ? sum(function (k) { return space(k) ? odin.heat_kw[k] : 0; }, ON) : null;
+    var elecO = odin ? sum(function (k) { return space(k) ? odin.elec_kwh[k] : 0; }, ON) : null;
     var costO = odin ? sum(function (k) { return space(k) ? odin.elec_kwh[k] * (price[k] || 0) : 0; }, ON) : null;
     var belowO = odin ? sum(function (k) { return bmin[k] != null && odin.expected_c[k] != null ? Math.max(0, bmin[k] - odin.expected_c[k]) : 0; }, ON) : null;
-    var pair = function (a, b, dec) { return (a == null ? '—' : num(a, dec)) + ' / ' + (b == null ? '—' : num(b, dec)); };
+    var cellv = function (v, dec) { return '<td>' + (v == null ? '—' : num(v, dec)) + '</td>'; };
     var priced = price.slice(0, N).some(function (v) { return v != null; });
     if (!priced) { costT = null; costO = null; }
-    var metric_ = function (label, val, unit) { return '<div class="metric"><dt>' + esc(label) + '</dt><dd>' + val + ' <small>' + unit + '</small></dd></div>'; };
+    // The next 24 h as a small table (LDS .vs-sum): a row per figure, Touch and Odin as columns.
+    var row_ = function (key, unit, a, b, dec) {
+      return '<tr><td>' + esc(t(key)) + ' <small>' + unit + '</small></td>' + cellv(a, dec) + cellv(b, dec) + '</tr>';
+    };
     // The whole window: the last day's band and setpoint from the history (as the plan held
     // them), the next day's from the plan (Odin's schedule with Touch's lift).
     var band_c = plan.band_c != null ? Number(plan.band_c) : 0.5;
@@ -3038,9 +3043,10 @@
       '<rect class="future" x="' + VS_PAST + '" y="0" width="' + VS_AHEAD + '" height="100"/><line class="grid" x1="0" x2="' + VS_H + '" y1="99.5" y2="99.5"/>' + bars +
       '<line class="nowl" x1="' + VS_PAST + '" x2="' + VS_PAST + '" y1="0" y2="100"/></svg>' + vsAxis(plan.from_ts) + '</div>';
     var lg_ = function (c, k) { return '<span><i class="' + c + '"></i>' + esc(t(k)) + '</span>'; };
-    return '<div class="hchart hchart--ahead hchart--vs"><div class="hchart-head"><dl class="metrics">' +
-      metric_(t('planner.vsHeat'), pair(heatT, heatO, 0), 'kWh') + metric_(t('planner.vsCost'), pair(costT, costO, 2), '€') +
-      metric_(t('planner.vsBelow'), pair(belowT, belowO, 1), 'K·t') + '</dl>' +
+    return '<div class="hchart hchart--ahead hchart--vs"><div class="hchart-head"><table class="table vs-sum"><thead><tr><th>' +
+      esc(t('planner.sNext')) + '</th><th>Touch</th><th>Odin</th></tr></thead><tbody>' +
+      row_('planner.sHeat', 'kWh', heatT, heatO, 0) + row_('planner.sElec', 'kWh', elecT, elecO, 1) +
+      row_('planner.sCost', '€', costT, costO, 2) + row_('planner.sBelow', 'K·t', belowT, belowO, 1) + '</tbody></table>' +
       (odin ? '' : '<p class="note">' + esc(t(NO_ODIN[(d.odin || {}).reason] || 'planner.vsNoOdin')) + '</p>') + '</div>' + temp + heat +
       '<p class="chart-legend" aria-hidden="true">' + lg_('lbd', 'planner.lBand') + lg_('lsp', 'planner.lScheduled') + lg_('lt', 'planner.lMeasured') +
       lg_('ltf', 'planner.lTouch') + (odin ? lg_('lod', 'planner.lOdin') : '') + lg_('lstrip', 'planner.lStrip') + lg_('ldl', 'planner.lDelivered') + lg_('lac', 'planner.lHeatTouch') + (odin ? lg_('lodb', 'planner.lHeatOdin') : '') + '</p></div>';

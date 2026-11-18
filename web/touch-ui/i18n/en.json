@@ -1322,5 +1322,10 @@
   "planner.lWind": "wind (m/s)",
   "planner.lSun": "sun (W/m²)",
   "planner.wxAria": "Weather for the next 48 hours: outdoor temperature, wind speed and direction, and sun per hour",
-  "planner.emptyWx": "No weather forecast yet."
+  "planner.emptyWx": "No weather forecast yet.",
+  "planner.sNext": "Next 24 h",
+  "planner.sHeat": "Heat",
+  "planner.sElec": "Electricity",
+  "planner.sCost": "Cost",
+  "planner.sBelow": "Below band"
 }
