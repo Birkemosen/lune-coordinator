@@ -2744,14 +2744,14 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
   float sec_feed = NAN, sec_ret = NAN;
   bool defrost = false;
   int mode = -1;
-  float sh_heat = NAN, sh_elec = NAN, dhw_elec = NAN;
+  float sh_heat = NAN, sh_elec = NAN, dhw_elec = NAN, total_elec = NAN;
   if (ok) {
     JsonDocument filter;
     for (const char *k : {"hp_feed_temp", "hp_return_temp", "outside_temp", "z1_flow_temp_target",
                           "compressor_frequency", "status_compressor", "operation_mode",
                           "flow_rate", "status_water_pump", "computed_output_power", "status_defrost",
                           "ow_role_z1_feed", "ow_role_z1_return", "heating_produced", "heating_consumed",
-                          "dhw_consumed"})
+                          "dhw_consumed", "daily_total_energy_consumption"})
       filter[k] = true;
     JsonDocument doc;
     ok = !deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -2773,6 +2773,9 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       sh_heat = f("heating_produced");
       sh_elec = f("heating_consumed");
       dhw_elec = f("dhw_consumed");
+      // Today's electricity so far, all modes, in 0.1 kWh steps: the only live meter (the
+      // per-mode meters above tick once a day, at 23:00).
+      total_elec = f("daily_total_energy_consumption");
       ok = std::isfinite(feed) || std::isfinite(ret);
     }
   }
@@ -2794,6 +2797,7 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     heat_source_.hp_sh_heat_kwh = sh_heat;
     heat_source_.hp_sh_elec_kwh = sh_elec;
     heat_source_.hp_dhw_elec_kwh = dhw_elec;
+    heat_source_.hp_total_elec_kwh = total_elec;
     heat_source_.hp_telemetry_ms = esphome::millis();
     // Balance sample: Alpha2 secondary flow against the heat pump's primary flow, and the
     // heat on each side of the tank where the temperatures are known.
@@ -15417,6 +15421,7 @@ void LuneTouchCoordinator::planner_tick_() {
     ps.sh_heat_kwh = heat_source_.hp_sh_heat_kwh;
     ps.sh_elec_kwh = heat_source_.hp_sh_elec_kwh;
     ps.dhw_elec_kwh = heat_source_.hp_dhw_elec_kwh;
+    ps.total_elec_kwh = heat_source_.hp_total_elec_kwh;
   }
   pending = planner_solve_pending_;
   planner_solve_pending_ = false;

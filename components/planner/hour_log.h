@@ -47,6 +47,9 @@ struct PollSample {
   float flow_target_c{NAN};
   // The heat pump's daily meters (kWh since local midnight; they reset there).
   float sh_heat_kwh{NAN}, sh_elec_kwh{NAN}, dhw_heat_kwh{NAN}, dhw_elec_kwh{NAN};
+  // Today's electricity so far over all modes from a meter that moves during the day
+  // (Asgard's daily_total_energy_consumption, 0.1 kWh steps; resets at local midnight).
+  float total_elec_kwh{NAN};
   float expected_c{NAN};      // the planner's forecast for this hour's end
   float plan_kw{NAN};         // the plan's output for this hour
   float shadow_flow_c{NAN};   // the shadow flow controller's target now
@@ -129,7 +132,7 @@ class HourAccumulator {
     flags_ = 0;
     output_kwh_ = 0;
     output_n_ = 0;
-    for (Meter *m : {&shh_, &she_, &dwh_, &dwe_}) { m->sum = 0; m->any = m->moved = false; }   // `last` carries over
+    for (Meter *m : {&shh_, &she_, &dwh_, &dwe_, &tot_}) { m->sum = 0; m->any = m->moved = false; }   // `last` carries over
     expected_ = plan_kw_ = NAN;
   }
 
@@ -159,6 +162,7 @@ class HourAccumulator {
     if (s.defrost) { flags_ |= MODE_DEFROST; defrost_s_ += dt; }
     if (std::isfinite(s.output_kw) && !(s.output_kw <= out_max_)) out_max_ = s.output_kw;
     shh_.add(s.sh_heat_kwh); she_.add(s.sh_elec_kwh); dwh_.add(s.dhw_heat_kwh); dwe_.add(s.dhw_elec_kwh);
+    tot_.add(s.total_elec_kwh);
     if (std::isfinite(s.expected_c)) expected_ = s.expected_c;
     if (std::isfinite(s.plan_kw)) plan_kw_ = s.plan_kw;
   }
@@ -177,9 +181,12 @@ class HourAccumulator {
     r->set(K, H_HEAT_SH_KWH, sh);
     if (dwh_.moved && dwh_.sum <= HOUR_HEAT_MAX_KWH) r->set(K, H_HEAT_DHW_KWH, static_cast<float>(dwh_.sum));
     // Electricity has no live reading, only the meters: kept when the hour's COP is plausible.
-    const float el = static_cast<float>(she_.sum + dwe_.sum);
+    // The live all-mode meter first; the per-mode daily meters only when it is missing (on
+    // the Ecodan they tick once a day, so no hour of theirs passed the check).
+    const bool live = tot_.any;
+    const float el = static_cast<float>(live ? tot_.sum : she_.sum + dwe_.sum);
     const float heat = (std::isfinite(sh) ? sh : 0.0f) + (dwh_.moved ? static_cast<float>(dwh_.sum) : 0.0f);
-    if ((she_.moved || dwe_.moved) && el <= HOUR_ELEC_MAX_KWH && heat >= 1.5f * el && heat <= 8.0f * el)
+    if ((live || she_.moved || dwe_.moved) && el <= HOUR_ELEC_MAX_KWH && heat >= 1.5f * el && heat <= 8.0f * el)
       r->set(K, H_ELEC_KWH, el);
     // The house at the hour's start (its first 15 minutes), as the model reads t[i].
     r->set(K, H_ROOM_C, house0_.n ? house0_.get() : house_.get());
@@ -218,7 +225,7 @@ class HourAccumulator {
   double output_kwh_{0};
   uint16_t output_n_{0};
   bool was_on_{false};
-  Meter shh_, she_, dwh_, dwe_;
+  Meter shh_, she_, dwh_, dwe_, tot_;
   float expected_{NAN}, plan_kw_{NAN};
 };
 

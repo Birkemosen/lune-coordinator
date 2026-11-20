@@ -82,6 +82,32 @@ int main() {
     }
     assert(closed == 3);
   }
+  // --- The live all-mode meter (Asgard's daily_total_energy_consumption, 0.1 kWh steps)
+  // gives each hour its electricity while the per-mode meters stand still all day.
+  {
+    HourAccumulator acc;
+    Record r;
+    HourExtra x;
+    int closed = 0;
+    float tot = 7.0f;
+    for (int m = 0; m <= 120; m++) {
+      PollSample s;
+      s.ts = T0 + 10 * 3600u + m * 60u;   // 10:00 → 12:00
+      s.house_c = 22.0f;
+      s.compressor_on = true;
+      s.output_kw = 6.0f;
+      s.sh_heat_kwh = 40.0f;              // the daily meters: unmoved all day
+      s.sh_elec_kwh = 9.0f;
+      if (m > 0 && m % 4 == 0) tot += 0.1f;   // 1.5 kWh an hour
+      s.total_elec_kwh = std::round(tot * 10.0f) / 10.0f;
+      if (acc.add(s, &r, &x)) {
+        closed++;
+        assert(near(r.get(Kind::HOUSE, H_HEAT_SH_KWH), 6.0f, 0.15f));
+        assert(near(r.get(Kind::HOUSE, H_ELEC_KWH), 1.5f, 0.11f));
+      }
+    }
+    assert(closed == 2);
+  }
   // --- Hours the learners skip: more heat than an hour holds, or none while running.
   {
     Record r;

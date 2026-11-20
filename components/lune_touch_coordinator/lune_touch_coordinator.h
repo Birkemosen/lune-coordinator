@@ -201,6 +201,7 @@ struct HeatSourceState {
   float hp_sh_heat_kwh{NAN};
   float hp_sh_elec_kwh{NAN};
   float hp_dhw_elec_kwh{NAN};
+  float hp_total_elec_kwh{NAN};   // today's electricity so far, all modes (live, 0.1 kWh steps)
   uint32_t hp_telemetry_ms{0};
 };
 
