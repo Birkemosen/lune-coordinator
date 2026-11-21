@@ -21,6 +21,7 @@ static void expect(bool cond, const char *what) {
 }
 
 static bool near(float a, float b, float eps = 0.01f) { return std::fabs(a - b) < eps; }
+static constexpr float RISE_ON_FOR_TEST = 1.5f;   // forecast_model.cpp RISE_ON
 
 static void test_wind_alignment() {
   expect(near(wind_alignment(WALL_NORTH, 0.0f), 1.0f), "alignment: N wall, N wind = 1.0");
@@ -375,6 +376,56 @@ static void test_evening_episode() {
   expect(at16.horizon_ok, "episode: the room keeps up");
 }
 
+// Wind that stays vs wind that comes (2026-11-21, Kontor: west wall, learned exposure 3,
+// floor lag 1.7 h). A steady 4–6 m/s west wind at 0–4 °C from midnight seen at 09: the loss
+// is high all day but the floors have it, so nothing. Calm turning to the same storm within
+// two hours: preload. The same storm reached over twelve hours: the floor follows, nothing.
+static void test_rise_not_level() {
+  static const float T[24] = {-1.0f, -0.6f, 0.1f, 0.0f, 0.1f, 0.9f, 1.2f, 1.5f, 1.8f, 2.3f, 2.7f, 3.2f,
+                              4.2f,  4.4f,  4.7f, 4.6f, 3.9f, 3.2f, 2.7f, 2.5f, 2.0f, 1.2f, 1.6f, 1.2f};
+  static const float W[24] = {2.2f, 2.7f, 2.6f, 2.4f, 3.0f, 3.5f, 4.5f, 4.4f, 4.1f, 4.6f, 4.6f, 4.8f,
+                              5.2f, 5.7f, 5.6f, 6.3f, 5.4f, 4.3f, 4.2f, 4.7f, 5.1f, 4.3f, 4.6f, 3.9f};
+  ForecastHour hours[FORECAST_HOURS];
+  for (size_t i = 0; i < FORECAST_HOURS; i++)
+    hours[i] = i < 24 ? ForecastHour{T[i], W[i], 278.0f, 0.0f} : ForecastHour{0.5f, 3.5f, 300.0f, 0.0f};
+  ZoneExposure kontor{};
+  kontor.exterior_walls = WALL_WEST;
+  kontor.wind_exposure = 3.0f;
+  kontor.thermal_lead_h = 4;
+  PreloadParams params{};
+  params.indoor_ref_c = 22.0f;
+  params.scheduled_setpoint_c = 22.0f;
+  params.has_current_temp = true;
+  params.current_temp_c = 22.5f;
+  params.max_offset_c = 1.5f;
+  params.floor_lag_h = 1.7f;
+  params.thermal_samples = 12;
+  params.learned_heat_gain_c_per_h = 0.15f;
+  params.learned_cool_loss_c_per_h = 0.12f;
+  const float base = params.learned_cool_loss_c_per_h;
+  expect(room_loss_c_per_h(hours[19], kontor, params) > RISE_ON_FOR_TEST * base,
+         "rise: the steady wind's loss is above the old threshold all evening");
+  PreloadDecision d = compute_zone_preload(hours, FORECAST_HOURS, 9, kontor, params);
+  expect(near(d.offset_c, 0.0f) && near(d.planned_offset_c, 0.0f), "rise: steady wind from midnight → no preload");
+
+  // Calm until 17, the same wind at 6–8 m/s from 19.
+  for (size_t i = 0; i < 24; i++)
+    hours[i] = ForecastHour{2.0f, i < 17 ? 1.0f : (i < 19 ? 4.0f : 7.5f), 278.0f, 0.0f};
+  d = compute_zone_preload(hours, FORECAST_HOURS, 9, kontor, params);
+  expect(d.planned_offset_c >= 0.3f && d.preload_start_h > 0 && d.preload_start_h < 10,
+         "rise: calm turning to storm within two hours → preload planned before it");
+  const float sudden = d.planned_offset_c;
+
+  // The same storm reached over twelve hours, from 07 to 19.
+  for (size_t i = 0; i < 24; i++) {
+    const float w = i < 7 ? 1.0f : (i >= 19 ? 7.5f : 1.0f + 6.5f * static_cast<float>(i - 7) / 12.0f);
+    hours[i] = ForecastHour{2.0f, w, 278.0f, 0.0f};
+  }
+  d = compute_zone_preload(hours, FORECAST_HOURS, 9, kontor, params);
+  printf("      rise: sudden %.2f, slow %.2f\n", sudden, d.planned_offset_c);
+  expect(d.planned_offset_c < sudden, "rise: a slow climb needs less than a sudden one");
+}
+
 int main() {
   test_wind_alignment();
   test_zone_hour_load();
@@ -388,6 +439,7 @@ int main() {
   test_absurd_heat_gain_suppresses_horizon();
   test_inverted_wind_direction();
   test_evening_episode();
+  test_rise_not_level();
 
   if (g_failures > 0) {
     printf("%d test(s) FAILED.\n", g_failures);

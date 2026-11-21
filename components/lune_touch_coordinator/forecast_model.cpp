@@ -27,8 +27,12 @@ static constexpr float TYPICAL_DT_K = 15.0f;
 static constexpr float TYPICAL_WIND_MS = 4.0f;
 static constexpr float TYPICAL_ALIGN = 0.5f;
 static constexpr float WIND_LOSS_FACTOR = 0.6f;
-// A preload episode: loss this many times the room's usual cooling, or above its floor.
+// A preload episode: loss this many times the room's usual cooling, or above its floor,
+// reached by a rise of at least (RISE_ON − 1) × the usual cooling within the floor's
+// response window (RISE_WINDOW_MIN..MAX hours, twice the floor lag and an hour).
 static constexpr float RISE_ON = 1.5f;
+static constexpr int RISE_WINDOW_MIN_H = 3;
+static constexpr int RISE_WINDOW_MAX_H = 6;
 // Smallest offset worth sending: V6 must notice it and call.
 static constexpr float MIN_OFFSET_C = 0.3f;
 
@@ -167,9 +171,24 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
   // fell from 18 because no heat came until 21:30, cooling 0.3 K/h as this loss says).
   // An episode is the hours the loss is RISE_ON × what the room usually loses, or more
   // than its floor gives; a dip of up to EPISODE_GAP_H hours does not end it.
+  // It starts only where the loss climbs fast: by (RISE_ON − 1) × the usual cooling above
+  // the lowest loss of the hours before it, within twice the floor lag and an hour
+  // (2026-11-21: a steady 4–6 m/s west wind at 0–3 °C held the loss at ~1.8 × usual for a
+  // day and preheated six rooms; the floors keep up with wind that stays, it is calm turning
+  // to storm within a few hours they cannot follow). The hours before now come from the
+  // forecast's past hours; without them the usual cooling is the reference, as before.
   const auto wants = [&](float loss) { return loss > RISE_ON * base || loss > capacity; };
+  const int window = static_cast<int>(
+      clampf_(std::round(2.0f * (lag_h_(params) + 1.0f)), static_cast<float>(RISE_WINDOW_MIN_H),
+              static_cast<float>(RISE_WINDOW_MAX_H)));
+  const auto before = [&](size_t i) {
+    float lo = INFINITY;
+    for (int k = 1; k <= window && static_cast<int>(i) - k >= 0; k++)
+      lo = fminf_(lo, room_loss_c_per_h(hours[i - k], exposure, params));
+    return finite_(lo) ? lo : base;
+  };
   size_t onset = count, ep_end = count, last_on = count;
-  float peak_loss = 0.0f, deficit = 0.0f;
+  float peak_loss = 0.0f, deficit = 0.0f, ref = base;
   for (size_t i = now_index; i <= horizon_last; i++) {
     const float loss = room_loss_c_per_h(hours[i], exposure, params);
     if (!wants(loss)) {
@@ -177,11 +196,16 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
         break;
       continue;
     }
-    if (onset == count)
+    if (onset == count) {
+      const float prior = before(i);
+      if (loss - prior <= (RISE_ON - 1.0f) * base)
+        continue;   // the loss is high but has been for a while: the floor is on it
       onset = i;
+      ref = fmaxf_(base, prior);
+    }
     last_on = i;
     ep_end = i + 1;
-    deficit += fmaxf_(0.0f, loss - capacity);
+    deficit += fmaxf_(0.0f, loss - fmaxf_(capacity, ref));
     if (loss > peak_loss) {
       peak_loss = loss;
       decision.peak_in_h = static_cast<int8_t>(i - now_index);
@@ -208,7 +232,7 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
     const float lag = lag_h_(params);
     const float gain_scale = clampf_(params.learned_gain_scale, 0.5f, 1.5f);
     const float priority = fmaxf_(0.5f, params.priority_gain);
-    float offset = ((peak_loss - base) * (lag + 1.0f) + deficit) * gain_scale * priority;
+    float offset = ((peak_loss - ref) * (lag + 1.0f) + deficit) * gain_scale * priority;
     offset = clampf_(offset, MIN_OFFSET_C, params.max_offset_c);
     decision.heuristic_offset_c = offset;
     decision.planned_offset_c = offset;

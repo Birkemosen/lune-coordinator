@@ -295,16 +295,17 @@ location; check them and save.
 
 
 Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
-Walls, wind and solar factors on each room decide which spaces preload.
-Preload starts when the load from wind and cold on a room passes 1.0:
+Walls, wind and solar factors on each room decide which spaces preload. From the forecast,
+Touch works out each room's heat loss per hour (wind on its facades and the difference to
+outdoors, less the sun) against what the room usually loses.
 
-    load = wind factor × facade alignment × (wind m/s ÷ 10) × (ΔT indoor–outdoor ÷ 10)
-           − solar factor × irradiance ÷ 800
-
-Each load unit adds 0.5 °C, at most the **max preload boost** (1.5 °C). A fully exposed room
-(factor 1.0, wind straight on the facade) at 0 °C outside therefore starts preloading at about
-5 m/s; a room with factor 0.5 needs about 10 m/s. Commands live for 75 minutes and are not
-repeated within 30 minutes.
+Preload is for **wind that comes**, not wind that stays: it starts only where a room's loss
+climbs to 1.5 × its usual, or past what its floor can give, and does so within a few hours
+(twice the floor's response time and an hour, 3–6 h). A steady breeze, even a stiff one, does
+not preload: the floors keep up with it on their own. Calm turning to storm does: the room is
+raised by up to the **max preload boost** (1.5 °C), from the floor's response time and an hour
+before the loss climbs, so the floor is warm when the wind arrives. Commands live for 75
+minutes and are not repeated within 30 minutes.
 
 <a id="solar-holdoff"></a>
 
