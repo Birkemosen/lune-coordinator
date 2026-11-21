@@ -343,6 +343,7 @@ struct LearnReport {
   float rmse_k{NAN};           // its 1–24 h forecast RMSE
   uint32_t hp_hours{0};        // full space-heating hours the heat pump learned from
   bool heat_pump{false};       // enough of them to use the learned heat pump
+  uint32_t defrost_hours{0};   // hours the defrost model learned from
 };
 
 // Workspace for learn_house: big, so it lives where the caller puts it (PSRAM on Touch).
@@ -412,7 +413,10 @@ bool learn_house(const HistoryStore<N> &st, uint32_t now_hour, const HouseParams
 }
 
 // The heat pump from every full space-heating hour in the store (oldest first): a whole
-// hour on space heating, no hot water or defrost, meters ticked.
+// hour on space heating, no hot water, meters ticked. An hour with defrost counts with its
+// defrost minutes when they are known (Touch's own hours); a seed hour flagged with defrost
+// but without minutes is left out. Defrost minutes per running hour are learned from every
+// hour with half an hour of space heating and known minutes.
 template <size_t N>
 bool learn_heat_pump(const HistoryStore<N> &st, uint32_t now_hour, const HeatPumpParams &seed, HeatPumpParams *out,
                      LearnReport *rep) {
@@ -424,11 +428,15 @@ bool learn_heat_pump(const HistoryStore<N> &st, uint32_t now_hour, const HeatPum
     const auto g = [r](uint8_t c) { return r->get(Kind::HOUSE, c); };
     const float flags = g(H_MODE_FLAGS);
     const uint16_t f = std::isfinite(flags) ? static_cast<uint16_t>(flags) : 0;
-    if (f & (MODE_HOT_WATER | MODE_LEGIONELLA | MODE_DEFROST)) continue;
+    if (f & (MODE_HOT_WATER | MODE_LEGIONELLA)) continue;
+    const float dm = g(H_DEFROST_MIN);
+    const float defrost = std::isfinite(dm) ? dm : ((f & MODE_DEFROST) ? NAN : 0.0f);
+    l.learn_defrost(dm, g(H_RUN_MIN), g(H_OUTDOOR_C));   // only measured minutes
     if (!(g(H_RUN_MIN) >= 55.0f)) continue;
-    l.learn(g(H_HEAT_SH_KWH), g(H_ELEC_KWH), g(H_HP_FEED_C), g(H_Z1_FEED_C), g(H_ROOM_C), g(H_OUTDOOR_C));
+    l.learn(g(H_HEAT_SH_KWH), g(H_ELEC_KWH), g(H_HP_FEED_C), g(H_Z1_FEED_C), g(H_ROOM_C), g(H_OUTDOOR_C), defrost);
   }
   rep->hp_hours = l.samples();
+  rep->defrost_hours = l.defrost_samples();
   HeatPumpParams p = l.params();
   p.min_kw = seed.min_kw;
   p.max_kw = seed.max_kw;

@@ -18,30 +18,53 @@ int main(int argc, char **argv) {
   Header h;
   if (std::fread(hb, 1, HEADER_SIZE, f) != HEADER_SIZE || !read_header(hb, &h)) return 1;
   HeatPumpLearner l;
-  size_t used = 0;
-  double se = 0;
+  // The same without the defrost term (c3 held at 0, defrost hours learned as if clean),
+  // to show what the term buys.
+  HeatPumpParams nod;
+  nod.c3 = 0.0f;
+  HeatPumpLearner l0(nod);
+  size_t used = 0, used_d = 0, used_dm = 0;
+  double se = 0, se0 = 0, se_d = 0, se0_d = 0, se_dm = 0;
   while (std::fread(rb, 1, RECORD_SIZE, f) == RECORD_SIZE) {
     Record r;
     read_record(h, rb, &r);
     auto g = [&](uint8_t c) { return r.get(Kind::HOUSE, c); };
-    const float run = g(H_RUN_MIN), dhw = g(H_HEAT_DHW_KWH);
-    if (!(run >= 57) || (std::isfinite(dhw) && dhw >= 0.05f)) continue;
+    const float run = g(H_RUN_MIN), dhw = g(H_HEAT_DHW_KWH), dm = g(H_DEFROST_MIN);
+    if (std::isfinite(dhw) && dhw >= 0.05f) continue;
+    // Defrost minutes per running hour, predicted before learning the hour.
+    if (std::isfinite(dm) && run >= 30 && g(H_OUTDOOR_C) < l.params().defrost_below_c && l.defrost_samples() > 24) {
+      const float e = defrost_min_for(l.params(), g(H_OUTDOOR_C)) - dm * 60.0f / run;
+      se_dm += e * e;
+      used_dm++;
+    }
+    l.learn_defrost(dm, run, g(H_OUTDOOR_C));
+    if (!(run >= 57) || !std::isfinite(dm)) continue;
     const float kw = g(H_HEAT_SH_KWH), el = g(H_ELEC_KWH);
     // Score the prediction made before learning the hour.
     if (l.params().valid && kw > 0.5f && el > 0.2f && std::isfinite(g(H_HP_FEED_C))) {
-      const float pred = cop_at(l.params(), g(H_HP_FEED_C), g(H_OUTDOOR_C));
-      se += (pred - kw / el) * (pred - kw / el);
+      const float pred = cop_at(l.params(), g(H_HP_FEED_C), g(H_OUTDOOR_C), dm);
+      const float pred0 = cop_at(l0.params(), g(H_HP_FEED_C), g(H_OUTDOOR_C));
+      const float e = pred - kw / el, e0 = pred0 - kw / el;
+      se += e * e;
+      se0 += e0 * e0;
       used++;
+      if (dm > 0) { se_d += e * e; se0_d += e0 * e0; used_d++; }
     }
-    l.learn(kw, el, g(H_HP_FEED_C), g(H_Z1_FEED_C), g(H_ROOM_C), g(H_OUTDOOR_C));
+    l.learn(kw, el, g(H_HP_FEED_C), g(H_Z1_FEED_C), g(H_ROOM_C), g(H_OUTDOOR_C), dm);
+    l0.learn(kw, el, g(H_HP_FEED_C), g(H_Z1_FEED_C), g(H_ROOM_C), g(H_OUTDOOR_C), 0.0f);
   }
   std::fclose(f);
   const HeatPumpParams &p = l.params();
   std::printf("heat pump: %u full space-heating hours learned\n", l.samples());
   std::printf("  floor  kW = %.2f + %.3f * (zone feed - room)\n", p.f0, p.f1);
   std::printf("  buffer HP feed - zone feed = %.2f + %.2f * kW\n", p.b0, p.b1);
-  std::printf("  COP = %.2f %+.3f * HP feed %+.3f * outdoor   (next-hour RMSE %.2f over %zu hours)\n", p.c0, p.c1,
-              p.c2, used ? std::sqrt(se / used) : NAN, used);
+  std::printf("  COP = %.2f %+.3f * HP feed %+.3f * outdoor %+.3f * defrost min   (next-hour RMSE %.2f over %zu hours)\n",
+              p.c0, p.c1, p.c2, p.c3, used ? std::sqrt(se / used) : NAN, used);
+  std::printf("  without the defrost term: RMSE %.2f; in the %zu hours with defrost %.2f with, %.2f without\n",
+              used ? std::sqrt(se0 / used) : NAN, used_d, used_d ? std::sqrt(se_d / used_d) : NAN,
+              used_d ? std::sqrt(se0_d / used_d) : NAN);
+  std::printf("  defrost min per running hour = %.2f %+.2f * outdoor below %.0f C (%u hours, next-hour RMSE %.2f min over %zu)\n",
+              p.d0, p.d1, p.defrost_below_c, l.defrost_samples(), used_dm ? std::sqrt(se_dm / used_dm) : NAN, used_dm);
   std::printf("  at 22 C room, 5 C outdoor:\n    kW   zone feed  HP feed  COP   kWh el per kWh heat\n");
   for (float kw = 3.0f; kw <= 9.01f; kw += 1.0f) {
     const float zf = zone_feed_for(p, kw, 22.0f), hf = hp_feed_for(p, kw, 22.0f);

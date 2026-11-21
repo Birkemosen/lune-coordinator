@@ -36,6 +36,38 @@ int main() {
   l2.learn(5.0f, NAN, 35, 32, 22, 5);
   assert(l2.samples() == 0);
 
+  // Defrost: no minutes at or above defrost_below_c, more the colder it is, and a defrost
+  // hour costs more electricity for the same heat.
+  HeatPumpParams d;
+  assert(defrost_min_for(d, 7.0f) == 0.0f && defrost_min_for(d, 10.0f) == 0.0f);
+  assert(defrost_min_for(d, 0.0f) > defrost_min_for(d, 4.0f) && defrost_min_for(d, 4.0f) > 0.0f);
+  assert(elec_for(d, 5.0f, 22.0f, 1.0f) / elec_for(d, 5.0f, 22.0f, 7.5f) > 1.0f);
+  assert(cop_at(d, 35.0f, 1.0f, 6.0f) < cop_at(d, 35.0f, 1.0f, 0.0f));
+
+  // The learner finds the defrost cost in COP and the defrost minutes per running hour.
+  HeatPumpParams dt = truth;
+  dt.c3 = -0.05f;
+  dt.d0 = 8.0f; dt.d1 = -1.0f;
+  HeatPumpLearner l3;
+  for (int i = 0; i < 600; i++) {
+    const float kw = 3.0f + (i % 7), out = -3.0f + (i % 11), room = 22.0f;
+    const float zf = zone_feed_for(dt, kw, room), hf = hp_feed_for(dt, kw, room);
+    const float dm = (i % 3) ? defrost_min_for(dt, out) : 0.0f;   // some hours without a defrost
+    l3.learn(kw, kw / cop_at(dt, hf, out, dm), hf, zf, room, out, dm);
+    l3.learn_defrost(defrost_min_for(dt, out) * 0.75f, 45.0f, out);   // 45 minutes running
+  }
+  const HeatPumpParams &q3 = l3.params();
+  std::printf("defrost: c3 %.3f, d0 %.2f, d1 %.2f\n", q3.c3, q3.d0, q3.d1);
+  assert(near(q3.c3, -0.05f, 0.01f) && near(q3.d0, 8.0f, 0.3f) && near(q3.d1, -1.0f, 0.06f));
+  assert(near(q3.f1, 0.5f, 0.02f));   // floor curve from the hours without defrost
+  // Unknown defrost minutes: the hour is not learned.
+  HeatPumpLearner l4;
+  l4.learn(5.0f, 1.2f, 35, 32, 22, 2, NAN);
+  l4.learn_defrost(NAN, 60, 2);
+  l4.learn_defrost(5, 20, 2);     // too little running time
+  l4.learn_defrost(5, 60, 9);     // too warm for defrost
+  assert(l4.samples() == 0 && l4.defrost_samples() == 0);
+
   std::printf("planner heat_pump_model: all assertions passed\n");
   return 0;
 }

@@ -361,6 +361,8 @@ test-planner:
 	$(PLANNER_OUT)-hourlog
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_room_forecast.cpp -o $(PLANNER_OUT)-rooms
 	$(PLANNER_OUT)-rooms
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_forecast_score.cpp -o $(PLANNER_OUT)-score
+	$(PLANNER_OUT)-score
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/planner/test_planner_settings.cpp -o $(PLANNER_OUT)-settings
 	$(PLANNER_OUT)-settings
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)

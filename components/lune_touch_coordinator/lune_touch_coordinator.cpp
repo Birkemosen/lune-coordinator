@@ -18,6 +18,7 @@
 #include "esphome/components/planner/solver.h"
 #include "esphome/components/planner/hour_log.h"
 #include "esphome/components/planner/room_forecast.h"
+#include "esphome/components/planner/forecast_score.h"
 #include "esp_timer.h"
 #include "esphome/core/application.h"
 #ifdef USE_API
@@ -1855,8 +1856,17 @@ struct PlannerRuntime {
     ::lune_planner::RoomModel model{};
     float expected[::lune_planner::PLAN_H]{};
     bool forecast{false};  // expected holds a forecast for rooms_ts
+    ::lune_planner::ScoreSet score{};   // its shown forecast, scored live
   } rooms[ROOMS]{};
   uint8_t room_n{0};
+  // Live forecast scores at fixed horizons (forecast_score.h): the plan's house forecast,
+  // the house model re-run on the heat that was delivered, and each room's shown forecast
+  // (pending forecasts by room slot, moved with the room).
+  ::lune_planner::PendingForecasts<26> house_pend{};
+  ::lune_planner::ScoreSet house_plan_score{};
+  ::lune_planner::ScoreSet house_model_score{};
+  ::lune_planner::PendingForecasts<26> room_pend[ROOMS]{};
+  uint32_t room_score_hour{0};
   uint32_t rooms_ts{0};        // solved_ts the room forecasts belong to
   uint32_t rooms_fit_hour{0};  // now-hour of the last room refit (attempt)
   uint32_t rooms_fit_ms{0};
@@ -1874,6 +1884,19 @@ struct PlannerRuntime {
   ::lune_planner::HourIn room_in[RW];
   ::lune_planner::HourIn room_fut[::lune_planner::PLAN_H];
 };
+
+// A room's pending forecasts follow it when the rooms are reordered, slot by slot (a
+// whole PendingForecasts on the stack would be ~1.5 KB).
+static void planner_swap_pend_(::lune_planner::PendingForecasts<26> &a, ::lune_planner::PendingForecasts<26> &b) {
+  for (int j = 0; j < ::lune_planner::SCORE_N; j++)
+    for (int i = 0; i < 26; i++)
+      std::swap(a.s[j][i], b.s[j][i]);
+}
+static void planner_clear_pend_(::lune_planner::PendingForecasts<26> &a) {
+  for (int j = 0; j < ::lune_planner::SCORE_N; j++)
+    for (int i = 0; i < 26; i++)
+      a.s[j][i] = {};
+}
 
 // Let the idle task (watchdog) and the web server in about every 50 ms of fitting.
 static int64_t planner_last_yield_us_ = 0;
@@ -15530,6 +15553,7 @@ void LuneTouchCoordinator::planner_tick_() {
         const uint32_t h5 = hour0 + 5u * 3600u;
         rt.expect[(h5 / 3600u) % 8] = {h5, rt.plan.t_end_c[5]};
       }
+      rt.house_pend.put_plan(hour0, rt.plan.t_end_c, n, house_t);
       rt.out_now_c = rt.hours[0].weather.out_c;
       if (!rt.logged_runtime) {
         rt.logged_runtime = true;
@@ -15580,10 +15604,25 @@ void LuneTouchCoordinator::planner_tick_() {
     ps.shadow_flow_c = rt.our_flow_c;
     lp::Record rec;
     lp::HourExtra extra;
-    if (rt.acc.add(ps, &rec, &extra) && take_state_lock_(100)) {
-      rt.store->put(rec, extra);
-      rt.save_due = true;
-      give_state_lock_();
+    if (rt.acc.add(ps, &rec, &extra)) {
+      bool stored = false;
+      if (take_state_lock_(100)) {
+        rt.store->put(rec, extra);
+        rt.save_due = true;
+        if (rt.snapshot != nullptr)
+          std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+        stored = true;
+        give_state_lock_();
+      }
+      // The hour is closed: score the plan's forecasts for it, and the house model re-run
+      // over the last hours on the heat that was delivered.
+      rt.house_pend.score(rec.hour_start, rec.get(lp::Kind::HOUSE, lp::H_ROOM_C), &rt.house_plan_score);
+      if (stored && rt.snapshot != nullptr && rt.scratch != nullptr) {
+        constexpr size_t SW = 96;
+        lp::history_window(*rt.snapshot, rec.hour_start - static_cast<uint32_t>(SW) * 3600u, SW, planner_local_hour_,
+                           rt.scratch->t, rt.scratch->in);
+        lp::score_house_hour(rt.house, rt.scratch->t, rt.scratch->in, SW, rt.scratch->track, &rt.house_model_score);
+      }
     }
   }
   // The normal price's month: mean all-in price of the last 30 days logged, once an hour.
@@ -15675,10 +15714,13 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       if (j < n)
         continue;
       rt.rooms[j] = PlannerRuntime::Room{};
+      planner_clear_pend_(rt.room_pend[j]);
       std::strncpy(rt.rooms[j].id, room->room_id, sizeof(rt.rooms[j].id) - 1);
     }
-    if (j != n)
+    if (j != n) {
       std::swap(rt.rooms[j], rt.rooms[n]);
+      planner_swap_pend_(rt.room_pend[j], rt.room_pend[n]);
+    }
     PlannerRuntime::Room &pr = rt.rooms[n];
     std::strncpy(pr.name, room->room_name[0] != '\0' ? room->room_name : room->room_id, sizeof(pr.name) - 1);
     pr.area_m2 = room->total_area_m2 > 0.0f ? room->total_area_m2 : 1.0f;
@@ -15742,6 +15784,10 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
     pr.now_c = rt.room_t[W];
     for (size_t i = W; !std::isfinite(pr.now_c) && i > W - 3; i--)
       pr.now_c = rt.room_t[i - 1];
+    // Forecasts that end at this hour, against the mean of the hour that just closed (a
+    // forecast for the end of plan hour k is held to that hour's mean).
+    if (rt.room_score_hour != hour0)
+      rt.room_pend[k].score(hour0, rt.room_t[W - 1], &pr.score);
     // Refit: yesterday's model scored on the last day, then fitted again; and a room with
     // four days and no model yet.
     if ((refit || (retry && !pr.model.fitted)) && have >= 4 * 24) {
@@ -15770,8 +15816,11 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       }
       lp::forecast_room(pr.model, rt.room_t, rt.room_in, W, rt.room_fut, rt.plan.n, rt.room_track, pr.expected);
       pr.forecast = std::isfinite(pr.expected[0]);
+      if (pr.forecast)
+        rt.room_pend[k].put_plan(hour0, pr.expected, rt.plan.n, pr.now_c);
     }
   }
+  rt.room_score_hour = hour0;
   rt.rooms_fitted = fitted;
   rt.rooms_ts = rt.solved_ts;
   if (refit || fit_ran)
@@ -16019,20 +16068,28 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   put("],\"band_source\":\"%s\"},", rt->band_odin ? "odin" : "target");
   const lp::HouseParams &h = rt->house;
   put("\"model\":{\"ua_kw_per_k\":%.3f,\"ca_kwh_per_k\":%.1f,\"cs_kwh_per_k\":%.1f,\"h_kw_per_k\":%.2f,"
-      "\"sun_kw_per_100wm2\":%.2f,\"p_int_kw\":%.2f,\"wind_pct_per_ms\":%.1f,\"floor_kw_per_k\":%.3f,\"cop\":[",
+      "\"sun_kw_per_100wm2\":%.2f,\"sun_floor_frac\":%.2f,\"sun_late_kw_per_100wm2\":%.2f,"
+      "\"sensor_sun_k_per_100wm2\":%.2f,\"p_int_kw\":%.2f,\"wind_pct_per_ms\":%.1f,\"floor_kw_per_k\":%.3f,\"cop\":[",
       static_cast<double>(h.ua_kw_per_k), static_cast<double>(h.ca_kwh_per_k), static_cast<double>(h.cs_kwh_per_k),
-      static_cast<double>(h.h_kw_per_k), static_cast<double>(h.g_kw_per_100wm2), static_cast<double>(h.p_int_kw),
+      static_cast<double>(h.h_kw_per_k), static_cast<double>(h.g_kw_per_100wm2), static_cast<double>(h.sun_floor_frac),
+      static_cast<double>(h.g_lag_kw_per_100wm2), static_cast<double>(h.sensor_sun_k), static_cast<double>(h.p_int_kw),
       static_cast<double>(100.0f * h.kw_per_ms), static_cast<double>(rt->pump.f1));
   const float room = std::isfinite(rt->target_c) ? rt->target_c : 22.0f;
   const float out = std::isfinite(rt->out_now_c) ? rt->out_now_c : 5.0f;
+  const float dmin = lp::defrost_min_for(rt->pump, out);
   for (int kw = 3; kw <= 9; kw++) {
     const float zf = lp::zone_feed_for(rt->pump, static_cast<float>(kw), room);
     const float hf = lp::hp_feed_for(rt->pump, static_cast<float>(kw), room);
     put("%s{\"kw\":%d,\"zone_feed_c\":%.1f,\"hp_feed_c\":%.1f,\"cop\":%.2f}", kw > 3 ? "," : "", kw,
-        static_cast<double>(zf), static_cast<double>(hf), static_cast<double>(lp::cop_at(rt->pump, hf, out)));
+        static_cast<double>(zf), static_cast<double>(hf), static_cast<double>(lp::cop_at(rt->pump, hf, out, dmin)));
   }
   planner_num_(a, sizeof(a), out, 1);
-  put("],\"cop_outdoor_c\":%s},", a);
+  // Defrost: COP per defrost minute in an hour, minutes per running hour = d0 + d1·outdoor
+  // below below_c, and the minutes the COP table above counts at its outdoor temperature.
+  put("],\"cop_outdoor_c\":%s,\"defrost\":{\"cop_per_min\":%.3f,\"d0\":%.2f,\"d1\":%.2f,\"below_c\":%.1f,"
+      "\"min_per_h\":%.1f}},",
+      a, static_cast<double>(rt->pump.c3), static_cast<double>(rt->pump.d0), static_cast<double>(rt->pump.d1),
+      static_cast<double>(rt->pump.defrost_below_c), static_cast<double>(dmin));
   planner_num_(a, sizeof(a), rt->our_flow_c, 1);
   planner_num_(b, sizeof(b), rt->odin_flow_c, 1);
   planner_num_(c, sizeof(c), rt->measured_kw, 2);
@@ -16085,11 +16142,11 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   planner_num_(a, sizeof(a), L.rmse_k, 3);
   planner_num_(b, sizeof(b), rt->floor_c, 2);
   put("\"learning\":{\"source\":\"%s\",\"refit_ts\":%lu,\"refit_ms\":%lu,\"days\":%u,\"hours\":%u,\"energy\":%s,"
-      "\"dynamics\":%s,\"rmse_k\":%s,\"hp_hours\":%lu,\"heat_pump\":%s,\"floor_c\":%s,\"floor_tracked\":%s,"
-      "\"store\":{\"boot\":\"%s\",\"hours\":%u,\"saves\":%u,\"last_save\":\"%s\"}},",
+      "\"dynamics\":%s,\"rmse_k\":%s,\"hp_hours\":%lu,\"defrost_hours\":%lu,\"heat_pump\":%s,\"floor_c\":%s,"
+      "\"floor_tracked\":%s,\"store\":{\"boot\":\"%s\",\"hours\":%u,\"saves\":%u,\"last_save\":\"%s\"}},",
       rt->learned ? "learned" : "seed", static_cast<unsigned long>(rt->learned_hour), static_cast<unsigned long>(rt->learn_ms),
       L.days, L.hours, L.energy ? "true" : "false", L.dynamics ? "true" : "false", a, static_cast<unsigned long>(L.hp_hours),
-      L.heat_pump ? "true" : "false", b, rt->floor_tracked ? "true" : "false", rt->store_boot,
+      static_cast<unsigned long>(L.defrost_hours), L.heat_pump ? "true" : "false", b, rt->floor_tracked ? "true" : "false", rt->store_boot,
       static_cast<unsigned>(rt->store != nullptr ? rt->store->count_since(1) : 0), rt->saves, rt->last_save);
   // Plan vs actual: the last 168 hours from the store. Per hour: the house at its end
   // (measured) and as forecast 6 h before, planned and delivered heat, electricity, price.
@@ -16164,6 +16221,26 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
       }
     give_state_lock_();
   }
+  // Live forecast scores per horizon: RMSE, bias and persistence's RMSE over the last
+  // week (decayed), and how many forecasts were scored since the restart.
+  const auto put_score = [&](const lp::ScoreSet &sc) {
+    put("[");
+    for (int j = 0; j < lp::SCORE_N; j++) {
+      const lp::HorizonScore &hs = sc.h[j];
+      char e1[16], e2[16], e3[16];
+      planner_num_(e1, sizeof(e1), hs.rmse(), 3);
+      planner_num_(e2, sizeof(e2), hs.bias(), 3);
+      planner_num_(e3, sizeof(e3), hs.persistence_rmse(), 3);
+      put("%s{\"h\":%d,\"n\":%lu,\"rmse_k\":%s,\"bias_k\":%s,\"persistence_k\":%s}", j ? "," : "", lp::SCORE_H[j],
+          static_cast<unsigned long>(hs.count), e1, e2, e3);
+    }
+    put("]");
+  };
+  put("\"scores\":{\"house_plan\":");
+  put_score(rt->house_plan_score);
+  put(",\"house_model\":");
+  put_score(rt->house_model_score);
+  put("},");
   put("\"room_fit\":{\"ts\":%lu,\"ms\":%lu,\"fitted\":%u,\"rooms\":%u},\"rooms\":[",
       static_cast<unsigned long>(rt->rooms_fit_hour), static_cast<unsigned long>(rt->rooms_fit_ms),
       static_cast<unsigned>(rt->rooms_fitted), static_cast<unsigned>(rt->room_n));
@@ -16186,7 +16263,9 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
       planner_num_(a, sizeof(a), t == room_history::NONE ? NAN : t / 10.0f, 1);
       put("%s%s", i > PlannerRuntime::RW - 24 ? "," : "", a);
     }
-    put("],\"expected_c\":");
+    put("],\"score\":");
+    put_score(r.score);
+    put(",\"expected_c\":");
     if (rooms_now && r.forecast) {
       put("[");
       for (int i = 0; i < p.n; i++) {

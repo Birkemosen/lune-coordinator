@@ -121,6 +121,9 @@ as the planner gets data; until then each panel says so, and missing values show
 would send (line), over the electricity price. Hot water and legionella hours are hatched. It
 spreads the house's heat over the cheapest hours it can while every room stays in its comfort
 band, and prefers longer runs at lower output when that pays (lower flow temperature, better COP).
+It counts defrosts too: in frost the heat pump defrosts more, and each defrost costs electricity
+without heat. Before a sunny morning it may let the house dip a little below the band (at most
+0.5 °C) instead of charging the floors for heat the sun will bring.
 
 <a id="planner-rooms"></a>
 **Room forecast.** The temperature the planner expects per room, hour by hour, against the room's
@@ -137,7 +140,9 @@ It starts from the heat pump's and Odin's history and then learns on its own.
 <a id="planner-accuracy"></a>
 **Plan vs actual.** The planner measured against what happened: forecast against measured house
 temperature, planned against delivered heat, and planned against actual cost. Only the planner's
-own numbers are here; the comparison with Odin is built in Home Assistant.
+own numbers are here; the comparison with Odin is built in Home Assistant. The planner also
+scores its forecasts 1, 3, 6, 12 and 24 hours ahead against what happened, for the house and each
+room, next to simply assuming the temperature stays where it is.
 
 <a id="planner-settings"></a>
 **Settings** (Open settings): the strategy — **Comfort first** (default: no room below target −

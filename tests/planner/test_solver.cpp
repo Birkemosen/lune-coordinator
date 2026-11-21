@@ -62,6 +62,35 @@ int main() {
   std::printf("weighted:%.1f kWh, %.2f EUR, below %.2f Kh\n", w.heat_kwh, w.cost_eur, w.below_kh);
   assert(w.cost_eur >= q.cost_eur - 1e-3f && w.cost_eur <= p.cost_eur + 1e-3f);
 
+  // Sun ahead: a cold night before a sunny late morning. With the hold, the plan lets the
+  // house sag (at most sun_hold_k) before the sun and puts in less heat; without it, the
+  // plan charges to hold the floor all night.
+  {
+    PlanHour s[PLAN_H];
+    day(s, 2.0f, 0, 6);
+    for (int i = 0; i < PLAN_H; i++) {
+      const int hr = i % 24;
+      s[i].weather.sun_wm2 = hr >= 9 && hr <= 14 ? 600.0f : 0.0f;
+      s[i].band_min_c = 22.0f;
+      s[i].band_max_c = 24.0f;
+    }
+    HouseParams sh = hp;
+    sh.g_kw_per_100wm2 = 1.5f;   // a sunny house
+    const HouseState st{22.1f, 22.6f};
+    SolverSettings off = cfg, on = cfg;
+    off.sun_hold_k = 0.0f;
+    HeatPlan a, b;
+    solve_plan(sh, pump, st, s, 12, off, &a);
+    solve_plan(sh, pump, st, s, 12, on, &b);
+    float relief = 0, bmin = 99;
+    for (int i = 0; i < b.n; i++) { relief = std::fmax(relief, b.relief_k[i]); bmin = std::fmin(bmin, b.t_end_c[i]); }
+    std::printf("sun hold: %.1f kWh without, %.1f kWh with (relief %.2f K, min %.2f C)\n", a.heat_kwh, b.heat_kwh, relief, bmin);
+    assert(relief > 0.0f && relief <= on.sun_hold_k + 1e-4f);
+    assert(b.heat_kwh < a.heat_kwh);
+    assert(bmin >= 22.0f - on.sun_hold_k - 0.05f);
+    for (int i = 0; i < a.n; i++) assert(a.relief_k[i] == 0.0f);
+  }
+
   // Flow controller: on plan, the curve's feed; overdelivery trims down, never past bounds.
   FlowController fc;
   const float base = fc.update(pump, 4.5f, 4.5f, 22.0f);

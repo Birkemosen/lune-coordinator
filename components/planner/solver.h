@@ -14,6 +14,10 @@
 //   weighted       as price first, and between the two floors heat is added while a step
 //                  costs less than the comfort it buys (penalty € per K·h).
 // The plan is the house's; rooms come from it in F3.
+// Sun ahead: an hour whose house would, without heat, climb back to the floor on forecast
+// sun within the next few hours may sag below the floor by up to `sun_hold_k` first, so the
+// plan does not charge the floors for a morning the sun will warm anyway (20 Nov 2026: a
+// plan of 7.7 kW before a sunny morning, which still ended 1 K over the band).
 //
 // Flow target: the zone feed the floor curve says the planned output needs, trimmed by
 // the measured output against the plan (both ways, bounded and rate-limited). Unlike a
@@ -45,6 +49,9 @@ struct SolverSettings {
   float dip_k{0.5f};                // price first / weighted: how far below the floor the house may go
   float step_kw{0.5f};
   float room_c{22.0f};              // for the floor curve (zone feed − room)
+  float sun_hold_k{0.5f};           // how far below the floor the house may sag ahead of sun (0 = off)
+  float sun_hold_wm2{150.0f};       // sun that counts as warming the house back
+  int sun_hold_h{6};                // how far ahead the sun may come
   void (*yield)() {nullptr};        // called once per step on a device, so a long plan lets other tasks run
 };
 
@@ -57,6 +64,7 @@ struct HeatPlan {
   float cost_eur{0};
   float heat_kwh{0};
   float below_kh{0};           // K·h below the comfort floor that remain
+  float relief_k[PLAN_H];      // how far below the floor the plan let the house sag ahead of sun
 };
 
 inline float price_of_(const PlanHour &h) { return std::isfinite(h.price_eur_kwh) ? h.price_eur_kwh : 0.3f; }
@@ -84,11 +92,32 @@ inline void finish_plan(const HeatPumpParams &pump, const PlanHour *hours, float
   }
 }
 
-// Comfort miss of a plan: K·h below the floor (less `floor_off`) plus K·h above the top.
+// Sun relief per hour (see the header): with no heat, the house at hour i is below the
+// floor but is back on it at a later hour within sun_hold_h whose sun is at least
+// sun_hold_wm2. Relief is the gap, at most sun_hold_k. Fills p->relief_k.
+inline void sun_relief_(const HouseParams &hp, const HouseState &start, const PlanHour *hours,
+                        const SolverSettings &cfg, HeatPlan *p) {
+  for (int i = 0; i < p->n; i++) { p->relief_k[i] = 0; p->kw[i] = 0; }
+  if (!(cfg.sun_hold_k > 0)) return;
+  simulate_plan(hp, start, hours, p);
+  for (int i = 0; i < p->n; i++) {
+    const float gap = hours[i].band_min_c - p->t_end_c[i];
+    if (!(gap > 0)) continue;
+    for (int j = i + 1; j < p->n && j <= i + cfg.sun_hold_h; j++) {
+      if (hours[j].weather.sun_wm2 >= cfg.sun_hold_wm2 && p->t_end_c[j] >= hours[j].band_min_c) {
+        p->relief_k[i] = gap < cfg.sun_hold_k ? gap : cfg.sun_hold_k;
+        break;
+      }
+    }
+  }
+}
+
+// Comfort miss of a plan: K·h below the floor (less `floor_off` and the sun relief) plus
+// K·h above the top.
 inline float comfort_miss_(const PlanHour *hours, const HeatPlan &q, float floor_off, float *below_out) {
   float below = 0, above = 0;
   for (int i = 0; i < q.n; i++) {
-    const float f = hours[i].band_min_c - floor_off;
+    const float f = hours[i].band_min_c - floor_off - q.relief_k[i];
     if (std::isfinite(f) && q.t_end_c[i] < f) below += f - q.t_end_c[i];
     if (std::isfinite(hours[i].band_max_c) && q.t_end_c[i] > hours[i].band_max_c) above += q.t_end_c[i] - hours[i].band_max_c;
   }
@@ -140,7 +169,7 @@ inline void fill_plan_(const HouseParams &hp, const HeatPumpParams &pump, const 
 inline void solve_plan(const HouseParams &hp, const HeatPumpParams &pump, const HouseState &start,
                        const PlanHour *hours, int n, const SolverSettings &cfg, HeatPlan *p) {
   p->n = n > PLAN_H ? PLAN_H : n;
-  for (int i = 0; i < p->n; i++) p->kw[i] = 0;
+  sun_relief_(hp, start, hours, cfg, p);
   const float hard_off = cfg.strategy == Strategy::COMFORT ? 0.0f : cfg.dip_k;
   fill_plan_(hp, pump, start, hours, cfg, hard_off, INFINITY, p);
   if (cfg.strategy == Strategy::WEIGHTED) fill_plan_(hp, pump, start, hours, cfg, 0.0f, cfg.penalty_eur_per_kh, p);

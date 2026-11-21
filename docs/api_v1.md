@@ -1067,14 +1067,17 @@ it planned with and the shadow flow controller:
            "elec_kwh": [0.00, 0.66, "..."], "band_min_c": [21.5, "..."], "band_max_c": [23.0, "..."],
            "price_est": [0, 0, "...", 1], "band_source": "odin"},
   "model": {"ua_kw_per_k": 0.161, "ca_kwh_per_k": 13.3, "cs_kwh_per_k": 30.0, "h_kw_per_k": 0.70,
-            "sun_kw_per_100wm2": 0.79, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "floor_kw_per_k": 0.441,
+            "sun_kw_per_100wm2": 0.79, "sun_floor_frac": 0.00, "sun_late_kw_per_100wm2": 0.00,
+            "sensor_sun_k_per_100wm2": 0.00, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "floor_kw_per_k": 0.441,
             "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
-            "cop_outdoor_c": 5.0},
+            "cop_outdoor_c": 5.0,
+            "defrost": {"cop_per_min": -0.037, "d0": 6.60, "d1": -0.83, "below_c": 7.0, "min_per_h": 2.5}},
   "flow": {"our_target_c": 29.6, "odin_target_c": 35.0, "measured_kw": 10.0, "plan_kw": 4.4},
   "odin": {"available": true, "n": 24, "heat_kw": [0.00, 5.80, "..."], "expected_c": [22.41, "..."],
            "elec_kwh": [0.00, 1.42, "..."], "mode": [0, 2, "..."]},
   "learning": {"source": "learned", "refit_ts": 1794885600, "refit_ms": 2400, "days": 41, "hours": 336,
-               "energy": true, "dynamics": true, "rmse_k": 0.286, "hp_hours": 263, "heat_pump": true,
+               "energy": true, "dynamics": true, "rmse_k": 0.286, "hp_hours": 263, "defrost_hours": 118,
+               "heat_pump": true,
                "floor_c": 25.1, "floor_tracked": true,
                "store": {"boot": "restored", "hours": 1080, "saves": 3, "last_save": "ok"}},
   "history": {"from_ts": 1794283200, "n": 168, "temp_c": [22.41, "..."], "expected_c": [22.35, "..."],
@@ -1082,9 +1085,13 @@ it planned with and the shadow flow controller:
               "elec_kwh": [0.02, "..."], "price": [0.2875, "..."], "target_c": [22.0, "..."],
               "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."], "band_min_c": [21.5, "..."],
               "band_max_c": [22.5, "..."]},
+  "scores": {"house_plan": [{"h": 1, "n": 40, "rmse_k": 0.120, "bias_k": -0.020, "persistence_k": 0.150}, "..."],
+             "house_model": [{"h": 1, "n": 40, "rmse_k": 0.090, "bias_k": 0.010, "persistence_k": 0.150}, "..."]},
   "room_fit": {"ts": 1794884400, "ms": 19400, "fitted": 12, "rooms": 12},
   "rooms": [{"room_id": "room-10", "name": "Stue", "target_c": 22.0, "now_c": 22.4, "share": 0.191,
-             "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "past_c": [22.1, "..."], "expected_c": [22.41, "..."],
+             "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "past_c": [22.1, "..."],
+             "score": [{"h": 1, "n": 30, "rmse_k": 0.21, "bias_k": 0.02, "persistence_k": 0.18}, "..."],
+             "expected_c": [22.41, "..."],
              "preload": null, "charge": {"from": 6, "to": 11, "store_c": 0.8, "insufficient": false}}]
 }
 ```
@@ -1100,7 +1107,19 @@ it planned with and the shadow flow controller:
   is on Odin. With `target` (no schedule known) it is `target_c − band_c` to `target_c + 1.0`.
 - `model_source` is `learned` once Touch has refitted on its own hourly history, else
   `seed` (start values fitted on this house's 2 Oct–16 Nov 2026 history,
-  components/planner/seed_params.h). Sun is the global irradiance from Touch's forecast.
+  components/planner/seed_params.h). Sun is the global irradiance from Touch's forecast;
+  `sun_floor_frac` is the share of it that lands on the floors (and comes out later),
+  `sun_late_kw_per_100wm2` sun that arrives hours late through roof and walls, and
+  `sensor_sun_k_per_100wm2` how much a sensor in the sun reads high. All three are fitted
+  with the dynamics. The `cop` table counts the defrosts at `cop_outdoor_c`: `defrost` is
+  the COP lost per defrost minute in an hour (`cop_per_min`) and the defrost minutes per
+  running hour, `d0 + d1 × outdoor` below `below_c` and none above (`min_per_h` at
+  `cop_outdoor_c`), both learned with the heat pump. Electricity comes from the heat
+  pump's all-mode meter that moves during the day (Asgard's
+  `daily_total_energy_consumption`), else its per-mode daily meters.
+- The plan may let the house sag below the band's floor, by at most 0.5 K, in hours
+  before forecast sun (≥ 150 W/m² within 6 h) that would bring it back to the floor
+  without heat, so it does not charge the floors for a morning the sun warms anyway.
 - `learning`: Touch keeps one record per hour (components/planner/hour_log.h: house
   temperature at the hour's start, weather, price, band, run minutes, starts, feeds, the
   heat pump's own space-heating heat and electricity from its daily meters, the planner's
@@ -1110,7 +1129,9 @@ it planned with and the shadow flow controller:
   (`energy`: loss, internal gain, sun and wind pinned to the metered heat), the hourly
   dynamics over the last 14 days (`dynamics`, kept only when it forecasts better than
   the seed; `rmse_k` is its 1–24 h error), and the heat pump from full space-heating
-  hours (`hp_hours`; `heat_pump` from 24). `floor_c` is the floors' temperature the
+  hours (`hp_hours`, with their defrost minutes; `heat_pump` from 24), and the defrost
+  minutes from every hour with at least half an hour of space heating (`defrost_hours`).
+  `floor_c` is the floors' temperature the
   plan starts from: tracked through the last 72 stored hours (`floor_tracked`), else
   where they would stand if the house were holding its temperature now.
 - `history` covers the 168 hours before `plan.from_ts`, per hour: the house at the
@@ -1118,6 +1139,15 @@ it planned with and the shadow flow controller:
   electricity with today's model, the delivered space heat and electricity, price, band
   setpoint and band (as the plan held it that hour, lifts included), Odin's flow target and
   the shadow flow target. `null` until a stored hour.
+- `scores`: the forecasts scored live against what happened, per horizon `h` (1, 3, 6,
+  12, 24 h): RMSE, bias (forecast − measured) and the RMSE of "it stays as it is now"
+  (`persistence_k`), over about the last week (exponentially weighted), with `n` the
+  forecasts scored since the restart (components/planner/forecast_score.h).
+  `house_plan` is the plan's expected house temperature, which assumes the plan's own
+  heat (not delivered in shadow mode). `house_model` re-runs the house model over the
+  same hours on the heat that was delivered and the weather that was logged: the model's
+  own error. Each room's `score` is its shown `expected_c`, held to the mean of the hour
+  the forecast ends. Scores start again after a restart.
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
   to the zone-1 flow target Odin commands. It is never sent.
