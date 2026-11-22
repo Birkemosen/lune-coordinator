@@ -91,6 +91,37 @@ int main() {
     for (int i = 0; i < a.n; i++) assert(a.relief_k[i] == 0.0f);
   }
 
+  // Catching up: the house 0.8 K below a floor that holds for 7 h, on a flat price day (22
+  // Nov 2026). Without the catch-up, the plan front-loads high output at a poor COP; with
+  // it, the first hours run lower and the plan costs less. Above the floor it changes nothing.
+  {
+    PlanHour c[PLAN_H];
+    day(c, 3.0f, 0, 0);
+    for (int i = 0; i < PLAN_H; i++) {
+      c[i].price_eur_kwh = 0.30f;
+      c[i].band_min_c = i < 7 ? 22.8f : 21.5f;
+      c[i].band_max_c = i < 7 ? 23.8f : 22.5f;
+    }
+    HouseParams ch = hp;
+    ch.ca_kwh_per_k = 14.0f;
+    ch.cs_kwh_per_k = 30.0f;
+    const HouseState st{22.0f, 24.4f};
+    SolverSettings off = cfg, on = cfg;
+    off.catchup_kw = 0.0f;
+    HeatPlan a, b;
+    solve_plan(ch, pump, st, c, PLAN_H, off, &a);
+    solve_plan(ch, pump, st, c, PLAN_H, on, &b);
+    std::printf("catch-up: first hour %.1f kW without, %.1f kW with; %.2f vs %.2f EUR\n", a.kw[0], b.kw[0], a.cost_eur, b.cost_eur);
+    assert(b.kw[0] < a.kw[0]);
+    assert(b.cost_eur < a.cost_eur);
+    assert(b.catchup_k[0] > 0.0f && b.catchup_k[0] <= 0.8f + 1e-4f);
+    for (int i = 0; i < a.n; i++) assert(a.catchup_k[i] == 0.0f);
+    for (int i = 7; i < b.n; i++) assert(b.catchup_k[i] == 0.0f);   // the floor below the house: nothing to catch up
+    HeatPlan d;
+    solve_plan(ch, pump, HouseState{23.0f, 24.4f}, c, PLAN_H, on, &d);
+    for (int i = 0; i < d.n; i++) assert(d.catchup_k[i] == 0.0f);
+  }
+
   // Flow controller: on plan, the curve's feed; overdelivery trims down, never past bounds.
   FlowController fc;
   const float base = fc.update(pump, 4.5f, 4.5f, 22.0f);
