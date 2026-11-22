@@ -19,11 +19,15 @@
 // plan does not charge the floors for a morning the sun will warm anyway (20 Nov 2026: a
 // plan of 7.7 kW before a sunny morning, which still ended 1 K over the band).
 // Catching up: when the house starts below the floor, the floor is lowered to where the
-// house would be on `catchup_kw` from now (never below where it is now), until that path
-// meets the floor. Without it, every hour below the floor counts, so the most comfort per
-// euro is always the next hour at high output (22 Nov 2026: house 22.0 against a floor of
-// 22.8 gave 7.7 kW at COP 2.8 on a flat price day). With it, the plan catches up at about
-// that output, and the price decides whether to go faster or later.
+// house would be on a catch-up output from now (never below where it is now), until that
+// path meets the floor. Without it, every hour below the floor counts, so the most comfort
+// per euro is always the next hour at high output (22 Nov 2026: house 22.0 against a floor
+// of 22.8 gave 7.7 kW at COP 2.8 on a flat price day). With it, the plan catches up at
+// about that output, and the price decides whether to go faster or later.
+// The catch-up output is learned, per hour: the pump's efficient output (efficient_kw: the
+// last kW still at least `catchup_cop_frac` of the COP at minimum output), raised by what
+// the house needs to hold the floor in that hour's weather where that is above the pump's
+// minimum, so a cold day still gains the same surplus.
 //
 // Flow target: the zone feed the floor curve says the planned output needs, trimmed by
 // the measured output against the plan (both ways, bounded and rate-limited). Unlike a
@@ -58,7 +62,7 @@ struct SolverSettings {
   float sun_hold_k{0.5f};           // how far below the floor the house may sag ahead of sun (0 = off)
   float sun_hold_wm2{150.0f};       // sun that counts as warming the house back
   int sun_hold_h{6};                // how far ahead the sun may come
-  float catchup_kw{4.5f};           // output the house may take to climb back to the floor (0 = off)
+  float catchup_cop_frac{0.67f};    // catch-up output: the last kW at this share of the minimum's COP (0 = off)
   void (*yield)() {nullptr};        // called once per step on a device, so a long plan lets other tasks run
 };
 
@@ -120,17 +124,26 @@ inline void sun_relief_(const HouseParams &hp, const HouseState &start, const Pl
   }
 }
 
+// Output to catch up on in an hour (see the header).
+inline float catchup_kw_(const HouseParams &hp, const HeatPumpParams &pump, const PlanHour &h, float room_c,
+                         float frac) {
+  const float eff = efficient_kw(pump, h.weather.out_c, room_c, frac);
+  const float hold = house_room_heat_needed(hp, h.band_min_c, h.band_min_c, h.weather);
+  float k = std::fmax(eff, hold + eff - pump.min_kw);
+  return k > pump.max_kw ? pump.max_kw : k;
+}
+
 // Catch-up per hour (see the header): with the house below the floor at the start, the gap
-// between the floor and the house on cfg.catchup_kw from now (at least the start), until
-// that path reaches the floor. Fills p->catchup_k.
-inline void catchup_(const HouseParams &hp, const HouseState &start, const PlanHour *hours,
-                     const SolverSettings &cfg, HeatPlan *p) {
+// between the floor and the house on the catch-up output from now (at least the start),
+// until that path reaches the floor. Fills p->catchup_k.
+inline void catchup_(const HouseParams &hp, const HeatPumpParams &pump, const HouseState &start,
+                     const PlanHour *hours, const SolverSettings &cfg, HeatPlan *p) {
   for (int i = 0; i < p->n; i++) p->catchup_k[i] = 0;
-  if (!(cfg.catchup_kw > 0) || p->n == 0 || !(start.t_c < hours[0].band_min_c)) return;
+  if (!(cfg.catchup_cop_frac > 0) || p->n == 0 || !(start.t_c < hours[0].band_min_c)) return;
   HouseState s = start;
   for (int i = 0; i < p->n; i++) {
     HourIn in = hours[i].weather;
-    in.q_kw = cfg.catchup_kw;
+    in.q_kw = catchup_kw_(hp, pump, hours[i], cfg.room_c, cfg.catchup_cop_frac);
     s = house_step(hp, s, in);
     const float path = s.t_c > start.t_c ? s.t_c : start.t_c;
     const float gap = hours[i].band_min_c - path;
@@ -197,7 +210,7 @@ inline void solve_plan(const HouseParams &hp, const HeatPumpParams &pump, const 
                        const PlanHour *hours, int n, const SolverSettings &cfg, HeatPlan *p) {
   p->n = n > PLAN_H ? PLAN_H : n;
   sun_relief_(hp, start, hours, cfg, p);
-  catchup_(hp, start, hours, cfg, p);
+  catchup_(hp, pump, start, hours, cfg, p);
   const float hard_off = cfg.strategy == Strategy::COMFORT ? 0.0f : cfg.dip_k;
   fill_plan_(hp, pump, start, hours, cfg, hard_off, INFINITY, p);
   if (cfg.strategy == Strategy::WEIGHTED) fill_plan_(hp, pump, start, hours, cfg, 0.0f, cfg.penalty_eur_per_kh, p);

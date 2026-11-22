@@ -107,6 +107,21 @@ inline float elec_for(const HeatPumpParams &p, float kw, float room_c, float out
   return kw / cop_at(p, hp_feed_for(p, kw, room_c), out_c, defrost_min_for(p, out_c));
 }
 
+// The highest output whose marginal COP (the extra heat per extra electricity of the last
+// 0.1 kW) is still at least `frac` of the COP at minimum output, at `out_c`: above it each
+// extra kW costs disproportionately more. From the learned floor curve, buffer and COP.
+inline float efficient_kw(const HeatPumpParams &p, float out_c, float room_c, float frac) {
+  const float dm = defrost_min_for(p, out_c);
+  const float ref = frac * cop_at(p, hp_feed_for(p, p.min_kw, room_c), out_c, dm);
+  float k = p.min_kw;
+  for (float next = k + 0.1f; next <= p.max_kw + 1e-3f; next += 0.1f) {
+    const float de = elec_for(p, next, room_c, out_c) - elec_for(p, k, room_c, out_c);
+    if (!(de > 0) || (next - k) / de < ref) break;
+    k = next;
+  }
+  return k;
+}
+
 class HeatPumpLearner {
  public:
   explicit HeatPumpLearner(const HeatPumpParams &prior = HeatPumpParams{}) : prior_(prior), params_(prior) {}

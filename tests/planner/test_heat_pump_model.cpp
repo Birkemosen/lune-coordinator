@@ -68,6 +68,14 @@ int main() {
   l4.learn_defrost(5, 60, 9);     // too warm for defrost
   assert(l4.samples() == 0 && l4.defrost_samples() == 0);
 
+  // Efficient output: within the pump's range, higher when more COP loss is accepted.
+  {
+    HeatPumpParams q;
+    const float strict = efficient_kw(q, 3.0f, 22.0f, 0.8f), loose = efficient_kw(q, 3.0f, 22.0f, 0.5f);
+    std::printf("efficient output: %.1f kW at 0.8, %.1f kW at 0.5\n", strict, loose);
+    assert(strict >= q.min_kw - 1e-3f && loose <= q.max_kw + 1e-3f && loose > strict);
+  }
+
   std::printf("planner heat_pump_model: all assertions passed\n");
   return 0;
 }

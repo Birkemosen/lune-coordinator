@@ -107,7 +107,7 @@ int main() {
     ch.cs_kwh_per_k = 30.0f;
     const HouseState st{22.0f, 24.4f};
     SolverSettings off = cfg, on = cfg;
-    off.catchup_kw = 0.0f;
+    off.catchup_cop_frac = 0.0f;
     HeatPlan a, b;
     solve_plan(ch, pump, st, c, PLAN_H, off, &a);
     solve_plan(ch, pump, st, c, PLAN_H, on, &b);
