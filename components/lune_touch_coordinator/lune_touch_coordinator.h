@@ -1171,6 +1171,15 @@ class LuneTouchCoordinator : public esphome::Component {
   RoomOutlook room_outlook_[ROOM_OUTLOOK_N]{};
   uint8_t room_outlook_n_{0};
   const RoomOutlook *room_outlook_for_(const char *room_id, uint32_t now_ts) const;
+  /// The last lift's forecast check, for /heat-source/control (demand.forecast).
+  struct LiftForecastDiag {
+    char room_id[32]{};
+    bool has_forecast{false};
+    float lack_c{NAN};
+    float share{NAN};
+    float lift_c{NAN};
+  };
+  LiftForecastDiag lift_fc_diag_{};
   OdinControlState odin_control_{};
   GenericLeverState generic_levers_{};
   lune_touch_odin::OwnerState odin_owner_{};

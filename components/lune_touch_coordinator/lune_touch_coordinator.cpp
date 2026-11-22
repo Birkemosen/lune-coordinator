@@ -3761,16 +3761,22 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // room's share of the house (odin_comfort.h share_lift_c). Without a forecast, or urgent,
   // the full cold-call lift as before.
   const int lag_len = lune_touch_odin::lag_end_in_h(lag_floor_h);
+  LiftForecastDiag diag{};
   lune_touch_odin::Lift lag{};
   if (cold_call) {
     float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
+    std::strncpy(diag.room_id, cold_fc.id, sizeof(diag.room_id) - 1);
+    diag.has_forecast = has_cold_fc;
     if (!urgent && has_cold_fc) {
       const float lack = lune_touch_odin::forecast_shortfall_c(cold_fc.expected, 24, lag_len + lune_touch_odin::COLD_DEFER_MAX_H,
                                                               cold_fc.target_c, COMFORT_BAND_C);
       const float s = lune_touch_odin::share_lift_c(house_c, band_floor_c, lack, cold_fc.share, params);
+      diag.lack_c = lack;
+      diag.share = cold_fc.share;
       if (std::isfinite(s))
         c = s;
     }
+    diag.lift_c = c;
     const int len = lag_len;
     const int s0 = urgent ? 0 : lune_touch_odin::cold_call_start_in_h(price_rel, 24, len);
     lag = lune_touch_odin::make_lift(now_hour, s0, s0 + len, c, params);
@@ -3781,8 +3787,17 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     const float lack = has_lag_fc ? lune_touch_odin::forecast_shortfall_c(lag_fc.expected, 24, lag_len,
                                                                           lag_fc.target_c, COMFORT_BAND_C)
                                   : NAN;
+    std::strncpy(diag.room_id, lag_fc.id, sizeof(diag.room_id) - 1);
+    diag.has_forecast = has_lag_fc;
+    diag.lack_c = lack;
+    diag.share = lag_fc.share;
+    diag.lift_c = lack == 0.0f ? 0.0f : held;
     if (!(lack == 0.0f))
       lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  }
+  if (take_state_lock_(100)) {
+    lift_fc_diag_ = diag;
+    give_state_lock_();
   }
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
   // only what the house would have had anyway. The band opens from when the first room
@@ -16550,8 +16565,12 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   bool cold_call = false;
   float coldest = 0.0f;
   char type[24]{};
+  LiftForecastDiag fd{};
+  char cold_room[32]{};
   if (take_state_lock_(50)) {
     c = odin_control_;
+    fd = lift_fc_diag_;
+    std::strncpy(cold_room, coldest_room_id_, sizeof(cold_room) - 1);
     g = generic_levers_;
     has_user = odin_owner_.has_user;
     yielded = odin_owner_.yielded;
@@ -16597,10 +16616,17 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   json_float_token_(hpmax, sizeof(hpmax), hp_max_odin ? c.hp_max_kw : c.hp_max_kw_user, 1);
   json_float_token_(hpmax_user, sizeof(hpmax_user), c.hp_max_kw_user, 1);
   const char *hpmax_src = hp_max_odin ? "odin" : hp_max_user ? "user" : "none";
+  char cold_id[64], fc_id[64], fc_lack[16], fc_share[16], fc_lift[16];
+  json_escape_(cold_room, cold_id, sizeof(cold_id));
+  json_escape_(fd.room_id, fc_id, sizeof(fc_id));
+  json_float_token_(fc_lack, sizeof(fc_lack), fd.lack_c, 2);
+  json_float_token_(fc_share, sizeof(fc_share), fd.share, 3);
+  json_float_token_(fc_lift, sizeof(fc_lift), fd.lift_c, 2);
   std::snprintf(
       buffer, capacity,
       "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f,"
-      "\"cold_room_call\":%s,\"coldest_deficit_c\":%.2f},"
+      "\"cold_room_call\":%s,\"coldest_deficit_c\":%.2f,\"coldest_room\":\"%s\","
+      "\"forecast\":{\"room\":\"%s\",\"available\":%s,\"lack_c\":%s,\"share\":%s,\"lift_c\":%s}},"
       "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
@@ -16619,7 +16645,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
       route, static_cast<double>(held), static_cast<double>(uplift), cold_call ? "true" : "false",
-      static_cast<double>(coldest), c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
+      static_cast<double>(coldest), cold_id, fc_id, fd.has_forecast ? "true" : "false", fc_lack, fc_share, fc_lift,
+      c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
       c.sync_enabled ? "true" : "false",
       static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),
       static_cast<double>(c.sync_above_c), sync_target,
