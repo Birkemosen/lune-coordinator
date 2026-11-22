@@ -3530,6 +3530,7 @@ float LuneTouchCoordinator::update_demand_hold_(const ::lune_touch::StrategySnap
     held = demand_hold_.update(required, esphome::millis());
     demand_held_c_ = held;
     coldest_deficit_c_ = strategy.has_physical_temperature ? strategy.coldest_deficit_c : 0.0f;
+    std::strncpy(coldest_room_id_, strategy.coldest_room_id, sizeof(coldest_room_id_) - 1);
     const bool was = cold_room_call_.engaged;
     if (cold_room_call_.update(coldest_deficit_c_, COMFORT_BAND_C) != was)
       ESP_LOGI(TAG, "Cold room call %s (coldest room %.1f C behind, band %.1f C)",
@@ -3611,6 +3612,20 @@ float LuneTouchCoordinator::weather_store_c_() const {
   return std::max(store, preload);
 }
 
+// A room's forecast for the lift, while it is from the last two hours (caller holds the
+// state lock).
+const LuneTouchCoordinator::RoomOutlook *LuneTouchCoordinator::room_outlook_for_(const char *room_id,
+                                                                                uint32_t now_ts) const {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return nullptr;
+  for (uint8_t i = 0; i < room_outlook_n_; i++) {
+    const RoomOutlook &o = room_outlook_[i];
+    if (std::strncmp(o.id, room_id, sizeof(o.id)) == 0)
+      return o.ts != 0 && now_ts >= o.ts && now_ts - o.ts <= 2u * 3600u ? &o : nullptr;
+  }
+  return nullptr;
+}
+
 // A dear hour is left out of a lift only when that saves a tenth of the price level (the
 // last 30 days, else the yearly average).
 static constexpr float SKIP_MIN_SAVING_SHARE = 0.10f;
@@ -3633,6 +3648,9 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   int pre_start_in_h = -1;
   float pre_share = NAN;
   float coldest = NAN, house_c = NAN, band_floor_c = NAN;
+  // The lagging rooms' forecasts (planner_rooms_): the cold room's and the driver's.
+  RoomOutlook cold_fc{}, lag_fc{};
+  bool has_cold_fc = false, has_lag_fc = false;
   float normal_price = NAN;
   int charge_need_in_h = -1;
   // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
@@ -3685,6 +3703,15 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     }
     if (!std::isfinite(band_floor_c) && strategy.has_house_target)
       band_floor_c = strategy.house_target_c - COMFORT_BAND_C;
+    const uint32_t now_ts = static_cast<uint32_t>(::time(nullptr));
+    if (const RoomOutlook *o = room_outlook_for_(coldest_room_id_, now_ts)) {
+      cold_fc = *o;
+      has_cold_fc = true;
+    }
+    if (const RoomOutlook *o = room_outlook_for_(strategy.driver_room_id, now_ts)) {
+      lag_fc = *o;
+      has_lag_fc = true;
+    }
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
       const auto rz = model_.resolve_room(strategy.driver_room_id);
@@ -3729,16 +3756,34 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // this hour when the room is well behind (COLD_URGENT_BANDS), else from the cheapest
   // start within a few hours (cold_call_start_in_h).
   const bool urgent = cold_call && std::isfinite(coldest) && coldest >= lune_touch_odin::COLD_URGENT_BANDS * COMFORT_BAND_C;
+  // Not urgent, and the planner has a forecast for the room: lift only by what the
+  // forecast still lacks (none when sun or the plan's own heat gets it back), times the
+  // room's share of the house (odin_comfort.h share_lift_c). Without a forecast, or urgent,
+  // the full cold-call lift as before.
+  const int lag_len = lune_touch_odin::lag_end_in_h(lag_floor_h);
   lune_touch_odin::Lift lag{};
   if (cold_call) {
-    const float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
-    const int len = lune_touch_odin::lag_end_in_h(lag_floor_h);
+    float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
+    if (!urgent && has_cold_fc) {
+      const float lack = lune_touch_odin::forecast_shortfall_c(cold_fc.expected, 24, lag_len + lune_touch_odin::COLD_DEFER_MAX_H,
+                                                              cold_fc.target_c, COMFORT_BAND_C);
+      const float s = lune_touch_odin::share_lift_c(house_c, band_floor_c, lack, cold_fc.share, params);
+      if (std::isfinite(s))
+        c = s;
+    }
+    const int len = lag_len;
     const int s0 = urgent ? 0 : lune_touch_odin::cold_call_start_in_h(price_rel, 24, len);
     lag = lune_touch_odin::make_lift(now_hour, s0, s0 + len, c, params);
     if (lag.active())
       lag.floor_share = 1.0f;
-  } else if (held > 0.0f)
-    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  } else if (held > 0.0f) {
+    // A lagging room the forecast already sees back in its band needs no lift.
+    const float lack = has_lag_fc ? lune_touch_odin::forecast_shortfall_c(lag_fc.expected, 24, lag_len,
+                                                                          lag_fc.target_c, COMFORT_BAND_C)
+                                  : NAN;
+    if (!(lack == 0.0f))
+      lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  }
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
   // only what the house would have had anyway. The band opens from when the first room
   // starts charging (a lead before its wind, so Odin can heat gently and in cheap hours
@@ -15391,23 +15436,17 @@ void LuneTouchCoordinator::planner_tick_() {
   bool pending = false;
   lp::PollSample ps{};
   ps.ts = now_ts;
-  // Odin's comfort band as Touch keeps it: the user's schedule (or the synced setpoint)
-  // and, while one is on Odin, the lifted copy Touch wrote. The plan is held to the
-  // same band Odin plans against, lifts included.
-  lune_touch_odin::Profile base{}, lifted{};
-  bool has_base = false, has_lifted = false;
+  // Odin's comfort band as Touch keeps it: the user's schedule (or the synced setpoint),
+  // without the lift Touch wrote. Touch plans on its own judgement, and the rooms'
+  // forecasts on that plan tell the lift whether a lagging room needs one at all.
+  lune_touch_odin::Profile base{};
+  bool has_base = false;
   if (!take_state_lock_(100))
     return;
   set = planner_settings_;
   if (odin_owner_.has_user || odin_owner_.sync.on) {
     base = lune_touch_odin::apply_sync(odin_owner_.user, odin_owner_.sync);
     has_base = base.count > 0;
-  }
-  // The lifted copy rebuilt from the base and the lift on Odin (what `written` encodes;
-  // `written` itself is not restored after a restart).
-  if (odin_owner_.applied && odin_owner_.lift.active() && has_base) {
-    lifted = lune_touch_odin::apply_lift(base, odin_owner_.lift);
-    has_lifted = true;
   }
   fc_n = forecast_hours_count_ > 72 ? 72 : forecast_hours_count_;
   for (uint8_t i = 0; i < fc_n; i++)
@@ -15497,8 +15536,7 @@ void LuneTouchCoordinator::planner_tick_() {
         price = last < eur_n ? eur[last] : NAN;
       }
       ph.price_eur_kwh = price;
-      // The lifted copy covers the coming day; after that the base schedule.
-      const lune_touch_odin::Profile *prof = has_lifted && k < 24 ? &lifted : (has_base ? &base : nullptr);
+      const lune_touch_odin::Profile *prof = has_base ? &base : nullptr;
       if (prof != nullptr) {
         const lune_touch_odin::Block b = lune_touch_odin::block_at(*prof, static_cast<uint8_t>(lt.hour));
         ph.band_min_c = b.sp + b.min;
@@ -15547,7 +15585,7 @@ void LuneTouchCoordinator::planner_tick_() {
       rt.seen_price_n = eur_n;
       rt.start_t_c = house_t;
       rt.target_c = target;
-      rt.band_odin = has_base || has_lifted;
+      rt.band_odin = has_base;
       // The 6 h-ahead forecast for hour0 + 5, scored against what happened (plan vs actual).
       if (n > 5) {
         const uint32_t h5 = hour0 + 5u * 3600u;
@@ -15819,6 +15857,25 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       if (pr.forecast)
         rt.room_pend[k].put_plan(hour0, pr.expected, rt.plan.n, pr.now_c);
     }
+  }
+  // The forecasts the lift reads (compute_odin_lift_).
+  if (take_state_lock_(100)) {
+    uint8_t m = 0;
+    for (int k = 0; k < n && m < ROOM_OUTLOOK_N; k++) {
+      const PlannerRuntime::Room &pr = rt.rooms[k];
+      if (!pr.forecast)
+        continue;
+      RoomOutlook &o = room_outlook_[m++];
+      o = RoomOutlook{};
+      std::strncpy(o.id, pr.id, sizeof(o.id) - 1);
+      o.share = pr.share;
+      o.target_c = pr.target_c;
+      for (int h = 0; h < 24; h++)
+        o.expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
+      o.ts = now_ts;
+    }
+    room_outlook_n_ = m;
+    give_state_lock_();
   }
   rt.room_score_hour = hour0;
   rt.rooms_fitted = fitted;

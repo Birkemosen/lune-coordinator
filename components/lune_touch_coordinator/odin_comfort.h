@@ -450,6 +450,38 @@ inline float cold_call_lift_c(float house_c, float band_floor_c, float deficit_c
   return std::clamp(need, p.min_lift_c, p.max_lift_c);
 }
 
+/// What a lagging room still lacks after its forecast (the planner's room forecast on the
+/// house plan without a lift, sun and weather included): how far the best of its next
+/// `window_h` hours stays below target − band. 0 when the room gets back on its own (a
+/// sunny day: 22 Nov 2026, Stue Repo 1.4 K behind at 09, forecast 24.4 by noon); NAN
+/// without a forecast. expected[k] is the end of hour k.
+inline float forecast_shortfall_c(const float *expected, int n, int window_h, float target_c, float band_c) {
+  if (expected == nullptr || n <= 0 || window_h <= 0 || !std::isfinite(target_c))
+    return NAN;
+  float best = -INFINITY;
+  for (int k = 0; k < n && k < window_h; k++)
+    if (std::isfinite(expected[k]))
+      best = std::max(best, expected[k]);
+  if (!std::isfinite(best))
+    return NAN;
+  return std::max(0.0f, target_c - band_c - best);
+}
+
+/// A cold-room call sized by the room's share: Odin sees only the house's weighted
+/// temperature, and V6 sends the heat to the rooms that are open, so the house needs to
+/// rise by share × what the room lacks, not by all of it (plus enough to put the floor
+/// above the house, so Odin heats at all). `shortfall_c` is below target − band
+/// (forecast_shortfall_c, or the deficit less the band without a forecast); 0 → no lift.
+inline float share_lift_c(float house_c, float band_floor_c, float shortfall_c, float share, const LiftParams &p) {
+  if (!std::isfinite(shortfall_c))
+    return NAN;
+  if (!(shortfall_c > 0.0f))
+    return 0.0f;
+  const float s = std::isfinite(share) && share > 0.0f ? std::min(share, 1.0f) : 1.0f;
+  const float above = std::isfinite(house_c) && std::isfinite(band_floor_c) ? std::max(0.0f, house_c - band_floor_c) : 0.0f;
+  return std::clamp(above + s * shortfall_c, p.min_lift_c, p.max_lift_c);
+}
+
 /// When a cold-room call that is not urgent starts: the hour s in 0..max_defer_h whose
 /// `len` hours cost least on average, each hour of waiting counted `penalty_per_h` dearer
 /// (the room stays behind meanwhile). 0 when a price in the span is unknown.

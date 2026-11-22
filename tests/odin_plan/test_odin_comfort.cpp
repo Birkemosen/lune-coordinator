@@ -389,6 +389,26 @@ int main() {
     // A cold house: at least the minimum lift. Unknown temperatures: the maximum.
     assert(std::fabs(cold_call_lift_c(21.0f, 21.5f, 1.05f, 0.5f, p) - 0.55f) < 1e-3f);
     assert(std::fabs(cold_call_lift_c(NAN, 21.5f, 1.1f, 0.5f, p) - p.max_lift_c) < 1e-3f);
+    // Lift by forecast and share (22 Nov 2026). Stue Repo 1.4 K behind its 23.0 at 09,
+    // 44.5 % of the house's heat, in a house at 21.9 over a floor of 21.5. The forecast
+    // with the day's sun reaches 24.4 by noon: nothing left to lift for.
+    const float sunny[8] = {21.8f, 22.8f, 23.8f, 24.4f, 24.5f, 24.0f, 23.5f, 22.9f};
+    assert(forecast_shortfall_c(sunny, 8, 6, 23.0f, 0.5f) == 0.0f);
+    assert(share_lift_c(21.9f, 21.5f, 0.0f, 0.445f, p) == 0.0f);
+    // A grey day: it only gets to 21.9, 0.6 K short of 22.5; the lift is the house's 0.4
+    // above its floor plus 0.445 × 0.6, against the full 1.3 K of the rule without a forecast.
+    const float grey[8] = {21.6f, 21.7f, 21.8f, 21.9f, 21.9f, 21.8f, 21.7f, 21.7f};
+    assert(std::fabs(forecast_shortfall_c(grey, 8, 6, 23.0f, 0.5f) - 0.6f) < 1e-4f);
+    assert(std::fabs(share_lift_c(21.9f, 21.5f, 0.6f, 0.445f, p) - (0.4f + 0.445f * 0.6f)) < 1e-4f);
+    assert(std::fabs(cold_call_lift_c(21.9f, 21.5f, 1.4f, 0.5f, p) - 1.3f) < 1e-3f);
+    // Only the window counts; no forecast or no share: unknown, or the whole shortfall.
+    assert(forecast_shortfall_c(sunny, 8, 1, 23.0f, 0.5f) > 0.0f);
+    assert(std::isnan(forecast_shortfall_c(nullptr, 8, 6, 23.0f, 0.5f)));
+    assert(std::isnan(share_lift_c(21.9f, 21.5f, NAN, 0.445f, p)));
+    assert(std::fabs(share_lift_c(21.4f, 21.5f, 0.6f, NAN, p) - 0.6f) < 1e-4f);
+    // A small room a little short: at least the minimum lift, never above the maximum.
+    assert(std::fabs(share_lift_c(21.4f, 21.5f, 0.2f, 0.05f, p) - p.min_lift_c) < 1e-4f);
+    assert(std::fabs(share_lift_c(23.5f, 21.5f, 2.0f, 1.0f, p) - p.max_lift_c) < 1e-4f);
     float eve[24];
     for (int k = 0; k < 24; k++) eve[k] = 0.30f;
     eve[0] = 0.43f; eve[1] = 0.39f; eve[2] = 0.33f;

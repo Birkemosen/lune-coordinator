@@ -1157,6 +1157,20 @@ class LuneTouchCoordinator : public esphome::Component {
   /// A room more than twice the comfort band behind: Odin's band floor moves (odin_comfort.h).
   lune_touch_odin::ColdRoomCall cold_room_call_{};
   float coldest_deficit_c_{0.0f};
+  char coldest_room_id_[32]{};
+  /// The planner's room forecasts, for the lift (planner_rooms_): each room's next 24 h on
+  /// Touch's own plan (the band without a lift), its share of the house's heat and target.
+  struct RoomOutlook {
+    char id[32]{};
+    float share{NAN};
+    float target_c{NAN};
+    float expected[24]{};
+    uint32_t ts{0};
+  };
+  static constexpr size_t ROOM_OUTLOOK_N = 24;
+  RoomOutlook room_outlook_[ROOM_OUTLOOK_N]{};
+  uint8_t room_outlook_n_{0};
+  const RoomOutlook *room_outlook_for_(const char *room_id, uint32_t now_ts) const;
   OdinControlState odin_control_{};
   GenericLeverState generic_levers_{};
   lune_touch_odin::OwnerState odin_owner_{};

@@ -258,7 +258,17 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
   back within the band (0.5 °C behind). On 2026-11-14 Laura was 2.3 °C behind with its
   loop fully open while the house sat 0.4 °C above target, and Odin planned nothing from
   03 to 08. `demand.cold_room_call` and `demand.coldest_deficit_c` in
-  `/heat-source/control`. With `floor_share` < 1 the window
+  `/heat-source/control`.
+- **Lift by forecast and share.** A cold-room call that is not urgent (less than three bands
+  behind), and a room lag, first ask the planner's room forecast: the room run forward on
+  Touch's own plan (the band without a lift), with sun and weather. If the room gets back
+  within its band inside the lift window, there is no lift (22 Nov 2026: Stue Repo 1.4 °C
+  behind at 09, forecast 24.4 °C by noon on the day's sun). Otherwise the cold-call lift is
+  the house above its floor plus the room's share of the house's heat × what the forecast
+  still lacks (`share_lift_c`): Odin sees only the weighted house, and V6 sends the heat to
+  the open rooms, so the house needs to rise by that share, not by the whole deficit. Without
+  a forecast from the last two hours, or when urgent, the full call as above. With
+  `floor_share` < 1 the window
   is 8 h from the next hour (at least the 3–6 h above), so Odin can choose across a price
   swing. A slab charge (whole house) moves the whole band.
 - **Weather preload.** While V6 preloads rooms ahead of wind or cold, the band's top rises
