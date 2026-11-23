@@ -3756,10 +3756,12 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // this hour when the room is well behind (COLD_URGENT_BANDS), else from the cheapest
   // start within a few hours (cold_call_start_in_h).
   const bool urgent = cold_call && std::isfinite(coldest) && coldest >= lune_touch_odin::COLD_URGENT_BANDS * COMFORT_BAND_C;
-  // Not urgent, and the planner has a forecast for the room: lift only by what the
-  // forecast still lacks (none when sun or the plan's own heat gets it back), times the
-  // room's share of the house (odin_comfort.h share_lift_c). Without a forecast, or urgent,
-  // the full cold-call lift as before.
+  // The planner has a forecast for the room: lift only by what the forecast still lacks
+  // (none when sun or the plan's own heat gets it back), times the room's share of the
+  // house (odin_comfort.h share_lift_c), also when urgent; urgent only heats from now.
+  // Without a forecast, the full cold-call lift as before. (22–23 Nov 2026: Laura 1.5 °C
+  // behind with its loop fully open got the full 1.4 K for 3 h; Odin planned 7.5 kW and
+  // the house took 69 kWh overnight while Laura rose 0.4 °C.)
   const int lag_len = lune_touch_odin::lag_end_in_h(lag_floor_h);
   LiftForecastDiag diag{};
   lune_touch_odin::Lift lag{};
@@ -3767,7 +3769,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
     std::strncpy(diag.room_id, cold_fc.id, sizeof(diag.room_id) - 1);
     diag.has_forecast = has_cold_fc;
-    if (!urgent && has_cold_fc) {
+    if (has_cold_fc) {
       const float lack = lune_touch_odin::forecast_shortfall_c(cold_fc.expected, 24, lag_len + lune_touch_odin::COLD_DEFER_MAX_H,
                                                               cold_fc.target_c, COMFORT_BAND_C);
       const float s = lune_touch_odin::share_lift_c(house_c, band_floor_c, lack, cold_fc.share, params);
