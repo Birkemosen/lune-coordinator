@@ -39,10 +39,16 @@ template <int N> class EwLeastSquares {
   uint32_t samples() const { return n_; }
   // Solve with a small ridge toward `prior`; false while singular.
   bool solve(const float prior[N], float ridge, float out[N]) const {
+    float r[N];
+    for (int i = 0; i < N; i++) r[i] = ridge;
+    return solve(prior, r, out);
+  }
+  // The same with a ridge of its own for each coefficient (a large one pins it to the prior).
+  bool solve(const float prior[N], const float ridge[N], float out[N]) const {
     double m[N][N + 1];
     for (int i = 0; i < N; i++) {
-      for (int j = 0; j < N; j++) m[i][j] = a_[i][j] + (i == j ? ridge : 0.0);
-      m[i][N] = b_[i] + ridge * prior[i];
+      for (int j = 0; j < N; j++) m[i][j] = a_[i][j] + (i == j ? ridge[i] : 0.0);
+      m[i][N] = b_[i] + ridge[i] * prior[i];
     }
     for (int c = 0; c < N; c++) {
       int p = c;

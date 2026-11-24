@@ -359,8 +359,8 @@ struct LearnScratch {
 };
 
 // The house model from the store, starting from `seed`: the energy balance over every
-// whole local day, then the hourly fit over the last 14 days with loss, gains, sun and
-// wind frozen when the balance had enough days. The fit is kept only when it forecasts
+// local day with at least EnergyBalance::MIN_HOURS logged hours, then the hourly fit over the last 14 days with loss, gains, sun,
+// wind and cold frozen when the balance had enough days. The fit is kept only when it forecasts
 // better than the seed on the same window and stays under `max_rmse`.
 template <size_t N>
 bool learn_house(const HistoryStore<N> &st, uint32_t now_hour, const HouseParams &seed, int (*local_hour)(uint32_t),
@@ -372,7 +372,8 @@ bool learn_house(const HistoryStore<N> &st, uint32_t now_hour, const HouseParams
   uint16_t days = 0;
   for (uint32_t h = oldest; h + 24 * 3600u <= now_hour; h += 3600u) {
     if (local_hour && local_hour(h) != 0) continue;
-    if (history_window(st, h, 24, local_hour, w->day_t, w->day_in) < 24) continue;
+    if (history_window(st, h, 24, local_hour, w->day_t, w->day_in) < static_cast<size_t>(EnergyBalance::MIN_HOURS))
+      continue;
     const uint32_t before = eb.days();
     eb.add_day(w->day_t, w->day_in);
     days += eb.days() > before;
@@ -460,7 +461,7 @@ float floor_now(const HistoryStore<N> &st, uint32_t now_hour, const HouseParams 
   // Start: floors warm enough to cover the first hour's loss.
   const HourIn &x = w->in[first];
   const float ph = x.hour_local * (6.2831853f / 24.0f);
-  const float need = p.ua_kw_per_k * (1.0f + p.kw_per_ms * x.wind_ms) * (w->t[first] - x.out_c) - p.p_int_kw -
+  const float need = p.ua_kw_per_k * loss_factor(p, x.out_c, x.wind_ms) * (w->t[first] - x.out_c) - p.p_int_kw -
                      p.p_cos_kw * std::cos(ph) - p.p_sin_kw * std::sin(ph) - p.g_kw_per_100wm2 * x.sun_wm2 / 100.0f;
   const float ts0 = w->t[first] + std::fmax(0.0f, std::fmin(8.0f, need / p.h_kw_per_k));
   float *track = w->track;

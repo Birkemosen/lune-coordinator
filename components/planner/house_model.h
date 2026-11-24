@@ -3,8 +3,12 @@
 // House model for the shadow planner: two thermal masses.
 //
 //   floor (screed + floor circuit):  Cs · dTs/dt = Q − H · (Ts − T)
-//   rooms (air, furniture, walls):   Ca · dT/dt  = H · (Ts − T) + g · sun + P(hour) − UA · (1 + kw · wind) · (T − Tout)
+//   rooms (air, furniture, walls):   Ca · dT/dt  = H · (Ts − T) + g · sun + P(hour) − UA · f · (T − Tout)
 //                                                 + Knb · (T_neighbours − T)   (a room only)
+//
+// f = 1 + kw · wind + kc · max(0, COLD_REF_C − Tout): the loss grows with wind and, below
+// COLD_REF_C, with cold (air leaks and ventilation; 21–24 Nov 2026 at 1–4 °C the house took
+// 59–81 kWh a day where a straight UA fitted on the 4–15 °C days said 49–57).
 //
 // P(hour) = P + Pc·cos + Ps·sin of the local hour: people, cooking, appliances and any
 // setback follow the clock, and without it a 24 h forecast is no better than persistence.
@@ -36,6 +40,7 @@ struct HouseParams {
   float g_kw_per_100wm2{0.5f};    // sun, per 100 W/m² global irradiance
   float p_int_kw{0.4f};           // internal gain
   float kw_per_ms{0.02f};         // extra loss per m/s of wind, fraction of UA
+  float cold_per_k{0.0f};         // extra loss per K of outdoor temperature below COLD_REF_C, fraction of UA
   float p_cos_kw{0.0f};           // daily rhythm of the internal gain: cos/sin of the local hour
   float p_sin_kw{0.0f};
   float k_nb_kw_per_k{0.0f};      // exchange with neighbouring rooms (a room's model; 0 for the house)
@@ -44,6 +49,9 @@ struct HouseParams {
   float g_lag_kw_per_100wm2{0.0f};  // sun that arrives late, through a roof or wall that heats up first
   bool valid{false};
 };
+
+// Below this outdoor temperature the loss grows with the cold (cold_per_k).
+constexpr float COLD_REF_C = 8.0f;
 
 struct HourIn {
   float q_kw{0};       // space-heating heat in the hour (kWh = mean kW)
@@ -60,6 +68,11 @@ inline float sun_lag_filter(float prev_wm2, float sun_wm2, float tau_h = 3.0f) {
   return prev_wm2 + (sun_wm2 - prev_wm2) * (1.0f - std::exp(-1.0f / tau_h));
 }
 
+// The loss per kelvin of indoor − outdoor in an hour's weather, as a multiple of UA.
+inline float loss_factor(const HouseParams &p, float out_c, float wind_ms) {
+  return 1.0f + p.kw_per_ms * wind_ms + p.cold_per_k * std::fmax(0.0f, COLD_REF_C - out_c);
+}
+
 struct HouseState {
   float t_c{NAN};      // rooms
   float ts_c{NAN};     // floors
@@ -67,7 +80,7 @@ struct HouseState {
 
 inline HouseState house_step(const HouseParams &p, HouseState s, const HourIn &in) {
   const float flow = p.h_kw_per_k * (s.ts_c - s.t_c);
-  const float loss = p.ua_kw_per_k * (1.0f + p.kw_per_ms * in.wind_ms) * (s.t_c - in.out_c);
+  const float loss = p.ua_kw_per_k * loss_factor(p, in.out_c, in.wind_ms) * (s.t_c - in.out_c);
   HouseState n;
   const float sun = p.g_kw_per_100wm2 * in.sun_wm2 / 100.0f;
   n.ts_c = s.ts_c + (in.q_kw + p.sun_floor_frac * sun - flow) / p.cs_kwh_per_k;
@@ -103,53 +116,74 @@ inline void track_floor(const HouseParams &p, const float *t_meas, const HourIn 
 // inverse, one hour at a time; the floor lag is the planner's to respect).
 inline float house_room_heat_needed(const HouseParams &p, float t0_c, float t1_c, const HourIn &in) {
   const float tm = 0.5f * (t0_c + t1_c);
-  const float loss = p.ua_kw_per_k * (1.0f + p.kw_per_ms * in.wind_ms) * (tm - in.out_c);
+  const float loss = p.ua_kw_per_k * loss_factor(p, in.out_c, in.wind_ms) * (tm - in.out_c);
   return p.ca_kwh_per_k * (t1_c - t0_c) + loss - p.g_kw_per_100wm2 * in.sun_wm2 / 100.0f - p.p_int_kw;
 }
 
-// The house's long-run energy balance from whole days: heat ≈ UA·Σ(T − Tout)·(1 + kw·wind)
-// − g·Σsun − 24·P. Fitted on daily sums (exponentially weighted over days, ridge toward
+// The house's long-run energy balance from whole days: heat ≈ UA·Σ(T − Tout)·(1 + kw·wind
+// + kc·cold) − g·Σsun − 24·P, cold = max(0, COLD_REF_C − Tout). Only days below COLD_REF_C
+// say anything about kc, and the ridge keeps it at the prior's until they come. Fitted on daily sums (exponentially weighted over days, ridge toward
 // the prior), it pins loss, internal gain and useful sun to the heat actually metered;
 // the hourly fit then only shapes the dynamics. Without it, sun on a room sensor in a
 // sunny room passes for heat and the model's house needs a quarter of the real heat.
 class EnergyBalance {
  public:
   explicit EnergyBalance(const HouseParams &prior = HouseParams{}, float lambda = 0.97f) : prior_(prior), ls_(lambda) {}
-  // One whole day (24 hours from local midnight): t[0..24], in[0..23].
+  // At least this many of a day's hours must be logged for the day to count.
+  static constexpr int MIN_HOURS = 20;
+  // One day (24 hours from local midnight): t[0..24], in[0..23]. An hour without a log
+  // (t[i] not finite: a restart, an update) is left out and the day's sums are scaled up
+  // from the hours that are there (21–24 Nov 2026, the first cold days, each lacked 3–6
+  // hours to updates and were all dropped when a day had to be complete).
   void add_day(const float *t, const HourIn *in) {
-    double d = 0, dw = 0, sun = 0, q = 0;
+    double d = 0, dw = 0, dc = 0, sun = 0, q = 0;
+    int n = 0;
     for (int i = 0; i < 24; i++) {
-      if (!std::isfinite(t[i]) || !std::isfinite(in[i].out_c)) return;
+      if (!std::isfinite(t[i]) || !std::isfinite(in[i].out_c)) continue;
+      n++;
       d += t[i] - in[i].out_c;
       dw += (t[i] - in[i].out_c) * in[i].wind_ms;
+      dc += (t[i] - in[i].out_c) * std::fmax(0.0f, COLD_REF_C - in[i].out_c);
       sun += in[i].sun_wm2 / 100.0f;
       q += in[i].q_kw;
     }
+    if (n < MIN_HOURS) return;
+    const double k = 24.0 / n;
+    d *= k; dw *= k; dc *= k; sun *= k; q *= k;
     if (q < 5) return;   // a day the pump hardly ran says little about the loss
-    // Scaled so each coefficient is of order 1: UA·100, UA·kw·1000, P·10, g·10.
-    const float x[4] = {static_cast<float>(d / 100), static_cast<float>(dw / 1000), -2.4f, -static_cast<float>(sun / 10)};
+    // Scaled so each coefficient is of order 1: UA·100, UA·kw·1000, UA·kc·1000, P·10, g·10.
+    const float x[5] = {static_cast<float>(d / 100), static_cast<float>(dw / 1000), static_cast<float>(dc / 1000), -2.4f,
+                        -static_cast<float>(sun / 10)};
     ls_.add(x, static_cast<float>(q));
   }
   uint32_t days() const { return ls_.samples(); }
-  // Writes UA, wind factor, P and sun into p when there are enough days; true if it did.
+  // Writes UA, wind and cold factors, P and sun into p when there are enough days; true if it did.
   bool apply(HouseParams *p) const {
     if (ls_.samples() < 7) return false;
-    const float pr[4] = {prior_.ua_kw_per_k * 100, prior_.ua_kw_per_k * prior_.kw_per_ms * 1000,
-                         prior_.p_int_kw * 10, prior_.g_kw_per_100wm2 * 10};
-    float th[4];
+    const float pr[5] = {prior_.ua_kw_per_k * 100, prior_.ua_kw_per_k * prior_.kw_per_ms * 1000,
+                         prior_.ua_kw_per_k * prior_.cold_per_k * 1000, prior_.p_int_kw * 10,
+                         prior_.g_kw_per_100wm2 * 10};
+    float th[5];
     if (!ls_.solve(pr, 3.0f, th)) return false;
+    // Less loss in the cold than in mild weather is not physical: then the days say nothing
+    // about the cold, and the others are solved with it held at the prior's.
+    if (th[2] / 1000 < prior_.ua_kw_per_k * prior_.cold_per_k) {
+      const float ridge[5] = {3.0f, 3.0f, 1e9f, 3.0f, 3.0f};
+      if (!ls_.solve(pr, ridge, th)) return false;
+    }
     const float ua = th[0] / 100;
     if (!(ua > 0.03f && ua < 1.0f)) return false;
     p->ua_kw_per_k = ua;
     p->kw_per_ms = std::fmax(0.0f, std::fmin(0.15f, th[1] / 1000 / ua));
-    p->p_int_kw = std::fmax(0.0f, std::fmin(3.0f, th[2] / 10));
-    p->g_kw_per_100wm2 = std::fmax(0.0f, std::fmin(2.0f, th[3] / 10));
+    p->cold_per_k = std::fmax(0.0f, std::fmin(0.1f, th[2] / 1000 / ua));
+    p->p_int_kw = std::fmax(0.0f, std::fmin(3.0f, th[3] / 10));
+    p->g_kw_per_100wm2 = std::fmax(0.0f, std::fmin(2.0f, th[4] / 10));
     return true;
   }
 
  private:
   HouseParams prior_;
-  EwLeastSquares<4> ls_;
+  EwLeastSquares<5> ls_;
 };
 
 // Batch fit over a window of hours. t_meas[i] is the room temperature at the start of

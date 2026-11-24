@@ -213,9 +213,9 @@ int main() {
   HouseParams learned;
   LearnReport rep;
   assert(learn_house(*st, now, seed, utc_hour, w.get(), &learned, &rep));
-  std::printf("  house: %u days, %u h, energy %d, dynamics %d, rmse %.3f K; UA %.3f (truth %.3f, seed %.3f)\n",
+  std::printf("  house: %u days, %u h, energy %d, dynamics %d, rmse %.3f K; UA %.3f (truth %.3f, seed %.3f), cold %.4f\n",
               rep.days, rep.hours, rep.energy, rep.dynamics, rep.rmse_k, learned.ua_kw_per_k, truth.ua_kw_per_k,
-              seed.ua_kw_per_k);
+              seed.ua_kw_per_k, learned.cold_per_k);
   assert(rep.days >= 30 && rep.energy && rep.dynamics);
   assert(std::fabs(learned.ua_kw_per_k - truth.ua_kw_per_k) < std::fabs(seed.ua_kw_per_k - truth.ua_kw_per_k) / 2);
   assert(rep.rmse_k < 0.1f);

@@ -1823,6 +1823,34 @@ struct PlannerRuntime {
   float odin_flow_c{NAN};
   float measured_kw{NAN};
   float plan_kw_now{NAN};
+  // The day's plans as they stood at its first solve (normally just after local midnight),
+  // per local hour: what each planner meant to deliver that day. The rolling plan's first
+  // hour alone is no day plan: in shadow the house follows Odin's heat, and each new solve
+  // starts from a house Odin has already warmed, so its first hours stay low (21–24 Nov 2026:
+  // 23–34 kWh a day summed against a 48 h plan of 56 kWh a day and 59–81 delivered).
+  struct DayPlan {
+    uint32_t day_ts{0};   // local midnight
+    float heat_kw[24];
+    float elec_kwh[24];
+    void reset(uint32_t day) {
+      day_ts = day;
+      for (int i = 0; i < 24; i++) heat_kw[i] = elec_kwh[i] = NAN;
+    }
+    float at(uint32_t hour) const {
+      return day_ts != 0 && hour >= day_ts && hour < day_ts + 24u * 3600u ? heat_kw[(hour - day_ts) / 3600u] : NAN;
+    }
+    float elec_at(uint32_t hour) const {
+      return day_ts != 0 && hour >= day_ts && hour < day_ts + 24u * 3600u ? elec_kwh[(hour - day_ts) / 3600u] : NAN;
+    }
+    static float sum(const float *v) {
+      float t = 0.0f;
+      bool any = false;
+      for (int i = 0; i < 24; i++)
+        if (std::isfinite(v[i])) { t += v[i]; any = true; }
+      return any ? t : NAN;
+    }
+  };
+  DayPlan day_touch{}, day_odin{};
   // F3: the hourly history Touch keeps and what it learns from it.
   ::lune_planner::HourAccumulator acc{};
   PlannerStore *store{nullptr};
@@ -15451,6 +15479,8 @@ void LuneTouchCoordinator::planner_tick_() {
   uint8_t eur_n = 0;
   int eur_ymd = 0;
   float house_t = NAN, target = NAN, out_kw = NAN, odin_flow = NAN, outside = NAN;
+  float odin_heat[24], odin_elec[24];   // Odin's space heat from this hour on (hot water hours 0)
+  int odin_n = 0;
   bool pending = false;
   lp::PollSample ps{};
   ps.ts = now_ts;
@@ -15502,6 +15532,17 @@ void LuneTouchCoordinator::planner_tick_() {
     ps.sh_elec_kwh = heat_source_.hp_sh_elec_kwh;
     ps.dhw_elec_kwh = heat_source_.hp_dhw_elec_kwh;
     ps.total_elec_kwh = heat_source_.hp_total_elec_kwh;
+  }
+  {
+    const auto &o = odin_plan_;
+    if (o.available && !o.plan_stale && o.heat_production_count > 0) {
+      odin_n = std::min<int>(24, o.heat_production_count);
+      for (int k = 0; k < odin_n; k++) {
+        const bool space = o.operation_mode_horizon[k] != 1 && o.operation_mode_horizon[k] != 6;
+        odin_heat[k] = space ? std::max(0.0f, o.heat_production_horizon[k]) : 0.0f;
+        odin_elec[k] = space && std::isfinite(o.energy_horizon[k]) ? std::max(0.0f, o.energy_horizon[k]) : (space ? NAN : 0.0f);
+      }
+    }
   }
   pending = planner_solve_pending_;
   planner_solve_pending_ = false;
@@ -15585,7 +15626,7 @@ void LuneTouchCoordinator::planner_tick_() {
       }
       const lp::HourIn &w0 = rt.hours[0].weather;
       const float ph = w0.hour_local * (6.2831853f / 24.0f);
-      const float need = rt.house.ua_kw_per_k * (1.0f + rt.house.kw_per_ms * w0.wind_ms) * (house_t - w0.out_c) -
+      const float need = rt.house.ua_kw_per_k * lp::loss_factor(rt.house, w0.out_c, w0.wind_ms) * (house_t - w0.out_c) -
                          rt.house.p_int_kw - rt.house.p_cos_kw * std::cos(ph) - rt.house.p_sin_kw * std::sin(ph) -
                          rt.house.g_kw_per_100wm2 * w0.sun_wm2 / 100.0f;
       const float lift = std::clamp(need / rt.house.h_kw_per_k, 0.0f, 8.0f);
@@ -15610,6 +15651,23 @@ void LuneTouchCoordinator::planner_tick_() {
         rt.expect[(h5 / 3600u) % 8] = {h5, rt.plan.t_end_c[5]};
       }
       rt.house_pend.put_plan(hour0, rt.plan.t_end_c, n, house_t);
+      // The day's first plan: Touch's, and Odin's as it stood at the same time.
+      const uint32_t day0 = hour0 - static_cast<uint32_t>(planner_local_hour_(hour0)) * 3600u;
+      if (rt.day_touch.day_ts != day0) {
+        const int first = static_cast<int>((hour0 - day0) / 3600u);
+        rt.day_touch.reset(day0);
+        rt.day_odin.reset(day0);
+        for (int k = 0; first + k < 24; k++) {
+          if (k < n) {
+            rt.day_touch.heat_kw[first + k] = rt.plan.kw[k];
+            rt.day_touch.elec_kwh[first + k] = rt.plan.elec_kwh[k];
+          }
+          if (k < odin_n) {
+            rt.day_odin.heat_kw[first + k] = odin_heat[k];
+            rt.day_odin.elec_kwh[first + k] = odin_elec[k];
+          }
+        }
+      }
       rt.out_now_c = rt.hours[0].weather.out_c;
       if (!rt.logged_runtime) {
         rt.logged_runtime = true;
@@ -15656,7 +15714,10 @@ void LuneTouchCoordinator::planner_tick_() {
     ps.band_sp_c = target;
     const auto &e = rt.expect[(hour0 / 3600u) % 8];
     ps.expected_c = e.hour == hour0 ? e.t_c : NAN;
-    ps.plan_kw = plan_kw;
+    // The day plan's hour (what Touch meant to deliver today), the rolling plan's only
+    // before the day has one.
+    const float day_kw = rt.day_touch.at(hour0);
+    ps.plan_kw = std::isfinite(day_kw) ? day_kw : plan_kw;
     ps.shadow_flow_c = rt.our_flow_c;
     lp::Record rec;
     lp::HourExtra extra;
@@ -15727,9 +15788,11 @@ void LuneTouchCoordinator::planner_tick_() {
     rt.pump = pump;
     rt.learned = rep.energy || rep.dynamics || rep.heat_pump;
     char msg[128];
-    std::snprintf(msg, sizeof(msg), "planner refit in %lu ms: %u days, %u h, rmse %.2f K, UA %.3f, %lu pump hours",
+    std::snprintf(msg, sizeof(msg),
+                  "planner refit in %lu ms: %u days, %u h, rmse %.2f K, UA %.3f, cold %.1f %%/K, %lu pump hours",
                   static_cast<unsigned long>(rt.learn_ms), rep.days, rep.hours, static_cast<double>(rep.rmse_k),
-                  static_cast<double>(house.ua_kw_per_k), static_cast<unsigned long>(rep.hp_hours));
+                  static_cast<double>(house.ua_kw_per_k), static_cast<double>(100.0f * house.cold_per_k),
+                  static_cast<unsigned long>(rep.hp_hours));
     log_event_("info", "planner", msg);
     ESP_LOGI(TAG, "%s", msg);
     if (take_state_lock_(100)) {
@@ -16144,11 +16207,13 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   const lp::HouseParams &h = rt->house;
   put("\"model\":{\"ua_kw_per_k\":%.3f,\"ca_kwh_per_k\":%.1f,\"cs_kwh_per_k\":%.1f,\"h_kw_per_k\":%.2f,"
       "\"sun_kw_per_100wm2\":%.2f,\"sun_floor_frac\":%.2f,\"sun_late_kw_per_100wm2\":%.2f,"
-      "\"sensor_sun_k_per_100wm2\":%.2f,\"p_int_kw\":%.2f,\"wind_pct_per_ms\":%.1f,\"floor_kw_per_k\":%.3f,\"cop\":[",
+      "\"sensor_sun_k_per_100wm2\":%.2f,\"p_int_kw\":%.2f,\"wind_pct_per_ms\":%.1f,\"cold_pct_per_k\":%.1f,"
+      "\"floor_kw_per_k\":%.3f,\"cop\":[",
       static_cast<double>(h.ua_kw_per_k), static_cast<double>(h.ca_kwh_per_k), static_cast<double>(h.cs_kwh_per_k),
       static_cast<double>(h.h_kw_per_k), static_cast<double>(h.g_kw_per_100wm2), static_cast<double>(h.sun_floor_frac),
       static_cast<double>(h.g_lag_kw_per_100wm2), static_cast<double>(h.sensor_sun_k), static_cast<double>(h.p_int_kw),
-      static_cast<double>(100.0f * h.kw_per_ms), static_cast<double>(rt->pump.f1));
+      static_cast<double>(100.0f * h.kw_per_ms), static_cast<double>(100.0f * h.cold_per_k),
+      static_cast<double>(rt->pump.f1));
   const float room = std::isfinite(rt->target_c) ? rt->target_c : 22.0f;
   const float out = std::isfinite(rt->out_now_c) ? rt->out_now_c : 5.0f;
   const float dmin = lp::defrost_min_for(rt->pump, out);
@@ -16171,6 +16236,24 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   char d[16];
   planner_num_(d, sizeof(d), rt->plan_kw_now, 2);
   put("\"flow\":{\"our_target_c\":%s,\"odin_target_c\":%s,\"measured_kw\":%s,\"plan_kw\":%s},", a, b, c, d);
+  // The day plans (each planner's plan at the day's first solve, per local hour of the day).
+  {
+    using DP = PlannerRuntime::DayPlan;
+    const DP *dp[2] = {&rt->day_touch, &rt->day_odin};
+    const char *nm[2] = {"touch", "odin"};
+    put("\"day_plan\":{\"day_ts\":%lu", static_cast<unsigned long>(rt->day_touch.day_ts));
+    for (int w = 0; w < 2; w++) {
+      planner_num_(a, sizeof(a), DP::sum(dp[w]->heat_kw), 1);
+      planner_num_(b, sizeof(b), DP::sum(dp[w]->elec_kwh), 2);
+      put(",\"%s_heat_kwh\":%s,\"%s_elec_kwh\":%s,\"%s_heat_kw\":[", nm[w], a, nm[w], b, nm[w]);
+      for (int i = 0; i < 24; i++) {
+        planner_num_(a, sizeof(a), dp[w]->heat_kw[i], 2);
+        put("%s%s", i ? "," : "", a);
+      }
+      put("]");
+    }
+    put("},");
+  }
   // Odin's plan for the same hours (index 0 = the current hour, as plan's), for the page's
   // Touch vs Odin comparison: its space heat, expected house temperature, electricity and mode.
   {
@@ -18916,6 +18999,21 @@ bool LuneTouchCoordinator::plan_compare(PlanCompare *out) const {
     out->odin_elec_kwh = elec;
     out->odin_cost_eur = priced ? cost : NAN;
     out->odin_below_kh = touch ? bk : NAN;
+  }
+  // The day plans: this hour as planned at the day's first solve, and the day's totals.
+  if (rt != nullptr) {
+    const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+    const uint32_t hour = now - now % 3600u;
+    const float tk = rt->day_touch.at(hour), te = rt->day_touch.elec_at(hour);
+    const float ok = rt->day_odin.at(hour), oe = rt->day_odin.elec_at(hour);
+    if (std::isfinite(tk)) out->touch_heat_kw = tk;
+    if (std::isfinite(te)) out->touch_elec_kw = te;
+    if (std::isfinite(ok)) out->odin_heat_kw = ok;
+    if (std::isfinite(oe)) out->odin_elec_kw = oe;
+    out->touch_day_heat_kwh = PlannerRuntime::DayPlan::sum(rt->day_touch.heat_kw);
+    out->touch_day_elec_kwh = PlannerRuntime::DayPlan::sum(rt->day_touch.elec_kwh);
+    out->odin_day_heat_kwh = PlannerRuntime::DayPlan::sum(rt->day_odin.heat_kw);
+    out->odin_day_elec_kwh = PlannerRuntime::DayPlan::sum(rt->day_odin.elec_kwh);
   }
   give_state_lock_();
   return true;

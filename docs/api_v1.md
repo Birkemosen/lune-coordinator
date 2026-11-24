@@ -1083,11 +1083,15 @@ it planned with and the shadow flow controller:
            "price_est": [0, 0, "...", 1], "band_source": "odin"},
   "model": {"ua_kw_per_k": 0.161, "ca_kwh_per_k": 13.3, "cs_kwh_per_k": 30.0, "h_kw_per_k": 0.70,
             "sun_kw_per_100wm2": 0.79, "sun_floor_frac": 0.00, "sun_late_kw_per_100wm2": 0.00,
-            "sensor_sun_k_per_100wm2": 0.00, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "floor_kw_per_k": 0.441,
+            "sensor_sun_k_per_100wm2": 0.00, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "cold_pct_per_k": 0.0,
+            "floor_kw_per_k": 0.441,
             "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
             "cop_outdoor_c": 5.0,
             "defrost": {"cop_per_min": -0.037, "d0": 6.60, "d1": -0.83, "below_c": 7.0, "min_per_h": 2.5}},
   "flow": {"our_target_c": 29.6, "odin_target_c": 35.0, "measured_kw": 10.0, "plan_kw": 4.4},
+  "day_plan": {"day_ts": 1794870000, "touch_heat_kwh": 56.2, "touch_elec_kwh": 13.10,
+               "touch_heat_kw": [3.20, 3.70, "..."], "odin_heat_kwh": 74.6, "odin_elec_kwh": 22.40,
+               "odin_heat_kw": [5.80, "..."]},
   "odin": {"available": true, "n": 24, "heat_kw": [0.00, 5.80, "..."], "expected_c": [22.41, "..."],
            "elec_kwh": [0.00, 1.42, "..."], "mode": [0, 2, "..."]},
   "learning": {"source": "learned", "refit_ts": 1794885600, "refit_ms": 2400, "days": 41, "hours": 336,
@@ -1126,7 +1130,9 @@ it planned with and the shadow flow controller:
   `sun_floor_frac` is the share of it that lands on the floors (and comes out later),
   `sun_late_kw_per_100wm2` sun that arrives hours late through roof and walls, and
   `sensor_sun_k_per_100wm2` how much a sensor in the sun reads high. All three are fitted
-  with the dynamics. The `cop` table counts the defrosts at `cop_outdoor_c`: `defrost` is
+  with the dynamics. The loss is UA × (1 + wind × `wind_pct_per_ms` + cold ×
+  `cold_pct_per_k`) per kelvin indoors − outdoors, cold being the kelvins below 8 °C outdoors;
+  `cold_pct_per_k` stays 0 until days below 8 °C show more loss than the milder ones. The `cop` table counts the defrosts at `cop_outdoor_c`: `defrost` is
   the COP lost per defrost minute in an hour (`cop_per_min`) and the defrost minutes per
   running hour, `d0 + d1 × outdoor` below `below_c` and none above (`min_per_h` at
   `cop_outdoor_c`), both learned with the heat pump. Electricity comes from the heat
@@ -1140,8 +1146,9 @@ it planned with and the shadow flow controller:
   heat pump's own space-heating heat and electricity from its daily meters, the planner's
   6 h-ahead forecast, the plan's output and the shadow flow target) for 60 days on SPIFFS
   (`/hist/planner.a|b`, saved every 3 hours). Once a day at 03 local, once there are 4
-  days, and after a seed, it refits from the seed: the energy balance over whole days
-  (`energy`: loss, internal gain, sun and wind pinned to the metered heat), the hourly
+  days, and after a seed, it refits from the seed: the energy balance over every day with at
+  least 20 logged hours (sums scaled to 24 h)
+  (`energy`: loss, internal gain, sun, wind and cold pinned to the metered heat), the hourly
   dynamics over the last 14 days (`dynamics`, kept only when it forecasts better than
   the seed; `rmse_k` is its 1–24 h error), and the heat pump from full space-heating
   hours (`hp_hours`, with their defrost minutes; `heat_pump` from 24), and the defrost
@@ -1150,7 +1157,8 @@ it planned with and the shadow flow controller:
   plan starts from: tracked through the last 72 stored hours (`floor_tracked`), else
   where they would stand if the house were holding its temperature now.
 - `history` covers the 168 hours before `plan.from_ts`, per hour: the house at the
-  hour's end as measured and as forecast 6 h before, the planned output and its
+  hour's end as measured and as forecast 6 h before, the planned output (from the day plan,
+  see `day_plan`; the rolling plan's first hour before the day had one) and its
   electricity with today's model, the delivered space heat and electricity, price, band
   setpoint and band (as the plan held it that hour, lifts included), Odin's flow target and
   the shadow flow target. `null` until a stored hour.
@@ -1166,6 +1174,13 @@ it planned with and the shadow flow controller:
 - `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
   floor curve gives for this hour's planned output, trimmed by the measured output, next
   to the zone-1 flow target Odin commands. It is never sent.
+- `day_plan`: each planner's plan as it stood at the day's first solve (normally the first
+  hour after local midnight, `day_ts`), per local hour of the day, space heat only (hours
+  before a mid-day restart `null`). This is what the planner meant to deliver that day,
+  for plan vs actual: in shadow mode the house follows Odin's heat, so each new solve starts
+  from a house Odin has warmed and the rolling plan's first hours alone sum to far less
+  than the day needs. Home Assistant gets the same (packages/system/plan_compare.yaml:
+  "now" = the day plan's hour, "today" = its total).
 - `odin` is Odin's own plan for the same hours as Touch keeps it (`GET /plan`; index 0 =
   the current hour, up to 24 h): planned heat, expected house temperature, electricity
   (all modes) and operation mode (1 hot water, 6 legionella). The page compares the two
