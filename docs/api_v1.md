@@ -317,7 +317,9 @@ Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
 ```json
 "hp_diagnostics": {
   "plan_deviation": { "state": "over", "mean_kw": 9.1, "planned_kw": 6.3, "window_min": 30 },
-  "mixing": { "state": "short", "primary_l_min": 19.0, "secondary_l_min": 17.5 }
+  "mixing": { "state": "short", "primary_l_min": 19.0, "secondary_l_min": 17.5 },
+  "flow_check": { "state": "ok", "secondary_l_min": 17.5, "expected_l_min": 16.8, "open_area_m2": 143.0,
+                  "fit": { "base_l_min": 3.9, "l_min_per_m2": 0.09, "samples": 2410 } }
 }
 ```
 
@@ -334,9 +336,20 @@ Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
   its own water back through the tank; clears when secondary ≥ primary for 10 min),
   `mixing` (secondary > primary × 1.25 for 10 min; clears when secondary < primary × 1.15
   for 10 min). Flows in l/min (secondary = Alpha2 m³/h × 1000/60);
-  last judged values, `null` when unknown.
+  last judged values, `null` when unknown. Both say only that the tank's two circuits are
+  out of step: the secondary flow follows the valves, so neither is a pump fault.
+- `flow_check.state`: the circulation pump's flow against what the open loops normally
+  take. `unknown` (no Alpha2 flow, or a loop's valve stale), `learning` (fewer than 360
+  learned minutes, or too little spread in open area), `idle` (not judged now: compressor
+  off, not space heating, valves moved in the last 10 min, a valve flush, or expected
+  flow below 8 l/min), `ok`, `low` (secondary < 0.7 × expected and ≥ 3 l/min below for
+  30 min; clears at ≥ 0.8 ×), `high` (> 1.4 × expected and ≥ 3 l/min above for 30 min;
+  clears at ≤ 1.25 ×). `open_area_m2` sums the areas of loops with valve > 5 %;
+  `expected_l_min = base_l_min + l_min_per_m2 × open_area_m2`, an exponentially weighted
+  least-squares fit (half-life 3 days of learned minutes) kept in NVS. `fit` values are
+  `null` until the fit is usable.
 - Each raise and clear is logged once in `GET /events` (source `heat_source` for the plan,
-  `circulation` for mixing).
+  `circulation` for mixing and the flow check).
 
 `v6_control_mode` / `v6_control_mode_effective` mirror the optional lease
 `control_mode` (`local` omits the field; `heat_pump` / `normal` are sent).
@@ -400,7 +413,9 @@ sent only when it did):
 ]
 ```
 
-Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.short_flow`, `hydraulics.mixing`,
+Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.mixing` (the buffer tank's two
+circuits out of step, either way), `hydraulics.flow_low` and `hydraulics.flow_high` (the circulation pump's
+flow against what the open loops normally take, learned per house),
 `connectivity.v6:<node_id>`, `connectivity.asgard`, `connectivity.odin` and
 `room.not_reached:<room_id>`. Room sensors are V6's, so humidity, battery and sensor
 problems come from V6.

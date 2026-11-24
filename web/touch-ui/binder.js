@@ -2110,12 +2110,17 @@
     var mixOn = mz.state === 'mixing' && mzFlows;
     var shortOn = mz.state === 'short' && mzFlows;
     var mzVars = { sec: num(mz.secondary_l_min, 0), pri: num(mz.primary_l_min, 0) };
+    // Secondary flow against what the open loops normally take (the pump's own check).
+    var fc = hd.flow_check || {};
+    var flowOn = (fc.state === 'low' || fc.state === 'high') && finite(fc.secondary_l_min) && finite(fc.expected_l_min);
     var hdParts = [];
     if (devOn) hdParts.push(t('hpd.dev', { act: num(dv.mean_kw, 1), plan: num(dv.planned_kw, 1), min: dv.window_min || 30 }));
+    if (flowOn) hdParts.push(t('hpd.flow', { sec: num(fc.secondary_l_min, 1), exp: num(fc.expected_l_min, 1), open: num(fc.open_area_m2, 0) }));
     if (mixOn) hdParts.push(t('hpd.mix', mzVars));
     if (shortOn) hdParts.push(t('hpd.short', mzVars));
     setShow('hpd.show', hdParts.length > 0);
     setText('hpd.strong', devOn ? t(dv.state === 'over' ? 'hpd.overStrong' : 'hpd.underStrong')
+      : flowOn ? t(fc.state === 'low' ? 'hpd.flowLowStrong' : 'hpd.flowHighStrong')
       : mixOn ? t('hpd.mixStrong') : shortOn ? t('hpd.shortStrong') : '');
     setText('hpd.body', hdParts.join(' '));
     setText('dash.hpTemps', hp.available && hp.feed_c != null && hp.return_c != null
@@ -2172,11 +2177,9 @@
       pct: finite(mx.ratio) ? num(Number(mx.ratio) * 100, 0) : '—',
       rec: num(mx.recommended_l_min, 1),
       in: num(mx.in_kw, 1), out: num(mx.out_kw, 1) };
-    // Advice: the recommended flow. The head for it at full load came from a system curve
-    // built on the valve-curve measurement, which is gone (2026-11-13).
-    mxVars.head = num(circ.head_m, 1);
-    var advice = !finite(mx.recommended_l_min) ? ''
-      : t(shortFlow ? 'pump.shortAdvice' : 'pump.mixAdvice', mxVars);
+    // No advice to turn the pump: the secondary flow follows the valves, so the two
+    // circuits out of step is a state of the house, not a pump setting (hp_diagnostics.h).
+    var advice = '';
     var pumpTile = qs('[data-tile="pump"]');
     if (pumpTile) {
       if (risk || shortFlow) pumpTile.setAttribute('data-state', 'warn'); else pumpTile.removeAttribute('data-state');

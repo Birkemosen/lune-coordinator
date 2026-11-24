@@ -938,6 +938,9 @@ class LuneTouchCoordinator : public esphome::Component {
   void run_hp_phase_(uint32_t now_ms);
   // Heat pump diagnostics (hp_diagnostics.h): delivered heat vs. Odin's plan, tank mixing.
   ::lune_touch_hp_diag::State hp_diag_{};
+  uint32_t flow_fit_saved_ms_{0};
+  void save_flow_fit_();
+  void load_flow_fit_();
   void run_hp_diagnostics_(uint32_t now_ms);
   void append_hp_diagnostics_json_(char *buffer, size_t capacity) const;
   // Problems → Home Assistant (esphome.lune_problem), see problems.h.

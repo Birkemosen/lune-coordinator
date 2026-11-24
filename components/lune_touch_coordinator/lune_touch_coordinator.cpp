@@ -1933,6 +1933,7 @@ void LuneTouchCoordinator::setup() {
   load_odin_control_();
   model_.set_internal_gains_w(odin_control_.internal_gains_w);
   load_exposure_learning_();
+  load_flow_fit_();
   load_price_settings_();
   {
     // PSRAM: tariff caches, two days of quarter-hour spot samples and the
@@ -18355,6 +18356,38 @@ void LuneTouchCoordinator::load_exposure_learning_() {
 }
 
 
+// The secondary flow's fit on open loop area (hp_diagnostics.h FlowFit), kept across
+// restarts: it takes days of heating to learn.
+constexpr uint32_t FLOW_FIT_SAVE_MS = 6UL * 60UL * 60UL * 1000UL;
+
+void LuneTouchCoordinator::save_flow_fit_() {
+  if (!take_state_lock_(100))
+    return;
+  const ::lune_touch_hp_diag::FlowFit fit = hp_diag_.fit;
+  hp_diag_.fit_dirty = false;
+  flow_fit_saved_ms_ = esphome::millis();
+  give_state_lock_();
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  if (nvs_set_blob(handle, "flowfit", &fit, sizeof(fit)) == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::load_flow_fit_() {
+  ::lune_touch_hp_diag::FlowFit fit;
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  size_t len = sizeof(fit);
+  const esp_err_t err = nvs_get_blob(handle, "flowfit", &fit, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len != sizeof(fit) || !std::isfinite(fit.w) || !std::isfinite(fit.n))
+    return;   // none yet, or a different layout: learn afresh
+  hp_diag_.fit = fit;
+}
+
 // Heat pump diagnostics: delivered heat against Odin's plan, and mixing in the buffer
 // tank. Display and events only — Touch never acts on it (hp_diagnostics.h).
 void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
@@ -18380,13 +18413,38 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
   const bool circ_fresh = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
                           now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
   in.secondary_lmin = circ_fresh ? circulation_.flow_m3h * (1000.0f / 60.0f) : NAN;
+  // Open loop area: every loop with a valve counts; one stale loop makes it unknown.
+  {
+    float area = 0.0f;
+    size_t loops = 0;
+    bool stale = false;
+    for (size_t z = 0; z < model_.zone_count(); z++) {
+      const auto *zone = model_.zone(z);
+      const auto *live = model_.zone_live(z);
+      if (zone == nullptr || live == nullptr || !live->has_valve)
+        continue;
+      if (!live->fresh || !std::isfinite(live->valve_pct)) {
+        stale = true;
+        break;
+      }
+      loops++;
+      if (live->valve_pct > hd::OPEN_VALVE_PCT)
+        area += zone->v6_area_m2 > 0.0f ? zone->v6_area_m2 : 10.0f;
+    }
+    in.open_area_m2 = !stale && loops > 0 ? area : NAN;
+  }
+  in.valve_flush = vf_run_.active;
   hd::Params hdp;
   hdp.judge_short = circulation_pump::judges_short(circulation_.buffer_tank);
   hdp.judge_mix = circulation_pump::judges_mixing(circulation_.buffer_tank);
   const hd::Edges e = hd::step(hp_diag_, in, now_ms, hdp);
   const float mean = hp_diag_.mean_kw, plan = hp_diag_.plan_kw;
   const float pri = hp_diag_.primary_lmin, sec = hp_diag_.secondary_lmin;
+  const float open = hp_diag_.open_area_m2, expected = hp_diag_.expected_lmin;
+  const bool save_fit = hp_diag_.fit_dirty && (flow_fit_saved_ms_ == 0 || now_ms - flow_fit_saved_ms_ >= FLOW_FIT_SAVE_MS);
   give_state_lock_();
+  if (save_fit)
+    save_flow_fit_();
   char msg[96];
   if (e.over_raised || e.under_raised) {
     std::snprintf(msg, sizeof(msg), "heat pump delivers %.1f kW vs planned %.1f kW (30 min mean, %s plan)",
@@ -18419,6 +18477,19 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
       std::snprintf(msg, sizeof(msg), "tank short flow cleared (no flow data)");
     log_event_("info", "circulation", msg);
   }
+  if (e.low_raised || e.high_raised) {
+    std::snprintf(msg, sizeof(msg), "secondary flow %.1f l/min, open loops (%.0f m2) usually take %.1f l/min",
+                  static_cast<double>(sec), static_cast<double>(open), static_cast<double>(expected));
+    log_event_("warn", "circulation", msg);
+  }
+  if (e.low_cleared || e.high_cleared) {
+    if (std::isfinite(sec) && std::isfinite(expected))
+      std::snprintf(msg, sizeof(msg), "secondary flow back with the open loops: %.1f l/min, expected %.1f l/min",
+                    static_cast<double>(sec), static_cast<double>(expected));
+    else
+      std::snprintf(msg, sizeof(msg), "secondary flow check cleared (no flow or valve data)");
+    log_event_("info", "circulation", msg);
+  }
   if (e.mix_cleared) {
     if (std::isfinite(sec) && std::isfinite(pri))
       std::snprintf(msg, sizeof(msg), "tank mixing ended: secondary %.1f l/min < primary %.1f l/min",
@@ -18439,17 +18510,26 @@ void LuneTouchCoordinator::append_hp_diagnostics_json_(char *buffer, size_t capa
     return;
   d = hp_diag_;
   give_state_lock_();
-  char mean[16], plan[16], pri[16], sec[16];
+  char mean[16], plan[16], pri[16], sec[16], open[16], expected[16], fa[16], fb[16], fn[16];
   json_float_token_(mean, sizeof(mean), d.mean_kw, 2);
   json_float_token_(plan, sizeof(plan), d.plan_kw, 2);
   json_float_token_(pri, sizeof(pri), d.primary_lmin, 1);
   json_float_token_(sec, sizeof(sec), d.secondary_lmin, 1);
+  json_float_token_(open, sizeof(open), d.open_area_m2, 1);
+  json_float_token_(expected, sizeof(expected), d.expected_lmin, 1);
+  float a = NAN, b = NAN;
+  d.fit.coeffs(&a, &b);
+  json_float_token_(fa, sizeof(fa), a, 2);
+  json_float_token_(fb, sizeof(fb), b, 4);
+  json_float_token_(fn, sizeof(fn), d.fit.n, 0);
   std::snprintf(buffer + len - 1, capacity - (len - 1),
                 ",\"hp_diagnostics\":{\"plan_deviation\":{\"state\":\"%s\",\"mean_kw\":%s,\"planned_kw\":%s,"
-                "\"window_min\":%u},\"mixing\":{\"state\":\"%s\",\"primary_l_min\":%s,\"secondary_l_min\":%s}}}",
+                "\"window_min\":%u},\"mixing\":{\"state\":\"%s\",\"primary_l_min\":%s,\"secondary_l_min\":%s},"
+                "\"flow_check\":{\"state\":\"%s\",\"secondary_l_min\":%s,\"expected_l_min\":%s,\"open_area_m2\":%s,"
+                "\"fit\":{\"base_l_min\":%s,\"l_min_per_m2\":%s,\"samples\":%s}}}}",
                 ::lune_touch_hp_diag::dev_name(d.dev), mean, plan,
                 static_cast<unsigned>(::lune_touch_hp_diag::MEAN_MINUTES), ::lune_touch_hp_diag::mix_name(d.mix), pri,
-                sec);
+                sec, ::lune_touch_hp_diag::flow_check_name(d.flow), sec, expected, open, fa, fb, fn);
 }
 
 
@@ -18459,7 +18539,8 @@ void LuneTouchCoordinator::append_hp_diagnostics_json_(char *buffer, size_t capa
 // Runs on the poll task after the hp diagnostics; the events are fired from the
 // main loop (flush_problem_events_), where the native API may be used.
 //   heat_pump     hp_diagnostics over / under Odin's plan (30 min hold inside)
-//   hydraulics    hp_diagnostics mixing (10 min hold inside)
+//   hydraulics    hp_diagnostics: the tank's two circuits out of step (10 min hold inside),
+//                 secondary flow against the open loops (30 min hold inside)
 //   connectivity  V6 board 10 min, Asgard 10 min, Odin 30 min without an answer
 //   room_comfort  room_reached.h: target − 0.3 °C not reached in 24 h while heating
 // Touch reads no room sensors itself (rooms use V6 zone sensors), so humidity,
@@ -18517,13 +18598,15 @@ void LuneTouchCoordinator::run_problems_(uint32_t now_ms) {
 
   // Heat pump against Odin's plan, and mixing (flags already held in hp_diagnostics.h).
   {
-    char mean[16], plan[16], pri[16], sec[16];
+    char mean[16], plan[16], pri[16], sec[16], open[16], expected[16];
     num(mean, sizeof(mean), hp_diag_.mean_kw, 1);
     num(plan, sizeof(plan), hp_diag_.plan_kw, 1);
     num(pri, sizeof(pri), hp_diag_.primary_lmin, 1);
     num(sec, sizeof(sec), hp_diag_.secondary_lmin, 1);
-    const char *k[] = {"mean", "plan", "pri", "sec"};
-    const char *v[] = {mean, plan, pri, sec};
+    num(open, sizeof(open), hp_diag_.open_area_m2, 0);
+    num(expected, sizeof(expected), hp_diag_.expected_lmin, 1);
+    const char *k[] = {"mean", "plan", "pri", "sec", "open", "exp"};
+    const char *v[] = {mean, plan, pri, sec, open, expected};
     pr::Edge e = tr.update("heat_pump.over_plan", "heat_pump", pr::Severity::Warning, hp_diag_.over,
                            !hp_diag_.over, now_ms, 0);
     texts(tx::HP_OVER_TITLE, tx::HP_OVER_MSG, k, v, 4);
@@ -18532,13 +18615,20 @@ void LuneTouchCoordinator::run_problems_(uint32_t now_ms) {
                   now_ms, 0);
     texts(tx::HP_UNDER_TITLE, tx::HP_UNDER_MSG, k, v, 4);
     handle(e, "");
-    e = tr.update("hydraulics.mixing", "hydraulics", pr::Severity::Warning, hp_diag_.mixing, !hp_diag_.mixing,
-                  now_ms, 0);
-    texts(tx::MIXING_TITLE, tx::MIXING_MSG, k, v, 4);
+    // The two circuits out of step, either way: mixing, not a pump fault (the secondary
+    // flow follows the valves). The text says which way at the raise.
+    const bool out_of_step = hp_diag_.mixing || hp_diag_.short_flow;
+    e = tr.update("hydraulics.mixing", "hydraulics", pr::Severity::Warning, out_of_step, !out_of_step, now_ms, 0);
+    texts(tx::MIXING_TITLE, hp_diag_.short_flow ? tx::MIXING_MSG_LOW : tx::MIXING_MSG, k, v, 6);
     handle(e, "");
-    e = tr.update("hydraulics.short_flow", "hydraulics", pr::Severity::Warning, hp_diag_.short_flow,
-                  !hp_diag_.short_flow, now_ms, 0);
-    texts(tx::SHORT_FLOW_TITLE, tx::SHORT_FLOW_MSG, k, v, 4);
+    // The pump against what the open loops normally take.
+    e = tr.update("hydraulics.flow_low", "hydraulics", pr::Severity::Warning, hp_diag_.flow_low,
+                  !hp_diag_.flow_low, now_ms, 0);
+    texts(tx::FLOW_LOW_TITLE, tx::FLOW_LOW_MSG, k, v, 6);
+    handle(e, "");
+    e = tr.update("hydraulics.flow_high", "hydraulics", pr::Severity::Warning, hp_diag_.flow_high,
+                  !hp_diag_.flow_high, now_ms, 0);
+    texts(tx::FLOW_HIGH_TITLE, tx::FLOW_HIGH_MSG, k, v, 6);
     handle(e, "");
   }
 

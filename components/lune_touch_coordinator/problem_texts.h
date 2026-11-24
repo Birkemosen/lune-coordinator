@@ -13,6 +13,11 @@ enum Key : uint8_t {
   HP_UNDER_MSG,
   MIXING_TITLE,
   MIXING_MSG,
+  MIXING_MSG_LOW,
+  FLOW_LOW_TITLE,
+  FLOW_LOW_MSG,
+  FLOW_HIGH_TITLE,
+  FLOW_HIGH_MSG,
   V6_TITLE,
   V6_MSG,
   ASGARD_TITLE,
@@ -21,8 +26,6 @@ enum Key : uint8_t {
   ODIN_MSG,
   ROOM_TITLE,
   ROOM_MSG,
-  SHORT_FLOW_TITLE,
-  SHORT_FLOW_MSG,
   KEY_COUNT,
 };
 
@@ -32,7 +35,12 @@ static const char *const DA[KEY_COUNT] = {
     "Varmepumpen leverer mindre end planlagt",
     "Varmepumpen har i en halv time leveret {mean} kW mod Odins plan på {plan} kW.",
     "Blanding i buffertanken",
-    "Sekundært flow ({sec} l/min) er langt højere end primært ({pri} l/min), så returvand blandes i fremløbet. Sænk cirkulationspumpen til ca. 5 % over varmepumpens flow.",
+    "Sekundært flow ({sec} l/min) er over primært ({pri} l/min), fordi mange kredse er åbne. Returvand blandes i fremløbet, så varmepumpen kører varmere.",
+    "Sekundært flow ({sec} l/min) er under primært ({pri} l/min), fordi få kredse er åbne. Overskuddet løber gennem tanken tilbage og hæver varmepumpens retur.",
+    "For lidt flow til de åbne kredse",
+    "Pumpen flytter {sec} l/min, men de åbne kredse ({open} m²) plejer at tage ca. {exp} l/min. Tjek filteret, luft i kredsene og pumpen.",
+    "Mere flow end de åbne kredse forklarer",
+    "Pumpen flytter {sec} l/min, men de åbne kredse ({open} m²) plejer at tage ca. {exp} l/min. En ventil lukker måske ikke, eller pumpen er indstillet om.",
     "{name} svarer ikke",
     "Touch har ikke haft forbindelse til {name} i over 10 minutter. Rummene på styringen kører videre lokalt.",
     "Asgard svarer ikke",
@@ -41,8 +49,6 @@ static const char *const DA[KEY_COUNT] = {
     "Touch har ikke haft forbindelse til Odin i over 30 minutter. Varmeplanen bliver ikke opdateret.",
     "{room} når ikke sin temperatur",
     "{room} har ikke nået {target} °C i 24 timer (højst {max} °C).",
-    "For lidt flow på sekundærsiden",
-    "Sekundært flow ({sec} l/min) er lavere end primært ({pri} l/min), så varmepumpens overskud løber gennem buffertanken tilbage til den, og den kører korte drifter. Hæv cirkulationspumpen til ca. 5 % over varmepumpens flow.",
 };
 static constexpr char DA_DEC = ',';
 
@@ -52,7 +58,12 @@ static const char *const EN[KEY_COUNT] = {
     "Heat pump delivers less than planned",
     "For half an hour the heat pump has delivered {mean} kW against Odin's plan of {plan} kW.",
     "Mixing in the buffer tank",
-    "Secondary flow ({sec} l/min) is far above primary ({pri} l/min), so floor return mixes into the supply. Lower the circulation pump to about 5 % above the heat pump's flow.",
+    "Secondary flow ({sec} l/min) is above primary ({pri} l/min) because many loops are open. Floor return mixes into the supply, so the heat pump runs hotter.",
+    "Secondary flow ({sec} l/min) is below primary ({pri} l/min) because few loops are open. The surplus runs back through the tank and warms the heat pump's return.",
+    "Too little flow for the open loops",
+    "The pump moves {sec} l/min, but the open loops ({open} m²) usually take about {exp} l/min. Check the filter, air in the loops and the pump.",
+    "More flow than the open loops explain",
+    "The pump moves {sec} l/min, but the open loops ({open} m²) usually take about {exp} l/min. A valve may not close, or the pump setting changed.",
     "{name} is not answering",
     "Touch has had no contact with {name} for more than 10 minutes. Its rooms keep running locally.",
     "Asgard is not answering",
@@ -61,8 +72,6 @@ static const char *const EN[KEY_COUNT] = {
     "Touch has had no contact with Odin for more than 30 minutes. The heating plan is not updated.",
     "{room} is not reaching its temperature",
     "{room} has not reached {target} °C in 24 hours (highest {max} °C).",
-    "Too little flow on the secondary side",
-    "Secondary flow ({sec} l/min) is below primary ({pri} l/min), so the heat pump's surplus returns to it through the buffer tank and it runs in short cycles. Raise the circulation pump to about 5 % above the heat pump's flow.",
 };
 static constexpr char EN_DEC = '.';
 
