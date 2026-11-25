@@ -16146,14 +16146,15 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       pr.forecast = std::isfinite(pr.expected[0]);
       if (pr.forecast)
         rt.room_pend[k].put_plan(hour0, pr.expected, rt.plan.n, pr.now_c);
-      // The lift asks whether the room gets back on the heat that will come. In shadow that
-      // is Odin's, not Touch's plan (25 Nov 2026: Soveværelse 1.9 K behind after airing at 10,
-      // Touch's 3.2 kW from now forecast 20.8 °C, so the cold call lifted 0 K, while Odin had
-      // heat off until 12 and the room stayed at 19.1–19.9 °C).
+      // The lift asks whether the room gets back on the heat that will come: Odin's plan
+      // while Odin heats the house (the planner in shadow), Touch's own once it drives the
+      // heat (25 Nov 2026: Soveværelse 1.9 K behind after airing at 10, Touch's 3.2 kW from
+      // now forecast 20.8 °C, so the cold call lifted 0 K, while Odin had heat off until 12
+      // and the room stayed at 19.1–19.9 °C).
       pr.lift_on_odin = false;
       for (int h = 0; h < 24; h++)
         pr.lift_expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
-      if (pr.forecast && rt.odin_n > 0 && rt.odin_hour == hour0) {
+      if (!planner_settings::PLANNER_DRIVES_HEAT && pr.forecast && rt.odin_n > 0 && rt.odin_hour == hour0) {
         for (int h = 0; h < rt.plan.n; h++)
           rt.room_fut[h].q_kw = (h < rt.odin_n ? rt.odin_heat[h] : rt.plan.kw[h]) * pr.share;
         const int nf = std::min<int>(24, rt.plan.n);
@@ -16406,9 +16407,9 @@ void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) con
   planner_settings::write_settings_json(set, settings, sizeof(settings));
   const lp::HeatPlan &p = rt->plan;
   char a[16], b[16], c[16];
-  put("{\"mode\":\"shadow\",\"running\":true,\"strategy\":\"%s\",\"settings\":%s,\"solved_ts\":%lu,"
+  put("{\"mode\":\"%s\",\"running\":true,\"strategy\":\"%s\",\"settings\":%s,\"solved_ts\":%lu,"
       "\"model_source\":\"%s\",\"solve_ms\":%lu,",
-      planner_settings::strategy_name(set.strategy), settings, static_cast<unsigned long>(rt->solved_ts),
+      planner_settings::mode_name(), planner_settings::strategy_name(set.strategy), settings, static_cast<unsigned long>(rt->solved_ts),
       rt->learned ? "learned" : "seed", static_cast<unsigned long>(rt->solve_us / 1000));
   planner_num_(a, sizeof(a), rt->start_t_c, 2);
   planner_num_(b, sizeof(b), rt->target_c, 1);

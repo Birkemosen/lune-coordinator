@@ -13,6 +13,12 @@
 
 namespace esphome::lune_touch_coordinator::planner_settings {
 
+/// Whether Touch's own plan drives the heat source. False while the planner runs in shadow
+/// and Odin decides the heat (F0–F4); the takeover (F5) turns it on. One switch for what
+/// depends on who heats: the API's "mode", and which plan the lift's room forecasts run on.
+inline constexpr bool PLANNER_DRIVES_HEAT = false;
+inline const char *mode_name() { return PLANNER_DRIVES_HEAT ? "control" : "shadow"; }
+
 enum class Strategy : uint8_t { COMFORT = 0, WEIGHTED = 1, PRICE = 2 };
 
 static constexpr uint8_t BLOB_VERSION = 1;
@@ -70,9 +76,9 @@ inline void write_api_json(const Settings &s, char *buf, size_t cap) {
   char set[192];
   write_settings_json(s, set, sizeof(set));
   std::snprintf(buf, cap,
-                "{\"mode\":\"shadow\",\"running\":false,\"strategy\":\"%s\",\"settings\":%s,"
+                "{\"mode\":\"%s\",\"running\":false,\"strategy\":\"%s\",\"settings\":%s,"
                 "\"solved_ts\":null,\"plan\":null,\"rooms\":null,\"model\":null,\"history\":null}",
-                strategy_name(s.strategy), set);
+                mode_name(), strategy_name(s.strategy), set);
 }
 
 }  // namespace esphome::lune_touch_coordinator::planner_settings

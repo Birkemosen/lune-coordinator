@@ -1523,9 +1523,10 @@ heat-source levers. See [`house_balancing_and_weather.md`](house_balancing_and_w
   `preload` (weather preload, fx `room_lag+preload`). A warm-up by hand
   (`POST /rooms/{room_id}/warmup`) counts as `room_lag`.
 - `demand.forecast`: the lagging or cold room's forecast that sized the lift. `plan` is
-  `odin` when it ran on Odin's planned heat (the house follows Odin's plan, so a room is asked
-  whether it gets back on the heat that will come), `touch` when on Touch's own plan (no Odin
-  plan). A cold-room call keeps its lift until the room is back in its band.
+  `odin` when it ran on Odin's planned heat (the planner in shadow, `GET /planner` `mode:
+  "shadow"`: the house follows Odin's plan, so a room is asked whether it gets back on the heat
+  that will come), `touch` when on Touch's own plan (Touch drives the heat, `mode: "control"`,
+  or no Odin plan). A cold-room call keeps its lift until the room is back in its band.
 - `link.status`: `ok` | `forwarder_off` | `telemetry_stale` | `no_room_temperature` |
   `odin_unreachable` | `unknown`. `alarm` turns true after 10 min in a bad state.
 - `link.telemetry_age_s` is the fresher of Odin's own `telemetry_ts` and, when MQTT is
