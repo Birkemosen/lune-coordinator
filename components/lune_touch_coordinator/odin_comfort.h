@@ -509,6 +509,109 @@ inline int cold_call_start_in_h(const float *price_rel, size_t n, int len, int m
   return best;
 }
 
+/// A warm-up the user starts for one room (the room's sheet, or HA): a cold-room call by
+/// hand, without the forecast and share that size the automatic one (25 Nov 2026: the
+/// bedroom aired at 10, 1.9 K behind, the call lifted 0 K on a forecast that counted on
+/// heat Odin did not plan). «Heat now» lifts from this hour whatever the price; «heat
+/// cheaply» starts at the cheapest hour within COLD_DEFER_MAX_H, as a call that is not
+/// urgent. It ends when the room is back within the band, or after WARMUP_MAX_S, and can be
+/// stopped (user choices 2026-11-25).
+static constexpr uint32_t WARMUP_MAX_S = 6U * 3600U;
+static constexpr size_t WARMUP_N = 4;
+struct RoomWarmup {
+  char room_id[32] = {};
+  bool cheap = false;
+  uint32_t start_ts = 0;
+  uint32_t until_ts = 0;
+  bool active() const { return room_id[0] != '\0'; }
+  /// Back within the band (deficit = target − room), or the time is up. A room without a
+  /// reading keeps its warm-up until the time is up.
+  bool done(float deficit_c, float band_c, uint32_t now) const {
+    return now >= until_ts || (std::isfinite(deficit_c) && deficit_c <= band_c);
+  }
+  /// Whole hours left, rounded up (at least 1 while it runs).
+  int hours_left(uint32_t now) const {
+    if (now >= until_ts)
+      return 0;
+    return static_cast<int>((until_ts - now + 3599U) / 3600U);
+  }
+};
+struct Warmups {
+  RoomWarmup w[WARMUP_N];
+  RoomWarmup *find(const char *room_id) {
+    for (auto &x : w)
+      if (x.active() && room_id != nullptr && std::strncmp(x.room_id, room_id, sizeof(x.room_id)) == 0)
+        return &x;
+    return nullptr;
+  }
+  bool any() const {
+    for (const auto &x : w)
+      if (x.active())
+        return true;
+    return false;
+  }
+  /// Starts the room's warm-up, or restarts it with the new mode; a full set drops the oldest.
+  RoomWarmup &start(const char *room_id, bool cheap, uint32_t now) {
+    RoomWarmup *slot = find(room_id);
+    for (size_t i = 0; slot == nullptr && i < WARMUP_N; i++)
+      if (!w[i].active())
+        slot = &w[i];
+    if (slot == nullptr) {
+      slot = &w[0];
+      for (auto &x : w)
+        if (x.start_ts < slot->start_ts)
+          slot = &x;
+    }
+    *slot = RoomWarmup{};
+    std::strncpy(slot->room_id, room_id, sizeof(slot->room_id) - 1);
+    slot->cheap = cheap;
+    slot->start_ts = now;
+    slot->until_ts = now + WARMUP_MAX_S;
+    return *slot;
+  }
+  bool stop(const char *room_id) {
+    RoomWarmup *x = find(room_id);
+    if (x == nullptr)
+      return false;
+    *x = RoomWarmup{};
+    return true;
+  }
+};
+
+/// The lift for the warm-ups that run: the largest need of their rooms (cold_call_lift_c on
+/// each room's deficit), lifted over the room's lag window (lag_end_in_h of its floor lag)
+/// but never past its time. A «heat now» starts this hour; «heat cheaply» at
+/// cold_call_start_in_h. The whole band moves (floor share 1), so Odin must heat. `deficit`
+/// and `lead_h` are per warm-up slot; `now_mode` is set when any «heat now» runs.
+inline Lift warmup_lift(uint8_t now_hour, const Warmups &ws, const float *deficit, const uint8_t *lead_h,
+                        float house_c, float band_floor_c, float band_c, const float *price_rel, size_t n,
+                        uint32_t now, const LiftParams &p, bool *now_mode = nullptr) {
+  Lift out{};
+  if (now_mode != nullptr)
+    *now_mode = false;
+  for (size_t i = 0; i < WARMUP_N; i++) {
+    const RoomWarmup &w = ws.w[i];
+    if (!w.active())
+      continue;
+    const int left = w.hours_left(now);
+    if (left <= 0)
+      continue;
+    // Without a reading: enough to put the floor above the house, as if one band behind.
+    const float d = std::isfinite(deficit[i]) ? deficit[i] : 2.0f * band_c;
+    const float c = std::max(cold_call_lift_c(house_c, band_floor_c, d, band_c, p), p.min_lift_c);
+    const int len = std::min(left, lag_end_in_h(lead_h[i]));
+    const int s0 = w.cheap ? cold_call_start_in_h(price_rel, n, len, std::min(COLD_DEFER_MAX_H, left - len)) : 0;
+    Lift l = make_lift(now_hour, s0, s0 + len, c, p);
+    if (!l.active())
+      continue;
+    l.floor_share = 1.0f;
+    out = merge_lifts(now_hour, out, l, p);
+    if (!w.cheap && now_mode != nullptr)
+      *now_mode = true;
+  }
+  return out;
+}
+
 /// Leaves a dear hour of the window unlifted when heating at another lifted hour costs
 /// less, heat loss included. Heat stored j hours before it is needed loses about j / tau
 /// of itself (tau = the house's time constant, C / UA), so hour k is skipped when

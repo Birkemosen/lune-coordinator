@@ -39,6 +39,7 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 - [`POST /rooms/{room_id}/groups`](#post-roomsroom_idgroups)
 - [`POST /rooms/{room_id}/sensor`](#post-roomsroom_idsensor)
 - [`POST /rooms/{room_id}/remove`](#post-roomsroom_idremove)
+- [`POST /rooms/{room_id}/warmup`](#post-roomsroom_idwarmup)
 - [`GET /circulation`](#get-circulation)
 - [`POST /circulation/settings`](#post-circulationsettings)
 - [`POST /circulation/refresh`](#post-circulationrefresh)
@@ -250,7 +251,8 @@ temperature until merged into a room.
         "saturated_s": 0,
         "any_fresh": true
       },
-      "revision": 7
+      "revision": 7,
+      "warmup": { "mode": "now", "since": 1795600000, "until": 1795621600, "stop_at_c": 20.5 }
     }
   ],
   "unassigned": [
@@ -1385,6 +1387,26 @@ Body: `{ "node_id", "zone", "revision" }`.
 
 Deletes the room when it has no groups. Returns conflict if groups remain.
 
+### `POST /rooms/{room_id}/warmup`
+
+Warms one room up by hand (the room sheet's «Warm up», or the Home Assistant action
+`room_warmup`). Body: `{ "mode": "now" | "cheap" | "stop" }`. `room_id` may also be the room's
+name as shown on Touch.
+
+- `now` lifts Odin's comfort band from this hour, whatever the price, with no dear hour left out.
+- `cheap` starts at the cheapest hour within the next 4 (as a cold-room call that is not urgent),
+  as far as the 6 h allow.
+- The lift is what the house and the room need (the cold-room call's rule, without the forecast
+  and the room's share), the whole band (floor share 1), over the room's floor lag + 2 h.
+- It ends when the room is back within 0.5 °C of its target, after 6 h, or on `stop`. It is not
+  kept across a restart. Starting again replaces the mode and restarts the 6 h.
+
+Response: `{ "result": "started", "room_id", "mode", "until", "stop_at_c", "odin_control" }`
+(`odin_control: false`: Touch does not lift Odin's band, so the warm-up does nothing), or
+`{ "result": "stopped" | "not_running" }`. A room already within the band is refused with 409
+`within_band`. `GET /rooms` and `GET /zones` show a running warm-up per room as `warmup`
+(`null` when none); the lift's hours count as `room_lag` (`lift_src` bit 2).
+
 ### `GET /circulation`
 
 Returns the read-only circulation-pump telemetry polled from a satellite
@@ -1498,7 +1520,12 @@ heat-source levers. See [`house_balancing_and_weather.md`](house_balancing_and_w
   schedule in Odin; Touch waits until the need has passed) | `rate_limited` |
   `write_failed` | `odin_unreachable` | `schedule_unreadable` | `clock_invalid`.
 - `odin.reason`: `none`, or the reasons joined by `+` in this order: `slab_charge`, `room_lag`,
-  `preload` (weather preload, fx `room_lag+preload`).
+  `preload` (weather preload, fx `room_lag+preload`). A warm-up by hand
+  (`POST /rooms/{room_id}/warmup`) counts as `room_lag`.
+- `demand.forecast`: the lagging or cold room's forecast that sized the lift. `plan` is
+  `odin` when it ran on Odin's planned heat (the house follows Odin's plan, so a room is asked
+  whether it gets back on the heat that will come), `touch` when on Touch's own plan (no Odin
+  plan). A cold-room call keeps its lift until the room is back in its band.
 - `link.status`: `ok` | `forwarder_off` | `telemetry_stale` | `no_room_temperature` |
   `odin_unreachable` | `unknown`. `alarm` turns true after 10 min in a bad state.
 - `link.telemetry_age_s` is the fresher of Odin's own `telemetry_ts` and, when MQTT is

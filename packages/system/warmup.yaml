@@ -1,0 +1,28 @@
+# Warm one room up by hand from Home Assistant, as the room's sheet on Touch does: the
+# action esphome.<device>_room_warmup with `room` (the room's name as on Touch, or its id)
+# and `mode` ("now", "cheap" or "stop"). It lifts Odin's band until the room is back within
+# 0.5 °C of its target, at most 6 h. "Room warm-up" shows what runs ("off" when nothing).
+
+api:
+  actions:
+    - action: room_warmup
+      variables:
+        room: string
+        mode: string
+      then:
+        - lambda: |-
+            char buf[192];
+            id(lune_touch_app).room_warmup(room.c_str(), mode.c_str(), buf, sizeof(buf));
+            ESP_LOGI("warmup", "Home Assistant: %s %s -> %s", room.c_str(), mode.c_str(), buf);
+            id(lune_room_warmup).update();
+
+text_sensor:
+  - platform: template
+    id: lune_room_warmup
+    name: "Room warm-up"
+    icon: mdi:radiator
+    update_interval: 60s
+    lambda: |-
+      char buf[192];
+      id(lune_touch_app).room_warmup_summary(buf, sizeof(buf));
+      return std::string(buf);

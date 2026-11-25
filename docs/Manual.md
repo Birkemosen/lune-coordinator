@@ -394,6 +394,21 @@ page. Zones are configured on the V6 itself, not in Touch.
 **Overview** — temperature, target and status, the loops from V6 (valve, return) and the
 expected next 24 hours. **History** — recent readings.
 
+<a id="room-warmup"></a>
+
+**Warm up** (Overview) — when a room has gone cold, for example after airing, and should be
+back sooner than the house would bring it:
+
+- **Heat now** asks Odin for more heat from this hour, whatever the price.
+- **Heat cheaply** waits for cheaper hours first, as far as the time allows.
+
+Touch lifts Odin's comfort band by what the house and the room need, until the room is back
+within 0.5 °C of its target, at most 6 hours; **Stop warm-up** ends it sooner. The whole house
+gets warmer water while it runs, and V6 sends it to the rooms that are open. It needs **Let
+Touch lift Odin's comfort band** on (Heat source › Settings), and it does not survive a
+restart. Home Assistant has the same as the action `room_warmup` (room name, mode `now`,
+`cheap` or `stop`) and the sensor «Room warm-up».
+
 **Settings** — only what Touch owns:
 
 - **House temperature** — include the room in the house temperature, and its weight.

@@ -3,12 +3,25 @@
   "_name": "Dansk",
   "_short": "DA",
   "_dec": ",",
-  "_days": ["ons", "tor", "fre"],
+  "_days": [
+    "ons",
+    "tor",
+    "fre"
+  ],
   "_dir_ese": "ØSØ",
-  "_walls": {"n": "N", "e": "Ø", "s": "S", "w": "V"},
-  "_walls_full": {"n": "Nord", "e": "Øst", "s": "Syd", "w": "Vest"},
+  "_walls": {
+    "n": "N",
+    "e": "Ø",
+    "s": "S",
+    "w": "V"
+  },
+  "_walls_full": {
+    "n": "Nord",
+    "e": "Øst",
+    "s": "Syd",
+    "w": "Vest"
+  },
   "_h": "t",
-
   "doc.title": "Lune Touch",
   "device.sample": "Huskoordinator",
   "device.this": "denne enhed",
@@ -67,7 +80,6 @@
   "sect.service": "Service",
   "tile.fault": "Fejl",
   "house.heatstate": "{state} · {temp}°",
-
   "state.calling": "Kalder på varme",
   "state.idle": "I ro",
   "state.fault": "Fejl",
@@ -76,7 +88,6 @@
   "badge.ok": "Ok",
   "badge.warn": "Opmerk",
   "badge.bad": "Fejl",
-
   "common.open": "Åbn {x}",
   "common.decrease": "Sænk {x}",
   "common.increase": "Hæv {x}",
@@ -101,13 +112,11 @@
   "common.days": "dage",
   "common.chooseFile": "Vælg fil",
   "common.noFile": "Ingen fil valgt",
-
   "rt.savedOk": "Gemt",
   "rt.saveFailed": "Gem fejlede",
   "rt.secondsAgo": "{n} s siden",
   "rt.minutesAgo": "{n} min siden",
   "rt.offline": "Offline",
-
   "dash.house.sub": "{manifolds} styringer · {calling} zoner kalder · {faults} fejl",
   "dash.house.sub.one": "{manifolds} styringer · {calling} zone kalder · {faults} fejl",
   "house.below": "Under mål",
@@ -116,7 +125,6 @@
   "alert.boardFault": "{board} svarer ikke",
   "alert.boardFaultBody": "Zoner fra denne styring beholder seneste værdier, indtil den svarer igen.",
   "alert.openControllers": "Åbn styringer",
-
   "climate.title": "Husklima",
   "climate.now": "Hustemperatur",
   "climate.target": "Mål",
@@ -124,14 +132,12 @@
   "climate.save": "Gem husmål",
   "climate.coverage": "Dækning",
   "climate.authority": "Autoritet",
-
   "heat.title": "Varmekilde",
   "heat.delivery": "Levering",
   "heat.publish": "Publicering",
   "heat.mode": "Tilstand",
   "heat.status": "Status",
   "heat.lease": "Lease",
-
   "pump.title": "Cirkulationspumpe",
   "flow.title": "Flow",
   "flow.sub": "Cirkulationspumpe og omtrentlig fordeling pr. manifold",
@@ -158,14 +164,12 @@
   "pump.head": "Løftehøjde",
   "pump.power": "Effekt",
   "pump.host": "Vært",
-
   "comfort.title": "Komfort pr. zone",
   "legend.temp": "Temperatur",
   "legend.target": "Mål",
   "trend.title": "Seneste 24 timer",
   "trend.aria": "Hustemperatur, seneste 24 timer",
   "trend.now": "nu",
-
   "fc.title": "Vejrudsigt",
   "fc.sub": "72 timer · {model} · hentet {time}",
   "fc.badge": "Preload +{v} °C",
@@ -198,12 +202,10 @@
   "fc.sky.rain": "Regn",
   "fc.sky.snow": "Sne",
   "fc.sky.moon": "Klar nat",
-
   "plan.title": "Plan vs. virkelighed",
   "plan.sub": "Odin varmebehov, seneste 12 timer",
   "plan.planned": "Planlagt",
   "plan.actual": "Faktisk",
-
   "conf.house.sub": "Styringer, integrationer og service",
   "ctrl.title": "Styringer",
   "ctrl.sub": "V6-boards parret med huset",
@@ -225,7 +227,6 @@
   "ctrl.removeDo": "Fjern",
   "ctrl.removeBtn": "Fjern…",
   "tile.manifold.live": "{id} {name}. {addr}",
-
   "hs.title": "Varmekilde",
   "hs.host": "Vært",
   "hs.enabled": "Varmekilde aktiveret",
@@ -234,22 +235,18 @@
   "hs.testRead": "Test læsning",
   "hs.testPush": "Test afsendelse",
   "hs.save": "Gem varmekilde",
-
   "pumpCfg.title": "Pumpe",
   "pumpCfg.host": "Pumpe-vært",
   "pumpCfg.entity": "Entitet",
   "pumpCfg.save": "Gem pumpe",
-
   "weatherCfg.title": "Vejrplacering",
   "weatherCfg.lat": "Breddegrad",
   "weatherCfg.lon": "Længdegrad",
   "weatherCfg.boost": "Maks. preload-boost",
   "weatherCfg.geo": "Estimer fra netværk",
   "weatherCfg.save": "Gem vejr",
-
   "energy.title": "Energi",
   "energy.note": "Måling er endnu ikke tilgængelig på denne installation.",
-
   "id.title": "Identitet",
   "id.name": "Enhedsnavn",
   "id.idle": "Display idle minutter",
@@ -285,7 +282,6 @@
   "csys.backupImported": "Indstillinger gendannet",
   "csys.backupInvalid": "Ikke en Lune Touch-indstillingskopi",
   "csys.backupFailed": "Backup mislykkedes",
-
   "svc.title": "Service",
   "svc.commands": "Kommandolog",
   "boards.label": "Lune V6-styringer",
@@ -317,7 +313,6 @@
   "svc.activity": "Kald-samples",
   "svc.help": "Idriftsættelse",
   "svc.helpBody": "Godkend hvert V6-board, navngiv rum, sæt vejrplacering, og forbind derefter varmekilde og pumpe.",
-
   "rdash.sub": "{loops} kredse · {state}",
   "rdash.comfort": "Komfort",
   "rdash.target": "Mål °C",
@@ -329,7 +324,6 @@
   "rdash.chart": "Seneste 24 timer",
   "rdash.chartAria": "Rumtemperatur og mål, seneste 24 timer",
   "rdash.empty": "Denne rum-plads er ubrugt.",
-
   "rconf.sub": "Navn, gruppering og bygningsfaktorer",
   "rconf.nameTitle": "Rum",
   "rconf.name": "Navn",
@@ -756,7 +750,6 @@
   "price.err.no_token": "ENTSO-E kræver en token",
   "price.fxHint": "Valuta pr. euro. Bruges ikke ved EUR; Energi Data Service i kr. bruger sin egen kurs.",
   "price.perKwhHint": "Beløb er pr. kWh uden moms.",
-
   "nav.home": "Hjem",
   "nav.system": "System",
   "nav.label": "Hovedmenu",
@@ -939,6 +932,16 @@
   "room.valveMm": "ventil {v} % · {mm} mm",
   "room.loops": "Kredse fra {m}",
   "room.state": "Tilstand",
+  "room.warmTitle": "Varm op",
+  "room.warmIdle": "Løfter varmen, til rummet er højst 0,5 °C under målet (maks. 6 timer). «Varm nu» starter med det samme, «Varm billigt» venter på billigere strøm, hvis der er tid.",
+  "room.warmNow": "Varm nu",
+  "room.warmCheap": "Varm billigt",
+  "room.warmStop": "Stop opvarmning",
+  "room.warmRunNow": "Varmer op nu · stopper ved {t} °C, senest {at}",
+  "room.warmRunCheap": "Varmer op i de billigste timer · stopper ved {t} °C, senest {at}",
+  "room.warmWithin": "Rummet er allerede inden for 0,5 °C af målet.",
+  "room.warmNoOdin": "Touch løfter ikke Odins plan, så opvarmningen gør ingen forskel. Slå «Lad Touch løfte Odins komfortbånd» til under Varmekilde › Indstillinger.",
+  "room.warmFailed": "Opvarmningen kunne ikke ændres ({e}).",
   "room.noDataStrong": "Ingen data fra rummet.",
   "room.noData": "Føleren har ikke sendt noget. Tjek batteriet, eller vælg en anden føler på V6.",
   "room.noHistory": "Ingen målinger endnu",
@@ -1121,7 +1124,6 @@
   "ctrl.scanNone": "Ingen nye styringer fundet",
   "svc.nodesVal": "{on} af {n} online",
   "v6.offlineNoTime": "V6 er ikke tilgængelig",
-
   "problem.hpOver.title": "Varmepumpen leverer mere end planlagt",
   "problem.hpOver.msg": "Varmepumpen har i en halv time leveret {mean} kW mod Odins plan på {plan} kW.",
   "problem.hpUnder.title": "Varmepumpen leverer mindre end planlagt",

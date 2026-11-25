@@ -1,5 +1,9 @@
 # Changelog — Lune Design System
 
+## Ikke udgivet
+
+- Touch' Rum-ark › Overblik: «Varm op» (`.sub` med `data-state="warm-idle|warming"`): «Varm nu» og «Varm billigt», og mens rummet varmes op, én linje med tilstand og «Stop opvarmning». Nye tilstande `warm-idle` og `warming` i reglerne for tilstandsafhængige handlinger (6.1b). DESIGN.md 15.10.
+
 ## 2.5.0
 
 - Ny tilstand **Opvarmningsplan** («Heating Plan») på Touch mellem Hjem og System (`"modes": ["home", "plan", "sys"]`, `#m-plan`, `#v-plan-house`): skyggeplanlæggerens side med Plan for 48 timer, Rum-forventning, Lært model og Plan mod faktisk, og planlæggerens ark (`sheet-planner`) med Overblik og Indstillinger (strategi som typegruppen `st`: komfort først / vægtet / pris først; mindste og største effekt; maks. fremløb). Kun planlæggerens egne tal; sammenligning med Odin hører til Home Assistant. DESIGN.md 15.11.

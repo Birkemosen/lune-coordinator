@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <strings.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -1851,6 +1852,11 @@ struct PlannerRuntime {
     }
   };
   DayPlan day_touch{}, day_odin{};
+  // Odin's space heat from odin_hour on, as planner_tick_ last read it: in shadow the house
+  // follows Odin, so the forecasts the lift reads run on it (planner_rooms_).
+  float odin_heat[24]{};
+  int odin_n{0};
+  uint32_t odin_hour{0};
   // F3: the hourly history Touch keeps and what it learns from it.
   ::lune_planner::HourAccumulator acc{};
   PlannerStore *store{nullptr};
@@ -1884,6 +1890,10 @@ struct PlannerRuntime {
     ::lune_planner::RoomModel model{};
     float expected[::lune_planner::PLAN_H]{};
     bool forecast{false};  // expected holds a forecast for rooms_ts
+    // The forecast the lift reads: on Odin's planned heat while Odin heats the house, else
+    // on Touch's plan (expected).
+    float lift_expected[24]{};
+    bool lift_on_odin{false};
     ::lune_planner::ScoreSet score{};   // its shown forecast, scored live
   } rooms[ROOMS]{};
   uint8_t room_n{0};
@@ -3566,7 +3576,145 @@ float LuneTouchCoordinator::update_demand_hold_(const ::lune_touch::StrategySnap
                cold_room_call_.engaged ? "on" : "off", coldest_deficit_c_, COMFORT_BAND_C);
     give_state_lock_();
   }
+  end_room_warmups_();
   return held;
+}
+
+float LuneTouchCoordinator::room_deficit_locked_(const char *room_id, float *target_c) const {
+  // Caller holds the state lock. Target − temperature now, the schedule's target included.
+  if (target_c != nullptr)
+    *target_c = NAN;
+  if (room_id == nullptr || room_id[0] == '\0')
+    return NAN;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  for (size_t ri = 0; ri < model_.room_count(); ri++) {
+    const auto *room = model_.room(ri);
+    if (room == nullptr || std::strcmp(room->room_id, room_id) != 0)
+      continue;
+    const auto r = model_.room_comfort_reading(ri, time_valid, day_index, minute_of_day);
+    if (target_c != nullptr && r.has_target)
+      *target_c = r.target_c;
+    return r.has_target && r.has_temp ? r.target_c - r.temp_c : NAN;
+  }
+  return NAN;
+}
+
+void LuneTouchCoordinator::end_room_warmups_() {
+  // A warm-up ends when its room is back within the band, its time is up, or the room is gone.
+  const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+  char ended[lune_touch_odin::WARMUP_N][96]{};
+  size_t n = 0;
+  if (!take_state_lock_(100))
+    return;
+  for (auto &w : room_warmups_.w) {
+    if (!w.active())
+      continue;
+    const auto *room = model_.room_by_id(w.room_id);
+    const float deficit = room_deficit_locked_(w.room_id, nullptr);
+    if (room != nullptr && !w.done(deficit, COMFORT_BAND_C, now))
+      continue;
+    std::snprintf(ended[n++], sizeof(ended[0]), "%s: warm-up ended (%s)", room != nullptr ? room->room_name : w.room_id,
+                  room == nullptr ? "room removed" : now >= w.until_ts ? "time up" : "back within the band");
+    w = lune_touch_odin::RoomWarmup{};
+  }
+  give_state_lock_();
+  for (size_t i = 0; i < n; i++)
+    log_event_("info", "warmup", ended[i]);
+}
+
+void LuneTouchCoordinator::room_warmup_summary(char *out, size_t capacity) {
+  // For the HA text sensor: "Soveværelse: now, 4 h left; Laura: cheap, 1 h left", or "off".
+  if (out == nullptr || capacity == 0)
+    return;
+  std::snprintf(out, capacity, "off");
+  const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+  if (!take_state_lock_(100))
+    return;
+  size_t off = 0;
+  for (const auto &w : room_warmups_.w) {
+    if (!w.active())
+      continue;
+    const auto *room = model_.room_by_id(w.room_id);
+    const int n = std::snprintf(out + off, capacity - off, "%s%s: %s, %d h left", off ? "; " : "",
+                                room != nullptr ? room->room_name : w.room_id, w.cheap ? "cheap" : "now",
+                                w.hours_left(now));
+    if (n < 0 || static_cast<size_t>(n) >= capacity - off)
+      break;
+    off += static_cast<size_t>(n);
+  }
+  give_state_lock_();
+}
+
+bool LuneTouchCoordinator::room_warmup(const char *room_id, const char *mode, char *response, size_t capacity) {
+  const bool stop = mode != nullptr && std::strcmp(mode, "stop") == 0;
+  const bool cheap = mode != nullptr && std::strcmp(mode, "cheap") == 0;
+  if (room_id == nullptr || room_id[0] == '\0') {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_room\"}");
+    return false;
+  }
+  if (!stop && !cheap && !(mode != nullptr && std::strcmp(mode, "now") == 0)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_mode\"}");
+    return false;
+  }
+  const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+  if (!stop && now < 1700000000U) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"clock_invalid\"}");
+    return false;
+  }
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  // By id (the room sheet), or by the name shown on Touch (Home Assistant).
+  const auto *room = model_.room_by_id(room_id);
+  for (size_t ri = 0; room == nullptr && ri < model_.room_count(); ri++) {
+    const auto *r = model_.room(ri);
+    if (r != nullptr && r->enabled && strcasecmp(r->room_name, room_id) == 0)
+      room = r;
+  }
+  if (room == nullptr) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_found\"}");
+    return false;
+  }
+  room_id = room->room_id;
+  char id[64], name[96], msg[128];
+  json_escape_(room_id, id, sizeof(id));
+  std::snprintf(name, sizeof(name), "%s", room->room_name[0] != '\0' ? room->room_name : room_id);
+  if (stop) {
+    const bool had = room_warmups_.stop(room_id);
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"%s\",\"room_id\":\"%s\"}", had ? "stopped" : "not_running", id);
+    if (had) {
+      std::snprintf(msg, sizeof(msg), "%s: warm-up stopped", name);
+      log_event_("info", "warmup", msg);
+      kick_task_(odin_task_handle_);
+    }
+    return true;
+  }
+  float target = NAN;
+  const float deficit = room_deficit_locked_(room_id, &target);
+  char stop_at[16];
+  json_float_token_(stop_at, sizeof(stop_at), std::isfinite(target) ? target - COMFORT_BAND_C : NAN, 1);
+  if (std::isfinite(deficit) && deficit <= COMFORT_BAND_C) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"within_band\",\"room_id\":\"%s\",\"stop_at_c\":%s}",
+             id, stop_at);
+    return false;
+  }
+  const uint32_t until = room_warmups_.start(room_id, cheap, now).until_ts;
+  const bool lifts = odin_control_.enabled;
+  give_state_lock_();
+  snprintf(response, capacity,
+           "{\"result\":\"started\",\"room_id\":\"%s\",\"mode\":\"%s\",\"until\":%lu,\"stop_at_c\":%s,\"odin_control\":%s}",
+           id, cheap ? "cheap" : "now", static_cast<unsigned long>(until), stop_at, lifts ? "true" : "false");
+  std::snprintf(msg, sizeof(msg), "%s: warm-up %s until %s C, at most %u h", name, cheap ? "cheaply" : "now", stop_at,
+                static_cast<unsigned>(lune_touch_odin::WARMUP_MAX_S / 3600U));
+  log_event_("info", "warmup", msg);
+  kick_task_(odin_task_handle_);   // lift now, not on the next pass
+  return true;
 }
 
 bool LuneTouchCoordinator::odin_in_control_() const {
@@ -3667,6 +3815,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float heat_loss = NAN;
   float held = 0.0f;
   bool cold_call = false;
+  float cold_hold = 0.0f;
   float energy = 0.0f;
   int start = INT16_MAX;
   int end = -1;
@@ -3677,6 +3826,11 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   int pre_start_in_h = -1;
   float pre_share = NAN;
   float coldest = NAN, house_c = NAN, band_floor_c = NAN;
+  // Warm-ups the user started (room sheet or HA): each room's deficit and floor lag.
+  lune_touch_odin::Warmups warmups{};
+  float warm_deficit[lune_touch_odin::WARMUP_N];
+  uint8_t warm_lead[lune_touch_odin::WARMUP_N]{};
+  std::fill(std::begin(warm_deficit), std::end(warm_deficit), NAN);
   // The lagging rooms' forecasts (planner_rooms_): the cold room's and the driver's.
   RoomOutlook cold_fc{}, lag_fc{};
   bool has_cold_fc = false, has_lag_fc = false;
@@ -3718,6 +3872,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
     cold_call = cold_room_call_.engaged;
+    cold_hold = cold_call_hold_c_;
     coldest = coldest_deficit_c_;
     lagging_share = strategy.lagging_share;
     house_c = strategy.has_physical_temperature ? strategy.physical_temperature_c : NAN;
@@ -3740,6 +3895,15 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     if (const RoomOutlook *o = room_outlook_for_(strategy.driver_room_id, now_ts)) {
       lag_fc = *o;
       has_lag_fc = true;
+    }
+    warmups = room_warmups_;
+    for (size_t i = 0; i < lune_touch_odin::WARMUP_N; i++) {
+      if (!warmups.w[i].active())
+        continue;
+      warm_deficit[i] = room_deficit_locked_(warmups.w[i].room_id, nullptr);
+      const auto rz = model_.resolve_room(warmups.w[i].room_id);
+      if (rz.binding != nullptr)
+        warm_lead[i] = ::lune_touch::HouseModel::active_thermal_lead_h(*rz.binding);
     }
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
@@ -3798,6 +3962,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
     std::strncpy(diag.room_id, cold_fc.id, sizeof(diag.room_id) - 1);
     diag.has_forecast = has_cold_fc;
+    diag.on_odin = has_cold_fc && cold_fc.on_odin;
     if (has_cold_fc) {
       const float lack = lune_touch_odin::forecast_shortfall_c(cold_fc.expected, 24, lag_len + lune_touch_odin::COLD_DEFER_MAX_H,
                                                               cold_fc.target_c, COMFORT_BAND_C);
@@ -3807,6 +3972,11 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
       if (std::isfinite(s))
         c = s;
     }
+    // Once lifted, a call keeps its lift until the room is back in its band: the forecast
+    // runs on Odin's plan, and Odin plans on the lifted band, so the next hour's forecast
+    // would see the room recover and drop the lift that does it.
+    c = std::max(c, cold_hold);
+    cold_hold = c >= params.min_lift_c ? c : 0.0f;
     diag.lift_c = c;
     const int len = lag_len;
     const int s0 = urgent ? 0 : lune_touch_odin::cold_call_start_in_h(price_rel, 24, len);
@@ -3820,6 +3990,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
                                   : NAN;
     std::strncpy(diag.room_id, lag_fc.id, sizeof(diag.room_id) - 1);
     diag.has_forecast = has_lag_fc;
+    diag.on_odin = has_lag_fc && lag_fc.on_odin;
     diag.lack_c = lack;
     diag.share = lag_fc.share;
     diag.lift_c = lack == 0.0f ? 0.0f : held;
@@ -3828,8 +3999,17 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   }
   if (take_state_lock_(100)) {
     lift_fc_diag_ = diag;
+    cold_call_hold_c_ = cold_call ? cold_hold : 0.0f;
     give_state_lock_();
   }
+  // A warm-up by hand lifts like a cold call, without forecast or share; «heat now» from
+  // this hour with no dear hour left out (odin_comfort.h warmup_lift).
+  bool warm_now = false;
+  const lune_touch_odin::Lift warm =
+      lune_touch_odin::warmup_lift(now_hour, warmups, warm_deficit, warm_lead, house_c, band_floor_c, COMFORT_BAND_C,
+                                   price_rel, 24, static_cast<uint32_t>(::time(nullptr)), params, &warm_now);
+  lag = lune_touch_odin::merge_lifts(now_hour, lag, warm, params);
+  const bool heat_now = urgent || warm_now;
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
   // only what the house would have had anyway. The band opens from when the first room
   // starts charging (a lead before its wind, so Odin can heat gently and in cheap hours
@@ -3850,7 +4030,7 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     // included: earlier, or later but still before the heat is needed (the end of a lag
     // window, a preload's peak, a charge's deficit). An urgent cold call heats now.
     int need_in_h = 0;
-    if (!urgent) {
+    if (!heat_now) {
       need_in_h = 24;
       const auto rel_end = [&](const lune_touch_odin::Lift &l) {
         return static_cast<int>((l.start_hour + 24 - now_hour) % 24) + l.hours;
@@ -3865,9 +4045,10 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
         need_in_h = 0;
     }
     // Worth a gap only for a tenth of what prices are now or more (energy_price.h reference_price).
-    lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
-                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h,
-                                  std::isfinite(normal_price) ? SKIP_MIN_SAVING_SHARE * normal_price : 0.0f);
+    if (!warm_now)
+      lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
+                                    lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h,
+                                    std::isfinite(normal_price) ? SKIP_MIN_SAVING_SHARE * normal_price : 0.0f);
     if (reason != nullptr)
       *reason = lift_reason_(charge.active(), lag.active(), pre.active());
     // Which source wants each lifted hour (a skipped hour has none).
@@ -13681,6 +13862,26 @@ void LuneTouchCoordinator::write_node_scan_json(char *buffer, size_t capacity) c
   appendf_(buffer, capacity, off, "]}");
 }
 
+void LuneTouchCoordinator::append_room_warmup_json_(char *buffer, size_t capacity, size_t &off,
+                                                    const char *room_id) const {
+  // A warm-up by hand: since and until when, and the temperature it stops at (target − band).
+  const lune_touch_odin::RoomWarmup *warm = nullptr;
+  for (const auto &w : room_warmups_.w)
+    if (w.active() && std::strcmp(w.room_id, room_id) == 0)
+      warm = &w;
+  if (warm == nullptr) {
+    appendf_(buffer, capacity, off, "null");
+    return;
+  }
+  float target = NAN;
+  room_deficit_locked_(room_id, &target);
+  char stop_at[16];
+  json_float_token_(stop_at, sizeof(stop_at), std::isfinite(target) ? target - COMFORT_BAND_C : NAN, 1);
+  appendf_(buffer, capacity, off, "{\"mode\":\"%s\",\"since\":%lu,\"until\":%lu,\"stop_at_c\":%s}",
+           warm->cheap ? "cheap" : "now", static_cast<unsigned long>(warm->start_ts),
+           static_cast<unsigned long>(warm->until_ts), stop_at);
+}
+
 void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const {
   size_t off = 0;
   if (buffer == nullptr || capacity == 0)
@@ -13744,13 +13945,15 @@ void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const
              ",\"heat_demand\":{\"recommendation\":\"%s\",\"opening_ratio\":%.2f,"
              "\"saturated_s\":%lu,\"any_fresh\":%s},"
              "\"ble_sensor_mismatch\":%s,\"floor_unset\":%s,\"physics_conflict\":%s,"
-             "\"ua_effective_w_per_k\":%.1f}",
+             "\"ua_effective_w_per_k\":%.1f,\"warmup\":",
              ::lune_touch::heat_recommendation_name(demand.recommendation), demand.opening_ratio,
              static_cast<unsigned long>(demand.saturated_s), demand.any_fresh ? "true" : "false",
              room->ble_sensor_mismatch ? "true" : "false",
              room->floor_unset ? "true" : "false",
              room->physics_conflict ? "true" : "false",
              room->ua_effective_w_per_k);
+    append_room_warmup_json_(buffer, capacity, off, room->room_id);
+    appendf_(buffer, capacity, off, "}");
   }
   appendf_(buffer, capacity, off, "],\"unassigned\":[");
   bool first_unassigned = true;
@@ -13799,12 +14002,14 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     appendf_(buffer, capacity, off, "%s{\"room_id\":\"%s\",\"name\":\"%s\","
              "\"loop_count\":%u,\"area_m2\":%.1f,\"physical_weight\":%.2f,"
              "\"ua_w_per_k\":%.1f,\"delivered_kwh_today\":%.2f,"
-             "\"include_in_house_temperature\":%s}",
+             "\"include_in_house_temperature\":%s,\"warmup\":",
              first_room ? "" : ",", room_id_esc, room_name_esc,
              static_cast<unsigned>(loop_count), room->total_area_m2, room->physical_weight,
              room->ua_w_per_k > 0.0f ? room->ua_w_per_k : room->total_area_m2,
              room->delivered_kwh_today,
              room->include_in_house_temperature ? "true" : "false");
+    append_room_warmup_json_(buffer, capacity, off, room->room_id);
+    appendf_(buffer, capacity, off, "}");
     first_room = false;
   }
   appendf_(buffer, capacity, off, "],\"zones\":[");
@@ -15547,6 +15752,10 @@ void LuneTouchCoordinator::planner_tick_() {
   pending = planner_solve_pending_;
   planner_solve_pending_ = false;
   give_state_lock_();
+  rt.odin_n = odin_n;
+  rt.odin_hour = hour0;
+  for (int k = 0; k < odin_n; k++)
+    rt.odin_heat[k] = odin_heat[k];
 
   rt.pump.min_kw = set.min_output_kw;
   rt.pump.max_kw = set.max_output_kw;
@@ -15937,6 +16146,23 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       pr.forecast = std::isfinite(pr.expected[0]);
       if (pr.forecast)
         rt.room_pend[k].put_plan(hour0, pr.expected, rt.plan.n, pr.now_c);
+      // The lift asks whether the room gets back on the heat that will come. In shadow that
+      // is Odin's, not Touch's plan (25 Nov 2026: Soveværelse 1.9 K behind after airing at 10,
+      // Touch's 3.2 kW from now forecast 20.8 °C, so the cold call lifted 0 K, while Odin had
+      // heat off until 12 and the room stayed at 19.1–19.9 °C).
+      pr.lift_on_odin = false;
+      for (int h = 0; h < 24; h++)
+        pr.lift_expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
+      if (pr.forecast && rt.odin_n > 0 && rt.odin_hour == hour0) {
+        for (int h = 0; h < rt.plan.n; h++)
+          rt.room_fut[h].q_kw = (h < rt.odin_n ? rt.odin_heat[h] : rt.plan.kw[h]) * pr.share;
+        const int nf = std::min<int>(24, rt.plan.n);
+        if (lp::forecast_room(pr.model, rt.room_t, rt.room_in, W, rt.room_fut, nf, rt.room_track, pr.lift_expected))
+          pr.lift_on_odin = true;
+        else
+          for (int h = 0; h < 24; h++)
+            pr.lift_expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
+      }
     }
   }
   // The forecasts the lift reads (compute_odin_lift_).
@@ -15951,8 +16177,9 @@ void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool 
       std::strncpy(o.id, pr.id, sizeof(o.id) - 1);
       o.share = pr.share;
       o.target_c = pr.target_c;
+      o.on_odin = pr.lift_on_odin;
       for (int h = 0; h < 24; h++)
-        o.expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
+        o.expected[h] = pr.lift_expected[h];
       o.ts = now_ts;
     }
     room_outlook_n_ = m;
@@ -16712,7 +16939,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       buffer, capacity,
       "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f,"
       "\"cold_room_call\":%s,\"coldest_deficit_c\":%.2f,\"coldest_room\":\"%s\","
-      "\"forecast\":{\"room\":\"%s\",\"available\":%s,\"lack_c\":%s,\"share\":%s,\"lift_c\":%s}},"
+      "\"forecast\":{\"room\":\"%s\",\"available\":%s,\"plan\":\"%s\",\"lack_c\":%s,\"share\":%s,\"lift_c\":%s}},"
       "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
@@ -16731,7 +16958,7 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
       route, static_cast<double>(held), static_cast<double>(uplift), cold_call ? "true" : "false",
-      static_cast<double>(coldest), cold_id, fc_id, fd.has_forecast ? "true" : "false", fc_lack, fc_share, fc_lift,
+      static_cast<double>(coldest), cold_id, fc_id, fd.has_forecast ? "true" : "false", fd.on_odin ? "odin" : "touch", fc_lack, fc_share, fc_lift,
       c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
       c.sync_enabled ? "true" : "false",
       static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),

@@ -847,6 +847,9 @@
   [data-state="approved"] [data-show-when~="approved"],
   [data-state="pending"]  [data-show-when~="pending"],
   [data-state="error"]    [data-show-when~="error"] { display: var(--show-display, block); }
+  /* Rummets «Varm op» (DESIGN.md 15.10): handlinger efter tilstand. */
+  [data-state="warm-idle"] [data-show-when~="warm-idle"],
+  [data-state="warming"]   [data-show-when~="warming"] { display: var(--show-display, block); }
 
   /* Ekspert-tuning bag et link */
   .more > summary {

@@ -615,6 +615,12 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         </dl>
         <div class="bar" style="--v:0%" data-f="bar" aria-hidden="true"><i></i></div>
         <div class="sub"><h4 data-f="loopsTitle">{T("room.loops", m="V6")}</h4><dl class="kv" data-f="loops"></dl></div>
+        <div class="sub" data-f="warm" data-state="warm-idle"><h4>{T("room.warmTitle")}</h4>
+          <p class="note" data-show-when="warm-idle">{T("room.warmIdle")}</p>
+          <p class="note" data-show-when="warming" data-f="warmText" aria-live="polite"></p>
+          <div class="actions" data-show-when="warm-idle"><button class="btn" type="button" data-action="room-warmup" data-mode="now">{T("room.warmNow")}</button><button class="btn" type="button" data-action="room-warmup" data-mode="cheap">{T("room.warmCheap")}</button></div>
+          <div class="actions" data-show-when="warming"><button class="btn" type="button" data-action="room-warmup" data-mode="stop">{T("room.warmStop")}</button></div>
+          <p class="note c-bad" data-f="warmMsg" aria-live="polite" hidden></p></div>
         {trend("room.next24", "", T("room.next24Aria", name=rid), f'<span class="legend"><i class="lt"></i>{T("legend.temp")}<i class="lg"></i>{T("legend.target")}</span>', f="next24")}'''
         hist = f'''
         <div class="sub"><h4>{T("room.histChart")}</h4>
@@ -1118,7 +1124,7 @@ def render(T, langs, lang_urls, css_href, js_href, hs_type, inline_css=None):
         "home.greeting.morning", "home.greeting.forenoon", "home.greeting.day", "home.greeting.evening", "home.greeting.night",
         "home.headline.below", "home.headline.at", "home.headline.above", "home.headline.fault", "home.headline.none",
         "home.sentence.below", "home.sentence.above", "home.sentence.at", "home.sentence.none", "thermo.aria",
-        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "scope.target", "sheet.houseStatus", "house.callingVal", "room.valveMm", "common.open", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
+        "home.hp.on", "home.hp.off", "hp.pillOn", "hp.pillOff", "pump.dist", "wx.geoFound", "wx.geoFail", "hchart.r24", "hchart.r7", "scope.house", "scope.target", "sheet.houseStatus", "house.callingVal", "room.valveMm", "room.warmRunNow", "room.warmRunCheap", "room.warmWithin", "room.warmNoOdin", "room.warmFailed", "common.open", "tile.heat", "thermo.outside", "tile.open", "tile.closed",
         "tile.planNone", "tile.planVal", "tile.planNow", "tile.planKwh", "tile.planStatusOdin", "tile.price",
         "tile.weatherStatus", "tile.weatherStatusNone", "tile.weatherSub", "tile.pumpStatus", "tile.pumpNone", "tile.pumpSub",
         "tile.room.aria", "v6.offline", "v6.offlineBody", "v6.offlineNoTime", "sheet.manifoldStatus", "sheet.roomStatus",

@@ -208,6 +208,7 @@
     ['room-12', 'Lager', 2, 1, null, 15.0, 'unknown', null, 18, 0, false, 0.25, 0.3, 0]
   ];
   var mockRoomStore = {};
+  var mockWarmups = {};
   function mockZones() {
     var seen = {};
     var zones = mockRoomRows.map(function (r) {
@@ -238,7 +239,8 @@
       if (rs[r[0]]) return;
       rs[r[0]] = 1;
       rooms.push({ room_id: r[0], name: r[1], loop_count: r[0] === 'room-05' ? 2 : 1, area_m2: r[8],
-        include_in_house_temperature: mockRoomStore[r[0]] ? mockRoomStore[r[0]].include : r[10] });
+        include_in_house_temperature: mockRoomStore[r[0]] ? mockRoomStore[r[0]].include : r[10],
+        warmup: mockWarmups[r[0]] || null });
     });
     return { rooms: rooms, zones: zones };
   }
@@ -473,6 +475,16 @@
 
   async function mockPost(path, body) {
     if (path === '/planner/settings') return mockGet('/planner');
+    var mw = path.match(/^\/rooms\/([^/]+)\/warmup$/);
+    if (mw) {
+      var wid = decodeURIComponent(mw[1]);
+      if (body.mode === 'stop') { delete mockWarmups[wid]; return { result: 'stopped', room_id: wid }; }
+      var row = mockRoomRows.filter(function (r) { return r[0] === wid; })[0];
+      if (row && row[4] != null && row[5] - row[4] <= 0.5) throw new Error('within_band');
+      var until = Math.floor(Date.now() / 1000) + 6 * 3600;
+      mockWarmups[wid] = { mode: body.mode, since: Math.floor(Date.now() / 1000), until: until, stop_at_c: row ? row[5] - 0.5 : null };
+      return { result: 'started', room_id: wid, mode: body.mode, until: until, stop_at_c: row ? row[5] - 0.5 : null, odin_control: true };
+    }
     if (path === '/forecast/estimate-location') return { result: 'ok', source: 'network', latitude: 55.384697, longitude: 10.1402, city: 'Vissenbjerg', country: 'Denmark' };
     var bool = function (v) { return v === '1' || v === 1 || v === true; };
     if (path === '/heat-source/test-read' || path === '/heat-source/test-push') {
@@ -827,6 +839,7 @@
       if (r.name) by[r.room_id].name = r.name;
       if (r.area_m2 != null) by[r.room_id].area_m2 = r.area_m2;
       if (r.include_in_house_temperature != null) by[r.room_id].include_in_house_temperature = r.include_in_house_temperature;
+      by[r.room_id].warmup = r.warmup || null;
     });
     return Object.keys(by).map(function (k) { return by[k]; });
   }
@@ -1100,6 +1113,44 @@
   }
 
   // Room sheets: overview, history and the settings Touch owns.
+  /* Varm op (DESIGN.md 15.10): the room's warm-up by hand, from /zones rooms[].warmup. */
+  function roomMeta(id) {
+    for (var i = 0; i < state.rooms.length; i++) if (state.rooms[i].room_id === id) return state.rooms[i];
+    return null;
+  }
+  function fillWarmup(sh, roomId) {
+    var box = fEl(sh, 'warm');
+    if (!box) return;
+    var w = (roomMeta(roomId) || {}).warmup;
+    box.setAttribute('data-state', w ? 'warming' : 'warm-idle');
+    box.setAttribute('data-room', roomId);
+    if (!w) return;
+    var at = w.until ? new Date(w.until * 1000).toLocaleTimeString(i18n._lang || document.documentElement.lang || 'en', { hour: '2-digit', minute: '2-digit' }) : '—';
+    fText(box, 'warmText', t(w.mode === 'cheap' ? 'room.warmRunCheap' : 'room.warmRunNow', { t: finite(w.stop_at_c) ? num(w.stop_at_c) : '—', at: at }));
+  }
+  async function runWarmup(btn) {
+    var box = btn.closest('[data-f="warm"]');
+    var id = box && box.getAttribute('data-room');
+    if (!id) return;
+    var msg = fEl(box, 'warmMsg');
+    var mode = btn.getAttribute('data-mode');
+    btn.setAttribute('aria-busy', 'true');
+    try {
+      var res = await post('/rooms/' + encodeURIComponent(id) + '/warmup', { mode: mode });
+      var meta = roomMeta(id);
+      if (meta) meta.warmup = res && res.result === 'started' ? { mode: res.mode, until: res.until, stop_at_c: res.stop_at_c } : null;
+      fillWarmup(box.closest('.sheet') || document, id);
+      if (msg) { msg.hidden = !(res && res.odin_control === false); msg.textContent = t('room.warmNoOdin'); }
+    } catch (e) {
+      if (msg) {
+        msg.hidden = false;
+        msg.textContent = String(e && e.message) === 'within_band' ? t('room.warmWithin') : t('room.warmFailed', { e: (e && e.message) || '—' });
+      }
+    } finally {
+      btn.removeAttribute('aria-busy');
+    }
+  }
+
   function fillRoomSheets() {
     state.roomSlots.forEach(function (r, i) {
       var sh = qs('#sheet-r' + (i + 1));
@@ -1141,6 +1192,7 @@
       var bar = fEl(sh, 'bar');
       if (bar) bar.style.setProperty('--v', (open || 0) + '%');
       fText(sh, 'loopsTitle', t('room.loops', { m: mName }));
+      fillWarmup(sh, r.room_id);
       fHtml(sh, 'loops', r.loops.map(function (c) {
         var cz = mzOf(c);
         var lbl = (cz.m !== mz.m ? 'M' + cz.m + ' ' : '') + 'Z' + cz.z + (r.merged && c.name ? ' · ' + c.name : '');
@@ -4793,6 +4845,7 @@
     var pop = btn.closest('.confirm-pop');
     if (pop && pop.matches(':popover-open')) pop.hidePopover();
     try {
+      if (action === 'room-warmup') { await runWarmup(btn); return; }
       if (action === 'price-push') { await runPricePush(btn, false); return; }
       if (action === 'price-odin-write') { await runPricePush(btn, true); return; }
       if (action === 'price-zone-defaults') { await applyZoneDefaults(); return; }

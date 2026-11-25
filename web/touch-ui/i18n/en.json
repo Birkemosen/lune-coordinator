@@ -3,12 +3,25 @@
   "_name": "English",
   "_short": "EN",
   "_dec": ".",
-  "_days": ["Wed", "Thu", "Fri"],
+  "_days": [
+    "Wed",
+    "Thu",
+    "Fri"
+  ],
   "_dir_ese": "ESE",
-  "_walls": {"n": "N", "e": "E", "s": "S", "w": "W"},
-  "_walls_full": {"n": "North", "e": "East", "s": "South", "w": "West"},
+  "_walls": {
+    "n": "N",
+    "e": "E",
+    "s": "S",
+    "w": "W"
+  },
+  "_walls_full": {
+    "n": "North",
+    "e": "East",
+    "s": "South",
+    "w": "West"
+  },
   "_h": "h",
-
   "doc.title": "Lune Touch",
   "device.sample": "House coordinator",
   "device.this": "this device",
@@ -67,7 +80,6 @@
   "sect.service": "Service",
   "tile.fault": "Fault",
   "house.heatstate": "{state} · {temp}°",
-
   "state.calling": "Calling for heat",
   "state.idle": "Idle",
   "state.fault": "Fault",
@@ -76,7 +88,6 @@
   "badge.ok": "Ok",
   "badge.warn": "Attention",
   "badge.bad": "Fault",
-
   "common.open": "Open {x}",
   "common.decrease": "Decrease {x}",
   "common.increase": "Increase {x}",
@@ -101,13 +112,11 @@
   "common.days": "days",
   "common.chooseFile": "Choose file",
   "common.noFile": "No file chosen",
-
   "rt.savedOk": "Saved",
   "rt.saveFailed": "Save failed",
   "rt.secondsAgo": "{n} s ago",
   "rt.minutesAgo": "{n} min ago",
   "rt.offline": "Offline",
-
   "dash.house.sub": "{manifolds} controllers · {calling} zones calling · {faults} fault",
   "dash.house.sub.one": "{manifolds} controllers · {calling} zone calling · {faults} fault",
   "house.below": "Below target",
@@ -116,7 +125,6 @@
   "alert.boardFault": "{board} is unreachable",
   "alert.boardFaultBody": "Zones from this controller stay on last known values until it answers again.",
   "alert.openControllers": "Open controllers",
-
   "climate.title": "House climate",
   "climate.now": "House temperature",
   "climate.target": "Target",
@@ -124,14 +132,12 @@
   "climate.save": "Save house target",
   "climate.coverage": "Coverage",
   "climate.authority": "Authority",
-
   "heat.title": "Heat source",
   "heat.delivery": "Delivery",
   "heat.publish": "Publishing",
   "heat.mode": "Mode",
   "heat.status": "Status",
   "heat.lease": "Lease",
-
   "pump.title": "Circulation pump",
   "flow.title": "Flow",
   "flow.sub": "Circulation pump and approximate split per manifold",
@@ -158,14 +164,12 @@
   "pump.head": "Head",
   "pump.power": "Power",
   "pump.host": "Host",
-
   "comfort.title": "Comfort by zone",
   "legend.temp": "Temperature",
   "legend.target": "Target",
   "trend.title": "Last 24 hours",
   "trend.aria": "House temperature, last 24 hours",
   "trend.now": "now",
-
   "fc.title": "Forecast",
   "fc.sub": "72 hours · {model} · fetched {time}",
   "fc.badge": "Preload +{v} °C",
@@ -198,12 +202,10 @@
   "fc.sky.rain": "Rain",
   "fc.sky.snow": "Snow",
   "fc.sky.moon": "Clear night",
-
   "plan.title": "Plan vs reality",
   "plan.sub": "Odin heat demand, last 12 hours",
   "plan.planned": "Planned",
   "plan.actual": "Actual",
-
   "conf.house.sub": "Controllers, integrations and service",
   "ctrl.title": "Controllers",
   "ctrl.sub": "V6 boards paired with this house",
@@ -225,7 +227,6 @@
   "ctrl.removeDo": "Remove",
   "ctrl.removeBtn": "Remove…",
   "tile.manifold.live": "{id} {name}. {addr}",
-
   "hs.title": "Heat source",
   "hs.host": "Host",
   "hs.enabled": "Heat source enabled",
@@ -234,22 +235,18 @@
   "hs.testRead": "Test read",
   "hs.testPush": "Test send",
   "hs.save": "Save heat source",
-
   "pumpCfg.title": "Pump",
   "pumpCfg.host": "Pump host",
   "pumpCfg.entity": "Entity",
   "pumpCfg.save": "Save pump",
-
   "weatherCfg.title": "Weather location",
   "weatherCfg.lat": "Latitude",
   "weatherCfg.lon": "Longitude",
   "weatherCfg.boost": "Max preload boost",
   "weatherCfg.geo": "Estimate from network",
   "weatherCfg.save": "Save weather",
-
   "energy.title": "Energy",
   "energy.note": "Metering is not available on this install yet.",
-
   "id.title": "Identity",
   "id.name": "Device name",
   "id.idle": "Display idle minutes",
@@ -285,7 +282,6 @@
   "csys.backupImported": "Settings restored",
   "csys.backupInvalid": "Not a Lune Touch settings backup",
   "csys.backupFailed": "Backup failed",
-
   "svc.title": "Service",
   "svc.commands": "Command log",
   "boards.label": "Lune V6 boards",
@@ -317,7 +313,6 @@
   "svc.activity": "Calling samples",
   "svc.help": "Commissioning",
   "svc.helpBody": "Approve each V6 board, name rooms, set weather location, then connect heat source and pump.",
-
   "rdash.sub": "{loops} circuits · {state}",
   "rdash.comfort": "Comfort",
   "rdash.target": "Target °C",
@@ -329,7 +324,6 @@
   "rdash.chart": "Last 24 hours",
   "rdash.chartAria": "Room temperature and target, last 24 hours",
   "rdash.empty": "This room slot is unused.",
-
   "rconf.sub": "Name, grouping and building factors",
   "rconf.nameTitle": "Room",
   "rconf.name": "Name",
@@ -756,7 +750,6 @@
   "price.err.no_token": "ENTSO-E needs a token",
   "price.fxHint": "Currency per euro. Ignored for EUR; Energi Data Service in DKK uses its own rate.",
   "price.perKwhHint": "Amounts are per kWh, excl. VAT.",
-
   "nav.home": "Home",
   "nav.system": "System",
   "nav.label": "Main menu",
@@ -939,6 +932,16 @@
   "room.valveMm": "valve {v} % · {mm} mm",
   "room.loops": "Loops from {m}",
   "room.state": "State",
+  "room.warmTitle": "Warm up",
+  "room.warmIdle": "Raises the heat until the room is within 0.5 °C of its target (at most 6 hours). «Heat now» starts at once, «Heat cheaply» waits for cheaper power if there is time.",
+  "room.warmNow": "Heat now",
+  "room.warmCheap": "Heat cheaply",
+  "room.warmStop": "Stop warm-up",
+  "room.warmRunNow": "Warming up now · stops at {t} °C, by {at} at the latest",
+  "room.warmRunCheap": "Warming up in the cheapest hours · stops at {t} °C, by {at} at the latest",
+  "room.warmWithin": "The room is already within 0.5 °C of its target.",
+  "room.warmNoOdin": "Touch does not lift Odin's plan, so the warm-up makes no difference. Turn on «Let Touch lift Odin's comfort band» under Heat source › Settings.",
+  "room.warmFailed": "The warm-up could not be changed ({e}).",
   "room.noDataStrong": "No data from the room.",
   "room.noData": "The sensor has not reported. Check the battery, or choose another sensor on the V6.",
   "room.noHistory": "No readings yet",
@@ -1121,7 +1124,6 @@
   "ctrl.scanNone": "No new controllers found",
   "svc.nodesVal": "{on} of {n} online",
   "v6.offlineNoTime": "V6 is unavailable",
-
   "problem.hpOver.title": "Heat pump delivers more than planned",
   "problem.hpOver.msg": "For half an hour the heat pump has delivered {mean} kW against Odin's plan of {plan} kW.",
   "problem.hpUnder.title": "Heat pump delivers less than planned",

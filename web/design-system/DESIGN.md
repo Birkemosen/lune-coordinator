@@ -1450,6 +1450,8 @@ Touch' Hjem (15.7) bygges af disse komponenter (`@only touch` i CSS'en):
 
 Rum-arket på Touch viser kun det, Touch ejer (medregn i hustemperaturen, vægt, vind, sol). V6' egne felter, som Touch' API leverer (areal, ydervægge), står som læseværdier (`.setting-value`) i gruppen «Fra V6 (<styring>, Z<n>)» med «Redigér på V6 ›» (ny fane, `http://<v6>/#z<n>/indstillinger`); er V6'en offline, er gruppen dæmpet (`.setting-group[data-offline]`) med samme note.
 
+**Varm op** (Rum-arket › Overblik, Touch): en hverdagshandling, ikke en indstilling, så den står i overblikket som et `.sub` og gemmes med det samme. To knapper, «Varm nu» (løfter fra denne time uanset pris) og «Varm billigt» (venter på billigere strøm, hvis tiden tillader det), og en note om, hvad de gør. Mens rummet varmes op, viser noten tilstanden i én linje («Varmer op nu · stopper ved 21,5 °C, senest 14:40») og den eneste handling er «Stop opvarmning». Tilstanden skifter med `data-state="warm-idle|warming"` på `.sub` og `data-show-when` (6.1b). Opvarmningen slutter af sig selv, når rummet er tilbage inden for båndet (0,5 °C under målet), eller efter 6 timer. Et afslag (rummet er allerede inden for båndet, Touch løfter ikke Odins plan) står som `.note` med `aria-live` under knapperne. Samme handling findes i Home Assistant (14).
+
 ### 15.11 Opvarmningsplan: planlæggerens side (Touch)
 
 Touch' planlægger (skyggeplanlæggeren) har sin egen side mellem Hjem og System (`#m-plan`, `#v-plan-house`). Den er ikke et ark, fordi den viser 48 timer for hele huset og alle rum på én gang. Siden viser planlæggerens tal og, side om side, Odins plan for de samme timer (Touch mod Odin), så de kan sammenlignes på stedet; den lange sammenligning over uger hører stadig til Home Assistant.

@@ -744,6 +744,11 @@ class LuneTouchCoordinator : public esphome::Component {
   bool move_group_to_room(const char *node_id, uint8_t zone_1based, const char *room_id,
                           char *response, size_t capacity);
   bool sync_room_ble_sensor(const char *room_id, char *response, size_t capacity);
+  /// Warm one room up by hand (POST /rooms/{id}/warmup, HA action): mode "now", "cheap" or
+  /// "stop" (odin_comfort.h RoomWarmup).
+  bool room_warmup(const char *room_id, const char *mode, char *response, size_t capacity);
+  /// What warms up now, for the HA text sensor ("off" when nothing).
+  void room_warmup_summary(char *out, size_t capacity);
   bool set_room_sensor(const char *room_id, const char *node_id, uint8_t zone_1based,
                        char *response, size_t capacity);
   bool delete_room_if_empty(const char *room_id, char *response, size_t capacity);
@@ -1162,6 +1167,11 @@ class LuneTouchCoordinator : public esphome::Component {
   float demand_held_c_{0.0f};
   /// A room more than twice the comfort band behind: Odin's band floor moves (odin_comfort.h).
   lune_touch_odin::ColdRoomCall cold_room_call_{};
+  float cold_call_hold_c_{0.0f};   ///< a cold call's lift, kept until the call ends
+  lune_touch_odin::Warmups room_warmups_{};   ///< warm-ups by hand, not kept across a restart
+  float room_deficit_locked_(const char *room_id, float *target_c) const;
+  void end_room_warmups_();
+  void append_room_warmup_json_(char *buffer, size_t capacity, size_t &off, const char *room_id) const;
   float coldest_deficit_c_{0.0f};
   char coldest_room_id_[32]{};
   /// The planner's room forecasts, for the lift (planner_rooms_): each room's next 24 h on
@@ -1171,6 +1181,7 @@ class LuneTouchCoordinator : public esphome::Component {
     float share{NAN};
     float target_c{NAN};
     float expected[24]{};
+    bool on_odin{false};   // expected runs on Odin's planned heat, not Touch's plan
     uint32_t ts{0};
   };
   static constexpr size_t ROOM_OUTLOOK_N = 24;
@@ -1184,6 +1195,7 @@ class LuneTouchCoordinator : public esphome::Component {
     float lack_c{NAN};
     float share{NAN};
     float lift_c{NAN};
+    bool on_odin{false};
   };
   LiftForecastDiag lift_fc_diag_{};
   OdinControlState odin_control_{};

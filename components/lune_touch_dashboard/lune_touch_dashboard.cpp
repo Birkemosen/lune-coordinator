@@ -1068,7 +1068,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "name", name, sizeof(name));
     const bool accepted = coordinator_->set_node_profile(node_id, name, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 404);
-  } else if (strstr(path, "/remove") != nullptr) {
+  } else if (strncmp(path, "/nodes/", 7) == 0 && strstr(path, "/remove") != nullptr) {
     char node_id[32]{};
     if (!extract_middle_segment(path, "/nodes/", "/remove", node_id, sizeof(node_id))) {
       send_error_(api, 404, "unknown_route", "Unknown node remove route");
@@ -1078,7 +1078,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "confirm", confirm, sizeof(confirm));
     const bool accepted = coordinator_->remove_node(node_id, confirm, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 404);
-  } else if (strstr(path, "/room") != nullptr) {
+  } else if (strncmp(path, "/zones/", 7) == 0 && strstr(path, "/room") != nullptr) {
     char room_id[40]{};
     if (!extract_middle_segment(path, "/zones/", "/room", room_id, sizeof(room_id))) {
       send_error_(api, 404, "unknown_route", "Unknown atomic room route");
@@ -1464,6 +1464,16 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     const bool accepted =
         coordinator_->sync_room_ble_sensor(room_id, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
+  } else if ([&]() {
+               char room_id[48]{};
+               return extract_middle_segment(path, "/rooms/", "/warmup", room_id, sizeof(room_id));
+             }()) {
+    char room_id[48]{};
+    extract_middle_segment(path, "/rooms/", "/warmup", room_id, sizeof(room_id));
+    char mode[16]{};
+    parse_text_param(api, api.json_body, "mode", mode, sizeof(mode));
+    const bool accepted = coordinator_->room_warmup(room_id, mode, data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, strstr(data_buf_, "within_band") != nullptr ? 409 : 400);
   } else if ([&]() {
                char room_id[48]{};
                return extract_middle_segment(path, "/rooms/", "/sensor", room_id, sizeof(room_id));

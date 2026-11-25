@@ -463,6 +463,45 @@ int main() {
     assert(lift_hours_mask(w) == ((1UL << 22) | (1UL << 23) | 1UL | 2UL));
   }
 
+  // ---- Room warm-up by hand (25 Nov 2026: Soveværelse aired, 1.9 K behind) ----
+  {
+    LiftParams p{};
+    Warmups ws{};
+    const uint32_t t0 = 1795600000U;
+    RoomWarmup &w = ws.start("v62-z6", false, t0);
+    assert(ws.any() && ws.find("v62-z6") == &w && w.until_ts == t0 + WARMUP_MAX_S);
+    assert(w.hours_left(t0) == 6 && w.hours_left(t0 + 1) == 6 && w.hours_left(t0 + 5 * 3600 + 1) == 1);
+    // Ends back within the band or when the time is up; no reading keeps it running.
+    assert(!w.done(1.9f, 0.5f, t0) && w.done(0.5f, 0.5f, t0) && w.done(1.9f, 0.5f, t0 + WARMUP_MAX_S));
+    assert(!w.done(NAN, 0.5f, t0 + 3600));
+    // «Heat now»: the house at 22.0 over a floor of 21.5, the room 1.9 K behind: 0.5 + 1.4,
+    // capped at 1.5, from this hour over its lag window, whole band, whatever the price.
+    float dear[24];
+    for (int k = 0; k < 24; k++) dear[k] = k < 2 ? 0.40f : 0.30f;
+    float d[WARMUP_N] = {1.9f, NAN, NAN, NAN};
+    uint8_t lead[WARMUP_N] = {2, 0, 0, 0};
+    bool now_mode = false;
+    Lift l = warmup_lift(10, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0, p, &now_mode);
+    assert(l.active() && now_mode && l.start_hour == 10 && l.floor_share == 1.0f);
+    assert(std::fabs(l.lift_c - p.max_lift_c) < 1e-3f && l.hours == lag_end_in_h(2));
+    // «Heat cheaply» waits for cheaper hours as far as its 6 h allow: a 5 h window can
+    // start one hour on, past the first dear hour.
+    ws.start("v62-z6", true, t0);
+    assert(ws.find("v62-z6")->cheap);
+    l = warmup_lift(10, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0, p, &now_mode);
+    assert(l.active() && !now_mode && l.start_hour == 10 + 6 - lag_end_in_h(2));
+    // Never past its time: with one hour left only that hour is lifted, and it starts now.
+    l = warmup_lift(15, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0 + 5 * 3600 + 60, p, &now_mode);
+    assert(l.active() && l.hours == 1 && l.start_hour == 15);
+    // Time up: nothing.
+    assert(!warmup_lift(16, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0 + WARMUP_MAX_S, p).active());
+    // Stop, and a full set drops the oldest.
+    assert(ws.stop("v62-z6") && !ws.any() && !ws.stop("v62-z6"));
+    const char *ids[5] = {"a", "b", "c", "d", "e"};
+    for (int i = 0; i < 5; i++) ws.start(ids[i], false, t0 + static_cast<uint32_t>(i));
+    assert(ws.find("a") == nullptr && ws.find("e") != nullptr && ws.find("b") != nullptr);
+  }
+
   std::puts("odin_comfort: all assertions passed");
   return 0;
 }
