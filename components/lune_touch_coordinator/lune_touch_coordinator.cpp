@@ -5318,10 +5318,13 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
             const bool learn = ua_day_ymd_ != 0;
             ua_day_ymd_ = ymd;
             ::lune_touch::HouseModel::UaDayResult days[::lune_touch::MAX_HOUSE_ROOMS];
-            const size_t n = model_.close_ua_day(days, learn ? ::lune_touch::MAX_HOUSE_ROOMS : 0);
+            const size_t n = model_.close_ua_day(days, ::lune_touch::MAX_HOUSE_ROOMS, learn);
             for (size_t k = 0; k < n; k++)
               queue_ua_learned_writes_(days[k].room_index, days[k].confidence, days[k].observed_days,
                                        static_cast<uint32_t>(epoch_now));
+            // Touch keeps what it learned in its own registry too, not only on V6.
+            if (n > 0)
+              learning_dirty_ = true;
             ua_day_saved_ms_ = 0;  // store the new day at once
           }
           if (ua_day_saved_ms_ == 0 || now_fetch_ms - ua_day_saved_ms_ >= 3600000UL) {

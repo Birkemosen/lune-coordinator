@@ -644,7 +644,7 @@ class HouseModel {
     float confidence{0.0f};
     uint16_t observed_days{0};
   };
-  size_t close_ua_day(UaDayResult *out, size_t capacity);
+  size_t close_ua_day(UaDayResult *out, size_t capacity, bool learn = true);
   // What the last midnight made of each room's day, and why (GET /rooms ua_day).
   enum class UaVerdict : uint8_t { NONE, LEARNED, EXCLUDED, SHORT_DAY, NO_HEAT, MILD, NOT_STEADY, OUT_OF_BAND };
   static const char *ua_verdict_name(UaVerdict v);

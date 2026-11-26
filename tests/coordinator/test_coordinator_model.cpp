@@ -1540,6 +1540,12 @@ static void test_daily_ua_learning() {
   expect(std::fabs(living->ua_learned_w_per_k - 15.0f) < 0.3f, "ua day: living UA = 15 W/K");
   expect(std::fabs(bed->ua_learned_w_per_k - 7.5f) < 0.2f, "ua day: bed UA = 7.5 W/K");
   expect(living->ua_observed_days == 1 && bed->ua_observed_days == 1, "ua day: one day per day");
+  // A V6 that has not stored the learned value yet must not reset Touch's own learning.
+  expect(model.apply_v6_physics_mirror(0, 0, 0x01, 20.0f, floor, 18.0f, 0.0f, 18.0f, 0.0f, 0, 2,
+                                       "", "", "g1", nullptr),
+         "ua day: V6 poll without learned value applies");
+  expect(living->ua_observed_days == 1 && std::fabs(living->ua_learned_w_per_k - 15.0f) < 0.3f,
+         "ua day: V6 poll without learned value keeps Touch's day and UA");
   expect(living->ua_confidence > 0.0f && living->ua_confidence < 0.1f, "ua day: low confidence after one day");
   // A day colder than 8 K inside–outside teaches nothing.
   uint32_t t = 1000;

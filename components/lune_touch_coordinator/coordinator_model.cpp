@@ -838,15 +838,23 @@ bool HouseModel::apply_v6_physics_mirror(size_t node_index, size_t zone_index,
     z.floor = floor;
     if (std::isfinite(ua_prior) && ua_prior > 0.0f)
       z.ua_prior_w_per_k = ua_prior;
-    if (std::isfinite(ua_learned) && ua_learned > 0.0f)
+    if (std::isfinite(ua_learned) && ua_learned > 0.0f) {
       z.ua_learned_w_per_k = ua_learned;
-    if (std::isfinite(ua_effective) && ua_effective > 0.0f)
+      if (std::isfinite(ua_confidence))
+        z.ua_confidence = clamp_float_(ua_confidence, 0.0f, 1.0f, z.ua_confidence);
+      z.ua_observed_days = ua_observed_days;
+      if (std::isfinite(ua_effective) && ua_effective > 0.0f)
+        z.ua_effective_w_per_k = ua_effective;
+    } else if (z.ua_learned_w_per_k > 0.0f && z.ua_prior_w_per_k > 0.0f) {
+      // V6 has no learned value (not stored yet): keep Touch's own learning, which
+      // otherwise was reset to 0 days on every poll and never gained confidence.
+      z.ua_effective_w_per_k = physics::ua_effective_w_per_k(z.ua_prior_w_per_k, z.ua_learned_w_per_k,
+                                                             z.ua_confidence, z.ua_observed_days);
+    } else if (std::isfinite(ua_effective) && ua_effective > 0.0f) {
       z.ua_effective_w_per_k = ua_effective;
-    else if (std::isfinite(ua_prior) && ua_prior > 0.0f)
+    } else if (std::isfinite(ua_prior) && ua_prior > 0.0f) {
       z.ua_effective_w_per_k = ua_prior;
-    if (std::isfinite(ua_confidence))
-      z.ua_confidence = clamp_float_(ua_confidence, 0.0f, 1.0f, z.ua_confidence);
-    z.ua_observed_days = ua_observed_days;
+    }
     z.v6_data_revision = v6_revision;
     if (ble_mac != nullptr)
       copy_text_(z.ble_mac, sizeof(z.ble_mac), ble_mac);
@@ -1285,7 +1293,7 @@ HouseModel::UaDayFigures HouseModel::ua_day_figures(size_t i) const {
   return f;
 }
 
-size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
+size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity, bool learn) {
   size_t n = 0;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
     const UaDay day = ua_day_[i];
@@ -1296,6 +1304,11 @@ size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
     verdict.day = fig;
     LogicalRoom &room = rooms_[i];
     room.delivered_kwh_today = 0.0f;
+    if (!learn) {
+      // No known date before this one (lost store): the day is only a part of one.
+      verdict.verdict = UaVerdict::SHORT_DAY;
+      continue;
+    }
     if (!room.enabled || !room.include_in_house_temperature) {
       verdict.verdict = UaVerdict::EXCLUDED;
       continue;
