@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hp_phase.h"
+#include "close_margin.h"
 #include "valve_flush.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
@@ -945,6 +946,16 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t hp_phase_nonce_{0};
   bool hp_phase_release_pending_{false};
   void run_hp_phase_(uint32_t now_ms);
+  // House close margin (close_margin.h): while a room is cold, every V6 closes its warm
+  // rooms near their target. Part of house balance (same switch).
+  bool cm_active_{false};
+  bool cm_sent_active_{false};
+  int cm_coldest_zone_{-1};       // model zone index of the coldest room, -1 = none
+  float cm_deficit_k_{NAN};
+  uint32_t cm_push_ms_{0};
+  uint32_t cm_nonce_{0};
+  void run_close_margin_(uint32_t now_ms);
+  bool send_v6_close_margin_(const char *host, float margin_c, uint32_t ttl_s);
   // Heat pump diagnostics (hp_diagnostics.h): delivered heat vs. Odin's plan, tank mixing.
   ::lune_touch_hp_diag::State hp_diag_{};
   uint32_t flow_fit_saved_ms_{0};

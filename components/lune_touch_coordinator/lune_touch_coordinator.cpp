@@ -2469,6 +2469,7 @@ void LuneTouchCoordinator::poll_task_() {
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
       run_hp_phase_(esphome::millis());
+      run_close_margin_(esphome::millis());
       run_valve_flush_(esphome::millis());
       run_hp_diagnostics_(esphome::millis());
       run_problems_(esphome::millis());
@@ -18239,6 +18240,7 @@ bool LuneTouchCoordinator::set_house_balance_enabled(bool enabled) {
   if (changed) {
     hb_last_push_ms_ = 0;               // push (or release) on the next poll
     hb_release_pending_ = !enabled;
+    cm_push_ms_ = 0;                    // close margin follows the same switch
   }
   give_state_lock_();
   if (changed) {
@@ -18457,6 +18459,111 @@ void LuneTouchCoordinator::run_hp_phase_(uint32_t now_ms) {
     send_v6_hp_phase_(hosts[i], name, ttl_s);
 }
 
+// -----------------------------------------------------------------------------
+// House close margin (close_margin.h): while a room anywhere is outside its band on
+// the cold side, every approved V6 closes its warm rooms at target + 0.3 °C instead
+// of its own margin, so a warm manifold stops taking the cold room's water. Pushed on
+// a change and every 5 min with a 15 min TTL; cleared when the rooms are back (or
+// house balance is turned off), and V6 falls back to its own margin by itself.
+// -----------------------------------------------------------------------------
+void LuneTouchCoordinator::run_close_margin_(uint32_t now_ms) {
+  namespace cm = ::lune_touch_close_margin;
+  constexpr uint32_t PERIOD_MS = 5UL * 60UL * 1000UL;
+  constexpr uint32_t TTL_S = 15UL * 60UL;
+  constexpr size_t N = ::lune_touch::MAX_NODES;
+  constexpr size_t MAX_ROOMS = ::lune_touch::MAX_NODES * ::lune_touch::ZONES_PER_NODE;
+  char hosts[N][64]{};
+  size_t count = 0;
+  if (!take_state_lock_(100))
+    return;
+  cm::Room rooms[MAX_ROOMS]{};
+  size_t zone_of[MAX_ROOMS]{};
+  size_t n = 0;
+  for (size_t i = 0; i < model_.zone_count() && n < MAX_ROOMS; i++) {
+    const auto *zone = model_.zone(i);
+    const auto *live = model_.zone_live(i);
+    if (zone == nullptr || live == nullptr || !zone->enabled || zone->is_group_secondary || zone->unassigned)
+      continue;
+    // A room left out of the house temperature (or switched off in Touch) does not pull either.
+    const auto *room = model_.room_by_id(zone->room_id);
+    if (room != nullptr && (!room->enabled || !room->include_in_house_temperature))
+      continue;
+    // A sync group is one unit: V6 controls it on the members' mean.
+    const float temp = model_.group_mean_temperature_c(i);
+    rooms[n] = cm::Room{live->fresh && live->has_setpoint && std::isfinite(temp), temp, live->setpoint_c};
+    zone_of[n] = i;
+    n++;
+  }
+  const bool enabled = heat_source_.house_balance_enabled;
+  const auto r = cm::step(cm_active_, rooms, n);
+  const bool was_active = cm_active_;
+  cm_active_ = enabled && r.active;
+  cm_coldest_zone_ = r.coldest >= 0 ? static_cast<int>(zone_of[r.coldest]) : -1;
+  cm_deficit_k_ = r.deficit_k;
+  const bool changed = cm_active_ != cm_sent_active_;
+  // Send while active (refresh before the TTL lapses) and once to clear.
+  const bool due = changed || (cm_active_ && (cm_push_ms_ == 0 || now_ms - cm_push_ms_ >= PERIOD_MS));
+  char room_name[48]{};
+  if (cm_active_ != was_active && cm_coldest_zone_ >= 0) {
+    const auto *z = model_.zone(static_cast<size_t>(cm_coldest_zone_));
+    if (z != nullptr)
+      std::strncpy(room_name, z->room_name, sizeof(room_name) - 1);
+  }
+  if (due) {
+    for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+      const auto *node = model_.node(i);
+      if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+        continue;
+      const char *host = node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
+      if (host[0] == '\0')
+        continue;
+      std::strncpy(hosts[count], host, sizeof(hosts[count]) - 1);
+      count++;
+    }
+    cm_push_ms_ = now_ms == 0 ? 1 : now_ms;
+    cm_sent_active_ = cm_active_;
+  }
+  const bool active = cm_active_;
+  const float deficit = cm_deficit_k_;
+  give_state_lock_();
+  if (active != was_active) {
+    char msg[96];
+    if (active)
+      snprintf(msg, sizeof(msg), "close margin %.1f: %s %.1f K below target", cm::TIGHT_MARGIN_C,
+               room_name[0] != '\0' ? room_name : "a room", deficit);
+    else
+      snprintf(msg, sizeof(msg), "close margin released");
+    log_event_("info", "heat_source", msg);
+  }
+  if (count == 0 || current_epoch_s_() <= 0)
+    return;
+  for (size_t i = 0; i < count; i++)
+    send_v6_close_margin_(hosts[i], active ? cm::TIGHT_MARGIN_C : 0.0f, active ? TTL_S : 60);
+}
+
+bool LuneTouchCoordinator::send_v6_close_margin_(const char *host, float margin_c, uint32_t ttl_s) {
+  if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
+    return false;
+  const int64_t ts = current_epoch_s_();
+  char nonce[48];
+  snprintf(nonce, sizeof(nonce), "cm-%lld-%lu", static_cast<long long>(ts),
+           static_cast<unsigned long>(++cm_nonce_));
+  char payload[192];
+  snprintf(payload, sizeof(payload),
+           "{\"margin_c\":%.1f,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+           margin_c, static_cast<unsigned long>(ttl_s), static_cast<long long>(ts), nonce);
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/v1/close-margin", host);
+  char body[256];
+  int status = 0;
+  if (!post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+    // 404 = V6 firmware without the route; it keeps its own margin.
+    ESP_LOGD(TAG, "V6 close margin via %s failed (%d)", host, status);
+    return false;
+  }
+  return true;
+}
+
 bool LuneTouchCoordinator::send_v6_hp_phase_(const char *host, const char *phase, uint32_t ttl_s) {
   if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
     return false;
@@ -18522,6 +18629,18 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
     return;
   add(",\"valves_follow_hp\":{\"enabled\":%s,\"phase\":\"%s\"}",
       heat_source_.valves_follow_hp_enabled ? "true" : "false", ::lune_touch_hp_phase::name(hp_phase_));
+  {
+    char room_id[32]{};
+    const auto *z = cm_coldest_zone_ >= 0 ? model_.zone(static_cast<size_t>(cm_coldest_zone_)) : nullptr;
+    if (z != nullptr)
+      json_escape_(z->room_id, room_id, sizeof(room_id));
+    if (std::isfinite(cm_deficit_k_))
+      add(",\"close_margin\":{\"active\":%s,\"margin_c\":%.1f,\"coldest_room\":\"%s\",\"deficit_k\":%.2f}",
+          cm_active_ ? "true" : "false", ::lune_touch_close_margin::TIGHT_MARGIN_C, room_id, cm_deficit_k_);
+    else
+      add(",\"close_margin\":{\"active\":false,\"margin_c\":%.1f,\"coldest_room\":null,\"deficit_k\":null}",
+          ::lune_touch_close_margin::TIGHT_MARGIN_C);
+  }
   const auto basis = static_cast<::lune_touch_house_balance::Basis>(hb_basis_);
   add(",\"house_balance\":{\"enabled\":%s,\"basis\":\"%s\",\"weight_min\":%d,\"weight_max\":%d,"
       "\"weight_step\":%d,\"boards\":[",
