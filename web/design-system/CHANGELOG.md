@@ -1,5 +1,19 @@
 # Changelog — Lune Design System
 
+## Ikke udgivet
+
+- Touch' Rum-ark › Overblik: «Varm op» (`.sub` med `data-state="warm-idle|warming"`): «Varm nu» og «Varm billigt», og mens rummet varmes op, én linje med tilstand og «Stop opvarmning». Nye tilstande `warm-idle` og `warming` i reglerne for tilstandsafhængige handlinger (6.1b). DESIGN.md 15.10.
+
+## 2.5.0
+
+- Ny tilstand **Opvarmningsplan** («Heating Plan») på Touch mellem Hjem og System (`"modes": ["home", "plan", "sys"]`, `#m-plan`, `#v-plan-house`): skyggeplanlæggerens side med Plan for 48 timer, Rum-forventning, Lært model og Plan mod faktisk, og planlæggerens ark (`sheet-planner`) med Overblik og Indstillinger (strategi som typegruppen `st`: komfort først / vægtet / pris først; mindste og største effekt; maks. fremløb). Kun planlæggerens egne tal; sammenligning med Odin hører til Home Assistant. DESIGN.md 15.11.
+- `lds_build.py` kender tilstanden `plan` (kræver `home`) og genererer dens visning pr. omfang som `home`.
+- `.plan` regner i timer af `--plan-h` (24 som før, 48 med `.plan--48`). Nye spor: `.plan-lane--out` (planlagt varme, samme søjler som Odin-sporet), `.plan-lane--flow` (fremløbsmål som trappekurve, maks. fremløb stiplet) og `.plan-lane--room` (rummets komfortbånd, forventet temperatur, timer under båndet og opladning/forvarmning bag kurven). Forklaringer `.lflow`, `.lmax`, `.lrb`, `.llo`.
+- `.view-head > .vh-end`: én handling til højre i et sidehoved.
+- `lune-forms.js`: andre tilstande end Hjem skriver deres `data-hash` i adressen (fx `#opvarmningsplan`), ikke kun System.
+- Navbaren: sidekolonnerne må krympe (`minmax(0, 1fr)`), og med 3+ tilstande viser tablet (768–1023 px) de inaktive tilstande som ikon (genereret af `lds_build.py`), så «Opvarmningsplan» ikke skubber værktøjerne ind over pillen.
+- Touch-eksemplet: ark uden historik udelader fanen Historik (15.3).
+
 ## 2.4.1
 
 - Hjem-felternes grafer (`.ht-viz`) har en timeakse (`.ht-x`) som den kompakte plan: klokkeslæt hver 6. time og «Nu» i den ende, der er nu (Opvarmning: de seneste 24 t, Vejr: de næste 24 t). DESIGN.md 15.10.

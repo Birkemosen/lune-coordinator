@@ -232,6 +232,75 @@ int main() {
     run(s, t0, 32, [](uint32_t tt) { return heating(9.0f, 5.0f, tt); });
     assert(s.over);
   }
+  // --- Flow against the open loops. The house of 14–24 Nov 2026: 3.9 + 0.09 l/min per m².
+  {
+    auto flowing = [](float area, float sec, uint32_t tt) {
+      Input in = heating(6.0f, 6.0f, tt);
+      in.primary_lmin = 19.0f;
+      in.open_area_m2 = area;
+      in.secondary_lmin = sec;
+      return in;
+    };
+    auto house = [](float area) { return 3.9f + 0.09f * area; };
+    State s;
+    uint32_t t = 1000;
+    // Not fitted yet: learning, nothing raised even at half the flow.
+    t = run(s, t, 30, [&](uint32_t tt) { return flowing(140.0f, 8.0f, tt); });
+    assert(s.flow == FlowCheck::Learning && !s.flow_low);
+    s = State{};
+    // Learn over a spread of open areas, the valves steady for an hour at a time.
+    const float areas[] = {60.0f, 100.0f, 140.0f, 180.0f, 220.0f, 120.0f};
+    for (int rep = 0; rep < 2; rep++)
+      for (float a : areas)
+        t = run(s, t, 60, [&](uint32_t tt) { return flowing(a, house(a), tt); });
+    float fa = NAN, fb = NAN;
+    assert(s.fit.coeffs(&fa, &fb));
+    assert(std::fabs(fa - 3.9f) < 0.2f && std::fabs(fb - 0.09f) < 0.005f);
+    assert(s.flow == FlowCheck::Ok && s.fit_dirty);
+    // Few loops open at night: low flow that matches them is fine.
+    t = run(s, t, 60, [&](uint32_t tt) { return flowing(60.0f, house(60.0f), tt); });
+    assert(s.flow == FlowCheck::Ok && !s.flow_low);
+    // A clogging filter: 60 % of the expected flow for 30 min raises LOW, not before.
+    const float ex = house(140.0f);
+    t = run(s, t, 25, [&](uint32_t tt) { return flowing(140.0f, 0.6f * ex, tt); });
+    assert(!s.flow_low);
+    Edges e;
+    t = run(s, t, 20, [&](uint32_t tt) { return flowing(140.0f, 0.6f * ex, tt); }, &e);
+    assert(s.flow_low && s.flow == FlowCheck::Low);
+    // While raised the fit does not learn the fault (the 30 min before the raise move it
+    // only slightly: half-life 3 days of samples).
+    const float n_raised = s.fit.n;
+    float a1 = NAN, b1 = NAN, a2 = NAN, b2 = NAN;
+    s.fit.coeffs(&a1, &b1);
+    assert(std::fabs(a1 - fa) < 0.3f && std::fabs(b1 - fb) < 0.005f);
+    t = run(s, t, 30, [&](uint32_t tt) { return flowing(140.0f, 0.6f * ex, tt); });
+    s.fit.coeffs(&a2, &b2);
+    assert(s.flow_low && s.fit.n == n_raised && a2 == a1 && b2 == b1);
+    // Back to normal: clears after 30 min at ≥ 0.8 ×.
+    t = run(s, t, 35, [&](uint32_t tt) { return flowing(140.0f, ex, tt); });
+    assert(!s.flow_low && s.flow == FlowCheck::Ok);
+    // A valve that does not close: 1.5 × for 30 min raises HIGH.
+    t = run(s, t, 35, [&](uint32_t tt) { return flowing(140.0f, 1.5f * ex, tt); });
+    assert(s.flow_high && !s.flow_low);
+    t = run(s, t, 35, [&](uint32_t tt) { return flowing(140.0f, ex, tt); });
+    assert(!s.flow_high);
+    // Valves moving: not judged until they have held 10 min.
+    t = run(s, t, 9, [&](uint32_t tt) { return flowing(200.0f, 0.5f * house(200.0f), tt); });
+    assert(s.flow == FlowCheck::Idle);
+    // Below 8 l/min expected (one small loop open): never judged.
+    State q = s;
+    q.flow_low = false;
+    t = run(q, t, 60, [&](uint32_t tt) { return flowing(20.0f, 2.0f, tt); });
+    assert(!q.flow_low && q.flow == FlowCheck::Idle);
+    // A valve flush holds the valves: not judged, not learned.
+    State f = s;
+    const float n0 = f.fit.n;
+    t = run(f, t, 60, [&](uint32_t tt) { Input in = flowing(140.0f, 0.4f * ex, tt); in.valve_flush = true; return in; });
+    assert(!f.flow_low && f.fit.n == n0);
+    // A stale valve: unknown.
+    t = run(f, t, 2, [&](uint32_t tt) { Input in = flowing(140.0f, ex, tt); in.open_area_m2 = NAN; return in; });
+    assert(f.flow == FlowCheck::Unknown);
+  }
   std::puts("hp_diagnostics: ok");
   return 0;
 }

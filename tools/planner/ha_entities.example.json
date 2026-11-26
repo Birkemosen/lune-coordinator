@@ -1,0 +1,23 @@
+{
+  "asgard": {
+    "compressor_hz": "sensor.ecodan_heatpump_compressor_frequency",
+    "operation_mode": "sensor.ecodan_heatpump_operation_mode",
+    "output_kw": "sensor.ecodan_heatpump_output_power",
+    "hp_feed_c": "sensor.ecodan_heatpump_feed_temp",
+    "hp_return_c": "sensor.ecodan_heatpump_return_temp",
+    "hp_flow_lpm": "sensor.ecodan_heatpump_flow_rate",
+    "z1_flow_setpoint_c": "sensor.ecodan_heatpump_zone_1_setpoint_value",
+    "z1_feed_c": "sensor.ecodan_heatpump_z1_feed_temp",
+    "z1_return_c": "sensor.ecodan_heatpump_z1_return_temp",
+    "ds18_zone_feed_c": "sensor.ecodan_heatpump_ds18x20_sensor_0",
+    "ds18_zone_return_c": "sensor.ecodan_heatpump_ds18x20_sensor_1",
+    "outdoor_c": "sensor.ecodan_heatpump_outside_temp",
+    "defrost": "binary_sensor.ecodan_heatpump_defrost",
+    "room_c": "number.ecodan_heatpump_virtual_thermostat_input_z1",
+    "dhw_tank_c": "sensor.ecodan_heatpump_dhw_current_temp"
+  },
+  "rooms": [
+    {"index": 0, "temp": "sensor.lune_v6_xxxxxx_zone_1_temperature", "valve": "sensor.lune_v6_xxxxxx_zone_1_valve_position"},
+    {"index": 1, "temp": "sensor.lune_v6_xxxxxx_zone_2_temperature", "valve": "sensor.lune_v6_xxxxxx_zone_2_valve_position"}
+  ]
+}

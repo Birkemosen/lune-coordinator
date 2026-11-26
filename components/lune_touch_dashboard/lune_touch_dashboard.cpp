@@ -918,6 +918,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/planner") == 0) {
+      if (coordinator_)
+        coordinator_->write_planner_json(data_buf_, DATA_BUF_SIZE);
+      else
+        snprintf(data_buf_, DATA_BUF_SIZE, "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/heat-source/control") == 0) {
       if (coordinator_)
         coordinator_->write_heat_source_control_json(data_buf_, DATA_BUF_SIZE);
@@ -1060,7 +1068,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "name", name, sizeof(name));
     const bool accepted = coordinator_->set_node_profile(node_id, name, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 404);
-  } else if (strstr(path, "/remove") != nullptr) {
+  } else if (strncmp(path, "/nodes/", 7) == 0 && strstr(path, "/remove") != nullptr) {
     char node_id[32]{};
     if (!extract_middle_segment(path, "/nodes/", "/remove", node_id, sizeof(node_id))) {
       send_error_(api, 404, "unknown_route", "Unknown node remove route");
@@ -1070,7 +1078,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "confirm", confirm, sizeof(confirm));
     const bool accepted = coordinator_->remove_node(node_id, confirm, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 404);
-  } else if (strstr(path, "/room") != nullptr) {
+  } else if (strncmp(path, "/zones/", 7) == 0 && strstr(path, "/room") != nullptr) {
     char room_id[40]{};
     if (!extract_middle_segment(path, "/zones/", "/room", room_id, sizeof(room_id))) {
       send_error_(api, 404, "unknown_route", "Unknown atomic room route");
@@ -1232,6 +1240,41 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     const bool accepted = coordinator_->set_house_target(target);
     snprintf(data_buf_, DATA_BUF_SIZE, accepted ? "{\"result\":\"stored\"}" : "{\"result\":\"rejected\",\"error\":\"house_target_rejected\"}");
     send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/planner/settings") == 0) {
+    // Shadow planner settings; absent fields keep their value. Commands nothing.
+    auto ps = coordinator_->get_planner_settings();
+    char strategy[16]{};
+    const bool has_strategy = !api_arg(api, "strategy").empty() ||
+                              (api.json_body != nullptr && !(*api.json_body)["strategy"].isNull());
+    if (has_strategy) {
+      parse_text_param(api, api.json_body, "strategy", strategy, sizeof(strategy));
+      if (!lune_touch_coordinator::planner_settings::parse_strategy(strategy, &ps.strategy)) {
+        send_error_(api, 400, "invalid_param", "strategy must be comfort, weighted or price");
+        return;
+      }
+    }
+    float v = NAN;
+    if (parse_float_param(api, api.json_body, "comfort_weight_eur", &v)) ps.comfort_weight_eur = v;
+    if (parse_float_param(api, api.json_body, "min_output_kw", &v)) ps.min_output_kw = v;
+    if (parse_float_param(api, api.json_body, "max_output_kw", &v)) ps.max_output_kw = v;
+    if (parse_float_param(api, api.json_body, "max_flow_c", &v)) ps.max_flow_c = v;
+    const bool accepted = coordinator_->set_planner_settings(ps);
+    if (accepted)
+      coordinator_->write_planner_json(data_buf_, DATA_BUF_SIZE);
+    else
+      snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    send_write_result_(api, accepted, 503);
+  } else if (strcmp(path, "/planner/history") == 0) {
+    // Seed the shadow planner's hourly history: {"hex": "<LUNH house records>"}, at most
+    // 30 records a request (the POST body limit). Fills only hours Touch does not have.
+    const char *hex = api.json_body != nullptr ? (*api.json_body)["hex"].as<const char *>() : nullptr;
+    const int taken = coordinator_->seed_planner_history(hex);
+    if (taken < 0) {
+      send_error_(api, 400, "invalid_param", "hex must be whole history records, and the planner must be running");
+      return;
+    }
+    snprintf(data_buf_, DATA_BUF_SIZE, "{\"result\":\"stored\",\"seeded\":%d}", taken);
+    send_write_result_(api, true, 400);
   } else if (strcmp(path, "/weather/settings") == 0) {
     // Either field alone is a valid save (the solar switch saves on its own).
     float max_boost_c = 1.5f;
@@ -1423,6 +1466,16 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     send_write_result_(api, accepted, 400);
   } else if ([&]() {
                char room_id[48]{};
+               return extract_middle_segment(path, "/rooms/", "/warmup", room_id, sizeof(room_id));
+             }()) {
+    char room_id[48]{};
+    extract_middle_segment(path, "/rooms/", "/warmup", room_id, sizeof(room_id));
+    char mode[16]{};
+    parse_text_param(api, api.json_body, "mode", mode, sizeof(mode));
+    const bool accepted = coordinator_->room_warmup(room_id, mode, data_buf_, DATA_BUF_SIZE);
+    send_write_result_(api, accepted, strstr(data_buf_, "within_band") != nullptr ? 409 : 400);
+  } else if ([&]() {
+               char room_id[48]{};
                return extract_middle_segment(path, "/rooms/", "/sensor", room_id, sizeof(room_id));
              }()) {
     char room_id[48]{};
@@ -1596,6 +1649,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     num("energy_tax", "elafgift_dkk", &update.energy_tax);
     num("markup", "markup_dkk", &update.markup);
     num("vat_pct", nullptr, &update.vat_pct);
+    num("reference_price", nullptr, &update.reference_price);
     num("odin_fixed_price", nullptr, &update.odin_fixed_price);
     const bool accepted = coordinator_->set_price_settings(update, data_buf_, DATA_BUF_SIZE);
     memset(token, 0, sizeof(token));

@@ -10,6 +10,8 @@ in the linked docs.
 
 - [House temperature](#house-temperature)
 
+**[Heating Plan](#heating-plan)**
+
 **[Sheets](#sheets)**
 
 - [Heating](#heating)
@@ -104,6 +106,50 @@ at least 30 minutes), from the next hour for the room's floor lag + 2 h (3–6 h
 least an hour to plan heat that reaches the room. Raising the whole house for a room whose valve
 still has room to open would only overheat the others. The dashboard still shows the real average. Authority is Touch when it holds the lease.
 **How is it calculated?** in the Heat sheet shows each room's weight.
+
+---
+
+## Heating Plan
+
+**Opvarmningsplan** / **Heating Plan** in the menu between Home and System is the page of
+Touch's own planner. It runs in **shadow mode**: it computes and logs what it would do and
+sends nothing to the heat pump or Odin. Odin keeps controlling the heat pump. The page fills in
+as the planner gets data; until then each panel says so, and missing values show «—».
+
+<a id="planner-plan"></a>
+**48-hour plan.** The heat the planner would order per hour (bars) and the flow temperature it
+would send (line), over the electricity price. Hot water and legionella hours are hatched. It
+spreads the house's heat over the cheapest hours it can while every room stays in its comfort
+band, and prefers longer runs at lower output when that pays (lower flow temperature, better COP).
+It counts defrosts too: in frost the heat pump defrosts more, and each defrost costs electricity
+without heat. Before a sunny morning it may let the house dip a little below the band (at most
+0.5 °C) instead of charging the floors for heat the sun will bring.
+
+<a id="planner-rooms"></a>
+**Room forecast.** The temperature the planner expects per room, hour by hour, against the room's
+comfort band. Hatched hours are a charge before wind or cold from the room's exposed side; an edge
+at the bottom means the room is expected below its band.
+
+<a id="planner-model"></a>
+**Learned model.** What the planner has learned from measurements: the house's heat loss (kW/K,
+more in wind), its thermal capacity (kWh/K), how much heat the floor circuit takes per degree of
+flow temperature, the heat pump's COP by output and outdoor temperature, the solar and wind
+factors and hot-water use. **Learning** means the value still moves; the plan uses it with care.
+It starts from the heat pump's and Odin's history and then learns on its own.
+
+<a id="planner-accuracy"></a>
+**Plan vs actual.** The planner measured against what happened: forecast against measured house
+temperature, planned against delivered heat, and planned against actual cost. Only the planner's
+own numbers are here; the comparison with Odin is built in Home Assistant. The planner also
+scores its forecasts 1, 3, 6, 12 and 24 hours ahead against what happened, for the house and each
+room, next to simply assuming the temperature stays where it is.
+
+<a id="planner-settings"></a>
+**Settings** (Open settings): the strategy — **Comfort first** (default: no room below target −
+comfort band, then the cheapest plan), **Weighted** (a degree below the band for an hour costs the
+amount you set, so the plan may trade a little comfort for price) or **Price first** (only the
+house average is kept in the band) — and the heat pump's lowest and highest output and highest
+flow temperature. Saving changes the shadow plan only.
 
 ---
 
@@ -249,16 +295,17 @@ location; check them and save.
 
 
 Forecast wind and outdoor temperature raise selected rooms ahead of cold fronts.
-Walls, wind and solar factors on each room decide which spaces preload.
-Preload starts when the load from wind and cold on a room passes 1.0:
+Walls, wind and solar factors on each room decide which spaces preload. From the forecast,
+Touch works out each room's heat loss per hour (wind on its facades and the difference to
+outdoors, less the sun) against what the room usually loses.
 
-    load = wind factor × facade alignment × (wind m/s ÷ 10) × (ΔT indoor–outdoor ÷ 10)
-           − solar factor × irradiance ÷ 800
-
-Each load unit adds 0.5 °C, at most the **max preload boost** (1.5 °C). A fully exposed room
-(factor 1.0, wind straight on the facade) at 0 °C outside therefore starts preloading at about
-5 m/s; a room with factor 0.5 needs about 10 m/s. Commands live for 75 minutes and are not
-repeated within 30 minutes.
+Preload is for **wind that comes**, not wind that stays: it starts only where a room's loss
+climbs to 1.5 × its usual, or past what its floor can give, and does so within a few hours
+(twice the floor's response time and an hour, 3–6 h). A steady breeze, even a stiff one, does
+not preload: the floors keep up with it on their own. Calm turning to storm does: the room is
+raised by up to the **max preload boost** (1.5 °C), from the floor's response time and an hour
+before the loss climbs, so the floor is warm when the wind arrives. Commands live for 75
+minutes and are not repeated within 30 minutes.
 
 <a id="solar-holdoff"></a>
 
@@ -347,6 +394,21 @@ page. Zones are configured on the V6 itself, not in Touch.
 **Overview** — temperature, target and status, the loops from V6 (valve, return) and the
 expected next 24 hours. **History** — recent readings.
 
+<a id="room-warmup"></a>
+
+**Warm up** (Overview) — when a room has gone cold, for example after airing, and should be
+back sooner than the house would bring it:
+
+- **Heat now** asks Odin for more heat from this hour, whatever the price.
+- **Heat cheaply** waits for cheaper hours first, as far as the time allows.
+
+Touch lifts Odin's comfort band by what the house and the room need, until the room is back
+within 0.5 °C of its target, at most 6 hours; **Stop warm-up** ends it sooner. The whole house
+gets warmer water while it runs, and V6 sends it to the rooms that are open. It needs **Let
+Touch lift Odin's comfort band** on (Heat source › Settings), and it does not survive a
+restart. Home Assistant has the same as the action `room_warmup` (room name, mode `now`,
+`cheap` or `stop`) and the sensor «Room warm-up».
+
 **Settings** — only what Touch owns:
 
 - **House temperature** — include the room in the house temperature, and its weight.
@@ -357,6 +419,9 @@ expected next 24 hours. **History** — recent readings.
   Touch also **learns** both from the room's own data: each hour it compares how fast the room
   warms or cools with outdoor temperature, wind on its facades, sun and the heat from its
   loops. The sheet shows the learned values and how many sunny and windy hours they rest on.
+  The learned wind is the extra heat loss with 10 m/s straight onto the room's exterior walls
+  («+100 % loss at 10 m/s» doubles it), up to +200 %; a room with a door or a roof window on
+  the windward side can lose well over twice as much.
   Touch uses them only after enough hours (20 sunny, 30 windy) and only while the field is at
   its default (sun 0.30, wind 0.50); a value you set yourself always comes first.
 - **From V6** — area and exterior walls, read from the V6 (read-only). **Edit on V6 ›** opens

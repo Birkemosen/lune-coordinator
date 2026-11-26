@@ -73,12 +73,16 @@ V6_ZONES_OUT ?= /tmp/test_lune_touch_v6_zones_parse
 FLOW_TRIM_OUT ?= /tmp/test_lune_touch_flow_trim
 HP_HISTORY_OUT ?= /tmp/test_lune_touch_hp_history
 ENERGY_PRICE_OUT ?= /tmp/test_lune_touch_energy_price
+PLANNER_DIR := components/planner
+PLANNER_OUT ?= /tmp/test_lune_touch_planner
+PLANNER_REPLAY ?= /tmp/lune_planner_replay
+HISTORY ?= planner-history
 
 .PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy upload ota-size-check ota deploy install-registry-partition monitor \
         config-mini build-mini deploy-mini ota-mini release-mini release-deploy-mini \
         config-mini-n8r8 build-mini-n8r8 deploy-mini-n8r8 release-firmware release-image dashboard touch-ui dashboard-build \
         design-tokens design-verify \
-        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-problems test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-history test-energy-price clean
+        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-circulation-pump test-hp-phase test-comfort-signal test-hp-diagnostics test-problems test-close-margin test-simulation test-dashboard test-display test-v6-zones test-flow-trim test-hp-history test-history test-energy-price test-planner planner-history planner-replay planner-docker clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
@@ -108,6 +112,8 @@ help:
 	@echo "  make design-verify    Check committed LDS artifacts (LVGL)"
 	@echo "  make test-forecast    Run forecast preload-model tests"
 	@echo "  make test-coordinator Run coordinator model tests"
+	@echo "  make test-planner     Run shadow-planner host tests"
+	@echo "  make planner-replay HISTORY=dir  Replay the planner over dir/house.bin (+ rooms.bin)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build"
@@ -340,6 +346,52 @@ test-energy-price:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/energy_price/test_energy_price.cpp -o $(ENERGY_PRICE_OUT)
 	$(ENERGY_PRICE_OUT)
 
+test-planner:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_history_record.cpp -o $(PLANNER_OUT)-record
+	$(PLANNER_OUT)-record
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_planner_context.cpp -o $(PLANNER_OUT)-context
+	$(PLANNER_OUT)-context
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_house_model.cpp -o $(PLANNER_OUT)-house
+	$(PLANNER_OUT)-house
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_heat_pump_model.cpp -o $(PLANNER_OUT)-hp
+	$(PLANNER_OUT)-hp
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_solver.cpp -o $(PLANNER_OUT)-solver
+	$(PLANNER_OUT)-solver
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_hour_log.cpp -o $(PLANNER_OUT)-hourlog
+	$(PLANNER_OUT)-hourlog
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_room_forecast.cpp -o $(PLANNER_OUT)-rooms
+	$(PLANNER_OUT)-rooms
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/test_forecast_score.cpp -o $(PLANNER_OUT)-score
+	$(PLANNER_OUT)-score
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/planner/test_planner_settings.cpp -o $(PLANNER_OUT)-settings
+	$(PLANNER_OUT)-settings
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/replay.cpp -o $(PLANNER_REPLAY)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_house.cpp -o $(PLANNER_REPLAY)-house
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_learn.cpp -o $(PLANNER_REPLAY)-learn
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_rooms.cpp -o $(PLANNER_REPLAY)-rooms
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_room_forecast.cpp -o $(PLANNER_REPLAY)-roomfc
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_heat_pump.cpp -o $(PLANNER_REPLAY)-hp
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(PLANNER_DIR) tests/planner/eval_plan.cpp -o $(PLANNER_REPLAY)-plan
+
+# Build HISTORY/house.bin from exported CSVs (docs/planner_history_format.md):
+#   make planner-history ASGARD=asgard.csv ODIN=odin.csv ROOMS=rooms.csv WEATHER=weather.csv
+planner-history:
+	$(PYTHON) tools/planner/build_history.py --asgard $(ASGARD) $(if $(ODIN),--odin $(ODIN)) \
+		$(if $(ROOMS),--rooms $(ROOMS)) $(if $(WEATHER),--weather $(WEATHER)) --out-dir $(HISTORY)
+
+planner-replay: test-planner
+	$(PLANNER_REPLAY) $(HISTORY)/house.bin $(wildcard $(HISTORY)/rooms.bin)
+	$(PLANNER_REPLAY)-house $(HISTORY)/house.bin
+	$(PLANNER_REPLAY)-hp $(HISTORY)/house.bin
+	$(PLANNER_REPLAY)-learn $(HISTORY)/house.bin | tail -4
+	$(PLANNER_REPLAY)-plan $(HISTORY)/house.bin --target 22.5 | tail -3
+	$(if $(wildcard $(HISTORY)/rooms.bin),$(PLANNER_REPLAY)-rooms $(HISTORY)/house.bin $(HISTORY)/rooms.bin)
+	$(if $(wildcard $(HISTORY)/rooms.bin),$(PLANNER_REPLAY)-roomfc $(HISTORY)/house.bin $(HISTORY)/rooms.bin)
+
+# Same replay in a container: docker run --rm -v $$PWD/$(HISTORY):/data lune-planner
+planner-docker:
+	docker build -f tools/planner/Dockerfile -t lune-planner .
+
 test-circulation-pump:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/circulation_pump/test_circulation_pump.cpp -o $(CIRCULATION_PUMP_OUT)
 	$(CIRCULATION_PUMP_OUT)
@@ -365,11 +417,15 @@ test-hp-phase:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/hp_phase/test_hp_phase.cpp -o /tmp/test_lune_touch_hp_phase
 	/tmp/test_lune_touch_hp_phase
 
+test-close-margin:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/close_margin/test_close_margin.cpp -o /tmp/test_lune_touch_close_margin
+	/tmp/test_lune_touch_close_margin
+
 test-simulation:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator -I components/forecast -I ../lune/lune-v6/components/lv6_dashboard components/lune_touch_coordinator/coordinator_model.cpp components/forecast/forecast_model.cpp tests/simulation/test_end_to_end_simulation.cpp -o $(SIMULATION_OUT) -lm
 	$(SIMULATION_OUT)
 
-test: design-verify test-forecast test-coordinator test-valve-flush test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-history test-energy-price test-circulation-pump test-hp-diagnostics test-problems test-simulation test-dashboard test-display
+test: design-verify test-forecast test-coordinator test-valve-flush test-asgard-url test-asgard-adapter test-odin-plan test-v6-zones test-flow-trim test-hp-history test-history test-energy-price test-planner test-circulation-pump test-hp-diagnostics test-problems test-close-margin test-simulation test-dashboard test-display
 
 test-dashboard:
 	sh tests/dashboard/test_phase8_overview.sh

@@ -234,6 +234,8 @@ struct ZoneLiveState {
   bool headroom{false};
   HeatRecommendation recommendation{HeatRecommendation::HOLD};
   bool heat_demand_fresh{false};
+  // Runtime-only floor response time from V6 (learned, else its build prior); 0 = unknown.
+  float floor_lag_h{0.0f};
 };
 
 struct NodeHeatDemand {
@@ -379,6 +381,10 @@ struct StrategySnapshot {
   /// Share of the house (by weight) in rooms that lag beyond the band and may drive:
   /// one or two such rooms only open the top of Odin's band (odin_comfort.h).
   float lagging_share{0.0f};
+  /// Largest deficit (target − temp) of any contributing room, whether or not it may
+  /// drive: a room this far behind may call for heat on its own (odin_comfort.h ColdRoomCall).
+  float coldest_deficit_c{0.0f};
+  char coldest_room_id[32]{};
   // T2: Odin UA-prior calibration status.
   char ua_calibration_status[16]{"uncalibrated"};  // calibrated | uncalibrated | blocked
   char ua_calibration_reason[32]{"unknown"};
@@ -638,7 +644,26 @@ class HouseModel {
     float confidence{0.0f};
     uint16_t observed_days{0};
   };
-  size_t close_ua_day(UaDayResult *out, size_t capacity);
+  size_t close_ua_day(UaDayResult *out, size_t capacity, bool learn = true);
+  // What the last midnight made of each room's day, and why (GET /rooms ua_day).
+  enum class UaVerdict : uint8_t { NONE, LEARNED, EXCLUDED, SHORT_DAY, NO_HEAT, MILD, NOT_STEADY, OUT_OF_BAND };
+  static const char *ua_verdict_name(UaVerdict v);
+  struct UaDayFigures {
+    float hours{0.0f};
+    float kwh{0.0f};
+    float mean_dt_k{std::numeric_limits<float>::quiet_NaN()};
+    float net_change_k{std::numeric_limits<float>::quiet_NaN()};
+    float ua_est_w_per_k{std::numeric_limits<float>::quiet_NaN()};
+  };
+  struct UaDayClose {
+    UaVerdict verdict{UaVerdict::NONE};
+    UaDayFigures day{};
+  };
+  // The day so far; ua_est_w_per_k is what midnight would learn from it now.
+  UaDayFigures ua_day_figures(size_t room_index) const;
+  UaDayClose ua_last_close(size_t room_index) const {
+    return room_index < MAX_HOUSE_ROOMS ? ua_close_[room_index] : UaDayClose{};
+  }
   // The day's UA totals per room, kept across a restart (Touch stores them hourly):
   // a flash mid-day otherwise left the day short of UA_DAY_MIN_HOURS.
   struct UaDayPersist {
@@ -682,6 +707,7 @@ class HouseModel {
                                    bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
                                    bool has_valve = false);
   // Apply V6 group membership for a zone binding. Secondary members are detached from rooms.
+  bool update_zone_floor_lag(size_t node_index, size_t zone_index, float floor_lag_h);
   bool update_zone_group_membership(size_t node_index, size_t zone_index,
                                     uint8_t group_primary_zone_1based, uint8_t members_mask,
                                     bool is_primary);
@@ -721,6 +747,10 @@ class HouseModel {
   const LogicalRoom *room_by_id(const char *room_id) const;
   const ZoneBinding *zone(size_t index) const;
   const ZoneLiveState *zone_live(size_t index) const;
+  /// A V6 sync group's temperature as V6 controls it: the mean of the members' fresh,
+  /// plausible sensors (the zone's own reading when it is not a group primary with
+  /// members). NAN when none.
+  float group_mean_temperature_c(size_t index) const;
   const ZoneHistory *zone_history(size_t index) const;
   size_t node_count() const { return node_count_; }
   size_t zone_count() const { return zone_count_; }
@@ -768,6 +798,7 @@ class HouseModel {
     float last_c{std::numeric_limits<float>::quiet_NaN()};
   };
   UaDay ua_day_[MAX_HOUSE_ROOMS]{};
+  UaDayClose ua_close_[MAX_HOUSE_ROOMS]{};
   float ua_cv_[MAX_HOUSE_ROOMS]{};    // spread of daily estimates (EWMA, relative)
   float ua_trend_[MAX_HOUSE_ROOMS]{};  // daily EWMA; written once it moves ≥ 10 % past the gate
   PairedNode nodes_[MAX_NODES]{};

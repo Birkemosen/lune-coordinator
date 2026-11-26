@@ -59,6 +59,25 @@ int main() {
   assert(std::fabs(wind_alignment(8, 270.0f) - 1.0f) < 0.01f);
   assert(wind_alignment(1 | 8, 90.0f) < 0.01f);
   assert(wind_alignment(0, 270.0f) == 0.0f);
+  // A learned exposure above the presets' 1: exposure × WIND_LOSS_FACTOR is the extra loss
+  // at 10 m/s head-on, so 1.0 learned (exposure 1/0.6) doubles it; capped at WIND_EXPOSURE_MAX.
+  {
+    Params p{};
+    Room r{};
+    r.area_m2 = 20.0f;
+    r.setpoint_c = 22.0f;
+    r.ua_w_per_k = 20.0f;
+    r.exterior_walls = 8;
+    r.solar_gain = 0.0f;
+    Hour h{};
+    h.temp_c = 2.0f;
+    h.wind_ms = 10.0f;
+    h.wind_dir_deg = 270.0f;
+    r.wind_exposure = 1.0f / WIND_LOSS_FACTOR;
+    assert(std::fabs(hour_loss_w(h, r, p) - 2.0f * 400.0f) < 1.0f);
+    r.wind_exposure = 20.0f;
+    assert(std::fabs(hour_loss_w(h, r, p) - (1.0f + WIND_LOSS_FACTOR * WIND_EXPOSURE_MAX) * 400.0f) < 1.0f);
+  }
 
   // Wind raises loss; sun lowers it.
   {
@@ -90,6 +109,19 @@ int main() {
                 "charge %.0f h, start in %d h, insufficient %d\n",
                 d.floor_capacity_w, d.peak_loss_w, d.deficit_kwh, d.store_c, d.charge_hours,
                 d.start_in_h, d.insufficient ? 1 : 0);
+  }
+
+  // A slower floor starts charging earlier: the margin is its response time.
+  {
+    Hour h[24];
+    storm_day(h);
+    Room r = timber_room();
+    r.floor_lag_h = 1.0f;
+    const Decision base = plan(h, 24, 0, r, p);
+    assert(base.start_in_h == plan(h, 24, 0, timber_room(), p).start_in_h);  // = default margin
+    r.floor_lag_h = 3.0f;
+    const Decision slow = plan(h, 24, 0, r, p);
+    assert(slow.start_in_h == base.start_in_h - 2);
   }
 
   // Concrete, sheltered room: the same storm stays within floor capacity.

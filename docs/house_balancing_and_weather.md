@@ -68,7 +68,10 @@ stops early. A single V6 cannot tell "surplus" from "another manifold's demand".
 
 Therefore, under a Touch lease, **only Touch arms absorb**, because only Touch sees all
 manifolds and the Odin plan:
-- **Odin heat window** (cheap/planned surplus): all zones, house-wide.
+- **Odin pre-buffer** (Odin's reason says thermal buffer): every room at most a comfort
+  band above its target. A planned heat hour alone is heating, not pre-buffering, and
+  arms nothing: the rooms below target are heated by the load law, and the others close
+  at target + overheat margin.
 - **Slab charge** (section 5): only the rooms that need stored heat, per zone
   (`POST /api/v1/zones/{z}/absorb-arm` / `absorb-disarm` on V6).
 
@@ -153,8 +156,9 @@ nothing about stored heat.
 - **Store**: `ΔT = E / C_slab`, capped at the house max boost (default 1.5 °C).
   `insufficient = true` when even the cap cannot cover `E`.
 - **Start**: walking back from the episode, accumulate spare floor power
-  `P_floor − P_loss` until the store is covered; start that many hours before, plus a 1 h
-  margin.
+  `P_floor − P_loss` until the store is covered; start that many hours before, plus the
+  room's floor response time from V6 (`floor_lag_h`: learned per loop, else from the floor's
+  build; 1 h when V6 sends none).
 
 **Action while the charge window is open** (from start to the end of the episode):
 - the room's setpoint offset is raised to at least `ΔT`, and
@@ -245,7 +249,29 @@ Enable with `POST /heat-source/control {"odin_enabled":1}` (Touch UI: Heat sourc
   setpoint) only by `floor_share` of it: twice the share of the house (by weight) in rooms
   that lag more than 0.3 °C and may drive, between 0.2 and 1. One or two lagging rooms
   thus let Odin heat more where it is cheap without forcing it to, and V6 sends that heat
-  to them; half the house or more moves the whole band. With `floor_share` < 1 the window
+  to them; half the house or more moves the whole band.
+- **A cold room calls for heat.** A room more than twice the comfort band (0.5 °C, so
+  1.0 °C) below its target calls for heat on its own, however small its share and whether
+  or not its manifold reports RAISE (`ColdRoomCall`): the lift is the full `max_lift_c`, it
+  moves the whole band (floor share 1) and starts this hour, so Odin must heat instead of
+  waiting for cheap hours while the room keeps falling. The call holds until the room is
+  back within the band (0.5 °C behind). On 2026-11-14 Laura was 2.3 °C behind with its
+  loop fully open while the house sat 0.4 °C above target, and Odin planned nothing from
+  03 to 08. `demand.cold_room_call` and `demand.coldest_deficit_c` in
+  `/heat-source/control`.
+- **Lift by forecast and share.** A cold-room call, urgent or not, and a room lag, first ask
+  the planner's room forecast: the room run forward on
+  Touch's own plan (the band without a lift), with sun and weather. If the room gets back
+  within its band inside the lift window, there is no lift (22 Nov 2026: Stue Repo 1.4 °C
+  behind at 09, forecast 24.4 °C by noon on the day's sun). Otherwise the cold-call lift is
+  the house above its floor plus the room's share of the house's heat × what the forecast
+  still lacks (`share_lift_c`): Odin sees only the weighted house, and V6 sends the heat to
+  the open rooms, so the house needs to rise by that share, not by the whole deficit. Without
+  a forecast from the last two hours, the full call as above. Urgent (three bands or more
+  behind) only means the lift starts this hour and no dear hour is skipped (night 22–23 Nov
+  2026: Laura 1.5 °C behind with its loop fully open got the full 1.4 K for 3 h, Odin
+  planned 7.5 kW, the house took 69 kWh and Laura rose 0.4 °C). With
+  `floor_share` < 1 the window
   is 8 h from the next hour (at least the 3–6 h above), so Odin can choose across a price
   swing. A slab charge (whole house) moves the whole band.
 - **Weather preload.** While V6 preloads rooms ahead of wind or cold, the band's top rises

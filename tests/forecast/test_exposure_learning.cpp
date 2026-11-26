@@ -54,6 +54,22 @@ int main() {
     assert(r.solar_valid && r.solar < 0.08f);
     assert(r.wind_valid && std::fabs(r.wind - 0.2f) < 0.12f);
   }
+  // A windward door and roof window: 10 m/s more than doubles the loss (Laura). The
+  // factor is no longer held at 1.0; it stops at WIND_MAX.
+  {
+    State s{};
+    unsigned seed = 5;
+    for (int i = 0; i < 600; i++)
+      update(s, simulate(seed, 1.8f, 0.4f, 0.05f));
+    const Learned r = result(s);
+    std::printf("windward room: wind %.2f (n=%u)\n", r.wind, s.wind_n);
+    assert(r.wind_valid && std::fabs(r.wind - 1.8f) < 0.25f);
+    State t{};
+    seed = 9;
+    for (int i = 0; i < 600; i++)
+      update(t, simulate(seed, 6.0f, 0.4f, 0.05f));
+    assert(result(t).wind_valid && result(t).wind == WIND_MAX);
+  }
   // Too few informative hours: nothing reported yet.
   {
     State s{};

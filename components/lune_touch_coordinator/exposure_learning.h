@@ -17,8 +17,13 @@
 //   solar factor = c / SOLAR_REF_C_PER_H   (1.0 = the room rises 2 °C/h in full sun)
 //   wind factor  = b / a                   (1.0 = 10 m/s on the facade doubles the loss)
 //
-// Both are clamped to 0..1, the range the forecast model uses, and are only
-// reported once enough informative hours (sunny / windy) have been seen.
+// The solar factor is clamped to 0..1, the wind factor to 0..WIND_MAX: a room with a
+// door and a roof window on the windward side can lose well over twice as much at
+// 10 m/s (Laura, 1. sal, 2026-11-13: 0.23 °C/h at 8 m/s against the 0.12 its UA
+// predicts, with the floor still giving heat; the old 0..1 clamp held it at 1.0).
+// Both are reported once enough informative hours (sunny / windy) have been seen.
+// effective wind exposure = wind factor / slab_charge WIND_LOSS_FACTOR (same scale as
+// the manual presets).
 // =============================================================================
 
 #pragma once
@@ -37,6 +42,7 @@ static constexpr uint16_t SOLAR_MIN_SAMPLES = 20;   // hours with G >= 200 W/m²
 static constexpr uint16_t WIND_MIN_SAMPLES = 30;    // hours with w >= 0.3
 static constexpr float SOLAR_SAMPLE_WM2 = 200.0f;
 static constexpr float WIND_SAMPLE = 0.3f;
+static constexpr float WIND_MAX = 2.0f;        // extra loss at 10 m/s head-on: at most ×3 (the fit is noisy)
 
 struct Sample {
   float dtdt_c_per_h = 0.0f;
@@ -130,7 +136,7 @@ inline Learned result(const State &s) {
   }
   if (s.wind_n >= WIND_MIN_SAMPLES && a > 1e-4f && std::isfinite(b)) {
     r.wind_valid = true;
-    r.wind = std::clamp(b / a, 0.0f, 1.0f);
+    r.wind = std::clamp(b / a, 0.0f, WIND_MAX);
   }
   return r;
 }

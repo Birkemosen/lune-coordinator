@@ -46,8 +46,16 @@ Arm V6’s absorptions window before planned heat hours via a bounded, expiring,
 V6-clamped command. This is **not** room demand and must not issue valve setpoints
 from the plan.
 
-- Arm only when `heat_production[i] > 0` **and** `operation_mode[i] == 2` (space
-  heat). **Never** arm for `operation_mode == 1` (DHW — FTC redirects to the tank).
+- Arm only when Odin says it pre-buffers: a v2 plan whose `decision_reason` for this
+  or the next hour is `thermal_buffer` / `thermal_buffer_solar` (`energy_cost` /
+  `modulation` only with `arm_energy_cost_modulation`), or an Odin MQTT absorb command
+  with such a reason. A planned heat hour alone (`heat_production > 0`, space heat) is
+  heating for the rooms below target, not pre-buffering, and does not arm; v1 plans have
+  no reason and never arm. **Never** arm for `operation_mode == 1` (DHW — FTC redirects
+  to the tank).
+- Only rooms at most one comfort band (0.5 °C) above their target are armed. A room
+  warmer than that is skipped, and an arm Touch sent it earlier is withdrawn at the next
+  re-arm (every 30 min); a weather charge (slab charge) on the room is kept.
 - `idx_now = today_start_index + current_hour` (never hardcode 24). History
   arrays are only valid for indices `≤ idx_now`.
 - Client runs when `absorb_arm_enabled` is true.

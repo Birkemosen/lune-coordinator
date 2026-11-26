@@ -14,6 +14,12 @@
 #include "room_physics.h"
 #include "v6_zones_parse.h"
 #include "problem_texts.h"
+#include "esphome/components/planner/seed_params.h"
+#include "esphome/components/planner/solver.h"
+#include "esphome/components/planner/hour_log.h"
+#include "esphome/components/planner/room_forecast.h"
+#include "esphome/components/planner/forecast_score.h"
+#include "esp_timer.h"
 #include "esphome/core/application.h"
 #ifdef USE_API
 #include "esphome/components/api/api_server.h"
@@ -44,6 +50,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <strings.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -119,6 +126,7 @@ static constexpr uint16_t UA_DAY_VERSION = 1;
 static constexpr float LOAD_THRESHOLD = 1.0f;
 static constexpr float GAIN_C_PER_LOAD = 0.5f;
 static constexpr float COMFORT_BAND_C = 0.5f;
+
 static constexpr uint16_t FORECAST_CACHE_VERSION =
     lune_touch_forecast_timeline::PERSISTED_FORECAST_CACHE_VERSION;
 static constexpr size_t REGISTRY_CHUNK_SIZE = 3072;
@@ -1782,6 +1790,163 @@ uint8_t wifi_display_bars_() {
 
 }  // namespace
 
+// Shadow planner (components/planner/): the models it plans with, its last plan and the
+// shadow flow controller. Nothing here commands the heat source.
+using PlannerStore = ::lune_planner::HistoryStore<24 * 60>;   // 60 days of hours, ~96 KB
+
+// The local wall-clock hour of a UTC timestamp, for the house model's daily rhythm.
+static int planner_local_hour_(uint32_t ts) { return ESPTime::from_epoch_local(static_cast<time_t>(ts)).hour; }
+
+struct PlannerRuntime {
+  ::lune_planner::HouseParams house{};
+  ::lune_planner::HeatPumpParams pump{};
+  ::lune_planner::FlowController flow{};
+  ::lune_planner::PlanHour hours[::lune_planner::PLAN_H]{};
+  ::lune_planner::HeatPlan plan{};
+  float price[::lune_planner::PLAN_H]{};
+  bool price_est[::lune_planner::PLAN_H]{};   // not published yet: the same hour of the last known day
+  float band_min[::lune_planner::PLAN_H]{};
+  float band_max[::lune_planner::PLAN_H]{};
+  bool band_odin{false};        // band from Odin's comfort schedule as Touch keeps it (with its lift)
+  uint32_t from_ts{0};          // hour_start of plan hour 0 (the current hour)
+  uint32_t solved_ts{0};        // wall clock of the last solve
+  uint32_t solved_hour{0};      // from_ts of the last solve
+  int64_t seen_forecast_epoch{0};
+  int seen_price_ymd{0};
+  uint8_t seen_price_n{0};
+  uint32_t solve_us{0};
+  bool logged_runtime{false};
+  float start_t_c{NAN};
+  float target_c{NAN};
+  float out_now_c{NAN};
+  // Shadow flow controller, next to what Odin actually commands.
+  float our_flow_c{NAN};
+  float odin_flow_c{NAN};
+  float measured_kw{NAN};
+  float plan_kw_now{NAN};
+  // The day's plans as they stood at its first solve (normally just after local midnight),
+  // per local hour: what each planner meant to deliver that day. The rolling plan's first
+  // hour alone is no day plan: in shadow the house follows Odin's heat, and each new solve
+  // starts from a house Odin has already warmed, so its first hours stay low (21–24 Nov 2026:
+  // 23–34 kWh a day summed against a 48 h plan of 56 kWh a day and 59–81 delivered).
+  struct DayPlan {
+    uint32_t day_ts{0};   // local midnight
+    float heat_kw[24];
+    float elec_kwh[24];
+    void reset(uint32_t day) {
+      day_ts = day;
+      for (int i = 0; i < 24; i++) heat_kw[i] = elec_kwh[i] = NAN;
+    }
+    float at(uint32_t hour) const {
+      return day_ts != 0 && hour >= day_ts && hour < day_ts + 24u * 3600u ? heat_kw[(hour - day_ts) / 3600u] : NAN;
+    }
+    float elec_at(uint32_t hour) const {
+      return day_ts != 0 && hour >= day_ts && hour < day_ts + 24u * 3600u ? elec_kwh[(hour - day_ts) / 3600u] : NAN;
+    }
+    static float sum(const float *v) {
+      float t = 0.0f;
+      bool any = false;
+      for (int i = 0; i < 24; i++)
+        if (std::isfinite(v[i])) { t += v[i]; any = true; }
+      return any ? t : NAN;
+    }
+  };
+  DayPlan day_touch{}, day_odin{};
+  // Odin's space heat from odin_hour on, as planner_tick_ last read it: in shadow the house
+  // follows Odin, so the forecasts the lift reads run on it (planner_rooms_).
+  float odin_heat[24]{};
+  int odin_n{0};
+  uint32_t odin_hour{0};
+  // F3: the hourly history Touch keeps and what it learns from it.
+  ::lune_planner::HourAccumulator acc{};
+  PlannerStore *store{nullptr};
+  PlannerStore *snapshot{nullptr};          // copy the refit and the save work on, off the lock
+  ::lune_planner::LearnScratch *scratch{nullptr};
+  ::lune_planner::LearnReport learn{};
+  bool learned{false};                      // models come from this house's own hours
+  uint32_t learned_hour{0};                 // now-hour of the last refit
+  uint32_t learn_ms{0};
+  uint32_t saved_hour{0};
+  uint16_t seeded{0};                       // hours taken from a seed since the last refit
+  bool save_due{false};
+  uint8_t next_slot{0};
+  uint16_t saves{0};
+  const char *store_boot{"pending"};
+  const char *last_save{"none"};
+  struct Expect { uint32_t hour; float t_c; } expect[8]{};   // 6 h-ahead forecast per hour
+  float floor_c{NAN};
+  bool floor_tracked{false};
+  // Room expectation: the house's model per room on Touch's week of room history
+  // (room_forecast.h), refitted with the house; a forecast per room for each plan.
+  static constexpr int ROOMS = 24;
+  static constexpr size_t RW = ::lune_planner::ROOM_WINDOW;
+  struct Room {
+    char id[32]{};
+    char name[48]{};
+    float area_m2{1.0f};
+    float share{0.0f};     // of the house's heat over the 72 h before the last refit
+    float target_c{NAN};
+    float now_c{NAN};
+    ::lune_planner::RoomModel model{};
+    float expected[::lune_planner::PLAN_H]{};
+    bool forecast{false};  // expected holds a forecast for rooms_ts
+    // The forecast the lift reads: on Odin's planned heat while Odin heats the house, else
+    // on Touch's plan (expected).
+    float lift_expected[24]{};
+    bool lift_on_odin{false};
+    ::lune_planner::ScoreSet score{};   // its shown forecast, scored live
+  } rooms[ROOMS]{};
+  uint8_t room_n{0};
+  // Live forecast scores at fixed horizons (forecast_score.h): the plan's house forecast,
+  // the house model re-run on the heat that was delivered, and each room's shown forecast
+  // (pending forecasts by room slot, moved with the room).
+  ::lune_planner::PendingForecasts<26> house_pend{};
+  ::lune_planner::ScoreSet house_plan_score{};
+  ::lune_planner::ScoreSet house_model_score{};
+  ::lune_planner::PendingForecasts<26> room_pend[ROOMS]{};
+  uint32_t room_score_hour{0};
+  uint32_t rooms_ts{0};        // solved_ts the room forecasts belong to
+  uint32_t rooms_fit_hour{0};  // now-hour of the last room refit (attempt)
+  uint32_t rooms_fit_ms{0};
+  uint8_t rooms_fitted{0};
+  // Scratch for the rooms' windows: their week (temperature, valve), the house's hours.
+  int16_t room_temp[ROOMS][RW + 1];
+  uint8_t room_valve[ROOMS][RW + 1];
+  int16_t room_target[RW + 1];
+  float room_t[RW + 1];
+  float room_track[RW + 1];
+  float room_hq[RW];
+  float room_feed[RW];
+  float room_wsum[RW];
+  ::lune_planner::HourIn room_base[RW];
+  ::lune_planner::HourIn room_in[RW];
+  ::lune_planner::HourIn room_fut[::lune_planner::PLAN_H];
+};
+
+// A room's pending forecasts follow it when the rooms are reordered, slot by slot (a
+// whole PendingForecasts on the stack would be ~1.5 KB).
+static void planner_swap_pend_(::lune_planner::PendingForecasts<26> &a, ::lune_planner::PendingForecasts<26> &b) {
+  for (int j = 0; j < ::lune_planner::SCORE_N; j++)
+    for (int i = 0; i < 26; i++)
+      std::swap(a.s[j][i], b.s[j][i]);
+}
+static void planner_clear_pend_(::lune_planner::PendingForecasts<26> &a) {
+  for (int j = 0; j < ::lune_planner::SCORE_N; j++)
+    for (int i = 0; i < 26; i++)
+      a.s[j][i] = {};
+}
+
+// Let the idle task (watchdog) and the web server in about every 50 ms of fitting.
+static int64_t planner_last_yield_us_ = 0;
+static void planner_fit_yield_() {
+  const int64_t now_us = esp_timer_get_time();
+  if (now_us - planner_last_yield_us_ > 50000) {
+    vTaskDelay(1);
+    planner_last_yield_us_ = esp_timer_get_time();
+  }
+}
+
+
 void LuneTouchCoordinator::setup() {
   state_lock_ = xSemaphoreCreateMutex();
   heat_source_probe_done_ = xSemaphoreCreateBinary();
@@ -1806,6 +1971,7 @@ void LuneTouchCoordinator::setup() {
   load_odin_control_();
   model_.set_internal_gains_w(odin_control_.internal_gains_w);
   load_exposure_learning_();
+  load_flow_fit_();
   load_price_settings_();
   {
     // PSRAM: tariff caches, two days of quarter-hour spot samples and the
@@ -1887,7 +2053,7 @@ void LuneTouchCoordinator::start_worker_tasks_() {
          &odin_task_handle_);
   create(circulation_task_func_, "lune_touch_circ", INTEGRATION_STACK_SIZE, this, INTEGRATION_PRIORITY,
          &circulation_task_handle_);
-  create(heat_source_task_func_, "lune_touch_heat", INTEGRATION_STACK_SIZE, this, INTEGRATION_PRIORITY,
+  create(heat_source_task_func_, "lune_touch_heat", HEAT_STACK_SIZE, this, INTEGRATION_PRIORITY,
          &heat_source_task_handle_);
   create(lan_scan_task_func_, "lune_touch_lan", INTEGRATION_STACK_SIZE, this, INTEGRATION_PRIORITY,
          &lan_scan_task_handle_);
@@ -2032,7 +2198,7 @@ void LuneTouchCoordinator::run_mqtt_followups_() {
   const uint8_t action = mqtt_absorb_action_;
   mqtt_absorb_action_ = 0;
   if (action == 1)
-    maybe_dispatch_absorb_arm_();
+    maybe_dispatch_absorb_arm_(true);  // odin_mqtt checked Odin's reason (pre-buffering)
   else if (action == 2)
     maybe_dispatch_absorb_disarm_(mqtt_absorb_reason_[0] != '\0' ? mqtt_absorb_reason_ : "mqtt");
 }
@@ -2172,6 +2338,7 @@ void LuneTouchCoordinator::heat_source_task_() {
       }
       step_flow_trim_();
     }
+    planner_tick_();
   }
 }
 
@@ -2302,6 +2469,7 @@ void LuneTouchCoordinator::poll_task_() {
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
       run_hp_phase_(esphome::millis());
+      run_close_margin_(esphome::millis());
       run_valve_flush_(esphome::millis());
       run_hp_diagnostics_(esphome::millis());
       run_problems_(esphome::millis());
@@ -2639,12 +2807,14 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
   float sec_feed = NAN, sec_ret = NAN;
   bool defrost = false;
   int mode = -1;
+  float sh_heat = NAN, sh_elec = NAN, dhw_elec = NAN, total_elec = NAN;
   if (ok) {
     JsonDocument filter;
     for (const char *k : {"hp_feed_temp", "hp_return_temp", "outside_temp", "z1_flow_temp_target",
                           "compressor_frequency", "status_compressor", "operation_mode",
                           "flow_rate", "status_water_pump", "computed_output_power", "status_defrost",
-                          "ow_role_z1_feed", "ow_role_z1_return"})
+                          "ow_role_z1_feed", "ow_role_z1_return", "heating_produced", "heating_consumed",
+                          "dhw_consumed", "daily_total_energy_consumption"})
       filter[k] = true;
     JsonDocument doc;
     ok = !deserializeJson(doc, body, DeserializationOption::Filter(filter));
@@ -2663,6 +2833,12 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
       defrost = doc["status_defrost"] | false;
       sec_feed = f("ow_role_z1_feed");
       sec_ret = f("ow_role_z1_return");
+      sh_heat = f("heating_produced");
+      sh_elec = f("heating_consumed");
+      dhw_elec = f("dhw_consumed");
+      // Today's electricity so far, all modes, in 0.1 kWh steps: the only live meter (the
+      // per-mode meters above tick once a day, at 23:00).
+      total_elec = f("daily_total_energy_consumption");
       ok = std::isfinite(feed) || std::isfinite(ret);
     }
   }
@@ -2681,6 +2857,10 @@ bool LuneTouchCoordinator::poll_asgard_telemetry_() {
     heat_source_.hp_status_defrost = defrost;
     heat_source_.hp_sec_feed_c = sec_feed;
     heat_source_.hp_sec_return_c = sec_ret;
+    heat_source_.hp_sh_heat_kwh = sh_heat;
+    heat_source_.hp_sh_elec_kwh = sh_elec;
+    heat_source_.hp_dhw_elec_kwh = dhw_elec;
+    heat_source_.hp_total_elec_kwh = total_elec;
     heat_source_.hp_telemetry_ms = esphome::millis();
     // Balance sample: Alpha2 secondary flow against the heat pump's primary flow, and the
     // heat on each side of the tank where the temperatures are known.
@@ -2852,17 +3032,8 @@ void LuneTouchCoordinator::load_room_history_() {
     return;
   }
   if (!spiffs_mounted_) {
-    esp_vfs_spiffs_conf_t conf{};
-    conf.base_path = "/hist";
-    conf.partition_label = "spiffs";
-    conf.max_files = 2;
-    conf.format_if_mount_failed = true;
-    const esp_err_t err = esp_vfs_spiffs_register(&conf);
-    spiffs_mounted_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
-    st.mount_err = spiffs_mounted_ ? 0 : static_cast<int>(err);
-    if (!spiffs_mounted_)
-      ESP_LOGW(TAG, "Room history: SPIFFS mount failed (%s); history lives in RAM only", esp_err_to_name(err));
-    else
+    st.mount_err = mount_history_fs_() ? 0 : -1;
+    if (spiffs_mounted_)
       esp_spiffs_info("spiffs", &st.fs_total, &st.fs_used);
   }
   bool loaded = false;
@@ -3398,9 +3569,153 @@ float LuneTouchCoordinator::update_demand_hold_(const ::lune_touch::StrategySnap
   if (take_state_lock_(100)) {
     held = demand_hold_.update(required, esphome::millis());
     demand_held_c_ = held;
+    coldest_deficit_c_ = strategy.has_physical_temperature ? strategy.coldest_deficit_c : 0.0f;
+    std::strncpy(coldest_room_id_, strategy.coldest_room_id, sizeof(coldest_room_id_) - 1);
+    const bool was = cold_room_call_.engaged;
+    if (cold_room_call_.update(coldest_deficit_c_, COMFORT_BAND_C) != was)
+      ESP_LOGI(TAG, "Cold room call %s (coldest room %.1f C behind, band %.1f C)",
+               cold_room_call_.engaged ? "on" : "off", coldest_deficit_c_, COMFORT_BAND_C);
     give_state_lock_();
   }
+  end_room_warmups_();
   return held;
+}
+
+float LuneTouchCoordinator::room_deficit_locked_(const char *room_id, float *target_c) const {
+  // Caller holds the state lock. Target − temperature now, the schedule's target included.
+  if (target_c != nullptr)
+    *target_c = NAN;
+  if (room_id == nullptr || room_id[0] == '\0')
+    return NAN;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  for (size_t ri = 0; ri < model_.room_count(); ri++) {
+    const auto *room = model_.room(ri);
+    if (room == nullptr || std::strcmp(room->room_id, room_id) != 0)
+      continue;
+    const auto r = model_.room_comfort_reading(ri, time_valid, day_index, minute_of_day);
+    if (target_c != nullptr && r.has_target)
+      *target_c = r.target_c;
+    return r.has_target && r.has_temp ? r.target_c - r.temp_c : NAN;
+  }
+  return NAN;
+}
+
+void LuneTouchCoordinator::end_room_warmups_() {
+  // A warm-up ends when its room is back within the band, its time is up, or the room is gone.
+  const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+  char ended[lune_touch_odin::WARMUP_N][96]{};
+  size_t n = 0;
+  if (!take_state_lock_(100))
+    return;
+  for (auto &w : room_warmups_.w) {
+    if (!w.active())
+      continue;
+    const auto *room = model_.room_by_id(w.room_id);
+    const float deficit = room_deficit_locked_(w.room_id, nullptr);
+    if (room != nullptr && !w.done(deficit, COMFORT_BAND_C, now))
+      continue;
+    std::snprintf(ended[n++], sizeof(ended[0]), "%s: warm-up ended (%s)", room != nullptr ? room->room_name : w.room_id,
+                  room == nullptr ? "room removed" : now >= w.until_ts ? "time up" : "back within the band");
+    w = lune_touch_odin::RoomWarmup{};
+  }
+  give_state_lock_();
+  for (size_t i = 0; i < n; i++)
+    log_event_("info", "warmup", ended[i]);
+}
+
+void LuneTouchCoordinator::room_warmup_summary(char *out, size_t capacity) {
+  // For the HA text sensor: "Soveværelse: now, 4 h left; Laura: cheap, 1 h left", or "off".
+  if (out == nullptr || capacity == 0)
+    return;
+  std::snprintf(out, capacity, "off");
+  const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+  if (!take_state_lock_(100))
+    return;
+  size_t off = 0;
+  for (const auto &w : room_warmups_.w) {
+    if (!w.active())
+      continue;
+    const auto *room = model_.room_by_id(w.room_id);
+    const int n = std::snprintf(out + off, capacity - off, "%s%s: %s, %d h left", off ? "; " : "",
+                                room != nullptr ? room->room_name : w.room_id, w.cheap ? "cheap" : "now",
+                                w.hours_left(now));
+    if (n < 0 || static_cast<size_t>(n) >= capacity - off)
+      break;
+    off += static_cast<size_t>(n);
+  }
+  give_state_lock_();
+}
+
+bool LuneTouchCoordinator::room_warmup(const char *room_id, const char *mode, char *response, size_t capacity) {
+  const bool stop = mode != nullptr && std::strcmp(mode, "stop") == 0;
+  const bool cheap = mode != nullptr && std::strcmp(mode, "cheap") == 0;
+  if (room_id == nullptr || room_id[0] == '\0') {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_room\"}");
+    return false;
+  }
+  if (!stop && !cheap && !(mode != nullptr && std::strcmp(mode, "now") == 0)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_mode\"}");
+    return false;
+  }
+  const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+  if (!stop && now < 1700000000U) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"clock_invalid\"}");
+    return false;
+  }
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  // By id (the room sheet), or by the name shown on Touch (Home Assistant).
+  const auto *room = model_.room_by_id(room_id);
+  for (size_t ri = 0; room == nullptr && ri < model_.room_count(); ri++) {
+    const auto *r = model_.room(ri);
+    if (r != nullptr && r->enabled && strcasecmp(r->room_name, room_id) == 0)
+      room = r;
+  }
+  if (room == nullptr) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_found\"}");
+    return false;
+  }
+  room_id = room->room_id;
+  char id[64], name[96], msg[128];
+  json_escape_(room_id, id, sizeof(id));
+  std::snprintf(name, sizeof(name), "%s", room->room_name[0] != '\0' ? room->room_name : room_id);
+  if (stop) {
+    const bool had = room_warmups_.stop(room_id);
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"%s\",\"room_id\":\"%s\"}", had ? "stopped" : "not_running", id);
+    if (had) {
+      std::snprintf(msg, sizeof(msg), "%s: warm-up stopped", name);
+      log_event_("info", "warmup", msg);
+      kick_task_(odin_task_handle_);
+    }
+    return true;
+  }
+  float target = NAN;
+  const float deficit = room_deficit_locked_(room_id, &target);
+  char stop_at[16];
+  json_float_token_(stop_at, sizeof(stop_at), std::isfinite(target) ? target - COMFORT_BAND_C : NAN, 1);
+  if (std::isfinite(deficit) && deficit <= COMFORT_BAND_C) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"within_band\",\"room_id\":\"%s\",\"stop_at_c\":%s}",
+             id, stop_at);
+    return false;
+  }
+  const uint32_t until = room_warmups_.start(room_id, cheap, now).until_ts;
+  const bool lifts = odin_control_.enabled;
+  give_state_lock_();
+  snprintf(response, capacity,
+           "{\"result\":\"started\",\"room_id\":\"%s\",\"mode\":\"%s\",\"until\":%lu,\"stop_at_c\":%s,\"odin_control\":%s}",
+           id, cheap ? "cheap" : "now", static_cast<unsigned long>(until), stop_at, lifts ? "true" : "false");
+  std::snprintf(msg, sizeof(msg), "%s: warm-up %s until %s C, at most %u h", name, cheap ? "cheaply" : "now", stop_at,
+                static_cast<unsigned>(lune_touch_odin::WARMUP_MAX_S / 3600U));
+  log_event_("info", "warmup", msg);
+  kick_task_(odin_task_handle_);   // lift now, not on the next pass
+  return true;
 }
 
 bool LuneTouchCoordinator::odin_in_control_() const {
@@ -3409,39 +3724,59 @@ bool LuneTouchCoordinator::odin_in_control_() const {
   return odin_control_.enabled || (odin_control_.forwarder_known && odin_control_.forwarder_active);
 }
 
-bool LuneTouchCoordinator::weather_preload_(float *offset_c, int *peak_in_h, float *share) const {
-  float offset = 0.0f;
-  int peak = -1;
-  unsigned rooms = 0, preloading = 0;
+bool LuneTouchCoordinator::weather_preload_(float *offset_c, int *peak_in_h, float *share, float *planned_c,
+                                            int *start_in_h) const {
+  // Preloading now, or planned: a room whose episode is still more than a lead away
+  // (forecast_model.cpp) tells the heat source from when it will charge and by how much.
+  const auto now_pre = [](const ForecastDecisionState &d) {
+    return d.active && !d.solar_holdoff && !d.charge_episode && d.offset_c > 0.01f && d.peak_in_h >= 0;
+  };
+  const auto plans = [&](const ForecastDecisionState &d) {
+    return now_pre(d) || (!d.solar_holdoff && !d.charge_episode && d.peak_in_h >= 0 &&
+                          d.planned_offset_c > 0.01f && d.preload_end_h > d.preload_start_h);
+  };
+  float offset = 0.0f, planned = 0.0f;
+  int peak = -1, start = -1;
+  unsigned rooms = 0, preloading = 0, planning = 0;
   for (size_t i = 0; i < forecast_decision_count_; i++) {
     const auto &d = forecast_decisions_[i];
     // A room may span zones: count it once, preloading if any of its zones does.
-    bool seen = false;
-    for (size_t j = 0; j < i && !seen; j++)
-      seen = std::strcmp(forecast_decisions_[j].room_id, d.room_id) == 0;
-    const bool pre = d.active && !d.solar_holdoff && !d.charge_episode && d.offset_c > 0.01f &&
-                     d.peak_in_h >= 0;
+    bool seen = false, seen_now = false, seen_plan = false;
+    for (size_t j = 0; j < i; j++) {
+      const auto &e = forecast_decisions_[j];
+      if (std::strcmp(e.room_id, d.room_id) != 0)
+        continue;
+      seen = true;
+      seen_now = seen_now || now_pre(e);
+      seen_plan = seen_plan || plans(e);
+    }
     if (!seen)
       rooms++;
-    if (!pre)
+    if (!plans(d))
       continue;
-    offset = std::max(offset, d.offset_c);
-    peak = std::max<int>(peak, d.peak_in_h);
-    bool counted = false;
-    for (size_t j = 0; j < i && !counted; j++) {
-      const auto &e = forecast_decisions_[j];
-      counted = std::strcmp(e.room_id, d.room_id) == 0 && e.active && !e.solar_holdoff && !e.charge_episode &&
-                e.offset_c > 0.01f && e.peak_in_h >= 0;
+    const bool pre = now_pre(d);
+    if (pre) {
+      offset = std::max(offset, d.offset_c);
+      if (!seen_now)
+        preloading++;
     }
-    if (!counted)
-      preloading++;
+    if (!seen_plan)
+      planning++;
+    planned = std::max(planned, std::max(d.planned_offset_c, pre ? d.offset_c : 0.0f));
+    peak = std::max<int>(peak, d.peak_in_h);
+    const int s = pre ? 0 : d.preload_start_h;
+    start = start < 0 ? s : std::min(start, s);
   }
   if (offset_c != nullptr)
     *offset_c = offset;
   if (peak_in_h != nullptr)
     *peak_in_h = peak;
   if (share != nullptr)
-    *share = rooms > 0 ? static_cast<float>(preloading) / static_cast<float>(rooms) : NAN;
+    *share = rooms > 0 ? static_cast<float>(planning) / static_cast<float>(rooms) : NAN;
+  if (planned_c != nullptr)
+    *planned_c = planned;
+  if (start_in_h != nullptr)
+    *start_in_h = start;
   return preloading > 0;
 }
 
@@ -3455,6 +3790,24 @@ float LuneTouchCoordinator::weather_store_c_() const {
   return std::max(store, preload);
 }
 
+// A room's forecast for the lift, while it is from the last two hours (caller holds the
+// state lock).
+const LuneTouchCoordinator::RoomOutlook *LuneTouchCoordinator::room_outlook_for_(const char *room_id,
+                                                                                uint32_t now_ts) const {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return nullptr;
+  for (uint8_t i = 0; i < room_outlook_n_; i++) {
+    const RoomOutlook &o = room_outlook_[i];
+    if (std::strncmp(o.id, room_id, sizeof(o.id)) == 0)
+      return o.ts != 0 && now_ts >= o.ts && now_ts - o.ts <= 2u * 3600u ? &o : nullptr;
+  }
+  return nullptr;
+}
+
+// A dear hour is left out of a lift only when that saves a tenth of the price level (the
+// last 30 days, else the yearly average).
+static constexpr float SKIP_MIN_SAVING_SHARE = 0.10f;
+
 lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour, float *energy_kwh,
                                                                const char **reason,
                                                                lune_touch_odin::LiftSources *sources) {
@@ -3462,6 +3815,8 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float thermal_mass = NAN;
   float heat_loss = NAN;
   float held = 0.0f;
+  bool cold_call = false;
+  float cold_hold = 0.0f;
   float energy = 0.0f;
   int start = INT16_MAX;
   int end = -1;
@@ -3469,7 +3824,19 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   float lagging_share = NAN;
   float pre_lift_c = 0.0f;
   int pre_peak_in_h = -1;
+  int pre_start_in_h = -1;
   float pre_share = NAN;
+  float coldest = NAN, house_c = NAN, band_floor_c = NAN;
+  // Warm-ups the user started (room sheet or HA): each room's deficit and floor lag.
+  lune_touch_odin::Warmups warmups{};
+  float warm_deficit[lune_touch_odin::WARMUP_N];
+  uint8_t warm_lead[lune_touch_odin::WARMUP_N]{};
+  std::fill(std::begin(warm_deficit), std::end(warm_deficit), NAN);
+  // The lagging rooms' forecasts (planner_rooms_): the cold room's and the driver's.
+  RoomOutlook cold_fc{}, lag_fc{};
+  bool has_cold_fc = false, has_lag_fc = false;
+  float normal_price = NAN;
+  int charge_need_in_h = -1;
   // Price k hours from now, so a lift leaves the dearest hours alone (NAN: unknown).
   float price_rel[24];
   std::fill(std::begin(price_rel), std::end(price_rel), NAN);
@@ -3493,6 +3860,9 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
           price_rel[k] = d->total[h % 24];
       }
     }
+    normal_price = lune_touch_price::reference_price(
+        price_.cfg, price_month_mean_eur_, price_month_hours_,
+        lune_touch_price::year_all_in(price_.cfg, price_rt_ != nullptr ? &price_rt_->today : nullptr), nullptr);
     // One setting for "how far Touch may raise ahead": Weather › Preload › Max.
     // preload boost caps the Odin lift too (it was a second 1.5 °C field in Heat).
     params.max_lift_c = std::clamp(weather_max_boost_c_, 0.0f, 3.0f);
@@ -3502,7 +3872,40 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
     if (!std::isfinite(thermal_mass) || thermal_mass <= 0.5f)
       thermal_mass = strategy.thermal_mass_total_kwh_per_k;
     held = demand_held_c_;
+    cold_call = cold_room_call_.engaged;
+    cold_hold = cold_call_hold_c_;
+    coldest = coldest_deficit_c_;
     lagging_share = strategy.lagging_share;
+    house_c = strategy.has_physical_temperature ? strategy.physical_temperature_c : NAN;
+    // The band's floor this hour before any lift: Odin's schedule as Touch keeps it, else
+    // the house target less the comfort band.
+    if (odin_owner_.has_user || odin_owner_.sync.on) {
+      const lune_touch_odin::Profile base = lune_touch_odin::apply_sync(odin_owner_.user, odin_owner_.sync);
+      if (base.count > 0) {
+        const lune_touch_odin::Block b = lune_touch_odin::block_at(base, now_hour);
+        band_floor_c = b.sp + b.min;
+      }
+    }
+    if (!std::isfinite(band_floor_c) && strategy.has_house_target)
+      band_floor_c = strategy.house_target_c - COMFORT_BAND_C;
+    const uint32_t now_ts = static_cast<uint32_t>(::time(nullptr));
+    if (const RoomOutlook *o = room_outlook_for_(coldest_room_id_, now_ts)) {
+      cold_fc = *o;
+      has_cold_fc = true;
+    }
+    if (const RoomOutlook *o = room_outlook_for_(strategy.driver_room_id, now_ts)) {
+      lag_fc = *o;
+      has_lag_fc = true;
+    }
+    warmups = room_warmups_;
+    for (size_t i = 0; i < lune_touch_odin::WARMUP_N; i++) {
+      if (!warmups.w[i].active())
+        continue;
+      warm_deficit[i] = room_deficit_locked_(warmups.w[i].room_id, nullptr);
+      const auto rz = model_.resolve_room(warmups.w[i].room_id);
+      if (rz.binding != nullptr)
+        warm_lead[i] = ::lune_touch::HouseModel::active_thermal_lead_h(*rz.binding);
+    }
     // The lagging room's floor lag sets how far ahead the lift reaches.
     if (held > 0.0f && strategy.driver_room_id[0] != '\0') {
       const auto rz = model_.resolve_room(strategy.driver_room_id);
@@ -3522,9 +3925,11 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
         energy += d.charge_deficit_kwh;
       start = std::min<int>(start, d.charge_start_in_h);
       end = std::max<int>(end, d.charge_end_in_h);
+      if (d.charge_episode_in_h >= 0)
+        charge_need_in_h = charge_need_in_h < 0 ? d.charge_episode_in_h : std::min<int>(charge_need_in_h, d.charge_episode_in_h);
     }
     // Weather preload: rooms V6 raises ahead of wind or cold (a charge covers its own room).
-    weather_preload_(&pre_lift_c, &pre_peak_in_h, &pre_share);
+    weather_preload_(nullptr, &pre_peak_in_h, &pre_share, &pre_lift_c, &pre_start_in_h);
     give_state_lock_();
   }
   lune_touch_odin::Lift charge{};
@@ -3536,27 +3941,115 @@ lune_touch_odin::Lift LuneTouchCoordinator::compute_odin_lift_(uint8_t now_hour,
   // room's floor lag + 2 h (odin_comfort.h lag_lift), so Odin has at least an hour
   // to plan heat that reaches the room. Re-evaluated every cycle.
   // One or two lagging rooms open only the band's top over a wider window, so Odin
-  // chooses the hours (odin_comfort.h floor_share_for); a slab charge moves it all.
-  const float floor_share = charge.active() ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
+  // chooses the hours (odin_comfort.h floor_share_for), unless the room is well behind
+  // (ColdRoomCall: more than twice the comfort band behind), which moves the whole band
+  // by the full allowed lift from this hour, so Odin must heat; a slab charge moves it all.
+  const float floor_share =
+      (charge.active() || cold_call) ? 1.0f : lune_touch_odin::floor_share_for(lagging_share);
+  // A cold-room call lifts by what the house and the room need (cold_call_lift_c), from
+  // this hour when the room is well behind (COLD_URGENT_BANDS), else from the cheapest
+  // start within a few hours (cold_call_start_in_h).
+  const bool urgent = cold_call && std::isfinite(coldest) && coldest >= lune_touch_odin::COLD_URGENT_BANDS * COMFORT_BAND_C;
+  // The planner has a forecast for the room: lift only by what the forecast still lacks
+  // (none when sun or the plan's own heat gets it back), times the room's share of the
+  // house (odin_comfort.h share_lift_c), also when urgent; urgent only heats from now.
+  // Without a forecast, the full cold-call lift as before. (22–23 Nov 2026: Laura 1.5 °C
+  // behind with its loop fully open got the full 1.4 K for 3 h; Odin planned 7.5 kW and
+  // the house took 69 kWh overnight while Laura rose 0.4 °C.)
+  const int lag_len = lune_touch_odin::lag_end_in_h(lag_floor_h);
+  LiftForecastDiag diag{};
   lune_touch_odin::Lift lag{};
-  if (held > 0.0f)
-    lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  if (cold_call) {
+    float c = lune_touch_odin::cold_call_lift_c(house_c, band_floor_c, coldest, COMFORT_BAND_C, params);
+    std::strncpy(diag.room_id, cold_fc.id, sizeof(diag.room_id) - 1);
+    diag.has_forecast = has_cold_fc;
+    diag.on_odin = has_cold_fc && cold_fc.on_odin;
+    if (has_cold_fc) {
+      const float lack = lune_touch_odin::forecast_shortfall_c(cold_fc.expected, 24, lag_len + lune_touch_odin::COLD_DEFER_MAX_H,
+                                                              cold_fc.target_c, COMFORT_BAND_C);
+      const float s = lune_touch_odin::share_lift_c(house_c, band_floor_c, lack, cold_fc.share, params);
+      diag.lack_c = lack;
+      diag.share = cold_fc.share;
+      if (std::isfinite(s))
+        c = s;
+    }
+    // Once lifted, a call keeps its lift until the room is back in its band: the forecast
+    // runs on Odin's plan, and Odin plans on the lifted band, so the next hour's forecast
+    // would see the room recover and drop the lift that does it.
+    c = std::max(c, cold_hold);
+    cold_hold = c >= params.min_lift_c ? c : 0.0f;
+    diag.lift_c = c;
+    const int len = lag_len;
+    const int s0 = urgent ? 0 : lune_touch_odin::cold_call_start_in_h(price_rel, 24, len);
+    lag = lune_touch_odin::make_lift(now_hour, s0, s0 + len, c, params);
+    if (lag.active())
+      lag.floor_share = 1.0f;
+  } else if (held > 0.0f) {
+    // A lagging room the forecast already sees back in its band needs no lift.
+    const float lack = has_lag_fc ? lune_touch_odin::forecast_shortfall_c(lag_fc.expected, 24, lag_len,
+                                                                          lag_fc.target_c, COMFORT_BAND_C)
+                                  : NAN;
+    std::strncpy(diag.room_id, lag_fc.id, sizeof(diag.room_id) - 1);
+    diag.has_forecast = has_lag_fc;
+    diag.on_odin = has_lag_fc && lag_fc.on_odin;
+    diag.lack_c = lack;
+    diag.share = lag_fc.share;
+    diag.lift_c = lack == 0.0f ? 0.0f : held;
+    if (!(lack == 0.0f))
+      lag = lune_touch_odin::lag_lift(now_hour, held, lag_floor_h, params, floor_share);
+  }
+  if (take_state_lock_(100)) {
+    lift_fc_diag_ = diag;
+    cold_call_hold_c_ = cold_call ? cold_hold : 0.0f;
+    give_state_lock_();
+  }
+  // A warm-up by hand lifts like a cold call, without forecast or share; «heat now» from
+  // this hour with no dear hour left out (odin_comfort.h warmup_lift).
+  bool warm_now = false;
+  const lune_touch_odin::Lift warm =
+      lune_touch_odin::warmup_lift(now_hour, warmups, warm_deficit, warm_lead, house_c, band_floor_c, COMFORT_BAND_C,
+                                   price_rel, 24, static_cast<uint32_t>(::time(nullptr)), params, &warm_now);
+  lag = lune_touch_odin::merge_lifts(now_hour, lag, warm, params);
+  const bool heat_now = urgent || warm_now;
   // Wind or cold ahead: the heat source must know too, or the rooms V6 preloads get
-  // only what the house would have had anyway. The band opens from now through the
-  // peak, by the largest room offset, its floor by the preloading share of the house.
+  // only what the house would have had anyway. The band opens from when the first room
+  // starts charging (a lead before its wind, so Odin can heat gently and in cheap hours
+  // ahead) through the peak, by the largest planned room offset, its floor by the share
+  // of the house that preloads.
   lune_touch_odin::Lift pre{};
   if (pre_lift_c > 0.0f)
     pre = lune_touch_odin::preload_lift(now_hour, pre_lift_c, pre_peak_in_h, params,
-                                        lune_touch_odin::floor_share_for(pre_share));
+                                        lune_touch_odin::floor_share_for(pre_share),
+                                        std::max(0, pre_start_in_h));
   if (energy_kwh != nullptr)
     *energy_kwh = charge.active() ? energy : 0.0f;
   const lune_touch_odin::Lift out = lune_touch_odin::merge_lifts(
       now_hour, lune_touch_odin::merge_lifts(now_hour, charge, lag, params), pre, params);
   if (out.active()) {
     lune_touch_odin::Lift lifted = out;
-    // A dear hour stays lifted unless heating earlier is cheaper, heat loss included.
-    lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
-                                  lune_touch_odin::house_tau_h(thermal_mass, heat_loss));
+    // A dear hour stays lifted unless heating at another lifted hour is cheaper, heat loss
+    // included: earlier, or later but still before the heat is needed (the end of a lag
+    // window, a preload's peak, a charge's deficit). An urgent cold call heats now.
+    int need_in_h = 0;
+    if (!heat_now) {
+      need_in_h = 24;
+      const auto rel_end = [&](const lune_touch_odin::Lift &l) {
+        return static_cast<int>((l.start_hour + 24 - now_hour) % 24) + l.hours;
+      };
+      if (lag.active())
+        need_in_h = std::min(need_in_h, rel_end(lag));
+      if (pre.active())
+        need_in_h = std::min(need_in_h, std::max(0, pre_peak_in_h));
+      if (charge.active())
+        need_in_h = std::min(need_in_h, charge_need_in_h >= 0 ? charge_need_in_h : rel_end(charge));
+      if (!lag.active() && !pre.active() && !charge.active())
+        need_in_h = 0;
+    }
+    // Worth a gap only for a tenth of what prices are now or more (energy_price.h reference_price).
+    if (!warm_now)
+      lune_touch_odin::skip_dearest(lifted, now_hour, price_rel, 24,
+                                    lune_touch_odin::house_tau_h(thermal_mass, heat_loss), need_in_h,
+                                    std::isfinite(normal_price) ? SKIP_MIN_SAVING_SHARE * normal_price : 0.0f);
     if (reason != nullptr)
       *reason = lift_reason_(charge.active(), lag.active(), pre.active());
     // Which source wants each lifted hour (a skipped hour has none).
@@ -4546,7 +5039,17 @@ bool LuneTouchCoordinator::fetch_odin_plan_() {
       plan_last_run_cost = last_run["total_cost"] | NAN;
       plan_has_last_run = std::isfinite(plan_last_run_exec_ms);
     }
-    if (!plan.success)
+    // Odin answered but holds no plan from now on: its solver found none.
+    bool no_plan = false;
+    if (!plan.success && odin2 && !json_error && (response["success"] | false) && current_hour >= 0) {
+      JsonArrayConst heat = response["heat_production"].as<JsonArrayConst>();
+      no_plan = !heat.isNull() && idx_now < heat.size();
+      for (size_t i = idx_now; no_plan && i < heat.size(); ++i)
+        no_plan = heat[i].isNull();
+    }
+    if (no_plan)
+      std::strncpy(error, "no plan", sizeof(error) - 1);
+    else if (!plan.success)
       std::strncpy(error, json_error ? "invalid json" : (odin2 ? "invalid Odin 2 plan" : "invalid Asgard ODIN plan"),
                    sizeof(error) - 1);
   }
@@ -4795,8 +5298,13 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
         if (odin_plan_.heat_window_active || odin_plan_.preload_timing_bias_enabled)
           odin_plan_.bias_window_delivered_kwh += kwh;
       }
-      if (sample_ok && model_.has_outdoor_temp())
-        model_.accumulate_ua_day(sample_h, model_.outdoor_temp_c());
+      // The model had no outdoor temperature on the device (only tests set it), so the
+      // UA day never counted an hour and heat loss was never learned (2026-11-26).
+      const float outdoor_c = outdoor_now_c_locked_(now_fetch_ms);
+      if (std::isfinite(outdoor_c))
+        model_.set_outdoor_temp_c(outdoor_c);
+      if (sample_ok && std::isfinite(outdoor_c))
+        model_.accumulate_ua_day(sample_h, outdoor_c);
       // T2: at local midnight learn UA from the whole day just ended (§5.2). The
       // first known date only starts a clean day (clears totals kept from before).
       const int64_t epoch_now = current_epoch_s_();
@@ -4811,10 +5319,13 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
             const bool learn = ua_day_ymd_ != 0;
             ua_day_ymd_ = ymd;
             ::lune_touch::HouseModel::UaDayResult days[::lune_touch::MAX_HOUSE_ROOMS];
-            const size_t n = model_.close_ua_day(days, learn ? ::lune_touch::MAX_HOUSE_ROOMS : 0);
+            const size_t n = model_.close_ua_day(days, ::lune_touch::MAX_HOUSE_ROOMS, learn);
             for (size_t k = 0; k < n; k++)
               queue_ua_learned_writes_(days[k].room_index, days[k].confidence, days[k].observed_days,
                                        static_cast<uint32_t>(epoch_now));
+            // Touch keeps what it learned in its own registry too, not only on V6.
+            if (n > 0)
+              learning_dirty_ = true;
             ua_day_saved_ms_ = 0;  // store the new day at once
           }
           if (ua_day_saved_ms_ == 0 || now_fetch_ms - ua_day_saved_ms_ >= 3600000UL) {
@@ -5941,6 +6452,8 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
                                           static_cast<uint8_t>(fields.group_primary_zone),
                                           fields.group_members_mask, primary);
     }
+    if (!zone["floor_lag_h"].isNull())
+      model_.update_zone_floor_lag(node_index, zone_index, zone["floor_lag_h"] | 0.0f);
     if (fields.has_heat_demand) {
       model_.update_zone_heat_demand(
           node_index, zone_index, fields.demand_state, fields.opening_ratio, fields.saturated_s,
@@ -6356,18 +6869,48 @@ bool LuneTouchCoordinator::load_preload_learning_() {
   return true;
 }
 
+float LuneTouchCoordinator::outdoor_now_c_locked_(uint32_t now_ms) const {
+  // The heat pump's own sensor while fresh (30 min), else this hour's forecast.
+  const bool hp_fresh = heat_source_.hp_telemetry_ms != 0 && now_ms - heat_source_.hp_telemetry_ms < 30UL * 60UL * 1000UL;
+  if (hp_fresh && std::isfinite(heat_source_.hp_outside_c))
+    return heat_source_.hp_outside_c;
+  const int64_t now_s = current_epoch_s_();
+  for (uint8_t i = 0; i < forecast_hours_count_ && now_s > 0; i++) {
+    if (forecast_hours_[i].timestamp_s <= now_s && now_s < forecast_hours_[i].timestamp_s + 3600)
+      return forecast_hours_[i].temp_c;
+  }
+  return NAN;
+}
+
+void LuneTouchCoordinator::on_shutdown() {
+  // A planned restart (OTA, fix) stores the day's heat-loss totals and pending learning
+  // first, so it loses nothing instead of up to the hour since the last store.
+  if (take_state_lock_(200)) {
+    if (ua_day_ymd_ != 0)
+      save_ua_day_();
+    give_state_lock_();
+  }
+  if (learning_dirty_)
+    save_registry_();  // takes the state lock itself
+}
+
 bool LuneTouchCoordinator::load_ua_day_() {
   nvs_handle_t handle = 0;
-  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  ua_day_load_err_ = open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle);
+  if (ua_day_load_err_ != ESP_OK)
     return false;
   static PersistedUaDay blob;
   blob = PersistedUaDay{};
   size_t len = sizeof(blob);
   const esp_err_t err = nvs_get_blob(handle, "ua_day", &blob, &len);
   nvs_close(handle);
+  ua_day_load_err_ = err;
   if (err != ESP_OK || len != sizeof(blob) || blob.magic != UA_DAY_MAGIC || blob.version != UA_DAY_VERSION ||
-      blob.count > ::lune_touch::MAX_HOUSE_ROOMS)
+      blob.count > ::lune_touch::MAX_HOUSE_ROOMS) {
+    if (err == ESP_OK)
+      ua_day_load_err_ = ESP_ERR_INVALID_SIZE;
     return false;
+  }
   model_.import_ua_day(blob.rooms, blob.count);
   ua_day_ymd_ = blob.ymd;
   return true;
@@ -6379,12 +6922,16 @@ bool LuneTouchCoordinator::save_ua_day_() {
   blob.ymd = ua_day_ymd_;
   blob.count = static_cast<uint16_t>(model_.export_ua_day(blob.rooms, ::lune_touch::MAX_HOUSE_ROOMS));
   nvs_handle_t handle = 0;
-  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  ua_day_save_err_ = open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle);
+  if (ua_day_save_err_ != ESP_OK)
     return false;
-  const esp_err_t err = nvs_set_blob(handle, "ua_day", &blob, sizeof(blob));
+  esp_err_t err = nvs_set_blob(handle, "ua_day", &blob, sizeof(blob));
   if (err == ESP_OK)
-    nvs_commit(handle);
+    err = nvs_commit(handle);
   nvs_close(handle);
+  ua_day_save_err_ = err;
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "UA day not stored: %s (%u bytes)", esp_err_to_name(err), static_cast<unsigned>(sizeof(blob)));
   return err == ESP_OK;
 }
 
@@ -6441,16 +6988,20 @@ void LuneTouchCoordinator::apply_preload_outcome_learning_() {
     const auto *live = model_.zone_live(zone_index);
     if (live == nullptr || !live->fresh || !live->has_temperature)
       continue;
+    // A sync group is judged as V6 runs it: on the members' mean.
+    const float room_c = model_.group_mean_temperature_c(zone_index);
+    if (!std::isfinite(room_c))
+      continue;
     const auto effective =
         ::lune_touch::HouseModel::effective_comfort(*zone, time_valid, day_index, minute_of_day);
     hv6fc::PreloadOutcome outcome{};
     outcome.preload_was_active = true;
     const float band_lo = effective.setpoint_c - COMFORT_BAND_C;
     const float band_hi = effective.setpoint_c + COMFORT_BAND_C;
-    if (live->temperature_c < band_lo)
-      outcome.undershoot_c = band_lo - live->temperature_c;
-    if (live->temperature_c > band_hi)
-      outcome.overshoot_c = live->temperature_c - band_hi;
+    if (room_c < band_lo)
+      outcome.undershoot_c = band_lo - room_c;
+    if (room_c > band_hi)
+      outcome.overshoot_c = room_c - band_hi;
     if (outcome.undershoot_c <= 0.0f && outcome.overshoot_c <= 0.0f)
       continue;
     const hv6fc::LearningUpdate update = hv6fc::update_preload_learning(
@@ -6500,8 +7051,12 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
                      forecast_decision_count_ < ::lune_touch::MAX_HOUSE_ZONES; i++) {
     const auto *zone = model_.zone(i);
     const auto *live = model_.zone_live(i);
-    if (zone == nullptr || !zone->enabled)
+    // A V6 sync group (fx Stue + Stue Repo) is one room: V6 controls it on the members'
+    // mean, so it gets one decision, on the primary, never one per member.
+    if (zone == nullptr || !zone->enabled || zone->is_group_secondary)
       continue;
+    const bool grouped = live != nullptr && live->group_members_mask != 0 &&
+                         (live->group_members_mask & (live->group_members_mask - 1)) != 0;
 
     ForecastDecisionState &out = forecast_decisions_[forecast_decision_count_++];
     std::strncpy(out.room_id, zone->room_id, sizeof(out.room_id) - 1);
@@ -6518,6 +7073,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     out.learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
     const uint8_t house_active_lead = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
     out.active_thermal_lead_h = house_active_lead;
+    out.floor_lag_h = live != nullptr ? live->floor_lag_h : 0.0f;
     if (live == nullptr || !live->fresh)
       continue;
 
@@ -6548,9 +7104,13 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     params.scheduled_setpoint_c = out.comfort_setpoint_c;
     params.comfort_band_c = COMFORT_BAND_C;
     params.enable_horizon = true;
-    if (live->has_temperature && std::isfinite(live->temperature_c)) {
-      params.has_current_temp = true;
-      params.current_temp_c = live->temperature_c;
+    params.floor_lag_h = live->floor_lag_h;
+    {
+      const float t = model_.group_mean_temperature_c(i);
+      if (std::isfinite(t)) {
+        params.has_current_temp = true;
+        params.current_temp_c = t;
+      }
     }
 
     const hv6fc::PreloadDecision decision =
@@ -6567,6 +7127,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     out.used_thermal_sizing = decision.used_thermal_sizing;
     out.preload_start_h = decision.preload_start_h;
     out.preload_end_h = decision.preload_end_h;
+    out.planned_offset_c = decision.planned_offset_c;
     if (decision.active_lead_h > 0)
       out.active_thermal_lead_h = decision.active_lead_h;
     out.active = decision.offset_c > 0.01f;
@@ -6585,6 +7146,13 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
       room_in.area_m2 = zone->served_area_m2 > 0.0f ? zone->served_area_m2 : zone->v6_area_m2;
       room_in.ua_w_per_k = zone->ua_effective_w_per_k > 0.0f ? zone->ua_effective_w_per_k
                                                              : zone->ua_prior_w_per_k;
+      // A group: the room's totals (all members' loops and walls), as V6 runs them together.
+      if (grouped && room != nullptr) {
+        if (room->total_area_m2 > room_in.area_m2)
+          room_in.area_m2 = room->total_area_m2;
+        if (room->ua_effective_w_per_k > 0.0f)
+          room_in.ua_w_per_k = room->ua_effective_w_per_k;
+      }
       if (!zone->floor.unset && zone->floor.r_m2k_per_w > 0.0f)
         room_in.floor_r_m2k_per_w = zone->floor.r_m2k_per_w;
       if (!zone->floor.unset && zone->floor.c_slab_kwh_per_k > 0.0f)
@@ -6595,6 +7163,7 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
       room_in.setpoint_c = out.comfort_setpoint_c;
       if (params.has_current_temp)
         room_in.temp_c = params.current_temp_c;
+      room_in.floor_lag_h = live->floor_lag_h;
       lune_touch_charge::Params cp{};
       cp.max_store_c = weather_max_boost_c_ > 0.0f ? weather_max_boost_c_ : 1.5f;
       const auto c = lune_touch_charge::plan(ch, hour_count, now_index, room_in, cp);
@@ -6802,7 +7371,7 @@ void LuneTouchCoordinator::apply_odin_timing_bias_(ForecastDecisionState *decisi
   decision->active = decision->offset_c > 0.01f;
 }
 
-void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
+void LuneTouchCoordinator::maybe_dispatch_absorb_arm_(bool requested) {
   if (!odin_plan_active_() || !odin_plan_.absorb_arm_enabled || !odin_plan_.available)
     return;
   if (odin_defrost_blocks_arm_()) {
@@ -6816,8 +7385,11 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
   const uint32_t now = esphome::millis();
   if (odin_plan_.last_absorb_arm_ms != 0 && now - odin_plan_.last_absorb_arm_ms < 30UL * 60UL * 1000UL)
     return;
-  bool upcoming = odin_plan_.heat_window_active;
-  char reason_buf[48]{"odin_plan heat window"};
+  // Pre-buffering only: Odin asked for it (MQTT) or its plan says so for this or the next
+  // hour. A heat hour alone is heating for rooms below target, not a reason to let every
+  // room run past its target (heat_window_active armed them all, 2026-11-13).
+  bool upcoming = requested;
+  char reason_buf[48]{"odin_plan preload"};
   if (odin_plan_.current_decision_reason[0] != '\0' &&
       std::strcmp(odin_plan_.current_decision_reason, "unknown") != 0) {
     std::snprintf(reason_buf, sizeof(reason_buf), "%s", odin_plan_.current_decision_reason);
@@ -6850,6 +7422,33 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
     const auto *node = model_.node(zone->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
       continue;
+    // A room already a comfort band over its target has stored its share: skip it, and
+    // take back an arm this sent earlier (a weather charge from slab_charge stays).
+    const auto *live = model_.zone_live(zi);
+    const bool known = live != nullptr && live->fresh && live->has_temperature && live->has_setpoint;
+    if (!plan_source::absorb_room_has_headroom(known, known ? live->temperature_c : NAN,
+                                               known ? live->setpoint_c : NAN, COMFORT_BAND_C)) {
+      if (zi < ::lune_touch::MAX_HOUSE_ZONES && odin_armed_[zi] &&
+          !charge_armed_[zone->node_index][zone->zone_index]) {
+        ::lune_touch::CommandRecord record{};
+        snprintf(record.request_id, sizeof(record.request_id), "ad-%lu-%02u",
+                 static_cast<unsigned long>(now), static_cast<unsigned>(zi));
+        std::strncpy(record.source, "absorb_arm", sizeof(record.source) - 1);
+        std::strncpy(record.reason, "room_above_band", sizeof(record.reason) - 1);
+        record.node_index = zone->node_index;
+        record.zone_index = zone->zone_index;
+        stamp_command_timing_(&record, now, 0);
+        const auto target = model_.resolve_room(zone->room_id);
+        stamp_command_target_(&record, target.node, target.binding);
+        ::lune_touch::CommandRecord final_record = record;
+        send_v6_absorb_disarm_(*node, zone->zone_index, &final_record, "room_above_band");
+        ledger_.append(final_record);
+        any = true;
+      }
+      if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+        odin_armed_[zi] = false;
+      continue;
+    }
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "aa-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(zi));
@@ -6864,6 +7463,8 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_arm_() {
     ::lune_touch::CommandRecord final_record = record;
     send_v6_absorb_arm_(*node, zone->zone_index, 3600, &final_record, reason_buf);
     ledger_.append(final_record);
+    if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+      odin_armed_[zi] = true;
     any = true;
   }
   if (any) {
@@ -6890,6 +7491,10 @@ void LuneTouchCoordinator::maybe_dispatch_absorb_disarm_(const char *reason) {
     const auto *node = model_.node(zone->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
       continue;
+    if (zi < ::lune_touch::MAX_HOUSE_ZONES)
+      odin_armed_[zi] = false;
+    if (charge_armed_[zone->node_index][zone->zone_index])
+      continue;  // a weather charge (slab_charge) keeps its arm
     ::lune_touch::CommandRecord record{};
     snprintf(record.request_id, sizeof(record.request_id), "ad-%lu-%02u",
              static_cast<unsigned long>(now), static_cast<unsigned>(zi));
@@ -8179,6 +8784,11 @@ void LuneTouchCoordinator::load_settings_() {
       asgard_enabled_ = asgard_enabled != 0;
     len = sizeof(asgard_mode_);
     nvs_get_str(handle, "asgard_mode", asgard_mode_, &len);
+    planner_settings::Settings planner{};
+    len = sizeof(planner);
+    if (nvs_get_blob(handle, "planner", &planner, &len) == ESP_OK && len == sizeof(planner) &&
+        planner.version == planner_settings::BLOB_VERSION)
+      planner_settings_ = planner_settings::sanitize(planner);
     len = sizeof(authority_leader_node_id_);
     nvs_get_str(handle, "auth_leader", authority_leader_node_id_, &len);
     len = sizeof(authority_coordinator_id_);
@@ -13295,6 +13905,47 @@ void LuneTouchCoordinator::write_node_scan_json(char *buffer, size_t capacity) c
   appendf_(buffer, capacity, off, "]}");
 }
 
+void LuneTouchCoordinator::append_room_warmup_json_(char *buffer, size_t capacity, size_t &off,
+                                                    const char *room_id) const {
+  // A warm-up by hand: since and until when, and the temperature it stops at (target − band).
+  const lune_touch_odin::RoomWarmup *warm = nullptr;
+  for (const auto &w : room_warmups_.w)
+    if (w.active() && std::strcmp(w.room_id, room_id) == 0)
+      warm = &w;
+  if (warm == nullptr) {
+    appendf_(buffer, capacity, off, "null");
+    return;
+  }
+  float target = NAN;
+  room_deficit_locked_(room_id, &target);
+  char stop_at[16];
+  json_float_token_(stop_at, sizeof(stop_at), std::isfinite(target) ? target - COMFORT_BAND_C : NAN, 1);
+  appendf_(buffer, capacity, off, "{\"mode\":\"%s\",\"since\":%lu,\"until\":%lu,\"stop_at_c\":%s}",
+           warm->cheap ? "cheap" : "now", static_cast<unsigned long>(warm->start_ts),
+           static_cast<unsigned long>(warm->until_ts), stop_at);
+}
+
+void LuneTouchCoordinator::append_room_ua_day_json_(char *buffer, size_t capacity, size_t &off,
+                                                    size_t room_index) const {
+  // Daily heat-loss learning: the day so far, and what the last midnight made of its day.
+  auto figures = [&](const ::lune_touch::HouseModel::UaDayFigures &f) {
+    char dt[16], net[16], ua[16];
+    json_float_token_(dt, sizeof(dt), f.mean_dt_k, 1);
+    json_float_token_(net, sizeof(net), f.net_change_k, 2);
+    json_float_token_(ua, sizeof(ua), f.ua_est_w_per_k, 1);
+    appendf_(buffer, capacity, off,
+             "\"hours\":%.1f,\"kwh\":%.2f,\"mean_dt_k\":%s,\"net_change_k\":%s,\"ua_est_w_per_k\":%s",
+             f.hours, f.kwh, dt, net, ua);
+  };
+  appendf_(buffer, capacity, off, ",\"ua_day\":{");
+  figures(model_.ua_day_figures(room_index));
+  const auto last = model_.ua_last_close(room_index);
+  appendf_(buffer, capacity, off, ",\"last\":{\"verdict\":\"%s\",",
+           ::lune_touch::HouseModel::ua_verdict_name(last.verdict));
+  figures(last.day);
+  appendf_(buffer, capacity, off, "}}");
+}
+
 void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const {
   size_t off = 0;
   if (buffer == nullptr || capacity == 0)
@@ -13358,13 +14009,16 @@ void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const
              ",\"heat_demand\":{\"recommendation\":\"%s\",\"opening_ratio\":%.2f,"
              "\"saturated_s\":%lu,\"any_fresh\":%s},"
              "\"ble_sensor_mismatch\":%s,\"floor_unset\":%s,\"physics_conflict\":%s,"
-             "\"ua_effective_w_per_k\":%.1f}",
+             "\"ua_effective_w_per_k\":%.1f,\"warmup\":",
              ::lune_touch::heat_recommendation_name(demand.recommendation), demand.opening_ratio,
              static_cast<unsigned long>(demand.saturated_s), demand.any_fresh ? "true" : "false",
              room->ble_sensor_mismatch ? "true" : "false",
              room->floor_unset ? "true" : "false",
              room->physics_conflict ? "true" : "false",
              room->ua_effective_w_per_k);
+    append_room_warmup_json_(buffer, capacity, off, room->room_id);
+    append_room_ua_day_json_(buffer, capacity, off, room_index);
+    appendf_(buffer, capacity, off, "}");
   }
   appendf_(buffer, capacity, off, "],\"unassigned\":[");
   bool first_unassigned = true;
@@ -13382,7 +14036,9 @@ void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const
              name_esc);
     first_unassigned = false;
   }
-  appendf_(buffer, capacity, off, "]}");
+  // Whether the day's heat-loss totals survive a restart (NVS result of the last load and store).
+  appendf_(buffer, capacity, off, "],\"ua_day_store\":{\"load\":\"%s\",\"save\":\"%s\",\"ymd\":%ld}}",
+           esp_err_to_name(ua_day_load_err_), esp_err_to_name(ua_day_save_err_), static_cast<long>(ua_day_ymd_));
 }
 
 void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const {
@@ -13413,12 +14069,14 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     appendf_(buffer, capacity, off, "%s{\"room_id\":\"%s\",\"name\":\"%s\","
              "\"loop_count\":%u,\"area_m2\":%.1f,\"physical_weight\":%.2f,"
              "\"ua_w_per_k\":%.1f,\"delivered_kwh_today\":%.2f,"
-             "\"include_in_house_temperature\":%s}",
+             "\"include_in_house_temperature\":%s,\"warmup\":",
              first_room ? "" : ",", room_id_esc, room_name_esc,
              static_cast<unsigned>(loop_count), room->total_area_m2, room->physical_weight,
              room->ua_w_per_k > 0.0f ? room->ua_w_per_k : room->total_area_m2,
              room->delivered_kwh_today,
              room->include_in_house_temperature ? "true" : "false");
+    append_room_warmup_json_(buffer, capacity, off, room->room_id);
+    appendf_(buffer, capacity, off, "}");
     first_room = false;
   }
   appendf_(buffer, capacity, off, "],\"zones\":[");
@@ -14353,7 +15011,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              h.wind_dir_deg, h.shortwave_wm2, h.precipitation_mm, h.cloud_cover_pct);
   }
   appendf_(buffer, capacity, off, "],\"decisions\":[");
-  for (size_t i = 0; i < forecast_decision_count_ && off + 420 < capacity; i++) {
+  for (size_t i = 0; i < forecast_decision_count_ && off + 440 < capacity; i++) {
     const ForecastDecisionState &d = forecast_decisions_[i];
     char room_id[48];
     char room_name[80];
@@ -14363,11 +15021,11 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
              "\"comfort_setpoint_c\":%.1f,\"priority\":%u,\"offset_c\":%.2f,"
              "\"peak_load\":%.2f,\"peak_in_h\":%d,\"configured_thermal_lead_h\":%u,"
-             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,"
+             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,\"floor_lag_h\":%.2f,"
              "\"timing_scale\":%.2f,\"heuristic_offset_c\":%.2f,\"min_temp_c\":%.2f,"
              "\"horizon_ok\":%s,\"used_horizon\":%s,\"used_thermal_sizing\":%s,"
-             "\"preload_start_h\":%u,\"preload_end_h\":%u,\"active\":%s,\"odin_timing_bias\":%s,"
-             "\"solar\":{\"holdoff\":%s,\"peak_wm2\":%.0f,\"peak_in_h\":%d},"
+             "\"preload_start_h\":%u,\"preload_end_h\":%u,\"planned_offset_c\":%.2f,\"active\":%s,"
+             "\"odin_timing_bias\":%s,\"solar\":{\"holdoff\":%s,\"peak_wm2\":%.0f,\"peak_in_h\":%d},"
              "\"charge\":{\"episode\":%s,\"now\":%s,\"insufficient\":%s,\"store_c\":%.2f,"
              "\"deficit_kwh\":%.2f,\"floor_capacity_w\":%.0f,\"peak_loss_w\":%.0f,"
              "\"start_in_h\":%d,\"episode_in_h\":%d,\"end_in_h\":%d}}",
@@ -14377,11 +15035,11 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
              static_cast<int>(d.peak_in_h),
              static_cast<unsigned>(d.configured_thermal_lead_h),
              static_cast<unsigned>(d.learned_thermal_lead_h),
-             static_cast<unsigned>(d.active_thermal_lead_h), d.timing_scale,
+             static_cast<unsigned>(d.active_thermal_lead_h), d.floor_lag_h, d.timing_scale,
              d.heuristic_offset_c, d.min_temp_c, d.horizon_ok ? "true" : "false",
              d.used_horizon ? "true" : "false", d.used_thermal_sizing ? "true" : "false",
              static_cast<unsigned>(d.preload_start_h), static_cast<unsigned>(d.preload_end_h),
-             d.active ? "true" : "false", d.odin_timing_bias ? "true" : "false",
+             d.planned_offset_c, d.active ? "true" : "false", d.odin_timing_bias ? "true" : "false",
              d.solar_holdoff ? "true" : "false", d.solar_peak_wm2, static_cast<int>(d.solar_peak_in_h),
              d.charge_episode ? "true" : "false", d.charge_now ? "true" : "false",
              d.charge_insufficient ? "true" : "false", d.charge_store_c, d.charge_deficit_kwh,
@@ -15057,6 +15715,1055 @@ void LuneTouchCoordinator::write_odin_mqtt_json(char *buffer, size_t capacity) c
       mqtt.http_fallback_active ? "true" : "false", thermal, flow_rate, ret, feed, err);
 }
 
+// ---- Shadow planner --------------------------------------------------------------
+// Runs on the heat-source task after each telemetry poll. Plans 48 h from the current
+// hour with Touch's own weather forecast, the €/kWh array it pushes to Odin and the
+// comfort band Odin plans against, with the models learned from Touch's own hourly history
+// (hour_log.h; the seed values from seed_params.h until there is enough). Each poll also
+// goes into that history, which is refitted once a day. The flow controller runs on every
+// poll so its target can be read next to the one Odin sends. Nothing is written to Asgard or Odin.
+void LuneTouchCoordinator::planner_tick_() {
+  namespace lp = ::lune_planner;
+  if (time_ == nullptr || !time_->now().is_valid())
+    return;
+  if (planner_rt_ == nullptr) {
+    void *mem = heap_caps_calloc(1, sizeof(PlannerRuntime), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (mem == nullptr)
+      mem = heap_caps_calloc(1, sizeof(PlannerRuntime), MALLOC_CAP_8BIT);
+    if (mem == nullptr)
+      return;
+    planner_rt_ = new (mem) PlannerRuntime();
+    planner_rt_->house = lp::seed_house_params();
+    planner_rt_->pump = lp::seed_heat_pump_params();
+  }
+  PlannerRuntime &rt = *planner_rt_;
+  if (rt.store == nullptr)
+    planner_load_store_();
+  const uint32_t now_ts = static_cast<uint32_t>(time_->now().timestamp);
+  const uint32_t hour0 = now_ts - now_ts % 3600;
+
+  // Inputs under the state lock; the solve runs without it.
+  planner_settings::Settings set{};
+  ForecastHourState fc[72];
+  uint8_t fc_n = 0;
+  int64_t fc_epoch = 0;
+  float eur[48];
+  uint8_t eur_n = 0;
+  int eur_ymd = 0;
+  float house_t = NAN, target = NAN, out_kw = NAN, odin_flow = NAN, outside = NAN;
+  float odin_heat[24], odin_elec[24];   // Odin's space heat from this hour on (hot water hours 0)
+  int odin_n = 0;
+  bool pending = false;
+  lp::PollSample ps{};
+  ps.ts = now_ts;
+  // Odin's comfort band as Touch keeps it: the user's schedule (or the synced setpoint),
+  // without the lift Touch wrote. Touch plans on its own judgement, and the rooms'
+  // forecasts on that plan tell the lift whether a lagging room needs one at all.
+  lune_touch_odin::Profile base{};
+  bool has_base = false;
+  if (!take_state_lock_(100))
+    return;
+  set = planner_settings_;
+  if (odin_owner_.has_user || odin_owner_.sync.on) {
+    base = lune_touch_odin::apply_sync(odin_owner_.user, odin_owner_.sync);
+    has_base = base.count > 0;
+  }
+  fc_n = forecast_hours_count_ > 72 ? 72 : forecast_hours_count_;
+  for (uint8_t i = 0; i < fc_n; i++)
+    fc[i] = forecast_hours_[i];
+  fc_epoch = forecast_fetch_epoch_s_;
+  if (price_rt_ != nullptr) {
+    eur_n = price_rt_->eur_n;
+    eur_ymd = price_rt_->eur_ymd;
+    for (uint8_t i = 0; i < eur_n; i++)
+      eur[i] = price_rt_->eur[i];
+  }
+  const auto strategy = model_.strategy_snapshot();
+  house_t = strategy.has_physical_temperature ? strategy.physical_temperature_c
+            : strategy.has_last_known_temperature ? strategy.last_known_temperature_c
+                                                  : NAN;
+  target = strategy.has_house_target ? strategy.house_target_c : NAN;
+  const bool hp_fresh = heat_source_.hp_telemetry_ms != 0 && esphome::millis() - heat_source_.hp_telemetry_ms < 300000UL;
+  if (hp_fresh) {
+    const int mode = heat_source_.hp_operation_mode;
+    const bool space = heat_source_.hp_compressor_on && mode != 1 && mode != 6;   // 1 hot water, 6 legionella
+    out_kw = space ? heat_source_.hp_output_kw : 0.0f;
+    odin_flow = heat_source_.hp_flow_target_c;
+    outside = heat_source_.hp_outside_c;
+    ps.compressor_on = heat_source_.hp_compressor_on;
+    ps.hot_water = mode == 1 || mode == 6;
+    ps.legionella = mode == 6;
+    ps.defrost = heat_source_.hp_status_defrost;
+    ps.output_kw = heat_source_.hp_output_kw;
+    ps.hp_feed_c = heat_source_.hp_feed_c;
+    ps.hp_return_c = heat_source_.hp_return_c;
+    ps.zone_feed_c = heat_source_.hp_sec_feed_c;
+    ps.zone_return_c = heat_source_.hp_sec_return_c;
+    ps.flow_target_c = odin_flow;
+    ps.sh_heat_kwh = heat_source_.hp_sh_heat_kwh;
+    ps.sh_elec_kwh = heat_source_.hp_sh_elec_kwh;
+    ps.dhw_elec_kwh = heat_source_.hp_dhw_elec_kwh;
+    ps.total_elec_kwh = heat_source_.hp_total_elec_kwh;
+  }
+  {
+    const auto &o = odin_plan_;
+    if (o.available && !o.plan_stale && o.heat_production_count > 0) {
+      odin_n = std::min<int>(24, o.heat_production_count);
+      for (int k = 0; k < odin_n; k++) {
+        const bool space = o.operation_mode_horizon[k] != 1 && o.operation_mode_horizon[k] != 6;
+        odin_heat[k] = space ? std::max(0.0f, o.heat_production_horizon[k]) : 0.0f;
+        odin_elec[k] = space && std::isfinite(o.energy_horizon[k]) ? std::max(0.0f, o.energy_horizon[k]) : (space ? NAN : 0.0f);
+      }
+    }
+  }
+  pending = planner_solve_pending_;
+  planner_solve_pending_ = false;
+  give_state_lock_();
+  rt.odin_n = odin_n;
+  rt.odin_hour = hour0;
+  for (int k = 0; k < odin_n; k++)
+    rt.odin_heat[k] = odin_heat[k];
+
+  rt.pump.min_kw = set.min_output_kw;
+  rt.pump.max_kw = set.max_output_kw;
+  rt.flow.set_limits(20.0f, set.max_flow_c);
+
+  // Re-plan on a new hour, new settings, new weather or new prices.
+  const bool due = pending || rt.solved_ts == 0 || rt.solved_hour != hour0 || rt.seen_forecast_epoch != fc_epoch ||
+                   rt.seen_price_ymd != eur_ymd || rt.seen_price_n != eur_n;
+  if (due && std::isfinite(house_t) && std::isfinite(target) && fc_n >= 24) {
+    int n = 0;
+    float lag = 0.0f;
+    for (int k = 0; k < lp::PLAN_H; k++) {
+      const uint32_t ts = hour0 + static_cast<uint32_t>(k) * 3600u;
+      int best = -1;
+      int64_t best_d = 3600;
+      for (uint8_t i = 0; i < fc_n; i++) {
+        const int64_t d = std::llabs(fc[i].timestamp_s - static_cast<int64_t>(ts));
+        if (d < best_d) { best_d = d; best = i; }
+      }
+      if (best < 0)
+        break;
+      lp::PlanHour &ph = rt.hours[k];
+      ph = lp::PlanHour{};
+      ph.weather.out_c = fc[best].temp_c;
+      ph.weather.wind_ms = fc[best].wind_speed_ms;
+      ph.weather.sun_wm2 = fc[best].shortwave_wm2;   // global irradiance (no facade values on Touch yet)
+      lag = lp::sun_lag_filter(lag, ph.weather.sun_wm2);
+      ph.weather.sun_lag_wm2 = lag;
+      const ESPTime lt = ESPTime::from_epoch_local(static_cast<time_t>(ts));
+      ph.weather.hour_local = static_cast<float>(lt.hour);
+      const int ymd = lune_touch_price::make_ymd(lt.year, lt.month, lt.day_of_month);
+      float price = NAN;
+      if (eur_n > 0 && ymd == eur_ymd && lt.hour < eur_n)
+        price = eur[lt.hour];
+      else if (eur_n > 24 && ymd != eur_ymd && 24 + lt.hour < eur_n) {
+        // Tomorrow: the day after eur_ymd.
+        const ESPTime prev = ESPTime::from_epoch_local(static_cast<time_t>(ts - 86400u));
+        if (lune_touch_price::make_ymd(prev.year, prev.month, prev.day_of_month) == eur_ymd)
+          price = eur[24 + lt.hour];
+      }
+      // Not published yet (tomorrow before ~13:00, the day after): the same hour of the
+      // last day that is known, so the plan keeps the day's shape instead of a flat guess.
+      rt.price_est[k] = !std::isfinite(price) && eur_n > 0;
+      if (rt.price_est[k]) {
+        const int last = eur_n > 24 && 24 + lt.hour < eur_n ? 24 + lt.hour : lt.hour;
+        price = last < eur_n ? eur[last] : NAN;
+      }
+      ph.price_eur_kwh = price;
+      const lune_touch_odin::Profile *prof = has_base ? &base : nullptr;
+      if (prof != nullptr) {
+        const lune_touch_odin::Block b = lune_touch_odin::block_at(*prof, static_cast<uint8_t>(lt.hour));
+        ph.band_min_c = b.sp + b.min;
+        ph.band_max_c = b.sp + b.max;
+      } else {
+        ph.band_min_c = target - COMFORT_BAND_C;
+        ph.band_max_c = target + 1.0f;
+      }
+      rt.band_min[k] = ph.band_min_c;
+      rt.band_max[k] = ph.band_max_c;
+      rt.price[k] = price;
+      n = k + 1;
+    }
+    if (n >= 24) {
+      lp::SolverSettings cfg;
+      cfg.strategy = static_cast<lp::Strategy>(static_cast<uint8_t>(set.strategy));
+      cfg.penalty_eur_per_kh = set.comfort_weight_eur;
+      cfg.room_c = target;
+      cfg.yield = []() { vTaskDelay(1); };   // let the idle task (watchdog) run between steps
+      // Floors: tracked through the stored hours when there are enough; else where they
+      // would stand if the house were holding its temperature now (high enough above the
+      // rooms to cover the loss).
+      float tracked = NAN;
+      if (rt.store != nullptr && rt.scratch != nullptr && rt.snapshot != nullptr && take_state_lock_(100)) {
+        std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+        give_state_lock_();
+        tracked = lp::floor_now(*rt.snapshot, hour0, rt.house, planner_local_hour_, rt.scratch);
+      }
+      const lp::HourIn &w0 = rt.hours[0].weather;
+      const float ph = w0.hour_local * (6.2831853f / 24.0f);
+      const float need = rt.house.ua_kw_per_k * lp::loss_factor(rt.house, w0.out_c, w0.wind_ms) * (house_t - w0.out_c) -
+                         rt.house.p_int_kw - rt.house.p_cos_kw * std::cos(ph) - rt.house.p_sin_kw * std::sin(ph) -
+                         rt.house.g_kw_per_100wm2 * w0.sun_wm2 / 100.0f;
+      const float lift = std::clamp(need / rt.house.h_kw_per_k, 0.0f, 8.0f);
+      rt.floor_tracked = std::isfinite(tracked);
+      rt.floor_c = rt.floor_tracked ? tracked : house_t + lift;
+      const lp::HouseState start{house_t, rt.floor_c};
+      const int64_t t0 = esp_timer_get_time();
+      lp::solve_plan(rt.house, rt.pump, start, rt.hours, n, cfg, &rt.plan);
+      rt.solve_us = static_cast<uint32_t>(esp_timer_get_time() - t0);
+      rt.from_ts = hour0;
+      rt.solved_ts = now_ts;
+      rt.solved_hour = hour0;
+      rt.seen_forecast_epoch = fc_epoch;
+      rt.seen_price_ymd = eur_ymd;
+      rt.seen_price_n = eur_n;
+      rt.start_t_c = house_t;
+      rt.target_c = target;
+      rt.band_odin = has_base;
+      // The 6 h-ahead forecast for hour0 + 5, scored against what happened (plan vs actual).
+      if (n > 5) {
+        const uint32_t h5 = hour0 + 5u * 3600u;
+        rt.expect[(h5 / 3600u) % 8] = {h5, rt.plan.t_end_c[5]};
+      }
+      rt.house_pend.put_plan(hour0, rt.plan.t_end_c, n, house_t);
+      // The day's first plan: Touch's, and Odin's as it stood at the same time.
+      const uint32_t day0 = hour0 - static_cast<uint32_t>(planner_local_hour_(hour0)) * 3600u;
+      if (rt.day_touch.day_ts != day0) {
+        const int first = static_cast<int>((hour0 - day0) / 3600u);
+        rt.day_touch.reset(day0);
+        rt.day_odin.reset(day0);
+        for (int k = 0; first + k < 24; k++) {
+          if (k < n) {
+            rt.day_touch.heat_kw[first + k] = rt.plan.kw[k];
+            rt.day_touch.elec_kwh[first + k] = rt.plan.elec_kwh[k];
+          }
+          if (k < odin_n) {
+            rt.day_odin.heat_kw[first + k] = odin_heat[k];
+            rt.day_odin.elec_kwh[first + k] = odin_elec[k];
+          }
+        }
+      }
+      rt.out_now_c = rt.hours[0].weather.out_c;
+      if (!rt.logged_runtime) {
+        rt.logged_runtime = true;
+        char msg[96];
+        std::snprintf(msg, sizeof(msg), "shadow plan %d h solved in %lu ms, %.1f kWh, %.2f EUR", n,
+                      static_cast<unsigned long>(rt.solve_us / 1000), rt.plan.heat_kwh, rt.plan.cost_eur);
+        log_event_("info", "planner", msg);
+        ESP_LOGI(TAG, "%s", msg);
+      }
+    }
+  }
+
+  // Shadow flow controller on this poll: our plan's output for the current hour.
+  const float plan_kw = rt.solved_ts != 0 && rt.from_ts == hour0 && rt.plan.n > 0 ? rt.plan.kw[0] : NAN;
+  const float room = std::isfinite(house_t) ? house_t : rt.start_t_c;
+  rt.plan_kw_now = plan_kw;
+  rt.measured_kw = out_kw;
+  rt.odin_flow_c = odin_flow;
+  rt.our_flow_c = std::isfinite(plan_kw) && std::isfinite(room) ? rt.flow.update(rt.pump, plan_kw, out_kw, room) : NAN;
+  if (std::isfinite(outside))
+    rt.out_now_c = outside;
+
+  // ---- F3: this poll into the hourly history.
+  if (rt.store == nullptr)
+    return;
+  {
+    int best = -1;
+    int64_t best_d = 1800;
+    for (uint8_t i = 0; i < fc_n; i++) {
+      const int64_t d = std::llabs(fc[i].timestamp_s - static_cast<int64_t>(hour0));
+      if (d < best_d) { best_d = d; best = i; }
+    }
+    ps.house_c = house_t;
+    ps.out_c = std::isfinite(outside) ? outside : (best >= 0 ? fc[best].temp_c : NAN);
+    if (best >= 0) {
+      ps.wind_ms = fc[best].wind_speed_ms;
+      ps.sun_wm2 = fc[best].shortwave_wm2;
+    }
+    if (rt.from_ts == hour0 && rt.plan.n > 0) {
+      ps.price_eur_kwh = rt.price[0];
+      ps.band_min_c = rt.band_min[0];
+      ps.band_max_c = rt.band_max[0];
+    }
+    ps.band_sp_c = target;
+    const auto &e = rt.expect[(hour0 / 3600u) % 8];
+    ps.expected_c = e.hour == hour0 ? e.t_c : NAN;
+    // The day plan's hour (what Touch meant to deliver today), the rolling plan's only
+    // before the day has one.
+    const float day_kw = rt.day_touch.at(hour0);
+    ps.plan_kw = std::isfinite(day_kw) ? day_kw : plan_kw;
+    ps.shadow_flow_c = rt.our_flow_c;
+    lp::Record rec;
+    lp::HourExtra extra;
+    if (rt.acc.add(ps, &rec, &extra)) {
+      bool stored = false;
+      if (take_state_lock_(100)) {
+        rt.store->put(rec, extra);
+        rt.save_due = true;
+        if (rt.snapshot != nullptr)
+          std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+        stored = true;
+        give_state_lock_();
+      }
+      // The hour is closed: score the plan's forecasts for it, and the house model re-run
+      // over the last hours on the heat that was delivered.
+      rt.house_pend.score(rec.hour_start, rec.get(lp::Kind::HOUSE, lp::H_ROOM_C), &rt.house_plan_score);
+      if (stored && rt.snapshot != nullptr && rt.scratch != nullptr) {
+        constexpr size_t SW = 96;
+        lp::history_window(*rt.snapshot, rec.hour_start - static_cast<uint32_t>(SW) * 3600u, SW, planner_local_hour_,
+                           rt.scratch->t, rt.scratch->in);
+        lp::score_house_hour(rt.house, rt.scratch->t, rt.scratch->in, SW, rt.scratch->track, &rt.house_model_score);
+      }
+    }
+  }
+  // The normal price's month: mean all-in price of the last 30 days logged, once an hour.
+  if (price_month_hour_ != hour0 && take_state_lock_(100)) {
+    double sum = 0.0;
+    uint32_t n = 0;
+    for (uint32_t h = hour0 - 30u * 86400u; h < hour0; h += 3600u) {
+      const lp::Record *r = rt.store->at(h);
+      if (r != nullptr && r->has(lp::H_PRICE_EUR_KWH)) {
+        const float v = r->get(lp::Kind::HOUSE, lp::H_PRICE_EUR_KWH);
+        if (std::isfinite(v)) {
+          sum += v;
+          n++;
+        }
+      }
+    }
+    price_month_mean_eur_ = n > 0 ? static_cast<float>(sum / n) : NAN;
+    price_month_hours_ = n;
+    price_month_hour_ = hour0;
+    give_state_lock_();
+  }
+
+  // Daily refit at 03 local (and once as soon as there are 4 days, or after a seed): from
+  // the seed again, on a copy of the store so the lock is held only for the copy.
+  const int local_h = planner_local_hour_(hour0);
+  const bool have_days = rt.store->count_since(hour0 - 14u * 86400u) >= 4 * 24;
+  const bool refit = have_days && rt.scratch != nullptr && rt.snapshot != nullptr &&
+                     (rt.learned_hour == 0 || (rt.seeded > 0 && rt.learned_hour != hour0) ||
+                      (local_h == 3 && rt.learned_hour != hour0));
+  if (refit && take_state_lock_(100)) {
+    std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+    rt.seeded = 0;
+    give_state_lock_();
+    rt.scratch->fitter.set_yield(planner_fit_yield_);
+    const int64_t t0 = esp_timer_get_time();
+    planner_last_yield_us_ = t0;
+    lp::LearnReport rep{};
+    lp::HouseParams house = lp::seed_house_params();
+    lp::HeatPumpParams pump = lp::seed_heat_pump_params();
+    lp::learn_house(*rt.snapshot, hour0, lp::seed_house_params(), planner_local_hour_, rt.scratch, &house, &rep);
+    lp::learn_heat_pump(*rt.snapshot, hour0, lp::seed_heat_pump_params(), &pump, &rep);
+    rt.learn_ms = static_cast<uint32_t>((esp_timer_get_time() - t0) / 1000);
+    rt.learn = rep;
+    rt.learned_hour = hour0;
+    rt.house = house;
+    rt.pump = pump;
+    rt.learned = rep.energy || rep.dynamics || rep.heat_pump;
+    char msg[128];
+    std::snprintf(msg, sizeof(msg),
+                  "planner refit in %lu ms: %u days, %u h, rmse %.2f K, UA %.3f, cold %.1f %%/K, %lu pump hours",
+                  static_cast<unsigned long>(rt.learn_ms), rep.days, rep.hours, static_cast<double>(rep.rmse_k),
+                  static_cast<double>(house.ua_kw_per_k), static_cast<double>(100.0f * house.cold_per_k),
+                  static_cast<unsigned long>(rep.hp_hours));
+    log_event_("info", "planner", msg);
+    ESP_LOGI(TAG, "%s", msg);
+    if (take_state_lock_(100)) {
+      planner_solve_pending_ = true;   // re-plan with what was learned
+      give_state_lock_();
+    }
+  }
+  // Rooms: a forecast for each new plan; refitted with the house at 03, and as soon as a
+  // room has 4 days of history without a model (at most once an hour).
+  if (rt.solved_ts != 0 && rt.from_ts == hour0 && (rt.rooms_ts != rt.solved_ts || (local_h == 3 && rt.rooms_fit_hour != hour0)))
+    planner_rooms_(hour0, now_ts, local_h == 3 && rt.rooms_fit_hour != hour0);
+  // Save every 3 hours (two slots in turn, like the room history).
+  if (rt.save_due && hour0 >= rt.saved_hour + 3u * 3600u)
+    planner_save_store_();
+}
+
+void LuneTouchCoordinator::planner_rooms_(uint32_t hour0, uint32_t now_ts, bool refit) {
+  namespace lp = ::lune_planner;
+  PlannerRuntime &rt = *planner_rt_;
+  constexpr size_t W = PlannerRuntime::RW;
+  if (rt.store == nullptr || rt.snapshot == nullptr || rt.scratch == nullptr || room_history_store_ == nullptr)
+    return;
+  // The rooms and their week, and the house's hours, under the lock. A room keeps its
+  // model across calls by id.
+  if (!take_state_lock_(100))
+    return;
+  uint8_t n = 0;
+  for (size_t r = 0; r < model_.room_count() && n < PlannerRuntime::ROOMS; r++) {
+    const auto *room = model_.room(r);
+    if (room == nullptr || room->room_id[0] == '\0')
+      continue;
+    int j = -1;
+    for (int k = n; k < rt.room_n && j < 0; k++)
+      if (std::strncmp(rt.rooms[k].id, room->room_id, sizeof(rt.rooms[k].id)) == 0)
+        j = k;
+    if (j < 0) {
+      j = rt.room_n < PlannerRuntime::ROOMS ? rt.room_n++ : rt.room_n - 1;
+      if (j < n)
+        continue;
+      rt.rooms[j] = PlannerRuntime::Room{};
+      planner_clear_pend_(rt.room_pend[j]);
+      std::strncpy(rt.rooms[j].id, room->room_id, sizeof(rt.rooms[j].id) - 1);
+    }
+    if (j != n) {
+      std::swap(rt.rooms[j], rt.rooms[n]);
+      planner_swap_pend_(rt.room_pend[j], rt.room_pend[n]);
+    }
+    PlannerRuntime::Room &pr = rt.rooms[n];
+    std::strncpy(pr.name, room->room_name[0] != '\0' ? room->room_name : room->room_id, sizeof(pr.name) - 1);
+    pr.area_m2 = room->total_area_m2 > 0.0f ? room->total_area_m2 : 1.0f;
+    room_history_.series(pr.id, now_ts, W + 1, rt.room_temp[n], rt.room_target, rt.room_valve[n]);
+    pr.target_c = NAN;
+    for (size_t i = W + 1; i > 0 && !std::isfinite(pr.target_c); i--)
+      if (rt.room_target[i - 1] != room_history::NONE)
+        pr.target_c = rt.room_target[i - 1] / 10.0f;
+    n++;
+  }
+  rt.room_n = n;
+  std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+  give_state_lock_();
+  if (n == 0)
+    return;
+
+  // The house's week: weather, heat and the zone feed per hour.
+  const uint32_t from = hour0 - static_cast<uint32_t>(W) * 3600u;
+  lp::history_window(*rt.snapshot, from, W, planner_local_hour_, rt.room_t, rt.room_base);
+  float area = 0.0f;
+  for (int k = 0; k < n; k++)
+    area += rt.rooms[k].area_m2;
+  for (size_t i = 0; i < W; i++) {
+    const lp::Record *r = rt.snapshot->at(from + static_cast<uint32_t>(i) * 3600u);
+    rt.room_hq[i] = rt.room_base[i].q_kw;
+    rt.room_feed[i] = r != nullptr ? r->get(lp::Kind::HOUSE, lp::H_Z1_FEED_C) : NAN;
+    float sum = 0.0f;
+    for (int k = 0; k < n; k++) {
+      const int16_t t = rt.room_temp[k][i];
+      const uint8_t v = rt.room_valve[k][i];
+      sum += lp::room_heat_weight(v == room_history::NO_VALVE ? NAN : static_cast<float>(v), rt.rooms[k].area_m2,
+                                  rt.room_feed[i], t == room_history::NONE ? NAN : t / 10.0f);
+    }
+    rt.room_wsum[i] = sum;
+  }
+
+  const int64_t t0 = esp_timer_get_time();
+  planner_last_yield_us_ = t0;
+  rt.scratch->fitter.set_yield(planner_fit_yield_);
+  const bool planned = rt.plan.n > 0 && rt.from_ts == hour0;
+  const bool retry = rt.rooms_fit_hour != hour0;   // a room without a model: at most once an hour
+  bool fit_ran = false;
+  uint8_t fitted = 0;
+  for (int k = 0; k < n; k++) {
+    PlannerRuntime::Room &pr = rt.rooms[k];
+    // The room's week: hour-mean temperature (the last one the hour in progress) and its
+    // share of each hour's heat by valve × area × (feed − room).
+    size_t have = 0;
+    for (size_t i = 0; i <= W; i++) {
+      const int16_t t = rt.room_temp[k][i];
+      rt.room_t[i] = t == room_history::NONE ? NAN : t / 10.0f;
+      have += t != room_history::NONE;
+      if (i == W)
+        break;
+      const uint8_t v = rt.room_valve[k][i];
+      const float w = lp::room_heat_weight(v == room_history::NO_VALVE ? NAN : static_cast<float>(v), pr.area_m2,
+                                           rt.room_feed[i], rt.room_t[i]);
+      rt.room_in[i] = rt.room_base[i];
+      rt.room_in[i].q_kw = rt.room_wsum[i] > 0.0f ? rt.room_hq[i] * w / rt.room_wsum[i] : 0.0f;
+    }
+    pr.now_c = rt.room_t[W];
+    for (size_t i = W; !std::isfinite(pr.now_c) && i > W - 3; i--)
+      pr.now_c = rt.room_t[i - 1];
+    // Forecasts that end at this hour, against the mean of the hour that just closed (a
+    // forecast for the end of plan hour k is held to that hour's mean).
+    if (rt.room_score_hour != hour0)
+      rt.room_pend[k].score(hour0, rt.room_t[W - 1], &pr.score);
+    // Refit: yesterday's model scored on the last day, then fitted again; and a room with
+    // four days and no model yet.
+    if ((refit || (retry && !pr.model.fitted)) && have >= 4 * 24) {
+      fit_ran = true;
+      if (refit)
+        lp::score_room(&pr.model, rt.room_t, rt.room_in, rt.room_hq, pr.share, W, W - 24, rt.room_track);
+      lp::fit_room(&pr.model, &rt.scratch->fitter, rt.room_t, rt.room_in, W, pr.area_m2 / area);
+      float qr = 0.0f, qh = 0.0f;
+      for (size_t i = W - 72; i < W; i++) {
+        qr += rt.room_in[i].q_kw;
+        qh += rt.room_hq[i];
+      }
+      if (qh > 0.5f)
+        pr.share = qr / qh;
+      // A fresh model (after a restart) is scored on its own last 3 days until real days come:
+      // in sample, but a room the model does not suit leans on "as it is" from the start.
+      if (pr.model.fitted && pr.model.scored == 0)
+        lp::score_room(&pr.model, rt.room_t, rt.room_in, rt.room_hq, pr.share, W, W - 72, rt.room_track);
+    }
+    fitted += pr.model.fitted;
+    pr.forecast = false;
+    if (planned && pr.model.fitted) {
+      for (int h = 0; h < rt.plan.n; h++) {
+        rt.room_fut[h] = rt.hours[h].weather;
+        rt.room_fut[h].q_kw = rt.plan.kw[h] * pr.share;
+      }
+      lp::forecast_room(pr.model, rt.room_t, rt.room_in, W, rt.room_fut, rt.plan.n, rt.room_track, pr.expected);
+      pr.forecast = std::isfinite(pr.expected[0]);
+      if (pr.forecast)
+        rt.room_pend[k].put_plan(hour0, pr.expected, rt.plan.n, pr.now_c);
+      // The lift asks whether the room gets back on the heat that will come: Odin's plan
+      // while Odin heats the house (the planner in shadow), Touch's own once it drives the
+      // heat (25 Nov 2026: Soveværelse 1.9 K behind after airing at 10, Touch's 3.2 kW from
+      // now forecast 20.8 °C, so the cold call lifted 0 K, while Odin had heat off until 12
+      // and the room stayed at 19.1–19.9 °C).
+      pr.lift_on_odin = false;
+      for (int h = 0; h < 24; h++)
+        pr.lift_expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
+      if (!planner_settings::PLANNER_DRIVES_HEAT && pr.forecast && rt.odin_n > 0 && rt.odin_hour == hour0) {
+        for (int h = 0; h < rt.plan.n; h++)
+          rt.room_fut[h].q_kw = (h < rt.odin_n ? rt.odin_heat[h] : rt.plan.kw[h]) * pr.share;
+        const int nf = std::min<int>(24, rt.plan.n);
+        if (lp::forecast_room(pr.model, rt.room_t, rt.room_in, W, rt.room_fut, nf, rt.room_track, pr.lift_expected))
+          pr.lift_on_odin = true;
+        else
+          for (int h = 0; h < 24; h++)
+            pr.lift_expected[h] = h < rt.plan.n ? pr.expected[h] : NAN;
+      }
+    }
+  }
+  // The forecasts the lift reads (compute_odin_lift_).
+  if (take_state_lock_(100)) {
+    uint8_t m = 0;
+    for (int k = 0; k < n && m < ROOM_OUTLOOK_N; k++) {
+      const PlannerRuntime::Room &pr = rt.rooms[k];
+      if (!pr.forecast)
+        continue;
+      RoomOutlook &o = room_outlook_[m++];
+      o = RoomOutlook{};
+      std::strncpy(o.id, pr.id, sizeof(o.id) - 1);
+      o.share = pr.share;
+      o.target_c = pr.target_c;
+      o.on_odin = pr.lift_on_odin;
+      for (int h = 0; h < 24; h++)
+        o.expected[h] = pr.lift_expected[h];
+      o.ts = now_ts;
+    }
+    room_outlook_n_ = m;
+    give_state_lock_();
+  }
+  rt.room_score_hour = hour0;
+  rt.rooms_fitted = fitted;
+  rt.rooms_ts = rt.solved_ts;
+  if (refit || fit_ran)
+    rt.rooms_fit_hour = hour0;
+  if (fit_ran) {
+    rt.rooms_fit_ms = static_cast<uint32_t>((esp_timer_get_time() - t0) / 1000);
+    char msg[96];
+    std::snprintf(msg, sizeof(msg), "planner rooms: %u of %u fitted in %lu ms", fitted, n,
+                  static_cast<unsigned long>(rt.rooms_fit_ms));
+    log_event_("info", "planner", msg);
+    ESP_LOGI(TAG, "%s", msg);
+  }
+}
+
+namespace {
+constexpr const char *PLANNER_STORE_SLOTS[2] = {"/hist/planner.a", "/hist/planner.b"};
+}  // namespace
+
+bool LuneTouchCoordinator::mount_history_fs_() {
+  if (spiffs_mounted_)
+    return true;
+  esp_vfs_spiffs_conf_t conf{};
+  conf.base_path = "/hist";
+  conf.partition_label = "spiffs";
+  conf.max_files = 4;
+  conf.format_if_mount_failed = true;
+  const esp_err_t err = esp_vfs_spiffs_register(&conf);
+  spiffs_mounted_ = err == ESP_OK || err == ESP_ERR_INVALID_STATE;
+  if (!spiffs_mounted_)
+    ESP_LOGW(TAG, "History: SPIFFS mount failed (%s)", esp_err_to_name(err));
+  return spiffs_mounted_;
+}
+
+void LuneTouchCoordinator::planner_load_store_() {
+  namespace lp = ::lune_planner;
+  PlannerRuntime &rt = *planner_rt_;
+  if (rt.store != nullptr)
+    return;
+  auto alloc = [](size_t n) {
+    void *m = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return m;
+  };
+  void *a = alloc(sizeof(PlannerStore)), *b = alloc(sizeof(PlannerStore)), *s = alloc(sizeof(lp::LearnScratch));
+  if (a == nullptr || b == nullptr || s == nullptr) {
+    heap_caps_free(a);
+    heap_caps_free(b);
+    heap_caps_free(s);
+    rt.store_boot = "no_psram";
+    return;
+  }
+  PlannerStore *store = static_cast<PlannerStore *>(a);
+  PlannerStore *cand = static_cast<PlannerStore *>(b);
+  rt.scratch = new (s) lp::LearnScratch(lp::seed_house_params());
+  store->magic = 0;
+  int best = -1;
+  bool any_file = false;
+  if (!mount_history_fs_()) {
+    rt.store_boot = "no_spiffs";
+  } else {
+    for (int i = 0; i < 2; i++) {
+      FILE *f = std::fopen(PLANNER_STORE_SLOTS[i], "rb");
+      if (f == nullptr)
+        continue;
+      any_file = true;
+      const bool full = std::fread(cand, sizeof(PlannerStore), 1, f) == 1;
+      std::fclose(f);
+      if (!full || !cand->valid())
+        continue;
+      if (best < 0 || cand->newest_hour > store->newest_hour) {
+        std::memcpy(static_cast<void *>(store), cand, sizeof(PlannerStore));
+        best = i;
+      }
+    }
+    rt.store_boot = best >= 0 ? "restored" : (any_file ? "bad_file" : "no_file");
+  }
+  if (best < 0)
+    store->clear();
+  rt.next_slot = best == 0 ? 1 : 0;
+  rt.snapshot = cand;
+  if (take_state_lock_(200)) {
+    rt.store = store;
+    give_state_lock_();
+  }
+  ESP_LOGI(TAG, "Planner history: %s, %u hours", rt.store_boot,
+           static_cast<unsigned>(store->count_since(1)));
+}
+
+void LuneTouchCoordinator::planner_save_store_() {
+  PlannerRuntime &rt = *planner_rt_;
+  if (rt.store == nullptr || rt.snapshot == nullptr || !mount_history_fs_())
+    return;
+  if (!take_state_lock_(200))
+    return;
+  std::memcpy(static_cast<void *>(rt.snapshot), rt.store, sizeof(PlannerStore));
+  rt.save_due = false;
+  {
+    // Under the lock: a seed arriving during the write resets it and is saved next.
+    const uint32_t now_ts = static_cast<uint32_t>(time_->now().timestamp);
+    rt.saved_hour = now_ts - now_ts % 3600;
+  }
+  give_state_lock_();
+  const uint8_t slot = rt.next_slot & 1U;
+  // Through an internal-RAM bounce buffer in 4 KiB pieces: SPIFFS writes the store from
+  // PSRAM unreliably in one call.
+  static char why[40];
+  std::remove(PLANNER_STORE_SLOTS[slot]);
+  FILE *f = std::fopen(PLANNER_STORE_SLOTS[slot], "wb");
+  bool ok = f != nullptr;
+  int err = ok ? 0 : errno;
+  size_t done = 0;
+  char *bounce = ok ? static_cast<char *>(heap_caps_malloc(4096, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) : nullptr;
+  ok = ok && bounce != nullptr;
+  const char *src = reinterpret_cast<const char *>(rt.snapshot);
+  while (ok && done < sizeof(PlannerStore)) {
+    const size_t n = std::min<size_t>(4096, sizeof(PlannerStore) - done);
+    std::memcpy(bounce, src + done, n);
+    if (std::fwrite(bounce, 1, n, f) != n) {
+      ok = false;
+      err = errno;
+      break;
+    }
+    done += n;
+    vTaskDelay(1);
+  }
+  heap_caps_free(bounce);
+  if (f != nullptr && std::fclose(f) != 0 && ok) {
+    ok = false;
+    err = errno;
+  }
+  if (!ok) {
+    std::snprintf(why, sizeof(why), "%s errno %d at %u", f == nullptr ? "open_failed" : "write_failed", err,
+                  static_cast<unsigned>(done));
+    rt.last_save = why;
+    ESP_LOGW(TAG, "Planner history: save failed (%s)", why);
+    return;
+  }
+  rt.next_slot = slot ^ 1U;
+  rt.saves++;
+  rt.last_save = "ok";
+}
+
+int LuneTouchCoordinator::seed_planner_history(const char *hex) {
+  namespace lp = ::lune_planner;
+  if (hex == nullptr || planner_rt_ == nullptr || planner_rt_->store == nullptr)
+    return -1;
+  const size_t len = std::strlen(hex);
+  const size_t rec_hex = 2 * lp::RECORD_SIZE;
+  if (len == 0 || len % rec_hex != 0)
+    return -1;
+  auto nib = [](char ch) -> int {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+  };
+  const lp::Header hdr = lp::default_header(lp::Kind::HOUSE);
+  int taken = 0;
+  for (size_t off = 0; off < len; off += rec_hex) {
+    uint8_t raw[lp::RECORD_SIZE];
+    for (size_t i = 0; i < lp::RECORD_SIZE; i++) {
+      const int hi = nib(hex[off + 2 * i]), lo = nib(hex[off + 2 * i + 1]);
+      if (hi < 0 || lo < 0)
+        return -1;
+      raw[i] = static_cast<uint8_t>(hi << 4 | lo);
+    }
+    lp::Record r;
+    lp::read_record(hdr, raw, &r);
+    if (r.hour_start == 0 || r.hour_start % 3600 != 0)
+      continue;
+    if (!take_state_lock_(100))
+      return -1;
+    if (planner_rt_->store->seed(r)) {
+      planner_rt_->saved_hour = 0;   // save soon
+      taken++;
+      planner_rt_->save_due = true;
+      if (planner_rt_->seeded < 65535)
+        planner_rt_->seeded++;
+    }
+    give_state_lock_();
+  }
+  return taken;
+}
+
+static void planner_num_(char *out, size_t cap, float v, int dec) {
+  if (std::isfinite(v))
+    std::snprintf(out, cap, "%.*f", dec, static_cast<double>(v));
+  else
+    std::snprintf(out, cap, "null");
+}
+
+void LuneTouchCoordinator::write_planner_json(char *buffer, size_t capacity) const {
+  namespace lp = ::lune_planner;
+  planner_settings::Settings set{};
+  PlannerRuntime *rt_mem = nullptr;
+  if (take_state_lock_(100)) {
+    set = planner_settings_;
+    rt_mem = planner_rt_;
+    give_state_lock_();
+  }
+  if (rt_mem == nullptr || rt_mem->solved_ts == 0) {
+    planner_settings::write_api_json(set, buffer, capacity);
+    return;
+  }
+  // A copy, so the heat-source task can keep planning while this is written.
+  PlannerRuntime *rt = static_cast<PlannerRuntime *>(heap_caps_malloc(sizeof(PlannerRuntime), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (rt == nullptr) {
+    planner_settings::write_api_json(set, buffer, capacity);
+    return;
+  }
+  std::memcpy(static_cast<void *>(rt), rt_mem, sizeof(PlannerRuntime));
+  size_t off = 0;
+  auto put = [&](const char *fmt, auto... args) {
+    if (off >= capacity) return;
+    const int w = std::snprintf(buffer + off, capacity - off, fmt, args...);
+    if (w > 0) off += static_cast<size_t>(w) < capacity - off ? static_cast<size_t>(w) : capacity - off - 1;
+  };
+  char settings[192];
+  planner_settings::write_settings_json(set, settings, sizeof(settings));
+  const lp::HeatPlan &p = rt->plan;
+  char a[16], b[16], c[16];
+  put("{\"mode\":\"%s\",\"running\":true,\"strategy\":\"%s\",\"settings\":%s,\"solved_ts\":%lu,"
+      "\"model_source\":\"%s\",\"solve_ms\":%lu,",
+      planner_settings::mode_name(), planner_settings::strategy_name(set.strategy), settings, static_cast<unsigned long>(rt->solved_ts),
+      rt->learned ? "learned" : "seed", static_cast<unsigned long>(rt->solve_us / 1000));
+  planner_num_(a, sizeof(a), rt->start_t_c, 2);
+  planner_num_(b, sizeof(b), rt->target_c, 1);
+  put("\"plan\":{\"from_ts\":%lu,\"n\":%d,\"start_c\":%s,\"target_c\":%s,\"band_c\":%.1f,\"heat_kwh\":%.1f,"
+      "\"cost_eur\":%.2f,\"below_kh\":%.2f,",
+      static_cast<unsigned long>(rt->from_ts), p.n, a, b, static_cast<double>(COMFORT_BAND_C),
+      static_cast<double>(p.heat_kwh), static_cast<double>(p.cost_eur), static_cast<double>(p.below_kh));
+  const char *names[7] = {"heat_kw", "zone_feed_c", "t_end_c", "price", "elec_kwh", "band_min_c", "band_max_c"};
+  for (int f = 0; f < 7; f++) {
+    put("%s\"%s\":[", f ? "," : "", names[f]);
+    for (int i = 0; i < p.n; i++) {
+      const float v = f == 0 ? p.kw[i] : f == 1 ? p.zone_feed_c[i] : f == 2 ? p.t_end_c[i] : f == 3 ? rt->price[i]
+                      : f == 4 ? p.elec_kwh[i] : f == 5 ? rt->band_min[i] : rt->band_max[i];
+      planner_num_(a, sizeof(a), v, f == 3 ? 4 : (f == 2 || f == 4 ? 2 : 1));
+      put("%s%s", i ? "," : "", a);
+    }
+    put("]");
+  }
+  put(",\"price_est\":[");
+  for (int i = 0; i < p.n; i++)
+    put("%s%d", i ? "," : "", rt->price_est[i] ? 1 : 0);
+  put("],\"band_source\":\"%s\"},", rt->band_odin ? "odin" : "target");
+  const lp::HouseParams &h = rt->house;
+  put("\"model\":{\"ua_kw_per_k\":%.3f,\"ca_kwh_per_k\":%.1f,\"cs_kwh_per_k\":%.1f,\"h_kw_per_k\":%.2f,"
+      "\"sun_kw_per_100wm2\":%.2f,\"sun_floor_frac\":%.2f,\"sun_late_kw_per_100wm2\":%.2f,"
+      "\"sensor_sun_k_per_100wm2\":%.2f,\"p_int_kw\":%.2f,\"wind_pct_per_ms\":%.1f,\"cold_pct_per_k\":%.1f,"
+      "\"floor_kw_per_k\":%.3f,\"cop\":[",
+      static_cast<double>(h.ua_kw_per_k), static_cast<double>(h.ca_kwh_per_k), static_cast<double>(h.cs_kwh_per_k),
+      static_cast<double>(h.h_kw_per_k), static_cast<double>(h.g_kw_per_100wm2), static_cast<double>(h.sun_floor_frac),
+      static_cast<double>(h.g_lag_kw_per_100wm2), static_cast<double>(h.sensor_sun_k), static_cast<double>(h.p_int_kw),
+      static_cast<double>(100.0f * h.kw_per_ms), static_cast<double>(100.0f * h.cold_per_k),
+      static_cast<double>(rt->pump.f1));
+  const float room = std::isfinite(rt->target_c) ? rt->target_c : 22.0f;
+  const float out = std::isfinite(rt->out_now_c) ? rt->out_now_c : 5.0f;
+  const float dmin = lp::defrost_min_for(rt->pump, out);
+  for (int kw = 3; kw <= 9; kw++) {
+    const float zf = lp::zone_feed_for(rt->pump, static_cast<float>(kw), room);
+    const float hf = lp::hp_feed_for(rt->pump, static_cast<float>(kw), room);
+    put("%s{\"kw\":%d,\"zone_feed_c\":%.1f,\"hp_feed_c\":%.1f,\"cop\":%.2f}", kw > 3 ? "," : "", kw,
+        static_cast<double>(zf), static_cast<double>(hf), static_cast<double>(lp::cop_at(rt->pump, hf, out, dmin)));
+  }
+  planner_num_(a, sizeof(a), out, 1);
+  // Defrost: COP per defrost minute in an hour, minutes per running hour = d0 + d1·outdoor
+  // below below_c, and the minutes the COP table above counts at its outdoor temperature.
+  put("],\"cop_outdoor_c\":%s,\"defrost\":{\"cop_per_min\":%.3f,\"d0\":%.2f,\"d1\":%.2f,\"below_c\":%.1f,"
+      "\"min_per_h\":%.1f}},",
+      a, static_cast<double>(rt->pump.c3), static_cast<double>(rt->pump.d0), static_cast<double>(rt->pump.d1),
+      static_cast<double>(rt->pump.defrost_below_c), static_cast<double>(dmin));
+  planner_num_(a, sizeof(a), rt->our_flow_c, 1);
+  planner_num_(b, sizeof(b), rt->odin_flow_c, 1);
+  planner_num_(c, sizeof(c), rt->measured_kw, 2);
+  char d[16];
+  planner_num_(d, sizeof(d), rt->plan_kw_now, 2);
+  put("\"flow\":{\"our_target_c\":%s,\"odin_target_c\":%s,\"measured_kw\":%s,\"plan_kw\":%s},", a, b, c, d);
+  // The day plans (each planner's plan at the day's first solve, per local hour of the day).
+  {
+    using DP = PlannerRuntime::DayPlan;
+    const DP *dp[2] = {&rt->day_touch, &rt->day_odin};
+    const char *nm[2] = {"touch", "odin"};
+    put("\"day_plan\":{\"day_ts\":%lu", static_cast<unsigned long>(rt->day_touch.day_ts));
+    for (int w = 0; w < 2; w++) {
+      planner_num_(a, sizeof(a), DP::sum(dp[w]->heat_kw), 1);
+      planner_num_(b, sizeof(b), DP::sum(dp[w]->elec_kwh), 2);
+      put(",\"%s_heat_kwh\":%s,\"%s_elec_kwh\":%s,\"%s_heat_kw\":[", nm[w], a, nm[w], b, nm[w]);
+      for (int i = 0; i < 24; i++) {
+        planner_num_(a, sizeof(a), dp[w]->heat_kw[i], 2);
+        put("%s%s", i ? "," : "", a);
+      }
+      put("]");
+    }
+    put("},");
+  }
+  // Odin's plan for the same hours (index 0 = the current hour, as plan's), for the page's
+  // Touch vs Odin comparison: its space heat, expected house temperature, electricity and mode.
+  {
+    struct OdinCopy { bool ok; uint8_t n; float heat[24], exp[24], el[24]; int mode[24]; const char *reason; };
+    OdinCopy *oc = static_cast<OdinCopy *>(heap_caps_calloc(1, sizeof(OdinCopy), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (oc != nullptr && take_state_lock_(100)) {
+      oc->ok = odin_plan_.available && odin_plan_.heat_production_count > 0;
+      oc->n = std::min<uint8_t>(odin_plan_.heat_production_count, 24);
+      // Why not, for the page: Odin unreachable, Odin without a plan, or a plan Touch cannot use.
+      oc->reason = odin_plan_.last_fetch_ms == 0                         ? "pending"
+                   : std::strcmp(odin_plan_.last_error, "no plan") == 0 ? "no_plan"
+                   : odin_plan_.last_http_status != 200                ? "unreachable"
+                                                                       : "invalid";
+      for (int i = 0; i < oc->n; i++) {
+        oc->heat[i] = odin_plan_.heat_production_horizon[i];
+        oc->exp[i] = odin_plan_.expected_temp_horizon[i];
+        oc->el[i] = odin_plan_.energy_horizon[i];
+        oc->mode[i] = odin_plan_.operation_mode_horizon[i];
+      }
+      give_state_lock_();
+    }
+    if (oc != nullptr && oc->ok) {
+      put("\"odin\":{\"available\":true,\"n\":%u", static_cast<unsigned>(oc->n));
+      const char *on[3] = {"heat_kw", "expected_c", "elec_kwh"};
+      for (int f = 0; f < 3; f++) {
+        put(",\"%s\":[", on[f]);
+        for (int i = 0; i < oc->n; i++) {
+          planner_num_(a, sizeof(a), f == 0 ? oc->heat[i] : f == 1 ? oc->exp[i] : oc->el[i], 2);
+          put("%s%s", i ? "," : "", a);
+        }
+        put("]");
+      }
+      put(",\"mode\":[");
+      for (int i = 0; i < oc->n; i++)
+        put("%s%d", i ? "," : "", oc->mode[i]);
+      put("]},");
+    } else {
+      put("\"odin\":{\"available\":false,\"reason\":\"%s\"},", oc != nullptr && oc->reason ? oc->reason : "pending");
+    }
+    heap_caps_free(oc);
+  }
+  // What Touch has learned from its own hours.
+  const lp::LearnReport &L = rt->learn;
+  planner_num_(a, sizeof(a), L.rmse_k, 3);
+  planner_num_(b, sizeof(b), rt->floor_c, 2);
+  put("\"learning\":{\"source\":\"%s\",\"refit_ts\":%lu,\"refit_ms\":%lu,\"days\":%u,\"hours\":%u,\"energy\":%s,"
+      "\"dynamics\":%s,\"rmse_k\":%s,\"hp_hours\":%lu,\"defrost_hours\":%lu,\"heat_pump\":%s,\"floor_c\":%s,"
+      "\"floor_tracked\":%s,\"store\":{\"boot\":\"%s\",\"hours\":%u,\"saves\":%u,\"last_save\":\"%s\"}},",
+      rt->learned ? "learned" : "seed", static_cast<unsigned long>(rt->learned_hour), static_cast<unsigned long>(rt->learn_ms),
+      L.days, L.hours, L.energy ? "true" : "false", L.dynamics ? "true" : "false", a, static_cast<unsigned long>(L.hp_hours),
+      static_cast<unsigned long>(L.defrost_hours), L.heat_pump ? "true" : "false", b, rt->floor_tracked ? "true" : "false", rt->store_boot,
+      static_cast<unsigned>(rt->store != nullptr ? rt->store->count_since(1) : 0), rt->saves, rt->last_save);
+  // Plan vs actual: the last 168 hours from the store. Per hour: the house at its end
+  // (measured) and as forecast 6 h before, planned and delivered heat, electricity, price.
+  static constexpr int HIST_H = 168;
+  struct HistRow { float t, e, pkw, pel, q, el, pr, sp, of, sf, bl, bh; };
+  HistRow *rows = static_cast<HistRow *>(heap_caps_malloc(sizeof(HistRow) * HIST_H, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  const uint32_t h_from = rt->from_ts - static_cast<uint32_t>(HIST_H) * 3600u;
+  int have = 0;
+  if (rows != nullptr && rt->store != nullptr && take_state_lock_(100)) {
+    const PlannerStore &S = *rt->store;
+    for (int i = 0; i < HIST_H; i++) {
+      const uint32_t hr = h_from + static_cast<uint32_t>(i) * 3600u;
+      const lp::Record *r = S.at(hr), *nx = S.at(hr + 3600u);
+      const auto g = [r](uint8_t col) { return r ? r->get(lp::Kind::HOUSE, col) : NAN; };
+      // The planned hour's electricity with today's model at that hour's weather.
+      const float pkw = S.plan_kw(hr), sp = g(lp::H_SCHED_SP_C), out = g(lp::H_OUTDOOR_C);
+      const float pel = std::isfinite(pkw) && std::isfinite(out)
+                            ? lp::elec_for(rt->pump, pkw, std::isfinite(sp) ? sp : 22.0f, out) : NAN;
+      // An hour's heat the learners skip (a meter that lumped the day into it) is not shown either.
+      const bool heat_ok = r != nullptr && lp::heat_usable(*r);
+      // Our forecast only for hours this planner ran (a seed may carry Odin's).
+      rows[i] = {nx ? nx->get(lp::Kind::HOUSE, lp::H_ROOM_C) : NAN, std::isfinite(pkw) ? g(lp::H_ROOM_EXPECTED_C) : NAN, pkw, pel,
+                 heat_ok ? g(lp::H_HEAT_SH_KWH) : NAN, heat_ok ? g(lp::H_ELEC_KWH) : NAN, g(lp::H_PRICE_EUR_KWH), g(lp::H_SCHED_SP_C),
+                 g(lp::H_FLOW_TARGET_C), S.shadow_flow(hr), g(lp::H_SCHED_MIN_C), g(lp::H_SCHED_MAX_C)};
+      have += r != nullptr;
+    }
+    give_state_lock_();
+  }
+  if (rows != nullptr && have > 0) {
+    put("\"history\":{\"from_ts\":%lu,\"n\":%d", static_cast<unsigned long>(h_from), HIST_H);
+    const char *hn[12] = {"temp_c", "expected_c", "plan_kw", "plan_elec_kwh", "heat_kwh", "elec_kwh", "price", "target_c",
+                          "odin_flow_c", "shadow_flow_c", "band_min_c", "band_max_c"};
+    const int hd[12] = {2, 2, 1, 2, 2, 2, 4, 1, 1, 1, 1, 1};
+    for (int f = 0; f < 12; f++) {
+      put(",\"%s\":[", hn[f]);
+      for (int i = 0; i < HIST_H; i++) {
+        const HistRow &q = rows[i];
+        const float v = f == 0 ? q.t : f == 1 ? q.e : f == 2 ? q.pkw : f == 3 ? q.pel : f == 4 ? q.q : f == 5 ? q.el
+                        : f == 6 ? q.pr : f == 7 ? q.sp : f == 8 ? q.of : f == 9 ? q.sf : f == 10 ? q.bl : q.bh;
+        planner_num_(a, sizeof(a), v, hd[f]);
+        put("%s%s", i ? "," : "", a);
+      }
+      put("]");
+    }
+    put("},");
+  } else {
+    put("\"history\":null,");
+  }
+  heap_caps_free(rows);
+  // Rooms: expected temperature per plan hour, and Touch's charge/preload ahead of wind
+  // and cold for the same room (hours from the current one, as the plan's).
+  struct Seg { bool pre; uint8_t pre_from, pre_to; float pre_c; bool ch; int16_t ch_from, ch_to; float ch_c; bool ins; };
+  Seg *segs = static_cast<Seg *>(heap_caps_calloc(PlannerRuntime::ROOMS, sizeof(Seg), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (segs != nullptr && take_state_lock_(100)) {
+    for (int k = 0; k < rt->room_n; k++)
+      for (size_t i = 0; i < forecast_decision_count_; i++) {
+        const auto &fd = forecast_decisions_[i];
+        if (std::strncmp(fd.room_id, rt->rooms[k].id, sizeof(fd.room_id)) != 0)
+          continue;
+        Seg &g = segs[k];
+        g.pre = ((fd.active && fd.offset_c > 0.01f) || fd.planned_offset_c > 0.01f) &&
+                fd.preload_end_h > fd.preload_start_h;
+        g.pre_from = fd.preload_start_h;
+        g.pre_to = fd.preload_end_h;
+        g.pre_c = std::max(fd.offset_c, fd.planned_offset_c);
+        g.ch = fd.charge_episode && fd.charge_end_in_h > 0;
+        g.ch_from = static_cast<int16_t>(std::max<int>(0, fd.charge_start_in_h));
+        g.ch_to = fd.charge_end_in_h;
+        g.ch_c = fd.charge_store_c;
+        g.ins = fd.charge_insufficient;
+        break;
+      }
+    give_state_lock_();
+  }
+  // Live forecast scores per horizon: RMSE, bias and persistence's RMSE over the last
+  // week (decayed), and how many forecasts were scored since the restart.
+  const auto put_score = [&](const lp::ScoreSet &sc) {
+    put("[");
+    for (int j = 0; j < lp::SCORE_N; j++) {
+      const lp::HorizonScore &hs = sc.h[j];
+      char e1[16], e2[16], e3[16];
+      planner_num_(e1, sizeof(e1), hs.rmse(), 3);
+      planner_num_(e2, sizeof(e2), hs.bias(), 3);
+      planner_num_(e3, sizeof(e3), hs.persistence_rmse(), 3);
+      put("%s{\"h\":%d,\"n\":%lu,\"rmse_k\":%s,\"bias_k\":%s,\"persistence_k\":%s}", j ? "," : "", lp::SCORE_H[j],
+          static_cast<unsigned long>(hs.count), e1, e2, e3);
+    }
+    put("]");
+  };
+  put("\"scores\":{\"house_plan\":");
+  put_score(rt->house_plan_score);
+  put(",\"house_model\":");
+  put_score(rt->house_model_score);
+  put("},");
+  put("\"room_fit\":{\"ts\":%lu,\"ms\":%lu,\"fitted\":%u,\"rooms\":%u},\"rooms\":[",
+      static_cast<unsigned long>(rt->rooms_fit_hour), static_cast<unsigned long>(rt->rooms_fit_ms),
+      static_cast<unsigned>(rt->rooms_fitted), static_cast<unsigned>(rt->room_n));
+  const bool rooms_now = rt->rooms_ts == rt->solved_ts;
+  for (int k = 0; k < rt->room_n; k++) {
+    const PlannerRuntime::Room &r = rt->rooms[k];
+    char id[64], name[96];
+    json_escape_(r.id, id, sizeof(id));
+    json_escape_(r.name, name, sizeof(name));
+    planner_num_(a, sizeof(a), r.target_c, 1);
+    planner_num_(b, sizeof(b), r.now_c, 1);
+    planner_num_(c, sizeof(c), r.model.fitted ? r.model.weight(6) : NAN, 2);
+    planner_num_(d, sizeof(d), r.model.rmse_k, 2);
+    put("%s{\"room_id\":\"%s\",\"name\":\"%s\",\"target_c\":%s,\"now_c\":%s,\"share\":%.3f,\"model\":%s,"
+        "\"weight_6h\":%s,\"rmse_k\":%s,\"past_c\":[",
+        k ? "," : "", id, name, a, b, static_cast<double>(r.share), r.model.fitted ? "true" : "false", c, d);
+    // The last 24 closed hours (hour means), oldest first.
+    for (size_t i = PlannerRuntime::RW - 24; i < PlannerRuntime::RW; i++) {
+      const int16_t t = rt->room_temp[k][i];
+      planner_num_(a, sizeof(a), t == room_history::NONE ? NAN : t / 10.0f, 1);
+      put("%s%s", i > PlannerRuntime::RW - 24 ? "," : "", a);
+    }
+    put("],\"score\":");
+    put_score(r.score);
+    put(",\"expected_c\":");
+    if (rooms_now && r.forecast) {
+      put("[");
+      for (int i = 0; i < p.n; i++) {
+        planner_num_(a, sizeof(a), r.expected[i], 2);
+        put("%s%s", i ? "," : "", a);
+      }
+      put("]");
+    } else {
+      put("null");
+    }
+    const Seg g = segs != nullptr ? segs[k] : Seg{};
+    if (g.pre)
+      put(",\"preload\":{\"from\":%u,\"to\":%u,\"offset_c\":%.1f}", static_cast<unsigned>(g.pre_from),
+          static_cast<unsigned>(g.pre_to), static_cast<double>(g.pre_c));
+    else
+      put(",\"preload\":null");
+    if (g.ch)
+      put(",\"charge\":{\"from\":%d,\"to\":%d,\"store_c\":%.1f,\"insufficient\":%s}}", g.ch_from, g.ch_to,
+          static_cast<double>(g.ch_c), g.ins ? "true" : "false");
+    else
+      put(",\"charge\":null}");
+  }
+  put("]}");
+  heap_caps_free(segs);
+  heap_caps_free(rt);
+}
+
+bool LuneTouchCoordinator::set_planner_settings(const planner_settings::Settings &settings) {
+  const planner_settings::Settings clean = planner_settings::sanitize(settings);
+  if (!take_state_lock_(100))
+    return false;
+  planner_settings_ = clean;
+  planner_solve_pending_ = true;
+  give_state_lock_();
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return false;
+  esp_err_t err = nvs_set_blob(handle, "planner", &clean, sizeof(clean));
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  log_event_("info", "settings", "planner settings saved");
+  return err == ESP_OK;
+}
+
 void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const {
   // Snapshot under the lock; format outside it. Hours are relative to now
   // (index 0 = the current local hour), 24 h ahead.
@@ -15110,7 +16817,8 @@ void LuneTouchCoordinator::write_plan_json(char *buffer, size_t capacity) const 
     r.room_id[sizeof(r.room_id) - 1] = '\0';
     std::strncpy(r.name, d.room_name[0] != '\0' ? d.room_name : d.room_id, sizeof(r.name) - 1);
     r.name[sizeof(r.name) - 1] = '\0';
-    r.preload = d.active && d.offset_c > 0.01f && d.preload_end_h > d.preload_start_h;
+    r.preload = ((d.active && d.offset_c > 0.01f) || d.planned_offset_c > 0.01f) &&
+                d.preload_end_h > d.preload_start_h;
     r.pre_from = d.preload_start_h;
     r.pre_to = d.preload_end_h;
     r.offset_c = d.offset_c;
@@ -15235,14 +16943,22 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   const char *route = "none";
   float held = 0.0f;
   float uplift = 0.0f;
+  bool cold_call = false;
+  float coldest = 0.0f;
   char type[24]{};
+  LiftForecastDiag fd{};
+  char cold_room[32]{};
   if (take_state_lock_(50)) {
     c = odin_control_;
+    fd = lift_fc_diag_;
+    std::strncpy(cold_room, coldest_room_id_, sizeof(cold_room) - 1);
     g = generic_levers_;
     has_user = odin_owner_.has_user;
     yielded = odin_owner_.yielded;
     route = demand_route_;
     held = demand_held_c_;
+    cold_call = cold_room_call_.engaged;
+    coldest = coldest_deficit_c_;
     uplift = demand_target_uplift_c_;
     std::strncpy(type, heat_source_.type, sizeof(type) - 1);
     give_state_lock_();
@@ -15281,9 +16997,17 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
   json_float_token_(hpmax, sizeof(hpmax), hp_max_odin ? c.hp_max_kw : c.hp_max_kw_user, 1);
   json_float_token_(hpmax_user, sizeof(hpmax_user), c.hp_max_kw_user, 1);
   const char *hpmax_src = hp_max_odin ? "odin" : hp_max_user ? "user" : "none";
+  char cold_id[64], fc_id[64], fc_lack[16], fc_share[16], fc_lift[16];
+  json_escape_(cold_room, cold_id, sizeof(cold_id));
+  json_escape_(fd.room_id, fc_id, sizeof(fc_id));
+  json_float_token_(fc_lack, sizeof(fc_lack), fd.lack_c, 2);
+  json_float_token_(fc_share, sizeof(fc_share), fd.share, 3);
+  json_float_token_(fc_lift, sizeof(fc_lift), fd.lift_c, 2);
   std::snprintf(
       buffer, capacity,
-      "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f},"
+      "{\"demand\":{\"route\":\"%s\",\"held_c\":%.2f,\"target_uplift_c\":%.2f,"
+      "\"cold_room_call\":%s,\"coldest_deficit_c\":%.2f,\"coldest_room\":\"%s\","
+      "\"forecast\":{\"room\":\"%s\",\"available\":%s,\"plan\":\"%s\",\"lack_c\":%s,\"share\":%s,\"lift_c\":%s}},"
       "\"odin\":{\"enabled\":%s,\"max_lift_c\":%.1f,"
       "\"sync\":{\"enabled\":%s,\"band_c\":%.1f,\"below_c\":%.1f,\"above_c\":%.1f,\"target_c\":%s},"
       "\"forwarder_entity\":\"%s\",\"status\":\"%s\","
@@ -15301,7 +17025,8 @@ void LuneTouchCoordinator::write_heat_source_control_json(char *buffer, size_t c
       "\"generic\":{\"applies\":%s,\"target_url_template\":\"%s\",\"heat_request_url_template\":\"%s\","
       "\"curve_offset_url_template\":\"%s\",\"curve_gain\":%.2f,\"curve_max_offset_c\":%.1f,"
       "\"last_target_c\":%s,\"last_heat_request\":%s,\"last_curve_offset_c\":%s,\"status\":\"%s\"}}",
-      route, static_cast<double>(held), static_cast<double>(uplift),
+      route, static_cast<double>(held), static_cast<double>(uplift), cold_call ? "true" : "false",
+      static_cast<double>(coldest), cold_id, fc_id, fd.has_forecast ? "true" : "false", fd.on_odin ? "odin" : "touch", fc_lack, fc_share, fc_lift,
       c.enabled ? "true" : "false", static_cast<double>(std::clamp(weather_max_boost_c_, 0.0f, 3.0f)),
       c.sync_enabled ? "true" : "false",
       static_cast<double>(std::max(c.sync_below_c, c.sync_above_c)), static_cast<double>(c.sync_below_c),
@@ -16064,6 +17789,11 @@ void LuneTouchCoordinator::run_price_cycle_() {
   if (take_state_lock_(200)) {
     rt.today = rt.next_today;
     rt.tomorrow = rt.next_tomorrow;
+    // The same €/kWh array for the shadow planner, whether or not Odin took it.
+    for (size_t i = 0; i < count && i < 48; i++)
+      rt.eur[i] = eur[i];
+    rt.eur_n = static_cast<uint8_t>(count < 48 ? count : 48);
+    rt.eur_ymd = today;
     price_.fx = fx;
     copy_str_(price_.spot_used, sizeof(price_.spot_used), spot_used);
     price_.spot_fallback = spot_fallback;
@@ -16152,6 +17882,10 @@ void LuneTouchCoordinator::load_price_settings_() {
     if (std::isfinite(nums2[1])) cfg.spot_fixed_eur = nums2[1];
     if (std::isfinite(nums2[2])) cfg.odin_fixed_price = nums2[2];
   }
+  float ref = 0.0f;
+  len = sizeof(ref);
+  if (nvs_get_blob(handle, "pr_ref", &ref, &len) == ESP_OK && len == sizeof(ref) && std::isfinite(ref) && ref >= 0.0f)
+    cfg.reference_price = ref;
   len = sizeof(entsoe_token_);
   if (nvs_get_str(handle, "pr_etok", entsoe_token_, &len) != ESP_OK || !valid_token_(entsoe_token_))
     entsoe_token_[0] = '\0';
@@ -16197,6 +17931,7 @@ void LuneTouchCoordinator::save_price_settings_() {
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gcode", cfg.grid_code);
   if (err == ESP_OK) err = nvs_set_blob(handle, "pr_nums", nums, sizeof(nums));
   if (err == ESP_OK) err = nvs_set_blob(handle, "pr_nums2", nums2, sizeof(nums2));
+  if (err == ESP_OK) err = nvs_set_blob(handle, "pr_ref", &cfg.reference_price, sizeof(cfg.reference_price));
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_etok", token);
   if (err == ESP_OK) err = nvs_set_str(handle, "pr_gsched", sched);
   if (err == ESP_OK) err = nvs_commit(handle);
@@ -16248,7 +17983,7 @@ bool LuneTouchCoordinator::set_price_settings(const PriceSettingsUpdate &u, char
   auto bad = [](float v, float lo, float hi) { return !std::isnan(v) && !(v >= lo && v <= hi); };
   if (bad(u.system_fixed, -100.0f, 500.0f) || bad(u.energy_tax, 0.0f, 500.0f) || bad(u.markup, -100.0f, 500.0f) ||
       bad(u.vat_pct, 0.0f, 50.0f) || bad(u.fx, 0.01f, 10000.0f) || bad(u.spot_fixed_eur, -1.0f, 5.0f) ||
-      bad(u.odin_fixed_price, 0.0f, 5.0f))
+      bad(u.odin_fixed_price, 0.0f, 5.0f) || bad(u.reference_price, 0.0f, 100.0f))
     return reject("invalid_value");
 
   if (!take_state_lock_(200))
@@ -16275,6 +18010,7 @@ bool LuneTouchCoordinator::set_price_settings(const PriceSettingsUpdate &u, char
   if (!std::isnan(u.energy_tax)) cfg.energy_tax = u.energy_tax;
   if (!std::isnan(u.markup)) cfg.markup = u.markup;
   if (!std::isnan(u.vat_pct)) cfg.vat_pct = u.vat_pct;
+  if (!std::isnan(u.reference_price)) cfg.reference_price = u.reference_price;
   if (given(u.odin_mode)) cfg.odin_mode = odin_mode;
   if (given(u.odin_source)) cfg.odin_source = odin_source;
   if (!std::isnan(u.odin_fixed_price)) cfg.odin_fixed_price = u.odin_fixed_price;
@@ -16394,19 +18130,31 @@ void LuneTouchCoordinator::write_prices_json(char *buffer, size_t capacity) cons
                                                                       : "waiting";
   char err[96];
   json_escape_(p.last_error, err, sizeof(err));
+  // The price level savings are measured against, and the logged month behind it.
+  const char *ref_src = "none";
+  const float year = year_all_in(c, price_rt_ != nullptr ? &price_rt_->today : nullptr);
+  const float ref = reference_price(c, price_month_mean_eur_, price_month_hours_, year, &ref_src);
+  const float month = std::isfinite(price_month_mean_eur_) && c.fx > 0.0f ? price_month_mean_eur_ * c.fx : NAN;
+  char ref_tok[16], month_tok[16], year_tok[16];
+  json_float_token_(ref_tok, sizeof(ref_tok), ref, 3);
+  json_float_token_(month_tok, sizeof(month_tok), month, 3);
+  json_float_token_(year_tok, sizeof(year_tok), year, 3);
   size_t off = 0;
   appendf_(buffer, capacity, off,
            "{\"available\":true,\"enabled\":%s,\"model\":\"%s\",\"zone\":\"%s\",\"dk\":%s,"
            "\"spot\":{\"source\":\"%s\",\"fixed_eur\":%.4f},\"currency\":\"%s\",\"fx\":%.4f,"
            "\"grid\":{\"source\":\"%s\",\"gln\":\"%s\",\"code\":\"%s\",\"schedule\":%s},"
            "\"system\":{\"source\":\"%s\",\"fixed\":%.4f},"
-           "\"energy_tax\":%.4f,\"markup\":%.4f,\"vat_pct\":%.2f,\"entsoe_token_set\":%s,\"odin_host_set\":%s,",
+           "\"energy_tax\":%.4f,\"markup\":%.4f,\"vat_pct\":%.2f,\"entsoe_token_set\":%s,\"odin_host_set\":%s,"
+           "\"reference_price\":%.4f,\"reference\":{\"price\":%s,\"source\":\"%s\",\"month_mean\":%s,\"month_hours\":%lu,\"year_all_in\":%s},",
            c.enabled ? "true" : "false", model_name(c.model), c.zone, zone_is_dk(c.zone) ? "true" : "false",
            spot_source_name(c.spot_source), static_cast<double>(c.spot_fixed_eur), c.currency,
            static_cast<double>(c.fx), grid_source_name(c.grid_source), c.grid_gln, c.grid_code, sched,
            system_source_name(c.system_source), static_cast<double>(c.system_fixed),
            static_cast<double>(c.energy_tax), static_cast<double>(c.markup), static_cast<double>(c.vat_pct),
-           entsoe_token_[0] != '\0' ? "true" : "false", odin_plan_.odin_host[0] != '\0' ? "true" : "false");
+           entsoe_token_[0] != '\0' ? "true" : "false", odin_plan_.odin_host[0] != '\0' ? "true" : "false",
+           static_cast<double>(c.reference_price), ref_tok, ref_src, month_tok,
+           static_cast<unsigned long>(price_month_hours_), year_tok);
   char ofp[16];
   json_float_token_(ofp, sizeof(ofp), p.odin.fixed_price, 6);
   char oage[16] = "null";
@@ -16492,6 +18240,7 @@ bool LuneTouchCoordinator::set_house_balance_enabled(bool enabled) {
   if (changed) {
     hb_last_push_ms_ = 0;               // push (or release) on the next poll
     hb_release_pending_ = !enabled;
+    cm_push_ms_ = 0;                    // close margin follows the same switch
   }
   give_state_lock_();
   if (changed) {
@@ -16710,6 +18459,111 @@ void LuneTouchCoordinator::run_hp_phase_(uint32_t now_ms) {
     send_v6_hp_phase_(hosts[i], name, ttl_s);
 }
 
+// -----------------------------------------------------------------------------
+// House close margin (close_margin.h): while a room anywhere is outside its band on
+// the cold side, every approved V6 closes its warm rooms at target + 0.3 °C instead
+// of its own margin, so a warm manifold stops taking the cold room's water. Pushed on
+// a change and every 5 min with a 15 min TTL; cleared when the rooms are back (or
+// house balance is turned off), and V6 falls back to its own margin by itself.
+// -----------------------------------------------------------------------------
+void LuneTouchCoordinator::run_close_margin_(uint32_t now_ms) {
+  namespace cm = ::lune_touch_close_margin;
+  constexpr uint32_t PERIOD_MS = 5UL * 60UL * 1000UL;
+  constexpr uint32_t TTL_S = 15UL * 60UL;
+  constexpr size_t N = ::lune_touch::MAX_NODES;
+  constexpr size_t MAX_ROOMS = ::lune_touch::MAX_NODES * ::lune_touch::ZONES_PER_NODE;
+  char hosts[N][64]{};
+  size_t count = 0;
+  if (!take_state_lock_(100))
+    return;
+  cm::Room rooms[MAX_ROOMS]{};
+  size_t zone_of[MAX_ROOMS]{};
+  size_t n = 0;
+  for (size_t i = 0; i < model_.zone_count() && n < MAX_ROOMS; i++) {
+    const auto *zone = model_.zone(i);
+    const auto *live = model_.zone_live(i);
+    if (zone == nullptr || live == nullptr || !zone->enabled || zone->is_group_secondary || zone->unassigned)
+      continue;
+    // A room left out of the house temperature (or switched off in Touch) does not pull either.
+    const auto *room = model_.room_by_id(zone->room_id);
+    if (room != nullptr && (!room->enabled || !room->include_in_house_temperature))
+      continue;
+    // A sync group is one unit: V6 controls it on the members' mean.
+    const float temp = model_.group_mean_temperature_c(i);
+    rooms[n] = cm::Room{live->fresh && live->has_setpoint && std::isfinite(temp), temp, live->setpoint_c};
+    zone_of[n] = i;
+    n++;
+  }
+  const bool enabled = heat_source_.house_balance_enabled;
+  const auto r = cm::step(cm_active_, rooms, n);
+  const bool was_active = cm_active_;
+  cm_active_ = enabled && r.active;
+  cm_coldest_zone_ = r.coldest >= 0 ? static_cast<int>(zone_of[r.coldest]) : -1;
+  cm_deficit_k_ = r.deficit_k;
+  const bool changed = cm_active_ != cm_sent_active_;
+  // Send while active (refresh before the TTL lapses) and once to clear.
+  const bool due = changed || (cm_active_ && (cm_push_ms_ == 0 || now_ms - cm_push_ms_ >= PERIOD_MS));
+  char room_name[48]{};
+  if (cm_active_ != was_active && cm_coldest_zone_ >= 0) {
+    const auto *z = model_.zone(static_cast<size_t>(cm_coldest_zone_));
+    if (z != nullptr)
+      std::strncpy(room_name, z->room_name, sizeof(room_name) - 1);
+  }
+  if (due) {
+    for (size_t i = 0; i < model_.node_count() && i < N; i++) {
+      const auto *node = model_.node(i);
+      if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED)
+        continue;
+      const char *host = node->hostname[0] != '\0' ? node->hostname : node->fallback_ip;
+      if (host[0] == '\0')
+        continue;
+      std::strncpy(hosts[count], host, sizeof(hosts[count]) - 1);
+      count++;
+    }
+    cm_push_ms_ = now_ms == 0 ? 1 : now_ms;
+    cm_sent_active_ = cm_active_;
+  }
+  const bool active = cm_active_;
+  const float deficit = cm_deficit_k_;
+  give_state_lock_();
+  if (active != was_active) {
+    char msg[96];
+    if (active)
+      snprintf(msg, sizeof(msg), "close margin %.1f: %s %.1f K below target", cm::TIGHT_MARGIN_C,
+               room_name[0] != '\0' ? room_name : "a room", deficit);
+    else
+      snprintf(msg, sizeof(msg), "close margin released");
+    log_event_("info", "heat_source", msg);
+  }
+  if (count == 0 || current_epoch_s_() <= 0)
+    return;
+  for (size_t i = 0; i < count; i++)
+    send_v6_close_margin_(hosts[i], active ? cm::TIGHT_MARGIN_C : 0.0f, active ? TTL_S : 60);
+}
+
+bool LuneTouchCoordinator::send_v6_close_margin_(const char *host, float margin_c, uint32_t ttl_s) {
+  if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
+    return false;
+  const int64_t ts = current_epoch_s_();
+  char nonce[48];
+  snprintf(nonce, sizeof(nonce), "cm-%lld-%lu", static_cast<long long>(ts),
+           static_cast<unsigned long>(++cm_nonce_));
+  char payload[192];
+  snprintf(payload, sizeof(payload),
+           "{\"margin_c\":%.1f,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,\"auth_nonce\":\"%s\"}",
+           margin_c, static_cast<unsigned long>(ttl_s), static_cast<long long>(ts), nonce);
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/v1/close-margin", host);
+  char body[256];
+  int status = 0;
+  if (!post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
+    // 404 = V6 firmware without the route; it keeps its own margin.
+    ESP_LOGD(TAG, "V6 close margin via %s failed (%d)", host, status);
+    return false;
+  }
+  return true;
+}
+
 bool LuneTouchCoordinator::send_v6_hp_phase_(const char *host, const char *phase, uint32_t ttl_s) {
   if (host == nullptr || host[0] == '\0' || !esphome::network::is_connected())
     return false;
@@ -16775,6 +18629,18 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
     return;
   add(",\"valves_follow_hp\":{\"enabled\":%s,\"phase\":\"%s\"}",
       heat_source_.valves_follow_hp_enabled ? "true" : "false", ::lune_touch_hp_phase::name(hp_phase_));
+  {
+    char room_id[32]{};
+    const auto *z = cm_coldest_zone_ >= 0 ? model_.zone(static_cast<size_t>(cm_coldest_zone_)) : nullptr;
+    if (z != nullptr)
+      json_escape_(z->room_id, room_id, sizeof(room_id));
+    if (std::isfinite(cm_deficit_k_))
+      add(",\"close_margin\":{\"active\":%s,\"margin_c\":%.1f,\"coldest_room\":\"%s\",\"deficit_k\":%.2f}",
+          cm_active_ ? "true" : "false", ::lune_touch_close_margin::TIGHT_MARGIN_C, room_id, cm_deficit_k_);
+    else
+      add(",\"close_margin\":{\"active\":false,\"margin_c\":%.1f,\"coldest_room\":null,\"deficit_k\":null}",
+          ::lune_touch_close_margin::TIGHT_MARGIN_C);
+  }
   const auto basis = static_cast<::lune_touch_house_balance::Basis>(hb_basis_);
   add(",\"house_balance\":{\"enabled\":%s,\"basis\":\"%s\",\"weight_min\":%d,\"weight_max\":%d,"
       "\"weight_step\":%d,\"boards\":[",
@@ -16820,7 +18686,7 @@ void LuneTouchCoordinator::append_house_balance_json_(char *buffer, size_t capac
 // Exposure learning: solar and wind factors per room (exposure_learning.h)
 // -----------------------------------------------------------------------------
 namespace {
-constexpr uint32_t EXPOSURE_SAVE_MS = 6UL * 60UL * 60UL * 1000UL;
+constexpr uint32_t EXPOSURE_SAVE_MS = 60UL * 60UL * 1000UL;  // a restart loses at most an hour of fitting
 }  // namespace
 
 LuneTouchCoordinator::ExposureLearnSlot *LuneTouchCoordinator::exposure_slot_(const char *room_id, bool create) {
@@ -16856,8 +18722,11 @@ void LuneTouchCoordinator::effective_exposure_(const char *room_id, float *solar
   const auto learned = lune_touch_learn::result(slot->state);
   if (solar_gain != nullptr && learned.solar_valid && std::fabs(*solar_gain - 0.3f) < 0.005f)
     *solar_gain = learned.solar;
+  // The learned factor is the extra loss at 10 m/s head-on; exposure is on the presets'
+  // scale (exposure × WIND_LOSS_FACTOR = extra loss), so 1.0 learned → 1.67, not 1.0.
   if (wind_exposure != nullptr && learned.wind_valid && std::fabs(*wind_exposure - 0.5f) < 0.005f)
-    *wind_exposure = learned.wind;
+    *wind_exposure = std::min(learned.wind / ::lune_touch_charge::WIND_LOSS_FACTOR,
+                              ::lune_touch_charge::WIND_EXPOSURE_MAX);
 }
 
 void LuneTouchCoordinator::run_exposure_learning_() {
@@ -16983,6 +18852,38 @@ void LuneTouchCoordinator::load_exposure_learning_() {
 }
 
 
+// The secondary flow's fit on open loop area (hp_diagnostics.h FlowFit), kept across
+// restarts: it takes days of heating to learn.
+constexpr uint32_t FLOW_FIT_SAVE_MS = 6UL * 60UL * 60UL * 1000UL;
+
+void LuneTouchCoordinator::save_flow_fit_() {
+  if (!take_state_lock_(100))
+    return;
+  const ::lune_touch_hp_diag::FlowFit fit = hp_diag_.fit;
+  hp_diag_.fit_dirty = false;
+  flow_fit_saved_ms_ = esphome::millis();
+  give_state_lock_();
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  if (nvs_set_blob(handle, "flowfit", &fit, sizeof(fit)) == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::load_flow_fit_() {
+  ::lune_touch_hp_diag::FlowFit fit;
+  nvs_handle_t handle;
+  if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  size_t len = sizeof(fit);
+  const esp_err_t err = nvs_get_blob(handle, "flowfit", &fit, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len != sizeof(fit) || !std::isfinite(fit.w) || !std::isfinite(fit.n))
+    return;   // none yet, or a different layout: learn afresh
+  hp_diag_.fit = fit;
+}
+
 // Heat pump diagnostics: delivered heat against Odin's plan, and mixing in the buffer
 // tank. Display and events only — Touch never acts on it (hp_diagnostics.h).
 void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
@@ -17008,13 +18909,38 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
   const bool circ_fresh = circulation_.enabled && circulation_.has_flow && circulation_.last_success_ms != 0 &&
                           now_ms - circulation_.last_success_ms <= CIRCULATION_STALE_MS;
   in.secondary_lmin = circ_fresh ? circulation_.flow_m3h * (1000.0f / 60.0f) : NAN;
+  // Open loop area: every loop with a valve counts; one stale loop makes it unknown.
+  {
+    float area = 0.0f;
+    size_t loops = 0;
+    bool stale = false;
+    for (size_t z = 0; z < model_.zone_count(); z++) {
+      const auto *zone = model_.zone(z);
+      const auto *live = model_.zone_live(z);
+      if (zone == nullptr || live == nullptr || !live->has_valve)
+        continue;
+      if (!live->fresh || !std::isfinite(live->valve_pct)) {
+        stale = true;
+        break;
+      }
+      loops++;
+      if (live->valve_pct > hd::OPEN_VALVE_PCT)
+        area += zone->v6_area_m2 > 0.0f ? zone->v6_area_m2 : 10.0f;
+    }
+    in.open_area_m2 = !stale && loops > 0 ? area : NAN;
+  }
+  in.valve_flush = vf_run_.active;
   hd::Params hdp;
   hdp.judge_short = circulation_pump::judges_short(circulation_.buffer_tank);
   hdp.judge_mix = circulation_pump::judges_mixing(circulation_.buffer_tank);
   const hd::Edges e = hd::step(hp_diag_, in, now_ms, hdp);
   const float mean = hp_diag_.mean_kw, plan = hp_diag_.plan_kw;
   const float pri = hp_diag_.primary_lmin, sec = hp_diag_.secondary_lmin;
+  const float open = hp_diag_.open_area_m2, expected = hp_diag_.expected_lmin;
+  const bool save_fit = hp_diag_.fit_dirty && (flow_fit_saved_ms_ == 0 || now_ms - flow_fit_saved_ms_ >= FLOW_FIT_SAVE_MS);
   give_state_lock_();
+  if (save_fit)
+    save_flow_fit_();
   char msg[96];
   if (e.over_raised || e.under_raised) {
     std::snprintf(msg, sizeof(msg), "heat pump delivers %.1f kW vs planned %.1f kW (30 min mean, %s plan)",
@@ -17047,6 +18973,19 @@ void LuneTouchCoordinator::run_hp_diagnostics_(uint32_t now_ms) {
       std::snprintf(msg, sizeof(msg), "tank short flow cleared (no flow data)");
     log_event_("info", "circulation", msg);
   }
+  if (e.low_raised || e.high_raised) {
+    std::snprintf(msg, sizeof(msg), "secondary flow %.1f l/min, open loops (%.0f m2) usually take %.1f l/min",
+                  static_cast<double>(sec), static_cast<double>(open), static_cast<double>(expected));
+    log_event_("warn", "circulation", msg);
+  }
+  if (e.low_cleared || e.high_cleared) {
+    if (std::isfinite(sec) && std::isfinite(expected))
+      std::snprintf(msg, sizeof(msg), "secondary flow back with the open loops: %.1f l/min, expected %.1f l/min",
+                    static_cast<double>(sec), static_cast<double>(expected));
+    else
+      std::snprintf(msg, sizeof(msg), "secondary flow check cleared (no flow or valve data)");
+    log_event_("info", "circulation", msg);
+  }
   if (e.mix_cleared) {
     if (std::isfinite(sec) && std::isfinite(pri))
       std::snprintf(msg, sizeof(msg), "tank mixing ended: secondary %.1f l/min < primary %.1f l/min",
@@ -17067,17 +19006,26 @@ void LuneTouchCoordinator::append_hp_diagnostics_json_(char *buffer, size_t capa
     return;
   d = hp_diag_;
   give_state_lock_();
-  char mean[16], plan[16], pri[16], sec[16];
+  char mean[16], plan[16], pri[16], sec[16], open[16], expected[16], fa[16], fb[16], fn[16];
   json_float_token_(mean, sizeof(mean), d.mean_kw, 2);
   json_float_token_(plan, sizeof(plan), d.plan_kw, 2);
   json_float_token_(pri, sizeof(pri), d.primary_lmin, 1);
   json_float_token_(sec, sizeof(sec), d.secondary_lmin, 1);
+  json_float_token_(open, sizeof(open), d.open_area_m2, 1);
+  json_float_token_(expected, sizeof(expected), d.expected_lmin, 1);
+  float a = NAN, b = NAN;
+  d.fit.coeffs(&a, &b);
+  json_float_token_(fa, sizeof(fa), a, 2);
+  json_float_token_(fb, sizeof(fb), b, 4);
+  json_float_token_(fn, sizeof(fn), d.fit.n, 0);
   std::snprintf(buffer + len - 1, capacity - (len - 1),
                 ",\"hp_diagnostics\":{\"plan_deviation\":{\"state\":\"%s\",\"mean_kw\":%s,\"planned_kw\":%s,"
-                "\"window_min\":%u},\"mixing\":{\"state\":\"%s\",\"primary_l_min\":%s,\"secondary_l_min\":%s}}}",
+                "\"window_min\":%u},\"mixing\":{\"state\":\"%s\",\"primary_l_min\":%s,\"secondary_l_min\":%s},"
+                "\"flow_check\":{\"state\":\"%s\",\"secondary_l_min\":%s,\"expected_l_min\":%s,\"open_area_m2\":%s,"
+                "\"fit\":{\"base_l_min\":%s,\"l_min_per_m2\":%s,\"samples\":%s}}}}",
                 ::lune_touch_hp_diag::dev_name(d.dev), mean, plan,
                 static_cast<unsigned>(::lune_touch_hp_diag::MEAN_MINUTES), ::lune_touch_hp_diag::mix_name(d.mix), pri,
-                sec);
+                sec, ::lune_touch_hp_diag::flow_check_name(d.flow), sec, expected, open, fa, fb, fn);
 }
 
 
@@ -17087,7 +19035,8 @@ void LuneTouchCoordinator::append_hp_diagnostics_json_(char *buffer, size_t capa
 // Runs on the poll task after the hp diagnostics; the events are fired from the
 // main loop (flush_problem_events_), where the native API may be used.
 //   heat_pump     hp_diagnostics over / under Odin's plan (30 min hold inside)
-//   hydraulics    hp_diagnostics mixing (10 min hold inside)
+//   hydraulics    hp_diagnostics: the tank's two circuits out of step (10 min hold inside),
+//                 secondary flow against the open loops (30 min hold inside)
 //   connectivity  V6 board 10 min, Asgard 10 min, Odin 30 min without an answer
 //   room_comfort  room_reached.h: target − 0.3 °C not reached in 24 h while heating
 // Touch reads no room sensors itself (rooms use V6 zone sensors), so humidity,
@@ -17145,13 +19094,15 @@ void LuneTouchCoordinator::run_problems_(uint32_t now_ms) {
 
   // Heat pump against Odin's plan, and mixing (flags already held in hp_diagnostics.h).
   {
-    char mean[16], plan[16], pri[16], sec[16];
+    char mean[16], plan[16], pri[16], sec[16], open[16], expected[16];
     num(mean, sizeof(mean), hp_diag_.mean_kw, 1);
     num(plan, sizeof(plan), hp_diag_.plan_kw, 1);
     num(pri, sizeof(pri), hp_diag_.primary_lmin, 1);
     num(sec, sizeof(sec), hp_diag_.secondary_lmin, 1);
-    const char *k[] = {"mean", "plan", "pri", "sec"};
-    const char *v[] = {mean, plan, pri, sec};
+    num(open, sizeof(open), hp_diag_.open_area_m2, 0);
+    num(expected, sizeof(expected), hp_diag_.expected_lmin, 1);
+    const char *k[] = {"mean", "plan", "pri", "sec", "open", "exp"};
+    const char *v[] = {mean, plan, pri, sec, open, expected};
     pr::Edge e = tr.update("heat_pump.over_plan", "heat_pump", pr::Severity::Warning, hp_diag_.over,
                            !hp_diag_.over, now_ms, 0);
     texts(tx::HP_OVER_TITLE, tx::HP_OVER_MSG, k, v, 4);
@@ -17160,13 +19111,20 @@ void LuneTouchCoordinator::run_problems_(uint32_t now_ms) {
                   now_ms, 0);
     texts(tx::HP_UNDER_TITLE, tx::HP_UNDER_MSG, k, v, 4);
     handle(e, "");
-    e = tr.update("hydraulics.mixing", "hydraulics", pr::Severity::Warning, hp_diag_.mixing, !hp_diag_.mixing,
-                  now_ms, 0);
-    texts(tx::MIXING_TITLE, tx::MIXING_MSG, k, v, 4);
+    // The two circuits out of step, either way: mixing, not a pump fault (the secondary
+    // flow follows the valves). The text says which way at the raise.
+    const bool out_of_step = hp_diag_.mixing || hp_diag_.short_flow;
+    e = tr.update("hydraulics.mixing", "hydraulics", pr::Severity::Warning, out_of_step, !out_of_step, now_ms, 0);
+    texts(tx::MIXING_TITLE, hp_diag_.short_flow ? tx::MIXING_MSG_LOW : tx::MIXING_MSG, k, v, 6);
     handle(e, "");
-    e = tr.update("hydraulics.short_flow", "hydraulics", pr::Severity::Warning, hp_diag_.short_flow,
-                  !hp_diag_.short_flow, now_ms, 0);
-    texts(tx::SHORT_FLOW_TITLE, tx::SHORT_FLOW_MSG, k, v, 4);
+    // The pump against what the open loops normally take.
+    e = tr.update("hydraulics.flow_low", "hydraulics", pr::Severity::Warning, hp_diag_.flow_low,
+                  !hp_diag_.flow_low, now_ms, 0);
+    texts(tx::FLOW_LOW_TITLE, tx::FLOW_LOW_MSG, k, v, 6);
+    handle(e, "");
+    e = tr.update("hydraulics.flow_high", "hydraulics", pr::Severity::Warning, hp_diag_.flow_high,
+                  !hp_diag_.flow_high, now_ms, 0);
+    texts(tx::FLOW_HIGH_TITLE, tx::FLOW_HIGH_MSG, k, v, 6);
     handle(e, "");
   }
 
@@ -17399,6 +19357,77 @@ bool LuneTouchCoordinator::weather_summary(float *rooms, float *offset_c, float 
   *lift_c = lift;
   text->assign(count > 0 ? list : "none");
   reason->assign(why);
+  give_state_lock_();
+  return true;
+}
+
+bool LuneTouchCoordinator::plan_compare(PlanCompare *out) const {
+  *out = PlanCompare{};
+  if (!take_state_lock_(20))
+    return false;
+  // The same 24 h as the planner page (index 0 = the current hour); Odin's hot water and
+  // legionella hours left out, the comfort floor and prices are Touch's for both.
+  const PlannerRuntime *rt = planner_rt_;
+  const bool touch = rt != nullptr && rt->solved_ts != 0 && rt->plan.n > 0 && std::isfinite(rt->plan_kw_now);
+  const int n = touch ? std::min(24, rt->plan.n) : 0;
+  bool priced = false;
+  for (int k = 0; k < n; k++)
+    priced = priced || (std::isfinite(rt->price[k]) && rt->price[k] > 0.0f);
+  auto price = [&](int k) { return k < n && std::isfinite(rt->price[k]) ? rt->price[k] : 0.0f; };
+  auto below = [&](int k, float t) {
+    return k < n && std::isfinite(rt->band_min[k]) && std::isfinite(t) ? std::max(0.0f, rt->band_min[k] - t) : 0.0f;
+  };
+  if (touch) {
+    const auto &p = rt->plan;
+    float heat = 0, elec = 0, cost = 0, bk = 0;
+    for (int k = 0; k < n; k++) {
+      heat += p.kw[k];
+      elec += p.elec_kwh[k];
+      cost += p.elec_kwh[k] * price(k);
+      bk += below(k, p.t_end_c[k]);
+    }
+    out->touch_heat_kw = p.kw[0];
+    out->touch_elec_kw = p.elec_kwh[0];
+    out->touch_heat_kwh = heat;
+    out->touch_elec_kwh = elec;
+    out->touch_cost_eur = priced ? cost : NAN;
+    out->touch_below_kh = bk;
+  }
+  const auto &o = odin_plan_;
+  if (o.available && !o.plan_stale && o.heat_production_count > 0) {
+    const int on = std::min<int>(24, o.heat_production_count);
+    auto space = [&](int k) { return o.operation_mode_horizon[k] != 1 && o.operation_mode_horizon[k] != 6; };
+    float heat = 0, elec = 0, cost = 0, bk = 0;
+    for (int k = 0; k < on; k++) {
+      if (space(k)) {
+        heat += std::max(0.0f, o.heat_production_horizon[k]);
+        elec += std::max(0.0f, o.energy_horizon[k]);
+        cost += std::max(0.0f, o.energy_horizon[k]) * price(k);
+      }
+      bk += below(k, o.expected_temp_horizon[k]);
+    }
+    out->odin_heat_kw = space(0) ? std::max(0.0f, o.heat_production_horizon[0]) : 0.0f;
+    out->odin_elec_kw = space(0) ? std::max(0.0f, o.energy_horizon[0]) : 0.0f;
+    out->odin_heat_kwh = heat;
+    out->odin_elec_kwh = elec;
+    out->odin_cost_eur = priced ? cost : NAN;
+    out->odin_below_kh = touch ? bk : NAN;
+  }
+  // The day plans: this hour as planned at the day's first solve, and the day's totals.
+  if (rt != nullptr) {
+    const uint32_t now = static_cast<uint32_t>(::time(nullptr));
+    const uint32_t hour = now - now % 3600u;
+    const float tk = rt->day_touch.at(hour), te = rt->day_touch.elec_at(hour);
+    const float ok = rt->day_odin.at(hour), oe = rt->day_odin.elec_at(hour);
+    if (std::isfinite(tk)) out->touch_heat_kw = tk;
+    if (std::isfinite(te)) out->touch_elec_kw = te;
+    if (std::isfinite(ok)) out->odin_heat_kw = ok;
+    if (std::isfinite(oe)) out->odin_elec_kw = oe;
+    out->touch_day_heat_kwh = PlannerRuntime::DayPlan::sum(rt->day_touch.heat_kw);
+    out->touch_day_elec_kwh = PlannerRuntime::DayPlan::sum(rt->day_touch.elec_kwh);
+    out->odin_day_heat_kwh = PlannerRuntime::DayPlan::sum(rt->day_odin.heat_kw);
+    out->odin_day_elec_kwh = PlannerRuntime::DayPlan::sum(rt->day_odin.elec_kwh);
+  }
   give_state_lock_();
   return true;
 }

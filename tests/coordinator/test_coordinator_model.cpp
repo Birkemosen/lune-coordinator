@@ -732,6 +732,18 @@ static void test_sync_group_room_physics() {
   model.set_room_geometry("stue", 49.0f, 0.0f, true);
   const StrategySnapshot st = model.strategy_snapshot();
   expect(std::fabs(st.ua_total_w_per_k - 61.3f) < 0.05f, "group room: counts once with the full UA");
+  // Weather decisions run on the group as V6 controls it: the members' mean on the primary.
+  size_t primary = model.zone_count(), secondary = model.zone_count();
+  for (size_t i = 0; i < model.zone_count(); i++) {
+    const ZoneBinding *z = model.zone(i);
+    if (z != nullptr && z->node_index == 0 && z->zone_index == 3) primary = i;
+    if (z != nullptr && z->node_index == 0 && z->zone_index == 4) secondary = i;
+  }
+  expect(primary < model.zone_count() && std::fabs(model.group_mean_temperature_c(primary) - 22.5f) < 0.01f,
+         "group room: the primary reads the members' mean");
+  expect(secondary < model.zone_count() && model.zone(secondary)->is_group_secondary &&
+             std::fabs(model.group_mean_temperature_c(secondary) - 23.0f) < 0.01f,
+         "group room: a secondary is marked (no decision of its own) and keeps its own reading");
 }
 
 static void test_strategy_snapshot() {
@@ -1511,6 +1523,9 @@ static void test_daily_ua_learning() {
   run_hours(12.0f);
   HouseModel::UaDayResult out[4];
   expect(model.close_ua_day(out, 4) == 0, "ua day: half a day does not count");
+  expect(model.ua_last_close(0).verdict == HouseModel::UaVerdict::SHORT_DAY &&
+             std::fabs(model.ua_last_close(0).day.hours - 12.0f) < 0.1f,
+         "ua day: the short day says why, with its 12 h");
   const LogicalRoom *living = model.room_by_id("living");
   expect(living != nullptr && living->delivered_kwh_today == 0.0f, "ua day: midnight clears today's kWh");
   run_hours(24.0f);
@@ -1518,10 +1533,19 @@ static void test_daily_ua_learning() {
          "ua day: today's kWh is the room's share (7.2 kWh)");
   const size_t n = model.close_ua_day(out, 4);
   expect(n == 2, "ua day: both rooms learn from a whole day");
+  expect(model.ua_last_close(0).verdict == HouseModel::UaVerdict::LEARNED &&
+             std::fabs(model.ua_last_close(0).day.ua_est_w_per_k - 15.0f) < 0.3f,
+         "ua day: the learned day keeps its estimate");
   const LogicalRoom *bed = model.room_by_id("bed");
   expect(std::fabs(living->ua_learned_w_per_k - 15.0f) < 0.3f, "ua day: living UA = 15 W/K");
   expect(std::fabs(bed->ua_learned_w_per_k - 7.5f) < 0.2f, "ua day: bed UA = 7.5 W/K");
   expect(living->ua_observed_days == 1 && bed->ua_observed_days == 1, "ua day: one day per day");
+  // A V6 that has not stored the learned value yet must not reset Touch's own learning.
+  expect(model.apply_v6_physics_mirror(0, 0, 0x01, 20.0f, floor, 18.0f, 0.0f, 18.0f, 0.0f, 0, 2,
+                                       "", "", "g1", nullptr),
+         "ua day: V6 poll without learned value applies");
+  expect(living->ua_observed_days == 1 && std::fabs(living->ua_learned_w_per_k - 15.0f) < 0.3f,
+         "ua day: V6 poll without learned value keeps Touch's day and UA");
   expect(living->ua_confidence > 0.0f && living->ua_confidence < 0.1f, "ua day: low confidence after one day");
   // A day colder than 8 K inside–outside teaches nothing.
   uint32_t t = 1000;
@@ -1532,6 +1556,7 @@ static void test_daily_ua_learning() {
     model.accumulate_ua_day(step_h, 15.0f);
   }
   expect(model.close_ua_day(out, 4) == 0, "ua day: mild day (6 K) does not count");
+  expect(model.ua_last_close(0).verdict == HouseModel::UaVerdict::MILD, "ua day: the mild day says so");
   // With 300 W internal gains the heat pump delivers that much less for the same loss:
   // learning adds each room's area share back (living 2/3 → 200 W / 20 K = +10 W/K).
   HouseModel g;

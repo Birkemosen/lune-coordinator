@@ -202,7 +202,10 @@ inline PlanView from_v1_snapshot(const odin_plan::Snapshot &snap) {
   return view;
 }
 
-// Unified arm predicate: v1 uses heat+mode; v2 uses decision_reason (+ DHW deny).
+// Unified arm predicate: only a plan that says why it heats may arm the rooms' absorb
+// band. Heat planned because the house needs it is heating, not pre-buffering: v2
+// arms on its decision_reason (+ DHW deny); v1 and sources without reasons never arm.
+// Weather pre-charging is Touch's own (slab_charge), per room.
 inline bool may_arm_absorb(const PlanView &plan, size_t index, bool arm_energy_cost_modulation) {
   if (index >= odin_plan::HORIZON_HOURS)
     return false;
@@ -214,8 +217,17 @@ inline bool may_arm_absorb(const PlanView &plan, size_t index, bool arm_energy_c
       return false;
     return may_arm_absorb_v2(plan.decision_reason[index], arm_energy_cost_modulation);
   }
-  // v1 and unknown sources: legacy rule only.
-  return odin_plan::may_arm_absorb(plan.heat_production[index], plan.operation_mode[index]);
+  // v1 and unknown sources: a planned heat hour does not say it pre-buffers.
+  return false;
+}
+
+/// A room may take the absorb band only while it is at most one comfort band above its
+/// target: a room already warmer has stored its share, and the band would keep its
+/// loop open further still. Unknown temperature or target: leave it to V6.
+inline bool absorb_room_has_headroom(bool known, float temp_c, float setpoint_c, float comfort_band_c) {
+  if (!known || !std::isfinite(temp_c) || !std::isfinite(setpoint_c))
+    return true;
+  return temp_c <= setpoint_c + comfort_band_c;
 }
 
 }  // namespace esphome::lune_touch_coordinator::plan_source

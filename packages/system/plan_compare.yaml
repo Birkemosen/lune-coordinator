@@ -1,0 +1,221 @@
+# Touch's and Odin's plans side by side, so Home Assistant keeps them in its long-term
+# statistics (hourly mean/min/max, kept for good) next to the heat pump's delivered heat
+# and electricity. "now" is this hour's output in kW as planned at the day's first solve
+# (just after local midnight): its hourly mean is the planned kWh for the hour, so a day's
+# sum is the day plan. "today" is that day plan's total. "24 h" is the rolling plan from
+# this hour on, space heat only, as the planner page's Touch vs Odin table. Unknown while a
+# plan is missing.
+
+sensor:
+  - platform: template
+    id: lune_plan_touch_heat_kw
+    name: "Plan Touch heat now"
+    icon: mdi:heat-wave
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_heat_kw))
+        return {};
+      return c.touch_heat_kw;
+  - platform: template
+    id: lune_plan_odin_heat_kw
+    name: "Plan Odin heat now"
+    icon: mdi:heat-wave
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_heat_kw))
+        return {};
+      return c.odin_heat_kw;
+  - platform: template
+    id: lune_plan_touch_elec_kw
+    name: "Plan Touch electricity now"
+    icon: mdi:flash
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_elec_kw))
+        return {};
+      return c.touch_elec_kw;
+  - platform: template
+    id: lune_plan_odin_elec_kw
+    name: "Plan Odin electricity now"
+    icon: mdi:flash
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_elec_kw))
+        return {};
+      return c.odin_elec_kw;
+  - platform: template
+    id: lune_plan_touch_heat_kwh
+    name: "Plan Touch heat 24 h"
+    icon: mdi:heat-wave
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_heat_kwh))
+        return {};
+      return c.touch_heat_kwh;
+  - platform: template
+    id: lune_plan_odin_heat_kwh
+    name: "Plan Odin heat 24 h"
+    icon: mdi:heat-wave
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_heat_kwh))
+        return {};
+      return c.odin_heat_kwh;
+  - platform: template
+    id: lune_plan_touch_elec_kwh
+    name: "Plan Touch electricity 24 h"
+    icon: mdi:flash
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_elec_kwh))
+        return {};
+      return c.touch_elec_kwh;
+  - platform: template
+    id: lune_plan_odin_elec_kwh
+    name: "Plan Odin electricity 24 h"
+    icon: mdi:flash
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_elec_kwh))
+        return {};
+      return c.odin_elec_kwh;
+  - platform: template
+    id: lune_plan_touch_cost_eur
+    name: "Plan Touch cost 24 h"
+    icon: mdi:cash
+    unit_of_measurement: "EUR"
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_cost_eur))
+        return {};
+      return c.touch_cost_eur;
+  - platform: template
+    id: lune_plan_odin_cost_eur
+    name: "Plan Odin cost 24 h"
+    icon: mdi:cash
+    unit_of_measurement: "EUR"
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_cost_eur))
+        return {};
+      return c.odin_cost_eur;
+  - platform: template
+    id: lune_plan_touch_below_kh
+    name: "Plan Touch below floor 24 h"
+    icon: mdi:thermometer-chevron-down
+    unit_of_measurement: "K·h"
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_below_kh))
+        return {};
+      return c.touch_below_kh;
+  - platform: template
+    id: lune_plan_odin_below_kh
+    name: "Plan Odin below floor 24 h"
+    icon: mdi:thermometer-chevron-down
+    unit_of_measurement: "K·h"
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_below_kh))
+        return {};
+      return c.odin_below_kh;
+  - platform: template
+    id: lune_plan_touch_day_heat_kwh
+    name: "Plan Touch heat today"
+    icon: mdi:heat-wave
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_day_heat_kwh))
+        return {};
+      return c.touch_day_heat_kwh;
+  - platform: template
+    id: lune_plan_odin_day_heat_kwh
+    name: "Plan Odin heat today"
+    icon: mdi:heat-wave
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_day_heat_kwh))
+        return {};
+      return c.odin_day_heat_kwh;
+  - platform: template
+    id: lune_plan_touch_day_elec_kwh
+    name: "Plan Touch electricity today"
+    icon: mdi:flash
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.touch_day_elec_kwh))
+        return {};
+      return c.touch_day_elec_kwh;
+  - platform: template
+    id: lune_plan_odin_day_elec_kwh
+    name: "Plan Odin electricity today"
+    icon: mdi:flash
+    unit_of_measurement: "kWh"
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      lune_touch_coordinator::LuneTouchCoordinator::PlanCompare c;
+      if (!id(lune_touch_app).plan_compare(&c) || !std::isfinite(c.odin_day_elec_kwh))
+        return {};
+      return c.odin_day_elec_kwh;

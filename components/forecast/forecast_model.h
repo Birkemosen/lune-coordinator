@@ -57,6 +57,9 @@ struct PreloadParams {
   float comfort_band_c = 0.5f;      ///< ± around scheduled for horizon / chart band
   bool enable_horizon = true;
   bool has_current_temp = false;
+  /// Floor response time (h) from V6: an offset reaches the room this long after it is
+  /// applied, so preload ramps up this much earlier. 0 = immediate.
+  float floor_lag_h = 0.0f;
 };
 
 struct PreloadDecision {
@@ -72,6 +75,9 @@ struct PreloadDecision {
   uint8_t active_lead_h = 0;      ///< Lead used (configured + bias)
   uint8_t preload_start_h = 0;    ///< Inclusive hour offset for active preload bar
   uint8_t preload_end_h = 0;      ///< Exclusive hour offset for active preload bar
+  /// Full offset the coming episode asks for, before the ramp: set from a lead before it
+  /// (preload_start_h > 0 while offset_c is still 0), so the heat source can plan for it.
+  float planned_offset_c = 0.0f;
 };
 
 /// Optional chart series filled by fill_preload_series (not stored on ESP decisions).
@@ -105,10 +111,18 @@ float wind_alignment(uint8_t exterior_walls, float wind_dir_deg);
 /// (800 W/m² reference), floored at 0.
 float zone_hour_load(const ForecastHour &hour, const ZoneExposure &exposure, float indoor_ref_c);
 
+/// Calibrated cooling rate of the room this hour (°C/h with the valve shut): the learned
+/// cooling rate scaled from typical November weather to this hour's temperature difference,
+/// wind on the exposed walls (learned exposure) and sun.
+float room_loss_c_per_h(const ForecastHour &hour, const ZoneExposure &exposure, const PreloadParams &params);
+
 /// Effective lead hours: configured thermal_lead_h plus closed-loop bias (never below configured).
 uint8_t active_thermal_lead_h(const ZoneExposure &exposure, const PreloadParams &params);
 
-/// Scan the active lead window and decide the preload offset for this zone.
+/// Find the first episode within HORIZON_HOURS where the room's loss climbs (RISE_ON × its
+/// usual cooling, or more than its floor gives) and decide the preload: from the floor lag
+/// plus an hour before it (never more than the lead), an offset that keeps the room ahead of
+/// the extra loss while the floor answers, through the episode's end.
 PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, size_t now_index,
                                      const ZoneExposure &exposure, const PreloadParams &params);
 

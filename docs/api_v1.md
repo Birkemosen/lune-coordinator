@@ -29,6 +29,9 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 - [`POST /forecast/settings`](#post-forecastsettings)
 - [`POST /forecast/estimate-location`](#post-forecastestimate-location)
 - [`POST /weather/settings`](#post-weathersettings)
+- [`GET /planner`](#get-planner)
+- [`POST /planner/history`](#post-plannerhistory)
+- [`POST /planner/settings`](#post-plannersettings)
 - [`POST /settings`](#post-settings)
 - [`POST /display/wake`](#post-displaywake)
 - [`POST /heat-source/settings`](#post-heat-sourcesettings)
@@ -36,6 +39,7 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 - [`POST /rooms/{room_id}/groups`](#post-roomsroom_idgroups)
 - [`POST /rooms/{room_id}/sensor`](#post-roomsroom_idsensor)
 - [`POST /rooms/{room_id}/remove`](#post-roomsroom_idremove)
+- [`POST /rooms/{room_id}/warmup`](#post-roomsroom_idwarmup)
 - [`GET /circulation`](#get-circulation)
 - [`POST /circulation/settings`](#post-circulationsettings)
 - [`POST /circulation/refresh`](#post-circulationrefresh)
@@ -247,7 +251,8 @@ temperature until merged into a room.
         "saturated_s": 0,
         "any_fresh": true
       },
-      "revision": 7
+      "revision": 7,
+      "warmup": { "mode": "now", "since": 1795600000, "until": 1795621600, "stop_at_c": 20.5 }
     }
   ],
   "unassigned": [
@@ -314,7 +319,9 @@ Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
 ```json
 "hp_diagnostics": {
   "plan_deviation": { "state": "over", "mean_kw": 9.1, "planned_kw": 6.3, "window_min": 30 },
-  "mixing": { "state": "short", "primary_l_min": 19.0, "secondary_l_min": 17.5 }
+  "mixing": { "state": "short", "primary_l_min": 19.0, "secondary_l_min": 17.5 },
+  "flow_check": { "state": "ok", "secondary_l_min": 17.5, "expected_l_min": 16.8, "open_area_m2": 143.0,
+                  "fit": { "base_l_min": 3.9, "l_min_per_m2": 0.09, "samples": 2410 } }
 }
 ```
 
@@ -331,9 +338,20 @@ Asgard's `computed_output_power` (kW, `null` when Asgard does not report it).
   its own water back through the tank; clears when secondary ≥ primary for 10 min),
   `mixing` (secondary > primary × 1.25 for 10 min; clears when secondary < primary × 1.15
   for 10 min). Flows in l/min (secondary = Alpha2 m³/h × 1000/60);
-  last judged values, `null` when unknown.
+  last judged values, `null` when unknown. Both say only that the tank's two circuits are
+  out of step: the secondary flow follows the valves, so neither is a pump fault.
+- `flow_check.state`: the circulation pump's flow against what the open loops normally
+  take. `unknown` (no Alpha2 flow, or a loop's valve stale), `learning` (fewer than 360
+  learned minutes, or too little spread in open area), `idle` (not judged now: compressor
+  off, not space heating, valves moved in the last 10 min, a valve flush, or expected
+  flow below 8 l/min), `ok`, `low` (secondary < 0.7 × expected and ≥ 3 l/min below for
+  30 min; clears at ≥ 0.8 ×), `high` (> 1.4 × expected and ≥ 3 l/min above for 30 min;
+  clears at ≤ 1.25 ×). `open_area_m2` sums the areas of loops with valve > 5 %;
+  `expected_l_min = base_l_min + l_min_per_m2 × open_area_m2`, an exponentially weighted
+  least-squares fit (half-life 3 days of learned minutes) kept in NVS. `fit` values are
+  `null` until the fit is usable.
 - Each raise and clear is logged once in `GET /events` (source `heat_source` for the plan,
-  `circulation` for mixing).
+  `circulation` for mixing and the flow check).
 
 `v6_control_mode` / `v6_control_mode_effective` mirror the optional lease
 `control_mode` (`local` omits the field; `heat_pump` / `normal` are sent).
@@ -397,7 +415,9 @@ sent only when it did):
 ]
 ```
 
-Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.short_flow`, `hydraulics.mixing`,
+Touch reports `heat_pump.over_plan`, `heat_pump.under_plan`, `hydraulics.mixing` (the buffer tank's two
+circuits out of step, either way), `hydraulics.flow_low` and `hydraulics.flow_high` (the circulation pump's
+flow against what the open loops normally take, learned per house),
 `connectivity.v6:<node_id>`, `connectivity.asgard`, `connectivity.odin` and
 `room.not_reached:<room_id>`. Room sensors are V6's, so humidity, battery and sensor
 problems come from V6.
@@ -1028,6 +1048,182 @@ first V6 import seeds this from legacy V6 zone `max_offset_c` values using a
 conservative minimum aggregate. V6 still applies its local per-zone command
 clamps, absolute setpoint limits, expiry, and safety validation.
 
+### `GET /planner`
+
+The shadow planner's state for the Opvarmningsplan page. The planner computes and logs
+only; nothing here commands the heat source, Odin or Asgard. Until the planner runs,
+every result is `null` and the page shows its empty states.
+
+```json
+{
+  "mode": "shadow",
+  "running": false,
+  "strategy": "comfort",
+  "settings": {"strategy": "comfort", "comfort_weight_eur": 0.50, "min_output_kw": 3.2,
+               "max_output_kw": 8.0, "max_flow_c": 35.0},
+  "solved_ts": null,
+  "plan": null,
+  "rooms": null,
+  "model": null,
+  "history": null
+}
+```
+
+Once the planner has solved (on the heat-source task, each hour and when settings,
+weather or prices change), `running` is `true` and the body carries the plan, the model
+it planned with and the shadow flow controller:
+
+```json
+{
+  "mode": "shadow", "running": true, "strategy": "comfort", "settings": {"...": "..."},
+  "solved_ts": 1794830400, "model_source": "seed", "solve_ms": 820,
+  "plan": {"from_ts": 1794830400, "n": 48, "start_c": 22.62, "target_c": 22.0, "band_c": 0.5,
+           "heat_kwh": 58.5, "cost_eur": 3.41, "below_kh": 0.00,
+           "heat_kw": [0.0, 3.2, "..."], "zone_feed_c": [null, 26.1, "..."],
+           "t_end_c": [22.55, 22.49, "..."], "price": [0.2875, 0.2810, "..."],
+           "elec_kwh": [0.00, 0.66, "..."], "band_min_c": [21.5, "..."], "band_max_c": [23.0, "..."],
+           "price_est": [0, 0, "...", 1], "band_source": "odin"},
+  "model": {"ua_kw_per_k": 0.161, "ca_kwh_per_k": 13.3, "cs_kwh_per_k": 30.0, "h_kw_per_k": 0.70,
+            "sun_kw_per_100wm2": 0.79, "sun_floor_frac": 0.00, "sun_late_kw_per_100wm2": 0.00,
+            "sensor_sun_k_per_100wm2": 0.00, "p_int_kw": 0.58, "wind_pct_per_ms": 4.4, "cold_pct_per_k": 0.0,
+            "floor_kw_per_k": 0.441,
+            "cop": [{"kw": 3, "zone_feed_c": 25.7, "hp_feed_c": 28.3, "cop": 4.93}, "..."],
+            "cop_outdoor_c": 5.0,
+            "defrost": {"cop_per_min": -0.037, "d0": 6.60, "d1": -0.83, "below_c": 7.0, "min_per_h": 2.5}},
+  "flow": {"our_target_c": 29.6, "odin_target_c": 35.0, "measured_kw": 10.0, "plan_kw": 4.4},
+  "day_plan": {"day_ts": 1794870000, "touch_heat_kwh": 56.2, "touch_elec_kwh": 13.10,
+               "touch_heat_kw": [3.20, 3.70, "..."], "odin_heat_kwh": 74.6, "odin_elec_kwh": 22.40,
+               "odin_heat_kw": [5.80, "..."]},
+  "odin": {"available": true, "n": 24, "heat_kw": [0.00, 5.80, "..."], "expected_c": [22.41, "..."],
+           "elec_kwh": [0.00, 1.42, "..."], "mode": [0, 2, "..."]},
+  "learning": {"source": "learned", "refit_ts": 1794885600, "refit_ms": 2400, "days": 41, "hours": 336,
+               "energy": true, "dynamics": true, "rmse_k": 0.286, "hp_hours": 263, "defrost_hours": 118,
+               "heat_pump": true,
+               "floor_c": 25.1, "floor_tracked": true,
+               "store": {"boot": "restored", "hours": 1080, "saves": 3, "last_save": "ok"}},
+  "history": {"from_ts": 1794283200, "n": 168, "temp_c": [22.41, "..."], "expected_c": [22.35, "..."],
+              "plan_kw": [0.0, "..."], "plan_elec_kwh": [0.00, "..."], "heat_kwh": [0.00, "..."],
+              "elec_kwh": [0.02, "..."], "price": [0.2875, "..."], "target_c": [22.0, "..."],
+              "odin_flow_c": [24.0, "..."], "shadow_flow_c": [null, "..."], "band_min_c": [21.5, "..."],
+              "band_max_c": [22.5, "..."]},
+  "scores": {"house_plan": [{"h": 1, "n": 40, "rmse_k": 0.120, "bias_k": -0.020, "persistence_k": 0.150}, "..."],
+             "house_model": [{"h": 1, "n": 40, "rmse_k": 0.090, "bias_k": 0.010, "persistence_k": 0.150}, "..."]},
+  "room_fit": {"ts": 1794884400, "ms": 19400, "fitted": 12, "rooms": 12},
+  "rooms": [{"room_id": "room-10", "name": "Stue", "target_c": 22.0, "now_c": 22.4, "share": 0.191,
+             "model": true, "weight_6h": 0.97, "rmse_k": 0.42, "past_c": [22.1, "..."],
+             "score": [{"h": 1, "n": 30, "rmse_k": 0.21, "bias_k": 0.02, "persistence_k": 0.18}, "..."],
+             "expected_c": [22.41, "..."],
+             "preload": null, "charge": {"from": 6, "to": 11, "store_c": 0.8, "insufficient": false}}]
+}
+```
+
+- `plan` arrays are per hour from `from_ts` (the current hour): planned space-heating
+  output (kW, 0 or between min and max output), the flow to the floors that output needs
+  (`null` when off), the house temperature expected at the hour's end, the €/kWh price
+  Touch pushes to Odin (incl. grid tariffs), the electricity the hour costs and the
+  comfort band the plan is held to. An hour whose price is not published yet carries the
+  same hour of the last known day and `price_est` 1 (`null` before any prices). With
+  `band_source` `odin` the band is Odin's comfort schedule as Touch keeps it: the user's
+  schedule or the synced setpoint, with Touch's lifted copy for the coming 24 h while one
+  is on Odin. With `target` (no schedule known) it is `target_c − band_c` to `target_c + 1.0`.
+- `model_source` is `learned` once Touch has refitted on its own hourly history, else
+  `seed` (start values fitted on this house's 2 Oct–16 Nov 2026 history,
+  components/planner/seed_params.h). Sun is the global irradiance from Touch's forecast;
+  `sun_floor_frac` is the share of it that lands on the floors (and comes out later),
+  `sun_late_kw_per_100wm2` sun that arrives hours late through roof and walls, and
+  `sensor_sun_k_per_100wm2` how much a sensor in the sun reads high. All three are fitted
+  with the dynamics. The loss is UA × (1 + wind × `wind_pct_per_ms` + cold ×
+  `cold_pct_per_k`) per kelvin indoors − outdoors, cold being the kelvins below 8 °C outdoors;
+  `cold_pct_per_k` stays 0 until days below 8 °C show more loss than the milder ones. The `cop` table counts the defrosts at `cop_outdoor_c`: `defrost` is
+  the COP lost per defrost minute in an hour (`cop_per_min`) and the defrost minutes per
+  running hour, `d0 + d1 × outdoor` below `below_c` and none above (`min_per_h` at
+  `cop_outdoor_c`), both learned with the heat pump. Electricity comes from the heat
+  pump's all-mode meter that moves during the day (Asgard's
+  `daily_total_energy_consumption`), else its per-mode daily meters.
+- The plan may let the house sag below the band's floor, by at most 0.5 K, in hours
+  before forecast sun (≥ 150 W/m² within 6 h) that would bring it back to the floor
+  without heat, so it does not charge the floors for a morning the sun warms anyway.
+- `learning`: Touch keeps one record per hour (components/planner/hour_log.h: house
+  temperature at the hour's start, weather, price, band, run minutes, starts, feeds, the
+  heat pump's own space-heating heat and electricity from its daily meters, the planner's
+  6 h-ahead forecast, the plan's output and the shadow flow target) for 60 days on SPIFFS
+  (`/hist/planner.a|b`, saved every 3 hours). Once a day at 03 local, once there are 4
+  days, and after a seed, it refits from the seed: the energy balance over every day with at
+  least 20 logged hours (sums scaled to 24 h)
+  (`energy`: loss, internal gain, sun, wind and cold pinned to the metered heat), the hourly
+  dynamics over the last 14 days (`dynamics`, kept only when it forecasts better than
+  the seed; `rmse_k` is its 1–24 h error), and the heat pump from full space-heating
+  hours (`hp_hours`, with their defrost minutes; `heat_pump` from 24), and the defrost
+  minutes from every hour with at least half an hour of space heating (`defrost_hours`).
+  `floor_c` is the floors' temperature the
+  plan starts from: tracked through the last 72 stored hours (`floor_tracked`), else
+  where they would stand if the house were holding its temperature now.
+- `history` covers the 168 hours before `plan.from_ts`, per hour: the house at the
+  hour's end as measured and as forecast 6 h before, the planned output (from the day plan,
+  see `day_plan`; the rolling plan's first hour before the day had one) and its
+  electricity with today's model, the delivered space heat and electricity, price, band
+  setpoint and band (as the plan held it that hour, lifts included), Odin's flow target and
+  the shadow flow target. `null` until a stored hour.
+- `scores`: the forecasts scored live against what happened, per horizon `h` (1, 3, 6,
+  12, 24 h): RMSE, bias (forecast − measured) and the RMSE of "it stays as it is now"
+  (`persistence_k`), over about the last week (exponentially weighted), with `n` the
+  forecasts scored since the restart (components/planner/forecast_score.h).
+  `house_plan` is the plan's expected house temperature, which assumes the plan's own
+  heat (not delivered in shadow mode). `house_model` re-runs the house model over the
+  same hours on the heat that was delivered and the weather that was logged: the model's
+  own error. Each room's `score` is its shown `expected_c`, held to the mean of the hour
+  the forecast ends. Scores start again after a restart.
+- `flow` is the shadow flow controller on the last telemetry poll: the zone feed the
+  floor curve gives for this hour's planned output, trimmed by the measured output, next
+  to the zone-1 flow target Odin commands. It is never sent.
+- `day_plan`: each planner's plan as it stood at the day's first solve (normally the first
+  hour after local midnight, `day_ts`), per local hour of the day, space heat only (hours
+  before a mid-day restart `null`). This is what the planner meant to deliver that day,
+  for plan vs actual: in shadow mode the house follows Odin's heat, so each new solve starts
+  from a house Odin has warmed and the rolling plan's first hours alone sum to far less
+  than the day needs. Home Assistant gets the same (packages/system/plan_compare.yaml:
+  "now" = the day plan's hour, "today" = its total).
+- `odin` is Odin's own plan for the same hours as Touch keeps it (`GET /plan`; index 0 =
+  the current hour, up to 24 h): planned heat, expected house temperature, electricity
+  (all modes) and operation mode (1 hot water, 6 legionella). The page compares the two
+  on space heating only. `{"available": false}` without an Odin plan.
+- `rooms`: the expected temperature per room for each plan hour
+  (components/planner/room_forecast.h). Each room runs the house's two-mass model on
+  Touch's week of room history (hour-mean temperature and valve opening), with its share
+  of each hour's metered space heat by valve × loop area × (zone feed − room). Ahead it
+  gets the plan's heat × `share` (its part of the house's heat over the 72 h before the
+  last refit). Rooms are refitted with the house at 03 local, and a room with 4 days of
+  history and no model as soon as it has them (`room_fit`: when, how long, how many).
+  `expected_c` blends the model with the room staying at `now_c`, per horizon, by how
+  each forecast the room out of sample over the last days (`weight_6h` is the model's
+  weight 6 h ahead; 1 until a day is scored); `null` until the room has a model.
+  `past_c` is the room's last 24 closed hours (hour means, oldest first).
+  `preload` / `charge` are Touch's own lift ahead of wind and cold for that room (hours
+  from the plan's first hour, as in `GET /plan`). Replay 2 Oct–16 Nov 2026 (12 rooms):
+  RMSE 0.40 / 0.52 / 0.64 / 0.69 K at 3 / 6 / 12 / 24 h against 0.60 / 0.90 / 1.12 /
+  0.75 K for the room staying as it is.
+
+### `POST /planner/history`
+
+Seeds the planner's hourly history with recorded hours: `{"hex": "…"}`, whole LUNH house
+records (64 bytes, default column order, docs/planner_history_format.md) as hex, at most
+30 a request. Touch takes only hours it does not have, saves soon and refits on the next
+poll. `tools/planner/seed_touch.py http://touch planner-history/house.bin` sends a file.
+Response: `{"result": "stored", "seeded": n}`.
+
+### `POST /planner/settings`
+
+Absent fields keep their value. Values are clamped and stored as one blob (`planner`)
+in the settings namespace; the response is the `GET /planner` body.
+
+| Field | Range | Meaning |
+| --- | --- | --- |
+| `strategy` | `comfort`, `weighted`, `price` | Comfort first (default), weighted, or price first |
+| `comfort_weight_eur` | 0–5 | EUR per K·h below the band (weighted only) |
+| `min_output_kw` | 0–10 (≤ max) | Lowest stable output |
+| `max_output_kw` | 1–16 | Highest output the planner may plan |
+| `max_flow_c` | 25–55 | Highest flow temperature the planner may send |
+
 ### `POST /settings`
 
 Stores coordinator-owned display and install profile fields. On first boot Touch automatically
@@ -1191,6 +1387,26 @@ Body: `{ "node_id", "zone", "revision" }`.
 
 Deletes the room when it has no groups. Returns conflict if groups remain.
 
+### `POST /rooms/{room_id}/warmup`
+
+Warms one room up by hand (the room sheet's «Warm up», or the Home Assistant action
+`room_warmup`). Body: `{ "mode": "now" | "cheap" | "stop" }`. `room_id` may also be the room's
+name as shown on Touch.
+
+- `now` lifts Odin's comfort band from this hour, whatever the price, with no dear hour left out.
+- `cheap` starts at the cheapest hour within the next 4 (as a cold-room call that is not urgent),
+  as far as the 6 h allow.
+- The lift is what the house and the room need (the cold-room call's rule, without the forecast
+  and the room's share), the whole band (floor share 1), over the room's floor lag + 2 h.
+- It ends when the room is back within 0.5 °C of its target, after 6 h, or on `stop`. It is not
+  kept across a restart. Starting again replaces the mode and restarts the 6 h.
+
+Response: `{ "result": "started", "room_id", "mode", "until", "stop_at_c", "odin_control" }`
+(`odin_control: false`: Touch does not lift Odin's band, so the warm-up does nothing), or
+`{ "result": "stopped" | "not_running" }`. A room already within the band is refused with 409
+`within_band`. `GET /rooms` and `GET /zones` show a running warm-up per room as `warmup`
+(`null` when none); the lift's hours count as `room_lag` (`lift_src` bit 2).
+
 ### `GET /circulation`
 
 Returns the read-only circulation-pump telemetry polled from a satellite
@@ -1304,7 +1520,13 @@ heat-source levers. See [`house_balancing_and_weather.md`](house_balancing_and_w
   schedule in Odin; Touch waits until the need has passed) | `rate_limited` |
   `write_failed` | `odin_unreachable` | `schedule_unreadable` | `clock_invalid`.
 - `odin.reason`: `none`, or the reasons joined by `+` in this order: `slab_charge`, `room_lag`,
-  `preload` (weather preload, fx `room_lag+preload`).
+  `preload` (weather preload, fx `room_lag+preload`). A warm-up by hand
+  (`POST /rooms/{room_id}/warmup`) counts as `room_lag`.
+- `demand.forecast`: the lagging or cold room's forecast that sized the lift. `plan` is
+  `odin` when it ran on Odin's planned heat (the planner in shadow, `GET /planner` `mode:
+  "shadow"`: the house follows Odin's plan, so a room is asked whether it gets back on the heat
+  that will come), `touch` when on Touch's own plan (Touch drives the heat, `mode: "control"`,
+  or no Odin plan). A cold-room call keeps its lift until the room is back in its band.
 - `link.status`: `ok` | `forwarder_off` | `telemetry_stale` | `no_room_temperature` |
   `odin_unreachable` | `unknown`. `alarm` turns true after 10 min in a bad state.
 - `link.telemetry_age_s` is the fresher of Odin's own `telemetry_ts` and, when MQTT is

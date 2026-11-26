@@ -524,12 +524,12 @@ sheet_demo = (
   '<input class="state tab" type="radio" name="tab-z1" id="tab-z1-s" value="settings" data-hash="indstillinger" aria-label="Indstillinger">'
   '<header class="sheet-head">'
   f'<span class="chip-icon" aria-hidden="true">{ICON_ROOM}</span>'
-  '<div><h2 id="sheet-z1-t">Josephine</h2><p>1. sal · Z1 · 22,9° · 62 % åben</p></div>'
+  '<div><h2 id="sheet-z1-t">Josephine</h2><p>1. sal · Z1 · 22,9° · 62 % flow</p></div>'
   '<button class="sheet-close" type="button" popovertarget="sheet-z1" popovertargetaction="hide" aria-label="Luk">×</button>'
   '<nav class="tabs" aria-label="Faner"><label for="tab-z1-o" data-tab="overview">Overblik</label><label for="tab-z1-h" data-tab="history">Historik</label><label for="tab-z1-s" data-tab="settings">Indstillinger</label></nav>'
   '</header><div class="sheet-body">'
   f'<section class="tab-panel" data-tab="overview">{climate_demo}'
-  '<dl class="kv"><div><dt>Ventil</dt><dd>62 % åben</dd></div><div><dt>Retur</dt><dd class="c-info">27,4 °C</dd></div><div><dt>Status</dt><dd>Kalder på varme</dd></div></dl></section>'
+  '<dl class="kv"><div><dt>Flow</dt><dd>62 % flow · ventil 22 %</dd></div><div><dt>Retur</dt><dd class="c-info">27,4 °C</dd></div><div><dt>Status</dt><dd>Kalder på varme</dd></div></dl></section>'
   f'<section class="tab-panel" data-tab="history">{trend_demo}</section>'
   f'<section class="tab-panel" data-tab="settings"><form data-save="doc-z1">{_z1_settings}</form></section>'
   '</div></div>')
@@ -540,7 +540,7 @@ sheet_code = """<div id="sheet-z1" popover class="sheet" role="dialog" aria-labe
   <input class="state tab" type="radio" name="tab-z1" id="tab-z1-s" value="settings" data-hash="indstillinger">
   <header class="sheet-head">
     <span class="chip-icon" aria-hidden="true"><svg …/></span>
-    <div><h2 id="sheet-z1-t">Josephine</h2><p>1. sal · Z1 · 22,9° · 62 % åben</p></div>
+    <div><h2 id="sheet-z1-t">Josephine</h2><p>1. sal · Z1 · 22,9° · 62 % flow</p></div>
     <button class="sheet-close" type="button" popovertarget="sheet-z1" popovertargetaction="hide" aria-label="Luk">×</button>
     <nav class="tabs"><label for="tab-z1-o" data-tab="overview">Overblik</label>…</nav>
   </header>

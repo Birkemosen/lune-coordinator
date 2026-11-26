@@ -1,12 +1,14 @@
 #pragma once
 
 #include "hp_phase.h"
+#include "close_margin.h"
 #include "valve_flush.h"
 #include "hp_diagnostics.h"
 #include "problems.h"
 #include "room_reached.h"
 #include "coordinator_model.h"
 #include "energy_price.h"
+#include "planner_settings.h"
 #include "exposure_learning.h"
 #include "flow_trim.h"
 #include "hp_history.h"
@@ -30,6 +32,10 @@
 
 namespace esphome {
 namespace lune_touch_coordinator {
+
+// Shadow planner state (models, last plan, flow controller); defined in the .cpp so the
+// planner headers stay out of this one. Lives in PSRAM.
+struct PlannerRuntime;
 
 struct ForecastHourState {
   int64_t timestamp_s{0};
@@ -58,6 +64,7 @@ struct ForecastDecisionState {
   uint8_t configured_thermal_lead_h{4};
   uint8_t learned_thermal_lead_h{0};
   uint8_t active_thermal_lead_h{4};
+  float floor_lag_h{0.0f};  ///< V6 floor response time used for preload and charge (0 = unknown)
   float timing_scale{0.0f};
   float heuristic_offset_c{0.0f};
   float min_temp_c{0.0f};
@@ -66,6 +73,7 @@ struct ForecastDecisionState {
   bool used_thermal_sizing{false};
   uint8_t preload_start_h{0};
   uint8_t preload_end_h{0};
+  float planned_offset_c{0.0f};  ///< Episode's full offset, set from a lead before it (forecast_model.h)
   bool active{false};
   bool odin_timing_bias{false};
   // Slab charge (slab_charge.h): capacity shortfall ahead → store heat first.
@@ -189,6 +197,12 @@ struct HeatSourceState {
   float hp_sec_feed_c{NAN};      // secondary feed/return: Asgard's 1-wire probes mapped to Zone 1
   float hp_sec_return_c{NAN};    // (ow_role_z1_feed / ow_role_z1_return), NAN when not mapped
   bool hp_status_defrost{false}; // status_defrost
+  // The heat pump's daily meters (kWh since local midnight): space-heating heat and
+  // electricity, hot-water electricity. The shadow planner's hourly history takes their steps.
+  float hp_sh_heat_kwh{NAN};
+  float hp_sh_elec_kwh{NAN};
+  float hp_dhw_elec_kwh{NAN};
+  float hp_total_elec_kwh{NAN};   // today's electricity so far, all modes (live, 0.1 kWh steps)
   uint32_t hp_telemetry_ms{0};
 };
 
@@ -484,6 +498,11 @@ struct PriceRuntime {
   lune_touch_price::DayPrices next_tomorrow{};
   lune_touch_price::SpotSample samples[lune_touch_price::MAX_SPOT_SAMPLES]{};
   char payload[640]{};
+  // The €/kWh array last pushed to Odin (today from 00:00, then tomorrow), kept for
+  // the shadow planner: eur_n values from local day eur_ymd.
+  float eur[48]{};
+  uint8_t eur_n{0};
+  int eur_ymd{0};
 };
 
 /// POST /prices/settings: null / empty / NAN / has_* false = unchanged.
@@ -505,6 +524,7 @@ struct PriceSettingsUpdate {
   float energy_tax{NAN};
   float markup{NAN};
   float vat_pct{NAN};
+  float reference_price{NAN};   ///< yearly average spot price; 0 = unknown
   const char *odin_mode{nullptr};
   const char *odin_source{nullptr};
   float odin_fixed_price{NAN};
@@ -536,6 +556,7 @@ class LuneTouchCoordinator : public esphome::Component {
   float get_setup_priority() const override { return esphome::setup_priority::AFTER_WIFI; }
   void setup() override;
   void loop() override;
+  void on_shutdown() override;
   void dump_config() override;
 
   void set_node_stale_after_ms(uint32_t stale_after_ms) {
@@ -571,6 +592,19 @@ class LuneTouchCoordinator : public esphome::Component {
   /// history (packages/system/weather.yaml). False when the state is busy.
   bool weather_summary(float *rooms, float *offset_c, float *lift_c, std::string *text,
                        std::string *reason) const;
+  /// Touch's and Odin's plans side by side for Home Assistant's long-term statistics
+  /// (packages/system/plan_compare.yaml): this hour's heat and electricity as planned at the
+  /// day's first solve (kW, so the hourly mean is the planned kWh; the rolling plan's first
+  /// hour before the day has a plan), the day plans' totals, and the next 24 h, space heat
+  /// only as the planner page's Touch vs Odin table. NAN where a plan is missing. False when
+  /// the state is busy.
+  struct PlanCompare {
+    float touch_heat_kw{NAN}, touch_elec_kw{NAN}, odin_heat_kw{NAN}, odin_elec_kw{NAN};
+    float touch_heat_kwh{NAN}, touch_elec_kwh{NAN}, touch_cost_eur{NAN}, touch_below_kh{NAN};
+    float odin_heat_kwh{NAN}, odin_elec_kwh{NAN}, odin_cost_eur{NAN}, odin_below_kh{NAN};
+    float touch_day_heat_kwh{NAN}, touch_day_elec_kwh{NAN}, odin_day_heat_kwh{NAN}, odin_day_elec_kwh{NAN};
+  };
+  bool plan_compare(PlanCompare *out) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
   std::string zone_line_meta_text(uint8_t row) const;
@@ -712,6 +746,11 @@ class LuneTouchCoordinator : public esphome::Component {
   bool move_group_to_room(const char *node_id, uint8_t zone_1based, const char *room_id,
                           char *response, size_t capacity);
   bool sync_room_ble_sensor(const char *room_id, char *response, size_t capacity);
+  /// Warm one room up by hand (POST /rooms/{id}/warmup, HA action): mode "now", "cheap" or
+  /// "stop" (odin_comfort.h RoomWarmup).
+  bool room_warmup(const char *room_id, const char *mode, char *response, size_t capacity);
+  /// What warms up now, for the HA text sensor ("off" when nothing).
+  void room_warmup_summary(char *out, size_t capacity);
   bool set_room_sensor(const char *room_id, const char *node_id, uint8_t zone_1based,
                        char *response, size_t capacity);
   bool delete_room_if_empty(const char *room_id, char *response, size_t capacity);
@@ -764,6 +803,15 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_heat_source_control_json(char *buffer, size_t capacity) const;
   /// Touch's heating plan for the next 24 h (dashboard plan graph).
   void write_plan_json(char *buffer, size_t capacity) const;
+  /// Shadow planner (GET /planner): settings, and null results until a planner runs.
+  void write_planner_json(char *buffer, size_t capacity) const;
+  /// Planner settings; absent fields keep their value. Shadow only: commands nothing.
+  bool set_planner_settings(const planner_settings::Settings &settings);
+  /// Seed the shadow planner's hourly history with recorded hours (LUNH house records in
+  /// the default column order, hex). Fills only hours it does not have. Returns the
+  /// number taken, or -1 when the store is not ready or the text is not records.
+  int seed_planner_history(const char *hex);
+  planner_settings::Settings get_planner_settings() const { return planner_settings_; }
   /// Odin comfort control + generic levers. Null strings / NAN = unchanged.
   bool set_heat_source_control(bool has_odin_enabled, bool odin_enabled, float odin_max_lift_c,
                                const char *forwarder_entity, const char *target_url_template,
@@ -898,8 +946,21 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t hp_phase_nonce_{0};
   bool hp_phase_release_pending_{false};
   void run_hp_phase_(uint32_t now_ms);
+  // House close margin (close_margin.h): while a room is cold, every V6 closes its warm
+  // rooms near their target. Part of house balance (same switch).
+  bool cm_active_{false};
+  bool cm_sent_active_{false};
+  int cm_coldest_zone_{-1};       // model zone index of the coldest room, -1 = none
+  float cm_deficit_k_{NAN};
+  uint32_t cm_push_ms_{0};
+  uint32_t cm_nonce_{0};
+  void run_close_margin_(uint32_t now_ms);
+  bool send_v6_close_margin_(const char *host, float margin_c, uint32_t ttl_s);
   // Heat pump diagnostics (hp_diagnostics.h): delivered heat vs. Odin's plan, tank mixing.
   ::lune_touch_hp_diag::State hp_diag_{};
+  uint32_t flow_fit_saved_ms_{0};
+  void save_flow_fit_();
+  void load_flow_fit_();
   void run_hp_diagnostics_(uint32_t now_ms);
   void append_hp_diagnostics_json_(char *buffer, size_t capacity) const;
   // Problems → Home Assistant (esphome.lune_problem), see problems.h.
@@ -925,6 +986,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool save_preload_learning_();
   bool load_ua_day_();
   bool save_ua_day_();
+  esp_err_t ua_day_load_err_{ESP_OK};  ///< NVS result of the last UA day load / store (GET /rooms)
+  esp_err_t ua_day_save_err_{ESP_OK};
   int32_t ua_day_ymd_{0};        ///< Local date of the UA day being accumulated (0: none yet)
   uint32_t ua_day_saved_ms_{0};  ///< Last hourly store of the day's totals
   ForecastDispatchSummary dispatch_forecast_commands_();
@@ -982,7 +1045,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool run_heat_source_test_read_(char *response, size_t capacity);
   bool run_heat_source_test_push_(char *response, size_t capacity);
   void apply_odin_timing_bias_(ForecastDecisionState *decision);
-  void maybe_dispatch_absorb_arm_();
+  void maybe_dispatch_absorb_arm_(bool requested = false);
   void maybe_dispatch_absorb_disarm_(const char *reason);
   bool send_v6_absorb_arm_(const ::lune_touch::PairedNode &node, uint8_t zone_index, uint32_t ttl_s,
                            ::lune_touch::CommandRecord *result, const char *decision_reason = nullptr);
@@ -1022,6 +1085,9 @@ class LuneTouchCoordinator : public esphome::Component {
   // Keep large per-call buffers in PSRAM (psram_scratch_), not on these stacks:
   // bigger stacks cost internal RAM that TLS handshakes need.
   static constexpr uint32_t INTEGRATION_STACK_SIZE = 12288;
+  // The heat-source task also runs the shadow planner: the house and room fits (Levenberg–
+  // Marquardt, a few KiB of normal equations) on top of planner_tick_'s own frame.
+  static constexpr uint32_t HEAT_STACK_SIZE = 16384;
   static constexpr UBaseType_t POLL_PRIORITY = 2;
   static constexpr UBaseType_t INTEGRATION_PRIORITY = 1;
   // Run beside the ESPHome loop on APP_CPU. Core 0 hosts Wi-Fi/lwIP; pinning
@@ -1105,6 +1171,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void dispatch_charge_arms_();
   uint32_t charge_last_arm_ms_[::lune_touch::MAX_NODES][6]{};
   bool charge_armed_[::lune_touch::MAX_NODES][6]{};
+  bool odin_armed_[::lune_touch::MAX_HOUSE_ZONES]{};  ///< Absorb band armed by an Odin pre-buffer (by model zone)
   /// Current lift of the Asgard comfort target above the real house target (°C).
   float demand_target_uplift_c_{0.0f};
   /// Where house demand goes: "virtual_thermostat" | "odin_schedule" | "generic" | "none".
@@ -1112,6 +1179,41 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Hysteresis/hold on the house demand signal (lagging room / slab charge).
   lune_touch_house::DemandHold demand_hold_{};
   float demand_held_c_{0.0f};
+  /// A room more than twice the comfort band behind: Odin's band floor moves (odin_comfort.h).
+  lune_touch_odin::ColdRoomCall cold_room_call_{};
+  float cold_call_hold_c_{0.0f};   ///< a cold call's lift, kept until the call ends
+  lune_touch_odin::Warmups room_warmups_{};   ///< warm-ups by hand, not kept across a restart
+  float room_deficit_locked_(const char *room_id, float *target_c) const;
+  void end_room_warmups_();
+  void append_room_warmup_json_(char *buffer, size_t capacity, size_t &off, const char *room_id) const;
+  void append_room_ua_day_json_(char *buffer, size_t capacity, size_t &off, size_t room_index) const;
+  float outdoor_now_c_locked_(uint32_t now_ms) const;
+  float coldest_deficit_c_{0.0f};
+  char coldest_room_id_[32]{};
+  /// The planner's room forecasts, for the lift (planner_rooms_): each room's next 24 h on
+  /// Touch's own plan (the band without a lift), its share of the house's heat and target.
+  struct RoomOutlook {
+    char id[32]{};
+    float share{NAN};
+    float target_c{NAN};
+    float expected[24]{};
+    bool on_odin{false};   // expected runs on Odin's planned heat, not Touch's plan
+    uint32_t ts{0};
+  };
+  static constexpr size_t ROOM_OUTLOOK_N = 24;
+  RoomOutlook room_outlook_[ROOM_OUTLOOK_N]{};
+  uint8_t room_outlook_n_{0};
+  const RoomOutlook *room_outlook_for_(const char *room_id, uint32_t now_ts) const;
+  /// The last lift's forecast check, for /heat-source/control (demand.forecast).
+  struct LiftForecastDiag {
+    char room_id[32]{};
+    bool has_forecast{false};
+    float lack_c{NAN};
+    float share{NAN};
+    float lift_c{NAN};
+    bool on_odin{false};
+  };
+  LiftForecastDiag lift_fc_diag_{};
   OdinControlState odin_control_{};
   GenericLeverState generic_levers_{};
   lune_touch_odin::OwnerState odin_owner_{};
@@ -1123,7 +1225,8 @@ class LuneTouchCoordinator : public esphome::Component {
                                           lune_touch_odin::LiftSources *sources = nullptr);
   /// Caller holds the state lock. Rooms V6 preloads ahead of wind or cold (not slab
   /// charge, not solar hold-off): largest offset, latest peak, share of the rooms.
-  bool weather_preload_(float *offset_c, int *peak_in_h, float *share) const;
+  bool weather_preload_(float *offset_c, int *peak_in_h, float *share, float *planned_c = nullptr,
+                        int *start_in_h = nullptr) const;
   /// Caller holds the state lock. What a heat source without Odin must keep above the
   /// house temperature for the weather: an open slab charge or a preload (°C).
   float weather_store_c_() const;
@@ -1255,6 +1358,23 @@ class LuneTouchCoordinator : public esphome::Component {
   bool circulation_poll_requested_{false};
   float weather_max_boost_c_{1.5f};
   bool solar_holdoff_enabled_{true};
+  planner_settings::Settings planner_settings_{};
+  PlannerRuntime *planner_rt_{nullptr};
+  // Mean all-in price of the last 30 days the planner logged (EUR/kWh) and its hours, for
+  // the price steps and the price level (energy_price.h reference_price); refreshed each hour.
+  float price_month_mean_eur_{NAN};
+  uint32_t price_month_hours_{0};
+  uint32_t price_month_hour_{0};
+  volatile bool planner_solve_pending_{true};
+  /// Shadow planner: re-plans each hour (or on new settings/prices/weather) and runs the
+  /// shadow flow controller on each telemetry poll. Heat-source task. Commands nothing.
+  void planner_tick_();
+  /// Shadow planner history: load/save its two-slot file on SPIFFS (/hist/planner.a|b).
+  void planner_load_store_();
+  void planner_save_store_();
+  // Not inlined into planner_tick_: its frame and the fits' must not stack on the tick's.
+  __attribute__((noinline)) void planner_rooms_(uint32_t hour0, uint32_t now_ts, bool refit);
+  bool mount_history_fs_();
   float weather_max_boost_resume_c_{1.5f};
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};

@@ -8,7 +8,6 @@ static constexpr float DEG_TO_RAD = 3.14159265358979f / 180.0f;
 static constexpr float WIND_REF_MS = 10.0f;     // stiff breeze
 static constexpr float COLD_REF_K = 10.0f;      // ΔT giving cold term 1.0
 static constexpr float SOLAR_REF_WM2 = 800.0f;  // clear-sky midday irradiance
-static constexpr float TIMING_FLOOR = 0.40f;    // minimum scale once threshold crossed
 static constexpr float DEFAULT_HEAT_GAIN = 0.18f;
 static constexpr float DEFAULT_COOL_LOSS = 0.12f;
 static constexpr uint16_t THERMAL_CONFIDENCE_SAMPLES = 6;
@@ -18,6 +17,24 @@ static constexpr float MAX_PLAUSIBLE_HEAT_GAIN = 0.35f;
 static constexpr float MIN_PLAUSIBLE_HEAT_GAIN = 0.05f;
 static constexpr float MAX_PLAUSIBLE_COOL_LOSS = 0.40f;
 static constexpr float MIN_PLAUSIBLE_COOL_LOSS = 0.02f;
+static constexpr float MAX_FLOOR_LAG_H = 5.0f;
+// Hours below the threshold that still belong to the same weather episode.
+static constexpr size_t EPISODE_GAP_H = 2;
+// Calibrated loss (room_loss_c_per_h): the conditions a room's cooling rate is learned in,
+// on average (November: 21 °C inside, about 6 °C out, 4 m/s at an angle), and the slab
+// charge's wind factor (slab_charge.h WIND_LOSS_FACTOR), which learned exposures are on.
+static constexpr float TYPICAL_DT_K = 15.0f;
+static constexpr float TYPICAL_WIND_MS = 4.0f;
+static constexpr float TYPICAL_ALIGN = 0.5f;
+static constexpr float WIND_LOSS_FACTOR = 0.6f;
+// A preload episode: loss this many times the room's usual cooling, or above its floor,
+// reached by a rise of at least (RISE_ON − 1) × the usual cooling within the floor's
+// response window (RISE_WINDOW_MIN..MAX hours, twice the floor lag and an hour).
+static constexpr float RISE_ON = 1.5f;
+static constexpr int RISE_WINDOW_MIN_H = 3;
+static constexpr int RISE_WINDOW_MAX_H = 6;
+// Smallest offset worth sending: V6 must notice it and call.
+static constexpr float MIN_OFFSET_C = 0.3f;
 
 // <algorithm> is avoided so the file compiles with the host toolchain too.
 static inline float fmaxf_(float a, float b) { return a > b ? a : b; }
@@ -74,51 +91,8 @@ static bool thermal_confident_(const PreloadParams &params) {
          params.learned_cool_loss_c_per_h <= MAX_PLAUSIBLE_COOL_LOSS;
 }
 
-static float timing_scale_for_(int8_t peak_in_h, uint8_t lead_h) {
-  if (lead_h == 0)
-    return 1.0f;
-  // Near peak → full; far edge of window → floor. urgency = 1 at peak, 0 at lead edge.
-  const float urgency = clampf_(1.0f - static_cast<float>(peak_in_h) / static_cast<float>(lead_h), 0.0f,
-                                1.0f);
-  return TIMING_FLOOR + (1.0f - TIMING_FLOOR) * urgency;
-}
-
-static float taper_scale_(const ForecastHour *hours, size_t /*count*/, size_t now_index,
-                          const ZoneExposure &exposure, const PreloadParams &params, float peak_load,
-                          int8_t peak_in_h) {
-  if (peak_in_h > 0 || peak_load <= params.load_threshold)
-    return 1.0f;
-  // At/after peak: reduce offset as current load falls below peak.
-  const float now_load = zone_hour_load(hours[now_index], exposure, params.indoor_ref_c);
-  if (peak_load <= 0.01f)
-    return 0.0f;
-  return clampf_(now_load / peak_load, 0.0f, 1.0f);
-}
-
-static float heuristic_offset_(float peak_load, float timing_scale, float taper,
-                               const PreloadParams &params, bool *used_thermal) {
-  const float above = peak_load - params.load_threshold;
-  if (above <= 0.0f)
-    return 0.0f;
-
-  const float gain_scale = clampf_(params.learned_gain_scale, 0.5f, 1.5f);
-  const float priority = fmaxf_(0.5f, params.priority_gain);
-  float offset = above * params.gain_c_per_load * priority * gain_scale;
-
-  if (thermal_confident_(params)) {
-    // Size from cool-loss vs heat-gain: how many °C of boost to counter extra weather loss.
-    const float severity = above;
-    const float thermal = (params.learned_cool_loss_c_per_h / params.learned_heat_gain_c_per_h) *
-                          severity * 0.5f;
-    offset = fmaxf_(offset, thermal);
-    if (used_thermal)
-      *used_thermal = true;
-  }
-
-  // Cap the full-urgency offset first, then apply timing/taper so early-window
-  // preloads stay below max_boost rather than saturating immediately.
-  offset = fminf_(params.max_offset_c, fmaxf_(0.0f, offset));
-  return offset * timing_scale * taper;
+static float lag_h_(const PreloadParams &params) {
+  return finite_(params.floor_lag_h) ? clampf_(params.floor_lag_h, 0.0f, MAX_FLOOR_LAG_H) : 0.0f;
 }
 
 static float heat_gain_rate_(const PreloadParams &params) {
@@ -133,82 +107,51 @@ static float cool_loss_rate_(const PreloadParams &params) {
   return DEFAULT_COOL_LOSS;
 }
 
-static float simulate_min_temp_(const ForecastHour *hours, size_t /*count*/, size_t now_index,
-                                size_t last, const ZoneExposure &exposure,
-                                const PreloadParams &params, float offset_c, float *out_series,
-                                size_t series_cap, uint8_t *out_count) {
+float room_loss_c_per_h(const ForecastHour &hour, const ZoneExposure &exposure, const PreloadParams &params) {
+  // The room's cooling rate is learned with the valve shut in whatever weather came
+  // (TYPICAL_DT_K / TYPICAL_WIND_MS); scale it to this hour's temperature difference
+  // and wind on the walls (the slab charge's wind factor, which the learned exposure
+  // is on), less what the sun gives.
+  const float dt = fmaxf_(0.0f, params.indoor_ref_c - hour.temp_c) / TYPICAL_DT_K;
+  const float exposure_k = WIND_LOSS_FACTOR * fmaxf_(0.0f, exposure.wind_exposure);
+  const float wind = 1.0f + exposure_k * wind_alignment(exposure.exterior_walls, hour.wind_dir_deg) *
+                                fmaxf_(0.0f, hour.wind_speed_ms) / WIND_REF_MS;
+  const float typical = 1.0f + exposure_k * TYPICAL_ALIGN * TYPICAL_WIND_MS / WIND_REF_MS;
+  const float sun = fminf_(0.8f, clampf_(exposure.solar_gain, 0.0f, 1.0f) * fmaxf_(0.0f, hour.shortwave_wm2) / SOLAR_REF_WM2);
+  return cool_loss_rate_(params) * dt * wind / typical * (1.0f - sun);
+}
+
+// Expected room temperature with V6 holding setpoint + offset (the offset felt after the
+// floor lag): heating at its learned capacity (the net rise it was learned at plus the
+// cooling it overcame) against this hour's loss; shut, it cools by the loss.
+static float simulate_min_temp_(const ForecastHour *hours, size_t now_index, size_t last,
+                                const ZoneExposure &exposure, const PreloadParams &params,
+                                const PreloadDecision &decision, float *out_series, size_t series_cap,
+                                uint8_t *out_count) {
   float temp = params.has_current_temp && finite_(params.current_temp_c) ? params.current_temp_c
                                                                          : params.scheduled_setpoint_c;
-  const float heat = heat_gain_rate_(params);
-  const float cool = cool_loss_rate_(params);
-  const float target = params.scheduled_setpoint_c + offset_c;
-  const float temp_lo = fminf_(params.scheduled_setpoint_c - 4.0f, 5.0f);
-  const float temp_hi = params.scheduled_setpoint_c + fmaxf_(params.max_offset_c, 1.5f) + 2.0f;
+  const float capacity = heat_gain_rate_(params) + cool_loss_rate_(params);
+  const float lag = lag_h_(params);
   float min_temp = temp;
   size_t written = 0;
-
   for (size_t i = now_index; i <= last; i++) {
     if (out_series != nullptr && written < series_cap)
       out_series[written++] = temp;
-    const float outdoor = hours[i].temp_c;
-    const float load = zone_hour_load(hours[i], exposure, params.indoor_ref_c);
-    const float calling = temp < target - 0.05f ? 1.0f : 0.0f;
-    if (calling > 0.0f) {
-      // Calling: heat gain minus weather-scaled loss (capped so one hour stays physical).
-      temp += heat - cool * fminf_(2.0f, fmaxf_(0.2f, load));
-    } else {
-      // Idle: coast slowly toward outdoor — never unbounded free-fall.
-      const float drift = clampf_((outdoor - temp) * 0.04f, -0.12f, 0.06f);
-      temp += drift;
-    }
-    temp = clampf_(temp, temp_lo, temp_hi);
-    if (temp < min_temp)
-      min_temp = temp;
+    const size_t k = i - now_index;
+    const bool lifted = decision.offset_c > 0.01f && k >= decision.preload_start_h &&
+                        k < decision.preload_end_h && static_cast<float>(k) + 1.0f > lag;
+    const float target = params.scheduled_setpoint_c + (lifted ? decision.offset_c : 0.0f);
+    const float loss = room_loss_c_per_h(hours[i], exposure, params);
+    if (temp < target - 0.05f)
+      temp = capacity > loss ? fminf_(target, temp + capacity - loss) : temp + capacity - loss;
+    else
+      temp -= loss;
+    temp = clampf_(temp, params.scheduled_setpoint_c - 6.0f, params.scheduled_setpoint_c + 4.0f);
+    min_temp = fminf_(min_temp, temp);
   }
   if (out_count)
     *out_count = static_cast<uint8_t>(written);
   return min_temp;
-}
-
-static float refine_with_horizon_(const ForecastHour *hours, size_t count, size_t now_index,
-                                  size_t last, const ZoneExposure &exposure,
-                                  const PreloadParams &params, float heuristic_offset,
-                                  PreloadDecision *decision) {
-  if (!params.enable_horizon || heuristic_offset <= 0.01f) {
-    decision->used_horizon = false;
-    decision->horizon_ok = heuristic_offset <= 0.01f;
-    decision->min_temp_c =
-        params.has_current_temp ? params.current_temp_c : params.scheduled_setpoint_c;
-    return heuristic_offset;
-  }
-
-  const float band = fmaxf_(0.1f, params.comfort_band_c);
-  const float floor_temp = params.scheduled_setpoint_c - band;
-  const float step = fmaxf_(0.25f, params.max_offset_c / 6.0f);
-
-  float best = heuristic_offset;
-  bool found = false;
-  for (float cand = 0.0f; cand <= params.max_offset_c + 0.001f; cand += step) {
-    const float use = fminf_(params.max_offset_c, cand);
-    const float min_t =
-        simulate_min_temp_(hours, count, now_index, last, exposure, params, use, nullptr, 0, nullptr);
-    if (min_t >= floor_temp - 0.05f) {
-      best = use;
-      decision->min_temp_c = min_t;
-      decision->horizon_ok = true;
-      found = true;
-      break;
-    }
-    decision->min_temp_c = min_t;
-  }
-  if (!found) {
-    best = fminf_(params.max_offset_c, fmaxf_(heuristic_offset, params.max_offset_c));
-    decision->horizon_ok = false;
-    decision->min_temp_c =
-        simulate_min_temp_(hours, count, now_index, last, exposure, params, best, nullptr, 0, nullptr);
-  }
-  decision->used_horizon = true;
-  return best;
 }
 
 PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, size_t now_index,
@@ -219,39 +162,97 @@ PreloadDecision compute_zone_preload(const ForecastHour *hours, size_t count, si
 
   const uint8_t lead = active_thermal_lead_h(exposure, params);
   decision.active_lead_h = lead;
-  const size_t last = min_size_(count - 1, now_index + static_cast<size_t>(lead));
-
-  for (size_t i = now_index; i <= last; i++) {
-    const float load = zone_hour_load(hours[i], exposure, params.indoor_ref_c);
-    if (load > decision.peak_load) {
-      decision.peak_load = load;
+  decision.used_thermal_sizing = thermal_confident_(params);
+  const size_t horizon_last = min_size_(count - 1, now_index + HORIZON_HOURS - 1);
+  const float base = cool_loss_rate_(params);
+  const float capacity = heat_gain_rate_(params) + base;
+  // The goal is not to raise the room but to keep it from falling behind when the loss
+  // climbs (2026-11-18: the model stored 1.5 K from 07 for wind at 22, while the room only
+  // fell from 18 because no heat came until 21:30, cooling 0.3 K/h as this loss says).
+  // An episode is the hours the loss is RISE_ON × what the room usually loses, or more
+  // than its floor gives; a dip of up to EPISODE_GAP_H hours does not end it.
+  // It starts only where the loss climbs fast: by (RISE_ON − 1) × the usual cooling above
+  // the lowest loss of the hours before it, within twice the floor lag and an hour
+  // (2026-11-21: a steady 4–6 m/s west wind at 0–3 °C held the loss at ~1.8 × usual for a
+  // day and preheated six rooms; the floors keep up with wind that stays, it is calm turning
+  // to storm within a few hours they cannot follow). The hours before now come from the
+  // forecast's past hours; without them the usual cooling is the reference, as before.
+  const auto wants = [&](float loss) { return loss > RISE_ON * base || loss > capacity; };
+  const int window = static_cast<int>(
+      clampf_(std::round(2.0f * (lag_h_(params) + 1.0f)), static_cast<float>(RISE_WINDOW_MIN_H),
+              static_cast<float>(RISE_WINDOW_MAX_H)));
+  const auto before = [&](size_t i) {
+    float lo = INFINITY;
+    for (int k = 1; k <= window && static_cast<int>(i) - k >= 0; k++)
+      lo = fminf_(lo, room_loss_c_per_h(hours[i - k], exposure, params));
+    return finite_(lo) ? lo : base;
+  };
+  size_t onset = count, ep_end = count, last_on = count;
+  float peak_loss = 0.0f, deficit = 0.0f, ref = base;
+  for (size_t i = now_index; i <= horizon_last; i++) {
+    const float loss = room_loss_c_per_h(hours[i], exposure, params);
+    if (!wants(loss)) {
+      if (onset != count && i - last_on > EPISODE_GAP_H)
+        break;
+      continue;
+    }
+    if (onset == count) {
+      const float prior = before(i);
+      if (loss - prior <= (RISE_ON - 1.0f) * base)
+        continue;   // the loss is high but has been for a while: the floor is on it
+      onset = i;
+      ref = fmaxf_(base, prior);
+    }
+    last_on = i;
+    ep_end = i + 1;
+    deficit += fmaxf_(0.0f, loss - fmaxf_(capacity, ref));
+    if (loss > peak_loss) {
+      peak_loss = loss;
       decision.peak_in_h = static_cast<int8_t>(i - now_index);
     }
   }
-  if (decision.peak_in_h < 0)
-    decision.peak_in_h = 0;
-
-  bool used_thermal = false;
-  decision.timing_scale = timing_scale_for_(decision.peak_in_h, lead);
-  const float taper =
-      taper_scale_(hours, count, now_index, exposure, params, decision.peak_load, decision.peak_in_h);
-  decision.heuristic_offset_c =
-      heuristic_offset_(decision.peak_load, decision.timing_scale, taper, params, &used_thermal);
-  decision.used_thermal_sizing = used_thermal;
-
-  decision.offset_c = refine_with_horizon_(hours, count, now_index, last, exposure, params,
-                                           decision.heuristic_offset_c, &decision);
-
-  if (decision.offset_c > 0.01f) {
-    // Preload bar: from now through peak (inclusive), at least 1 h when active.
-    decision.preload_start_h = 0;
-    decision.preload_end_h =
-        static_cast<uint8_t>(fmaxf_(1.0f, static_cast<float>(decision.peak_in_h) + 1.0f));
-    if (decision.preload_end_h > lead)
-      decision.preload_end_h = lead;
-    if (decision.preload_end_h == 0)
-      decision.preload_end_h = 1;
+  // The weather load (zone_hour_load) at the peak, as before, for the API and the charts.
+  if (onset != count) {
+    decision.peak_load = zone_hour_load(hours[now_index + decision.peak_in_h], exposure, params.indoor_ref_c);
+  } else {
+    for (size_t i = now_index; i <= min_size_(horizon_last, now_index + lead); i++) {
+      const float load = zone_hour_load(hours[i], exposure, params.indoor_ref_c);
+      if (load > decision.peak_load) {
+        decision.peak_load = load;
+        decision.peak_in_h = static_cast<int8_t>(i - now_index);
+      }
+    }
+    if (decision.peak_in_h < 0)
+      decision.peak_in_h = 0;
   }
+
+  if (onset != count) {
+    // Ahead by what the room loses beyond its usual while the floor answers (the lag and
+    // an hour to get the heat in), plus what the floor cannot give at all.
+    const float lag = lag_h_(params);
+    const float gain_scale = clampf_(params.learned_gain_scale, 0.5f, 1.5f);
+    const float priority = fmaxf_(0.5f, params.priority_gain);
+    float offset = ((peak_loss - ref) * (lag + 1.0f) + deficit) * gain_scale * priority;
+    offset = clampf_(offset, MIN_OFFSET_C, params.max_offset_c);
+    decision.heuristic_offset_c = offset;
+    decision.planned_offset_c = offset;
+    // From the floor lag and an hour before the loss climbs, never more than the lead.
+    const int onset_in_h = static_cast<int>(onset - now_index);
+    const int ahead = static_cast<int>(std::round(lag)) + 1;
+    const int start_in_h = onset_in_h > ahead ? onset_in_h - (ahead < lead ? ahead : lead) : 0;
+    decision.preload_start_h = static_cast<uint8_t>(start_in_h);
+    decision.preload_end_h = static_cast<uint8_t>(
+        fminf_(static_cast<float>(HORIZON_HOURS), static_cast<float>(ep_end - now_index)));
+    if (start_in_h == 0) {
+      decision.offset_c = offset;
+      decision.timing_scale = 1.0f;
+    }
+  }
+
+  const size_t last = onset != count ? min_size_(horizon_last, ep_end) : min_size_(horizon_last, now_index + lead);
+  decision.used_horizon = true;
+  decision.min_temp_c = simulate_min_temp_(hours, now_index, last, exposure, params, decision, nullptr, 0, nullptr);
+  decision.horizon_ok = decision.min_temp_c >= params.scheduled_setpoint_c - fmaxf_(0.1f, params.comfort_band_c) - 0.05f;
   return decision;
 }
 
@@ -264,16 +265,14 @@ void fill_preload_series(const ForecastHour *hours, size_t count, size_t now_ind
   if (hours == nullptr || count == 0 || now_index >= count)
     return;
 
-  const uint8_t lead = decision.active_lead_h > 0 ? decision.active_lead_h
-                                                  : active_thermal_lead_h(exposure, params);
   const size_t horizon = min_size_(HORIZON_HOURS, count - now_index);
   const size_t last = min_size_(count - 1, now_index + horizon - 1);
   const float band = fmaxf_(0.1f, params.comfort_band_c);
   const float scheduled = params.scheduled_setpoint_c;
 
   uint8_t sim_count = 0;
-  simulate_min_temp_(hours, count, now_index, last, exposure, params, decision.offset_c,
-                     out->expected_temp_c, HORIZON_HOURS, &sim_count);
+  simulate_min_temp_(hours, now_index, last, exposure, params, decision, out->expected_temp_c, HORIZON_HOURS,
+                     &sim_count);
   out->count = sim_count;
 
   for (uint8_t i = 0; i < out->count; i++) {
@@ -283,8 +282,6 @@ void fill_preload_series(const ForecastHour *hours, size_t count, size_t now_ind
     out->preload_active[i] =
         decision.offset_c > 0.01f && i >= decision.preload_start_h && i < decision.preload_end_h;
   }
-  (void)exposure;
-  (void)lead;
 }
 
 LearningUpdate update_preload_learning(float current_gain_scale, int8_t current_lead_bias_h,

@@ -31,11 +31,24 @@ can, while each Lune V6 keeps validating and clamping the resulting commands loc
    `(peak − threshold) × gain × priority × learned_gain_scale`, optionally raised by thermal
    sizing from learned cool-loss / heat-gain. Cap at `max_offset_c` / house `max_boost_c`,
    then apply **timing scale** (lower far from peak, full near peak, floor 0.4) and **taper**
-   after the peak as load falls.
+   after the peak as load falls. The timing scale counts the peak as the room's floor
+   response time (V6 `floor_lag_h`) closer, so the ramp starts that much earlier.
+
+   **Episode onset (2026-11-21).** A preload episode starts only where a room's loss
+   (`room_loss_c_per_h`) is above 1.5 × its usual cooling or its floor's capacity *and* has
+   climbed by at least 0.5 × the usual cooling above the lowest loss of the hours before
+   it, within `clamp(round(2 × (floor_lag_h + 1)), 3, 6)` hours. The hours before now come
+   from the forecast's past hours (the fetch starts at local midnight); with none, the
+   usual cooling is the reference. The offset counts the rise from that level, not from the
+   usual cooling, and the deficit only beyond it. A steady wind keeps the loss high without
+   a rise and does not preload: the floors keep up with wind that stays; it is calm turning
+   to storm within a few hours they cannot follow.
 
 4. **Plant horizon.** When enabled, simulate zone temperature over the lead window and choose
    the smallest offset that keeps predicted temp within the comfort band
-   (`scheduled ± comfort_band_c`). Falls back to the heuristic if learning is thin.
+   (`scheduled ± comfort_band_c`). Falls back to the heuristic if learning is thin. The offset
+   reaches the room only after the floor response time; until then the room runs as without
+   it.
 
 5. **Closed-loop learning.** While preload is active, compare live temperature to the comfort
    band. Undershoot raises gain scale (and may extend lead bias); overshoot eases gain. Values

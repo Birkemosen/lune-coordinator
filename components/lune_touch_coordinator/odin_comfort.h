@@ -356,31 +356,37 @@ inline int lag_end_in_h(uint8_t floor_lag_h, float floor_share = 1.0f) {
   const int end = LAG_LEAD_IN_H + lag + LAG_EXTRA_H;
   return floor_share < 1.0f ? std::max(end, LAG_LEAD_IN_H + LAG_CHOICE_H) : end;
 }
+/// `lead_in_h` 0 starts the window this hour (a cold room's call: ColdRoomCall).
 inline Lift lag_lift(uint8_t now_hour, float lift_c, uint8_t floor_lag_h, const LiftParams &p,
-                     float floor_share = 1.0f) {
-  Lift l = make_lift(now_hour, LAG_LEAD_IN_H, lag_end_in_h(floor_lag_h, floor_share), lift_c, p);
+                     float floor_share = 1.0f, int lead_in_h = LAG_LEAD_IN_H) {
+  const int lead = std::clamp(lead_in_h, 0, LAG_LEAD_IN_H);
+  Lift l = make_lift(now_hour, lead, lag_end_in_h(floor_lag_h, floor_share), lift_c, p);
   if (l.active())
     l.floor_share = floor_share;
   return l;
 }
 
-/// Lift window for a weather preload (wind or cold ahead): from now through the hour
-/// after the forecast peak, at least PRELOAD_MIN_H hours. V6 raises the room's
-/// setpoint ahead of the peak; without this the heat source never hears of it and
-/// the room only gets what the house would have had anyway.
+/// Lift window for a weather preload (wind or cold ahead): from `start_in_h` (when the
+/// first room starts charging, a lead before its wind) through the hour after the
+/// forecast peak, at least PRELOAD_MIN_H hours. V6 raises the room's setpoint ahead of
+/// the peak; without this the heat source never hears of it and the room only gets
+/// what the house would have had anyway. A start ahead lets Odin plan the charge.
 static constexpr int PRELOAD_MIN_H = 3;
 inline Lift preload_lift(uint8_t now_hour, float lift_c, int peak_in_h, const LiftParams &p,
-                         float floor_share = 1.0f) {
+                         float floor_share = 1.0f, int start_in_h = 0) {
   if (peak_in_h < 0)
     return Lift{};
-  Lift l = make_lift(now_hour, 0, std::max(peak_in_h + 2, PRELOAD_MIN_H), lift_c, p);
+  const int start = std::clamp(start_in_h, 0, std::max(0, peak_in_h));
+  Lift l = make_lift(now_hour, start, std::max(peak_in_h + 2, start + PRELOAD_MIN_H), lift_c, p);
   if (l.active())
     l.floor_share = floor_share;
   return l;
 }
 
-/// One lift covering both: the union of the windows (relative to now), the larger
-/// lift and the larger floor share.
+/// One lift covering both: the union of the windows (relative to now), the larger lift,
+/// and a floor share that moves the floor by the larger of the two floors (lift × share):
+/// a preload that opens only the top by 1.5 K and a call that moves the floor 1.3 K give a
+/// 1.5 K lift whose floor moves 1.3 K, not 1.5 K.
 inline Lift merge_lifts(uint8_t now_hour, const Lift &a, const Lift &b, const LiftParams &p) {
   if (!a.active())
     return b;
@@ -390,8 +396,10 @@ inline Lift merge_lifts(uint8_t now_hour, const Lift &a, const Lift &b, const Li
   const int sb = static_cast<int>((b.start_hour + 24 - now_hour) % 24);
   Lift l = make_lift(now_hour, std::min(sa, sb), std::max(sa + a.hours, sb + b.hours),
                      std::max(a.lift_c, b.lift_c), p);
-  if (l.active())
-    l.floor_share = std::max(a.floor_share, b.floor_share);
+  if (l.active()) {
+    const float floor_c = std::max(a.lift_c * a.floor_share, b.lift_c * b.floor_share);
+    l.floor_share = l.lift_c > 0.0f ? std::clamp(floor_c / l.lift_c, 0.0f, 1.0f) : 1.0f;
+  }
   return l;
 }
 
@@ -406,15 +414,219 @@ inline float floor_share_for(float lagging_share) {
   return std::clamp(2.0f * lagging_share, FLOOR_SHARE_MIN, 1.0f);
 }
 
-/// Leaves a dear hour of the window unlifted only when heating earlier costs less,
-/// heat loss included. Heat stored j hours before it is needed loses about j / tau of
-/// itself (tau = the house's time constant, C / UA), so hour k is skipped when
+/// A room more than twice the comfort band below its target calls for heat now, however
+/// small its share of the house (user rule 2026-11-14: Laura 2.3 °C behind with its loop
+/// fully open, the house 0.4 °C above target, Odin off from 03 to 08). While the call is
+/// on, the lag lift moves the whole band (floor share 1) by the full allowed lift from
+/// this hour, so Odin must heat; it ends when the room is back within the band.
+/// Below twice the band a lagging room still only opens the band's top (floor_share_for).
+static constexpr float COLD_CALL_BANDS = 2.0f;
+struct ColdRoomCall {
+  bool engaged = false;
+  bool update(float deficit_c, float band_c) {
+    if (!std::isfinite(deficit_c) || !(band_c > 0.0f))
+      return engaged = false;
+    if (!engaged && deficit_c > COLD_CALL_BANDS * band_c)
+      engaged = true;
+    else if (engaged && deficit_c <= band_c)
+      engaged = false;
+    return engaged;
+  }
+};
+
+/// A cold-room call well behind (three bands or more) heats from this hour whatever the
+/// price; one less behind may wait a few hours for cheaper heat (cold_call_start_in_h).
+static constexpr float COLD_URGENT_BANDS = 3.0f;
+static constexpr int COLD_DEFER_MAX_H = 4;
+
+/// How far a cold-room call lifts the band: enough to put its floor above the house as
+/// it is now (so Odin must heat), plus what the room needs to get back into its band,
+/// at least the minimum lift and never more than the maximum. A room 1.1 K behind in a
+/// house 0.7 K above its floor got the full 1.5 K before (2026-11-16, Stue).
+inline float cold_call_lift_c(float house_c, float band_floor_c, float deficit_c, float band_c, const LiftParams &p) {
+  if (!std::isfinite(house_c) || !std::isfinite(band_floor_c) || !std::isfinite(deficit_c))
+    return p.max_lift_c;
+  const float need = std::max(0.0f, house_c - band_floor_c) + std::max(0.0f, deficit_c - band_c);
+  return std::clamp(need, p.min_lift_c, p.max_lift_c);
+}
+
+/// What a lagging room still lacks after its forecast (the planner's room forecast on the
+/// house plan without a lift, sun and weather included): how far the best of its next
+/// `window_h` hours stays below target − band. 0 when the room gets back on its own (a
+/// sunny day: 22 Nov 2026, Stue Repo 1.4 K behind at 09, forecast 24.4 by noon); NAN
+/// without a forecast. expected[k] is the end of hour k.
+inline float forecast_shortfall_c(const float *expected, int n, int window_h, float target_c, float band_c) {
+  if (expected == nullptr || n <= 0 || window_h <= 0 || !std::isfinite(target_c))
+    return NAN;
+  float best = -INFINITY;
+  for (int k = 0; k < n && k < window_h; k++)
+    if (std::isfinite(expected[k]))
+      best = std::max(best, expected[k]);
+  if (!std::isfinite(best))
+    return NAN;
+  return std::max(0.0f, target_c - band_c - best);
+}
+
+/// A cold-room call sized by the room's share: Odin sees only the house's weighted
+/// temperature, and V6 sends the heat to the rooms that are open, so the house needs to
+/// rise by share × what the room lacks, not by all of it (plus enough to put the floor
+/// above the house, so Odin heats at all). `shortfall_c` is below target − band
+/// (forecast_shortfall_c, or the deficit less the band without a forecast); 0 → no lift.
+inline float share_lift_c(float house_c, float band_floor_c, float shortfall_c, float share, const LiftParams &p) {
+  if (!std::isfinite(shortfall_c))
+    return NAN;
+  if (!(shortfall_c > 0.0f))
+    return 0.0f;
+  const float s = std::isfinite(share) && share > 0.0f ? std::min(share, 1.0f) : 1.0f;
+  const float above = std::isfinite(house_c) && std::isfinite(band_floor_c) ? std::max(0.0f, house_c - band_floor_c) : 0.0f;
+  return std::clamp(above + s * shortfall_c, p.min_lift_c, p.max_lift_c);
+}
+
+/// When a cold-room call that is not urgent starts: the hour s in 0..max_defer_h whose
+/// `len` hours cost least on average, each hour of waiting counted `penalty_per_h` dearer
+/// (the room stays behind meanwhile). 0 when a price in the span is unknown.
+inline int cold_call_start_in_h(const float *price_rel, size_t n, int len, int max_defer_h = COLD_DEFER_MAX_H,
+                                float penalty_per_h = 0.03f) {
+  if (price_rel == nullptr || len <= 0)
+    return 0;
+  int best = 0;
+  float best_cost = INFINITY;
+  for (int s = 0; s <= max_defer_h; s++) {
+    if (static_cast<size_t>(s + len) > n)
+      break;
+    float sum = 0.0f;
+    for (int k = s; k < s + len; k++) {
+      if (!std::isfinite(price_rel[k]))
+        return 0;
+      sum += price_rel[k];
+    }
+    const float cost = sum / static_cast<float>(len) * (1.0f + penalty_per_h * static_cast<float>(s));
+    if (cost < best_cost) {
+      best_cost = cost;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/// A warm-up the user starts for one room (the room's sheet, or HA): a cold-room call by
+/// hand, without the forecast and share that size the automatic one (25 Nov 2026: the
+/// bedroom aired at 10, 1.9 K behind, the call lifted 0 K on a forecast that counted on
+/// heat Odin did not plan). «Heat now» lifts from this hour whatever the price; «heat
+/// cheaply» starts at the cheapest hour within COLD_DEFER_MAX_H, as a call that is not
+/// urgent. It ends when the room is back within the band, or after WARMUP_MAX_S, and can be
+/// stopped (user choices 2026-11-25).
+static constexpr uint32_t WARMUP_MAX_S = 6U * 3600U;
+static constexpr size_t WARMUP_N = 4;
+struct RoomWarmup {
+  char room_id[32] = {};
+  bool cheap = false;
+  uint32_t start_ts = 0;
+  uint32_t until_ts = 0;
+  bool active() const { return room_id[0] != '\0'; }
+  /// Back within the band (deficit = target − room), or the time is up. A room without a
+  /// reading keeps its warm-up until the time is up.
+  bool done(float deficit_c, float band_c, uint32_t now) const {
+    return now >= until_ts || (std::isfinite(deficit_c) && deficit_c <= band_c);
+  }
+  /// Whole hours left, rounded up (at least 1 while it runs).
+  int hours_left(uint32_t now) const {
+    if (now >= until_ts)
+      return 0;
+    return static_cast<int>((until_ts - now + 3599U) / 3600U);
+  }
+};
+struct Warmups {
+  RoomWarmup w[WARMUP_N];
+  RoomWarmup *find(const char *room_id) {
+    for (auto &x : w)
+      if (x.active() && room_id != nullptr && std::strncmp(x.room_id, room_id, sizeof(x.room_id)) == 0)
+        return &x;
+    return nullptr;
+  }
+  bool any() const {
+    for (const auto &x : w)
+      if (x.active())
+        return true;
+    return false;
+  }
+  /// Starts the room's warm-up, or restarts it with the new mode; a full set drops the oldest.
+  RoomWarmup &start(const char *room_id, bool cheap, uint32_t now) {
+    RoomWarmup *slot = find(room_id);
+    for (size_t i = 0; slot == nullptr && i < WARMUP_N; i++)
+      if (!w[i].active())
+        slot = &w[i];
+    if (slot == nullptr) {
+      slot = &w[0];
+      for (auto &x : w)
+        if (x.start_ts < slot->start_ts)
+          slot = &x;
+    }
+    *slot = RoomWarmup{};
+    std::strncpy(slot->room_id, room_id, sizeof(slot->room_id) - 1);
+    slot->cheap = cheap;
+    slot->start_ts = now;
+    slot->until_ts = now + WARMUP_MAX_S;
+    return *slot;
+  }
+  bool stop(const char *room_id) {
+    RoomWarmup *x = find(room_id);
+    if (x == nullptr)
+      return false;
+    *x = RoomWarmup{};
+    return true;
+  }
+};
+
+/// The lift for the warm-ups that run: the largest need of their rooms (cold_call_lift_c on
+/// each room's deficit), lifted over the room's lag window (lag_end_in_h of its floor lag)
+/// but never past its time. A «heat now» starts this hour; «heat cheaply» at
+/// cold_call_start_in_h. The whole band moves (floor share 1), so Odin must heat. `deficit`
+/// and `lead_h` are per warm-up slot; `now_mode` is set when any «heat now» runs.
+inline Lift warmup_lift(uint8_t now_hour, const Warmups &ws, const float *deficit, const uint8_t *lead_h,
+                        float house_c, float band_floor_c, float band_c, const float *price_rel, size_t n,
+                        uint32_t now, const LiftParams &p, bool *now_mode = nullptr) {
+  Lift out{};
+  if (now_mode != nullptr)
+    *now_mode = false;
+  for (size_t i = 0; i < WARMUP_N; i++) {
+    const RoomWarmup &w = ws.w[i];
+    if (!w.active())
+      continue;
+    const int left = w.hours_left(now);
+    if (left <= 0)
+      continue;
+    // Without a reading: enough to put the floor above the house, as if one band behind.
+    const float d = std::isfinite(deficit[i]) ? deficit[i] : 2.0f * band_c;
+    const float c = std::max(cold_call_lift_c(house_c, band_floor_c, d, band_c, p), p.min_lift_c);
+    const int len = std::min(left, lag_end_in_h(lead_h[i]));
+    const int s0 = w.cheap ? cold_call_start_in_h(price_rel, n, len, std::min(COLD_DEFER_MAX_H, left - len)) : 0;
+    Lift l = make_lift(now_hour, s0, s0 + len, c, p);
+    if (!l.active())
+      continue;
+    l.floor_share = 1.0f;
+    out = merge_lifts(now_hour, out, l, p);
+    if (!w.cheap && now_mode != nullptr)
+      *now_mode = true;
+  }
+  return out;
+}
+
+/// Leaves a dear hour of the window unlifted when heating at another lifted hour costs
+/// less, heat loss included. Heat stored j hours before it is needed loses about j / tau
+/// of itself (tau = the house's time constant, C / UA), so hour k is skipped when
 ///   price[k] > min over earlier lifted hours i of price[i] × (1 + (k − i) / tau).
-/// A dear hour with no cheaper earlier hour in the window (the first, or one after
-/// dearer hours) stays lifted: not heating then would let the room fall behind.
+/// With `defer_before` > 0 a later lifted hour j < defer_before counts too (the heat comes
+/// a little later, at price[j] × (1 + (j − k) / tau)): a window that starts in the day's
+/// dearest hours then leaves them to the cheaper ones after. The caller sets it to when
+/// the heat is needed (the end of a lag window, a preload's peak, a charge's deficit);
+/// 0 for an urgent call. Without it a dear hour with no cheaper earlier hour (the first,
+/// or one after dearer hours) stays lifted.
 /// The largest saving goes first, up to a third of the window's hours (rounded down),
 /// since the lift stores only so much. `price_rel[k]` is the price k hours from now
-/// (k < n); any unknown price in the window, or no tau, leaves it whole.
+/// (k < n); any unknown price in the window, or no tau, leaves it whole. A saving below
+/// `min_saving` (the caller: a share of the house's normal price) is not worth a gap: on a
+/// day cheap all through, a few øre between hours left holes in the lift.
 static constexpr float TAU_DEFAULT_H = 48.0f;
 inline float house_tau_h(float thermal_mass_kwh_per_k, float heat_loss_kw_per_k) {
   if (thermal_mass_kwh_per_k > 0.5f && heat_loss_kw_per_k > 0.01f)
@@ -422,7 +634,7 @@ inline float house_tau_h(float thermal_mass_kwh_per_k, float heat_loss_kw_per_k)
   return TAU_DEFAULT_H;
 }
 inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size_t n,
-                         float tau_h = TAU_DEFAULT_H) {
+                         float tau_h = TAU_DEFAULT_H, int defer_before = 0, float min_saving = 0.0f) {
   l.skip_mask = 0;
   if (!l.active() || price_rel == nullptr || !(tau_h > 0.0f))
     return;
@@ -436,15 +648,20 @@ inline void skip_dearest(Lift &l, uint8_t now_hour, const float *price_rel, size
   for (size_t left = l.hours / 3U; left > 0; left--) {
     size_t pick = n;
     float best = 0.0f;
-    for (size_t k = start + 1; k < start + l.hours; k++) {
+    const size_t end = start + l.hours;
+    const size_t later_end = std::min<size_t>(end, defer_before > 0 ? static_cast<size_t>(defer_before) : 0);
+    for (size_t k = start; k < end; k++) {
       if (skipped(k))
         continue;
-      float earlier = INFINITY;
+      float other = INFINITY;
       for (size_t i = start; i < k; i++)
         if (!skipped(i))
-          earlier = std::min(earlier, price_rel[i] * (1.0f + static_cast<float>(k - i) / tau_h));
-      const float saving = price_rel[k] - earlier;
-      if (saving > best) {
+          other = std::min(other, price_rel[i] * (1.0f + static_cast<float>(k - i) / tau_h));
+      for (size_t j = k + 1; j < later_end; j++)
+        if (!skipped(j))
+          other = std::min(other, price_rel[j] * (1.0f + static_cast<float>(j - k) / tau_h));
+      const float saving = price_rel[k] - other;
+      if (saving > best && saving >= min_saving) {
         best = saving;
         pick = k;
       }

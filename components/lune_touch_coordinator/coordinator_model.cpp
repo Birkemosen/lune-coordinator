@@ -148,6 +148,32 @@ const ZoneBinding *HouseModel::find_binding_by_loop_(const char *loop_id) const 
   return const_cast<HouseModel *>(this)->find_binding_by_loop_(loop_id);
 }
 
+float HouseModel::group_mean_temperature_c(size_t index) const {
+  if (index >= zone_count_)
+    return NAN;
+  const ZoneLiveState &live = live_[index];
+  const float own = live.has_temperature && std::isfinite(live.temperature_c) ? live.temperature_c : NAN;
+  const uint8_t mask = live.group_members_mask;
+  if (zones_[index].is_group_secondary || mask == 0 || (mask & (mask - 1)) == 0)
+    return own;
+  float sum = 0.0f;
+  unsigned n = 0;
+  for (size_t z = 0; z < ZONES_PER_NODE; z++) {
+    if (((mask >> z) & 1U) == 0)
+      continue;
+    const size_t bi = find_binding_index_(zones_[index].node_index, z);
+    if (bi >= zone_count_ || !zones_[bi].enabled)
+      continue;
+    const ZoneLiveState &m = live_[bi];
+    if (m.fresh && m.has_temperature && std::isfinite(m.temperature_c) && m.temperature_c >= PLAUSIBLE_MIN_C &&
+        m.temperature_c <= PLAUSIBLE_MAX_C) {
+      sum += m.temperature_c;
+      n++;
+    }
+  }
+  return n > 0 ? sum / static_cast<float>(n) : own;
+}
+
 size_t HouseModel::find_binding_index_(size_t node_index, size_t zone_index) const {
   for (size_t i = 0; i < zone_count_; i++) {
     if (zones_[i].node_index == node_index && zones_[i].zone_index == zone_index)
@@ -812,15 +838,23 @@ bool HouseModel::apply_v6_physics_mirror(size_t node_index, size_t zone_index,
     z.floor = floor;
     if (std::isfinite(ua_prior) && ua_prior > 0.0f)
       z.ua_prior_w_per_k = ua_prior;
-    if (std::isfinite(ua_learned) && ua_learned > 0.0f)
+    if (std::isfinite(ua_learned) && ua_learned > 0.0f) {
       z.ua_learned_w_per_k = ua_learned;
-    if (std::isfinite(ua_effective) && ua_effective > 0.0f)
+      if (std::isfinite(ua_confidence))
+        z.ua_confidence = clamp_float_(ua_confidence, 0.0f, 1.0f, z.ua_confidence);
+      z.ua_observed_days = ua_observed_days;
+      if (std::isfinite(ua_effective) && ua_effective > 0.0f)
+        z.ua_effective_w_per_k = ua_effective;
+    } else if (z.ua_learned_w_per_k > 0.0f && z.ua_prior_w_per_k > 0.0f) {
+      // V6 has no learned value (not stored yet): keep Touch's own learning, which
+      // otherwise was reset to 0 days on every poll and never gained confidence.
+      z.ua_effective_w_per_k = physics::ua_effective_w_per_k(z.ua_prior_w_per_k, z.ua_learned_w_per_k,
+                                                             z.ua_confidence, z.ua_observed_days);
+    } else if (std::isfinite(ua_effective) && ua_effective > 0.0f) {
       z.ua_effective_w_per_k = ua_effective;
-    else if (std::isfinite(ua_prior) && ua_prior > 0.0f)
+    } else if (std::isfinite(ua_prior) && ua_prior > 0.0f) {
       z.ua_effective_w_per_k = ua_prior;
-    if (std::isfinite(ua_confidence))
-      z.ua_confidence = clamp_float_(ua_confidence, 0.0f, 1.0f, z.ua_confidence);
-    z.ua_observed_days = ua_observed_days;
+    }
     z.v6_data_revision = v6_revision;
     if (ble_mac != nullptr)
       copy_text_(z.ble_mac, sizeof(z.ble_mac), ble_mac);
@@ -1222,32 +1256,87 @@ void HouseModel::import_ua_day(const UaDayPersist *in, size_t count) {
   }
 }
 
-size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
+const char *HouseModel::ua_verdict_name(UaVerdict v) {
+  switch (v) {
+    case UaVerdict::LEARNED: return "learned";
+    case UaVerdict::EXCLUDED: return "excluded";
+    case UaVerdict::SHORT_DAY: return "short_day";
+    case UaVerdict::NO_HEAT: return "no_heat";
+    case UaVerdict::MILD: return "mild";
+    case UaVerdict::NOT_STEADY: return "not_steady";
+    case UaVerdict::OUT_OF_BAND: return "out_of_band";
+    default: return "none";
+  }
+}
+
+HouseModel::UaDayFigures HouseModel::ua_day_figures(size_t i) const {
+  UaDayFigures f{};
+  if (i >= room_count_ || i >= MAX_HOUSE_ROOMS)
+    return f;
+  const UaDay &day = ua_day_[i];
+  const LogicalRoom &room = rooms_[i];
+  f.hours = day.hours;
+  f.kwh = day.kwh;
+  if (std::isfinite(day.first_c) && std::isfinite(day.last_c))
+    f.net_change_k = day.last_c - day.first_c;
+  if (!(day.hours > 0.0f))
+    return f;
+  f.mean_dt_k = day.dt_kh / day.hours;
+  if (!(f.mean_dt_k > 0.0f))
+    return f;
+  // The room also gets its area share of the internal gains: they are heat it loses too.
+  const float area_all = area_sum_included_m2();
+  const float gains = internal_gains_w_ > 0.0f && area_all > 0.0f && room.total_area_m2 > 0.0f
+                          ? internal_gains_w_ * room.total_area_m2 / area_all
+                          : 0.0f;
+  f.ua_est_w_per_k = (day.kwh * 1000.0f / day.hours + gains) / f.mean_dt_k;
+  return f;
+}
+
+size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity, bool learn) {
   size_t n = 0;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
     const UaDay day = ua_day_[i];
+    const UaDayFigures fig = ua_day_figures(i);
     ua_day_[i] = UaDay{};
+    UaDayClose &verdict = ua_close_[i];
+    verdict = UaDayClose{};
+    verdict.day = fig;
     LogicalRoom &room = rooms_[i];
     room.delivered_kwh_today = 0.0f;
-    if (!room.enabled || !room.include_in_house_temperature)
+    if (!learn) {
+      // No known date before this one (lost store): the day is only a part of one.
+      verdict.verdict = UaVerdict::SHORT_DAY;
       continue;
-    if (day.hours < physics::UA_DAY_MIN_HOURS || !(day.kwh > 0.05f))
+    }
+    if (!room.enabled || !room.include_in_house_temperature) {
+      verdict.verdict = UaVerdict::EXCLUDED;
       continue;
-    const float mean_dt = day.dt_kh / day.hours;
-    if (mean_dt < physics::UA_DAY_MIN_DT_K)
+    }
+    if (day.hours < physics::UA_DAY_MIN_HOURS) {
+      verdict.verdict = UaVerdict::SHORT_DAY;
       continue;
-    if (!(std::fabs(day.last_c - day.first_c) <= physics::UA_DAY_MAX_NET_CHANGE_K))
+    }
+    if (!(day.kwh > 0.05f)) {
+      verdict.verdict = UaVerdict::NO_HEAT;
       continue;
-    // The room also gets its area share of the internal gains: they are heat it loses too.
-    const float area_all = area_sum_included_m2();
-    const float gains = internal_gains_w_ > 0.0f && area_all > 0.0f && room.total_area_m2 > 0.0f
-                            ? internal_gains_w_ * room.total_area_m2 / area_all
-                            : 0.0f;
-    const float ua_est = (day.kwh * 1000.0f / day.hours + gains) / mean_dt;
+    }
+    if (!(fig.mean_dt_k >= physics::UA_DAY_MIN_DT_K)) {
+      verdict.verdict = UaVerdict::MILD;
+      continue;
+    }
+    if (!(std::fabs(fig.net_change_k) <= physics::UA_DAY_MAX_NET_CHANGE_K)) {
+      verdict.verdict = UaVerdict::NOT_STEADY;
+      continue;
+    }
+    const float ua_est = fig.ua_est_w_per_k;
     const float prior = room.ua_prior_w_per_k > 0.0f ? room.ua_prior_w_per_k
                                                      : geometry_ua_w_per_k(room.total_area_m2);
-    if (!std::isfinite(ua_est) || !physics::ua_learned_in_band(ua_est, prior))
+    if (!std::isfinite(ua_est) || !physics::ua_learned_in_band(ua_est, prior)) {
+      verdict.verdict = UaVerdict::OUT_OF_BAND;
       continue;
+    }
+    verdict.verdict = UaVerdict::LEARNED;
     const float prev = room.ua_learned_w_per_k;
     const bool first = !(prev > 0.0f) || room.ua_observed_days == 0;
     const float trend_prev = ua_trend_[i] > 0.0f ? ua_trend_[i] : prev;
@@ -1493,6 +1582,14 @@ bool HouseModel::update_zone_live_by_binding(size_t node_index, size_t zone_inde
     return true;
   }
   return false;
+}
+
+bool HouseModel::update_zone_floor_lag(size_t node_index, size_t zone_index, float floor_lag_h) {
+  const size_t i = find_binding_index_(node_index, zone_index);
+  if (i >= zone_count_ || !zones_[i].enabled)
+    return false;
+  live_[i].floor_lag_h = std::isfinite(floor_lag_h) && floor_lag_h > 0.0f ? floor_lag_h : 0.0f;
+  return true;
 }
 
 bool HouseModel::update_zone_group_membership(size_t node_index, size_t zone_index,
@@ -2186,6 +2283,10 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
     }
 
     const float deficit = target_c - use_temp_c;
+    if (std::isfinite(deficit) && deficit > snapshot.coldest_deficit_c) {
+      snapshot.coldest_deficit_c = deficit;
+      copy_text_(snapshot.coldest_room_id, sizeof(snapshot.coldest_room_id), room.room_id);
+    }
     if (deficit > 0.0f) {
       weighted_demand_sum += deficit * weight;
       snapshot.demand_zones++;

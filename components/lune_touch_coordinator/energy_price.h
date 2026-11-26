@@ -86,6 +86,11 @@ struct Config {
   float energy_tax = 0.008f;
   float markup = 0.0f;
   float vat_pct = 25.0f;
+  /// The house's yearly average spot price (currency/kWh, with VAT, without taxes and grid
+  /// tariff, as on the supplier's overview); 0 = unknown. The price steps compare each
+  /// hour's spot price with VAT with it (DESIGN.md 3.2.3); made all-in with the day's
+  /// tariffs (year_all_in()) it stands in for the month until a week is logged.
+  float reference_price = 0.0f;
   // Odin model (written to Odin's own settings)
   OdinMode odin_mode = OdinMode::DYNAMIC;
   OdinSource odin_source = OdinSource::ENERGY_CHARTS;
@@ -1017,6 +1022,46 @@ inline Due push_due(bool enabled, bool requested, bool time_valid, int ymd, uint
   if (s.pushed_tomorrow || minute < DAY_AHEAD_MIN || minute >= DAY_AHEAD_END_MIN) return Due::NONE;
   if (s.attempt_ymd == ymd && s.attempt_min < DAY_AHEAD_MIN) return Due::DAY_AHEAD;
   return since >= RETRY_MIN ? Due::DAY_AHEAD : Due::NONE;
+}
+
+// ---------------------------------------------------------------------------
+// Normal price
+// ---------------------------------------------------------------------------
+
+/// Hours of logged prices before the 30-day mean stands in for the normal price.
+static constexpr uint32_t REFERENCE_MIN_HOURS = 7 * 24;
+
+/// The yearly average spot price as an all-in price: VAT taken off the setting, then the day's
+/// mean grid and system tariffs, taxes, markup and VAT added; NaN without a setting or a day.
+/// Grid tariffs change between winter and summer, so this is only the fallback for the month
+/// (reference_price); the price steps compare spot with spot.
+inline float year_all_in(const Config &cfg, const DayPrices *day) {
+  if (!(cfg.reference_price > 0.0f) || day == nullptr || !day->valid) return NAN;
+  double grid = 0.0, system = 0.0;
+  for (size_t h = 0; h < HOURS; h++) {
+    grid += day->grid[h];
+    system += day->system[h];
+  }
+  const float spot = static_cast<float>(cfg.reference_price / (1.0 + cfg.vat_pct / 100.0));
+  return all_in(spot, static_cast<float>(grid / HOURS), static_cast<float>(system / HOURS), cfg);
+}
+
+/// The price level decisions measure savings against, in the calculation currency: the mean
+/// of the logged hours (EUR/kWh, converted by fx) once there are a week of them — what prices
+/// are now — else the yearly average all-in (year_all_in), else NaN. `source` names which
+/// ("month", "year", "none").
+inline float reference_price(const Config &cfg, float month_mean_eur, uint32_t month_hours, float year_all_in_price,
+                             const char **source) {
+  if (std::isfinite(month_mean_eur) && month_hours >= REFERENCE_MIN_HOURS && cfg.fx > 0.0f) {
+    if (source != nullptr) *source = "month";
+    return month_mean_eur * cfg.fx;
+  }
+  if (year_all_in_price > 0.0f) {
+    if (source != nullptr) *source = "year";
+    return year_all_in_price;
+  }
+  if (source != nullptr) *source = "none";
+  return NAN;
 }
 
 }  // namespace lune_touch_price

@@ -5,7 +5,7 @@ from esphome.components import time
 from esphome.components.esp32 import include_builtin_idf_component
 
 DEPENDENCIES = ["network"]
-AUTO_LOAD = ["json"]
+AUTO_LOAD = ["json", "planner"]
 
 CONF_NODE_STALE_AFTER = "node_stale_after"
 CONF_TIME_ID = "time_id"

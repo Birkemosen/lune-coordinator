@@ -21,6 +21,7 @@ Når dette dokument og koden er uenige, er det en fejl i et af dem. Ret den ene,
 - `3.2.0` [Statusfarver: tekst-tone og fyld-tone](#320-statusfarver-tekst-tone-og-fyld-tone)
 - `3.2.1` [Undgå brunt i mørkt tema](#321-undgå-brunt-i-mørkt-tema)
 - `3.2.2` [Farver i grafer: gradienter og blanding](#322-farver-i-grafer-gradienter-og-blanding)
+- `3.2.3` [Elprisens trin](#323-elprisens-trin)
 - `3.3` [Kontrast](#33-kontrast)
 - `3.4` [Typografi](#34-typografi)
 - `3.5` [Afstand](#35-afstand)
@@ -115,6 +116,7 @@ Når dette dokument og koden er uenige, er det en fejl i et af dem. Ret den ene,
 - `15.8` [Hvordan information præsenteres](#158-hvordan-information-præsenteres)
 - `15.9` [Markup: ark, faner, gem-bjælke, underside og System](#159-markup-ark-faner-gem-bjælke-underside-og-system)
 - `15.10` [Hjem: hovedsektion, termostat-ring, felter og varmekort](#1510-hjem-hovedsektion-termostat-ring-felter-og-varmekort)
+- `15.11` [Opvarmningsplan: planlæggerens side (Touch)](#1511-opvarmningsplan-planlæggerens-side-touch)
 <!-- /toc -->
 
 ---
@@ -273,6 +275,10 @@ Mørk orange *er* brun. Varme farver med lav dækning oven på en mørk flade bl
 - **Farvemængde: store flader er neutrale, farve kommer i små, intense doser.** Mængder (ventilåbning, samlet åbning, fremdrift) er neutrale (`--fg`); farve er forbeholdt betydning (varme, afvigelse, status). En væg af farvede felter bliver mat og udvasket; farve virker, når den skiller sig ud fra noget neutralt. Brug farvede chips, kanter (3 px øverst), tal og bjælker frem for farvede felter.
 - **Lyse toner til tekst og linjer, dybe toner til flader.** De lyse domæne-/tekst-toner (L ≈ 0,74 i mørkt) ser pastel ud som store flader. Ikonbrikker og knapper bruger de dybe fyld-toner (domænernes lyse-tema-værdier, statusfarvernes `-fill`) med hvid glyf.
 - **Datapaletten er afstemt** (se `$data` i tokens): samme lyshed og næsten samme farvestyrke, kun kuløren skifter. En ny datafarve skal ligge i samme bånd.
+
+### 3.2.3 Elprisens trin
+
+Elprisen vises i fem trin af `scale-good-bad` (`data-scale="1–5"`, «Meget billig» … «Meget dyr»). Et trin er gennemsnittet (afrundet) af tre: timens **rang** blandt døgnets kendte timer (femtedele, billig → dyr), dens **pris med alt mod de sidste 30 dage**, Touch har logget (samme tarifsæson), og dens **spotpris med moms mod årsgennemsnittet** (indstilling under Elpris: spotprisen de sidste 12 måneder med moms, uden afgifter og nettarif, som på elselskabets oversigt). Året sammenlignes spot mod spot, fordi nettariffen skifter mellem vinter og sommer; en pris med alt mod et helt år ville gøre vinteren dyrere, end markedet er. Niveauerne er trinvise: under 60 %, under 85 %, op til 115 %, op til 150 %, over 150 % af gennemsnittet. Så får en dag, der er billig hele vejen, ingen røde timer, en dyr måned ses stadig (november mod året), og døgnets udsving ses altid. Et niveau, der mangler (under en uges log, intet årsgennemsnit, en time uden offentliggjort spotpris), udelades; uden begge er trinnet rangen alene. Samme trin overalt: prisspor, striber, Hjem-feltets chip og elprisens graf.
 
 ### 3.3 Kontrast
 
@@ -1273,7 +1279,7 @@ Testen for, hvor en indstilling hører til: *Hører den til en ting, der har et 
 
 ### 15.2 Navbar
 
-Midten har altid de samme to punkter: **Hjem** og **System** (på Touch og i HA kan der komme flere visninger, fx Energi). Zonestrimlen/manifold-felterne vælger omfang på Hjem; de vises ikke på System.
+Midten har altid **Hjem** og **System**. Touch har desuden **Opvarmningsplan** imellem dem (planlæggerens side, 15.11); med tre tilstande viser tablet (768–1023 px) de inaktive som ikon og kun den aktive med tekst, så brand, pille og værktøjer kan stå på én linje (teksten bliver i labelen til skærmlæsere); i HA kan der komme flere visninger, fx Energi. Zonestrimlen/manifold-felterne vælger omfang på Hjem; de vises ikke på System.
 
 ### 15.3 Arket
 
@@ -1356,7 +1362,7 @@ Ingen kontrol strækkes for at fylde rækken. På mobil (< 600 px) må en kontro
 
 ### 15.9 Markup: ark, faner, gem-bjælke, underside og System
 
-**Tilstande i config.** `"modes": ["home", "sys"]`. `home` har en visning pr. omfang (`#v-home-{omfang}`, som før); `sys` har **én** visning, `#v-sys`, uanset omfang, og strimlen skjules på System. Radioerne er `#m-home` / `#m-sys` i navbarens pille («Hjem» / «System»). `systemCategories` (liste af id'er) genererer System-sidens kategoriregler. Configs med `dash`/`conf` bygger stadig, men `lds_build.py` advarer.
+**Tilstande i config.** `"modes": ["home", "sys"]`, på Touch `["home", "plan", "sys"]` (rækkefølgen er navbarens). `home` og `plan` har en visning pr. omfang (`#v-home-{omfang}`, `#v-plan-{omfang}`); `sys` har **én** visning, `#v-sys`, uanset omfang, og strimlen skjules på System. Radioerne er `#m-home` / `#m-plan` / `#m-sys` i navbarens pille («Hjem» / «Opvarmningsplan» / «System»); `plan` kræver `home`. `systemCategories` (liste af id'er) genererer System-sidens kategoriregler. Configs med `dash`/`conf` bygger stadig, men `lds_build.py` advarer.
 
 **Ark (`.sheet`).** Native `popover` (auto): Esc og klik udenfor lukker. Åbnes af ethvert element med `popovertarget`. Desktop: fast i højre side (`--sheet-w` 520 px, `--sheet-inset` 12 px fra kanterne, `--r-sheet` 24, `--float`-skygge, `::backdrop` 35 % sort). Under 600 px: ark fra bunden, maks. 92vh, safe-area nederst. Arket selv scroller; hoved og gem-bjælke klæber.
 
@@ -1421,7 +1427,7 @@ Ingen kontrol strækkes for at fylde rækken. På mobil (< 600 px) må en kontro
 </div>
 ```
 
-**Deep links** (progressiv, `lune-forms.js`). `data-hash` på ark, faneradioer, `#m-sys` og kategoriradioer bestemmer adressen: `#z3` åbner arket, `#z3/indstillinger` på fanen, `#system/varmekilde` System på kategorien. Adressen opdateres ved navigation (`history.replaceState`). Skift væk fra System eller en kategori med ugemte ændringer advarer.
+**Deep links** (progressiv, `lune-forms.js`). `data-hash` på ark, faneradioer, tilstandsradioer (`#m-plan`, `#m-sys`) og kategoriradioer bestemmer adressen (`#opvarmningsplan` åbner Opvarmningsplan): `#z3` åbner arket, `#z3/indstillinger` på fanen, `#system/varmekilde` System på kategorien. Adressen opdateres ved navigation (`history.replaceState`). Skift væk fra System eller en kategori med ugemte ændringer advarer.
 
 ### 15.10 Hjem: hovedsektion, termostat-ring, felter og varmekort
 
@@ -1444,3 +1450,17 @@ Touch' Hjem (15.7) bygges af disse komponenter (`@only touch` i CSS'en):
 
 Rum-arket på Touch viser kun det, Touch ejer (medregn i hustemperaturen, vægt, vind, sol). V6' egne felter, som Touch' API leverer (areal, ydervægge), står som læseværdier (`.setting-value`) i gruppen «Fra V6 (<styring>, Z<n>)» med «Redigér på V6 ›» (ny fane, `http://<v6>/#z<n>/indstillinger`); er V6'en offline, er gruppen dæmpet (`.setting-group[data-offline]`) med samme note.
 
+**Varm op** (Rum-arket › Overblik, Touch): en hverdagshandling, ikke en indstilling, så den står i overblikket som et `.sub` og gemmes med det samme. To knapper, «Varm nu» (løfter fra denne time uanset pris) og «Varm billigt» (venter på billigere strøm, hvis tiden tillader det), og en note om, hvad de gør. Mens rummet varmes op, viser noten tilstanden i én linje («Varmer op nu · stopper ved 21,5 °C, senest 14:40») og den eneste handling er «Stop opvarmning». Tilstanden skifter med `data-state="warm-idle|warming"` på `.sub` og `data-show-when` (6.1b). Opvarmningen slutter af sig selv, når rummet er tilbage inden for båndet (0,5 °C under målet), eller efter 6 timer. Et afslag (rummet er allerede inden for båndet, Touch løfter ikke Odins plan) står som `.note` med `aria-live` under knapperne. Samme handling findes i Home Assistant (14).
+
+### 15.11 Opvarmningsplan: planlæggerens side (Touch)
+
+Touch' planlægger (skyggeplanlæggeren) har sin egen side mellem Hjem og System (`#m-plan`, `#v-plan-house`). Den er ikke et ark, fordi den viser 48 timer for hele huset og alle rum på én gang. Siden viser planlæggerens tal og, side om side, Odins plan for de samme timer (Touch mod Odin), så de kan sammenlignes på stedet; den lange sammenligning over uger hører stadig til Home Assistant.
+
+- **Hoved:** `.view-head` med titel («Opvarmningsplan»), en `.badge` for driften («Skyggedrift», violet = læring, så længe planlæggeren kun regner og logger), én sætning om de næste 48 timer (energi og pris) og én handling til højre (`.vh-end`): «Åbn indstillinger» åbner planlæggerens ark på Indstillinger (`popovertarget="sheet-planner" data-tab="settings"`). Indstillingerne ligger i arket, ikke på siden (15.3: faner og gem-bjælke hører til ark).
+- **Plan for 48 timer** (panel, fuld bredde): `.plan.plan--48` (`--plan-h: 48`; alle spor, segmenter, nu-linje og aflæsning regnes i timer af `--plan-h`). Spor: Pris (`.plan-lane--price`: højde = pris, farve = rang blandt de offentliggjorte timer, billig → dyr; en time uden offentliggjort pris planlægges med samme time i det seneste kendte døgn og står med højden, men uden farve), Varme (`.plan-lane--out`: planlagt varme pr. time som Odin-sporets søjler — husvarme solid, varmt vand skraveret, legionella krydsskraveret) Fremløb (`.plan-lane--flow`: fremløbsmålet som trappekurve i varmens farve og maks. fremløb stiplet, `.max`) og Hus (`.plan-lane--house`: komfortbåndet time for time, som Odin får det med Touch' løft, og husets forventede temperatur som trappekurve), og under Varme sporet Forvarmning (et almindeligt `.plan-lane` med `.plan-seg`: Touch' forvarmning før vind og kulde skraveret lys, opladning af gulvet skraveret varme — husets vinduer, rummenes lagt sammen pr. slags, med rummene i `title`). Fremløb og Hus er høje spor (80 og 112 px), så tiendedele kan aflæses. x-aksen har mærker hver 3. time (hver 12. altid, 6. fra 300 px, 3. fra 520 px) og ugedagen ved midnat.
+- **Vejrudsigt** (panel, fuld bredde, lige under planen): samme `.plan.plan--48` og samme x-akse, så timerne flugter med planen (`.plan--48` har fast labelbredde 6,5 rem). Spor: Ude (`.plan-lane--temp`, 80 px: udetemperaturen som trappekurve i `--data-outdoor`, akse mindst 3 °C, 0 °C stiplet når den ligger i aksen), Vind (`.plan-lane--wind`: m/s som søjler i vejrets blå), Retning (`.plan-dir`: vejrarkets pil `.dir` hver 3. time, peger hvor vinden blæser hen) og Sol (`.plan-lane--sun`: W/m² som søjler i `--data-light`). Data er Touch' egen udsigt (Open-Meteo), ikke planlæggerens; uden udsigt klapper panelet sammen til én `.empty`-linje.
+- **Touch mod Odin** (panel, fuld bredde): `.hchart.hchart--ahead.hchart--vs`, bygget som Odins egen rumgraf: det seneste døgn og det næste i én graf (Odins plan rækker 24 t; de 48 t står i planen øverst). De næste 24 t øverst som lille tabel (`.table.vs-sum`, `--fs-xs`): rækker Touch og Odin, kolonner varme (kWh), el (kWh), pris (€) og under båndet (K·t), enheden i `<small>` i kolonnens overskrift. Over grafen tre striber (`.vs-temp` med `.vs-lab` + `.vs-strip`, flugter med grafen): Pris (rang, billig → dyr, hele vinduet), Touch (planlagt drift efter nu) og Odin (faktisk drift før nu — Odin styrer — og sin plan efter); husvarme solid, varmt vand skraveret, legionella krydsskraveret. Grafen (`.pair`, 220 px): komfortbåndet som jævn flade (`.bd`) med stiplede kanter (`.bde`) hele vinduet, så et løft står som en bule; planlagt sætpunkt tyndt stiplet (`.sp`); målt fuld med en prik pr. time (`.t` + `.tdot`); Touch' forventning stiplet violet (`.tf`), Odins prikket i vejrets og prognosernes blå (`--info`, `.od`). Kurverne er jævne og monotone (Fritsch–Carlson), så et trin i båndet aldrig giver en bue, der skyder over. Nederste panel (120 px): søjler for leveret varme før nu i grønt (`.dl`, `--scale-good-bad-1` som elprisens billige trin, hel bredde; undtagelse fra farvereglen, aftalt: grøn betyder her «leveret», så det, der kom, ikke forveksles med Touch' plan); efter nu to smalle søjler side om side pr. time, Touch' plan i varmens orange (`.ac`) til venstre og Odins plan i dæmpet violet (`.odb`, violet blandet 55 % med `--card`, uden alfa) til højre. De to planer ligger aldrig oven på hinanden, og forklaringen har `.ldl`, `.lac` og `.lodb`. «Nu» er `.nowl`, fremtiden `.future`. x-aksen hver 6. time (hver 12. under 600 px, `.h6`). Uden Odins plan: Odin-linjer og -stribens plan udelades, og tallene viser «—» for Odin.
+- **Rum** (panel, fuld bredde): `.rfc-list`, én række pr. rum: navn med mål i `<small>`, nu, laveste og højeste forventet de næste 24 t, timer under båndet («4 t», ellers «—») og Touch' opladning/forvarmning som `.badge` (gul «Opladning før vind», blå «Forvarme»). Laveste under båndet er fed med varm understregning (`.lo`); tallet og «Under båndet» siger det også. Rækken er en `details.rfc[name="plroom"]` — kun ét rum åbent ad gangen, uden JS — og åbner rummets graf (`.hchart--room`, 160 px, samme døgn bagud og frem og samme tegning som Touch mod Odin uden striber og Odin; akse mindst 3 °C, der rummer bånd og kurver — en kurve klemmes aldrig mod kanten): bånd (mål ± bånd), målt det seneste døgn, Touch' forventning 48 t frem og opladning/forvarmning skraveret bag kurven (`.heat`). Rummet, der kommer længst under båndet, står åbent. Rum uden måling: `.rfc--none` med «— Ingen måling». Under 600 px skjules Højeste og badgen (grafen viser skraveringen).
+- **Lært model** (`c5`): `.table` med størrelse, værdi (enhed i `<small>`) og sikkerhed som `.badge` (ok «Sikker», violet «Lærer», neutral «For lidt data») + grundlaget i `<small>`; under den en `.table` med COP efter effekt og udetemperatur. Manglende værdi «—».
+- **Plan mod faktisk** (`c7`): `.hchart` med 24 t / 7 d, tal øverst (afvigelse i temperatur, varme leveret/planlagt, pris faktisk/planlagt), øverste panel målt (`.t`) mod forudsagt (`.tf`) husets temperatur med mål (`.sp`), nederste panel planlagt (`.pl`) mod leveret (`.dl`, grøn som i Touch mod Odin) varme.
+- **Planlæggerens ark** (`sheet-planner`, `data-tone="violet"`): Overblik (næste opvarmning, varme og pris de næste 24 t, `.kv` med drift, seneste og næste planlægning og datakilder) og Indstillinger (ingen Historik — den står på siden): Strategi som `.seg` med typegruppen `st` (`comfort` / `weighted` / `price`; kun Vægtet har et felt: pris for afvigelse i €/K·t), Varmepumpe (mindste og største effekt, maks. fremløb) og Drift som læseværdi («Skyggedrift»), én gem-bjælke.

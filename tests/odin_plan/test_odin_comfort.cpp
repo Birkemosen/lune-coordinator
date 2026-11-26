@@ -110,6 +110,25 @@ int main() {
     assert(near(block_at(one, 14).sp, 22.0f) && near(block_at(one, 14).max, 1.5f));
     assert(lift_changed(Lift{15, 3, 1.5f, 0.2f}, Lift{15, 3, 1.5f, 1.0f}));
   }
+  // --- a room more than twice the comfort band behind calls for heat now -----
+  {
+    ColdRoomCall call;
+    assert(!call.update(0.9f, 0.5f));                 // within twice the band: top only
+    assert(!call.update(1.0f, 0.5f));                 // exactly 2 × band: not yet
+    assert(call.update(1.1f, 0.5f));                  // more than 2 × band: call on
+    assert(call.update(0.6f, 0.5f));                  // holds while outside the band
+    assert(!call.update(0.5f, 0.5f));                 // back within the band: off
+    assert(call.update(2.3f, 0.5f));                  // 2026-11-14: Laura 2.3 °C behind
+    assert(!call.update(NAN, 0.5f));                  // no reading: no call
+    // The call moves the whole band by the full lift from this hour (floor lag 1 h).
+    const Lift l = lag_lift(3, p.max_lift_c, 1, p, 1.0f, 0);
+    assert(l.start_hour == 3 && l.hours == 1 + 1 + 2 && near(l.floor_share, 1.0f));
+    assert(near(l.lift_c, p.max_lift_c));
+    const Profile cold = apply_lift(user, l);
+    assert(near(block_at(cold, 3).sp, block_at(user, 3).sp + p.max_lift_c));  // floor up by the full lift
+    // The ordinary lag window still starts next hour.
+    assert(lag_lift(3, 0.6f, 1, p).start_hour == 4);
+  }
 
   // --- a dear hour is skipped only when heating earlier is cheaper -----------
   {
@@ -128,6 +147,19 @@ int main() {
     assert(!hour_in_lift(l, 18) && hour_in_lift(l, 17) && hour_in_lift(l, 14));
     const Profile lifted2 = apply_lift(user, l);
     assert(near(block_at(lifted2, 18).sp, 22.0f) && near(block_at(lifted2, 17).sp, 23.0f));
+    // A saving below the minimum (a tenth of a 1.85 normal price) leaves the hour lifted:
+    // the 18–19 saving of about 1 is kept, a day with 0.1 between hours is left whole.
+    Lift ms{14, 8, 1.0f};
+    skip_dearest(ms, 13, price, 24, TAU_DEFAULT_H, 0, 0.185f);
+    assert(ms.skip_mask == ((1UL << 18) | (1UL << 19)));
+    float cheap[24];
+    for (int k = 0; k < 24; k++)
+      cheap[k] = ((13 + k) % 24 >= 17 && (13 + k) % 24 < 21) ? 1.0f : 0.9f;
+    Lift c2{14, 8, 1.0f};
+    skip_dearest(c2, 13, cheap, 24);
+    assert(c2.skip_mask != 0);
+    skip_dearest(c2, 13, cheap, 24, TAU_DEFAULT_H, 0, 0.185f);
+    assert(c2.skip_mask == 0);
     // Flat prices: nothing skipped.
     float flat[24];
     for (float &f : flat) f = 1.8f;
@@ -169,6 +201,20 @@ int main() {
     Lift fast{14, 6, 1.0f};
     skip_dearest(fast, 13, small, 24, 10.0f);
     assert(fast.skip_mask == 0);
+    // Deferring (defer_before): a window that starts in the day's dearest hours leaves
+    // them to cheaper lifted hours after, up to a third of the window, never past the need.
+    float eve[24];
+    for (int k = 0; k < 24; k++) eve[k] = 0.30f;
+    eve[0] = 0.43f; eve[1] = 0.39f;   // 20:00 and 21:00 dearest, now = 20
+    Lift late{20, 6, 1.3f};
+    skip_dearest(late, 20, eve, 24, 167.0f);
+    assert(late.skip_mask == 0);                                   // nothing earlier: lifted as before
+    Lift defer{20, 6, 1.3f};
+    skip_dearest(defer, 20, eve, 24, 167.0f, 6);
+    assert(defer.skip_mask == ((1UL << 20) | (1UL << 21)));        // the two dear hours wait
+    Lift soon{20, 6, 1.3f};
+    skip_dearest(soon, 20, eve, 24, 167.0f, 1);
+    assert(soon.skip_mask == 0);                                   // needed now: no later hour counts
     // Time constant from Odin's thermal mass and heat loss; a default without them.
     assert(std::fabs(house_tau_h(21.76f, 0.13f) - 167.4f) < 0.1f);
     assert(house_tau_h(NAN, 0.13f) == TAU_DEFAULT_H && house_tau_h(21.76f, 0.0f) == TAU_DEFAULT_H);
@@ -325,6 +371,59 @@ int main() {
     assert(soon.active() && soon.start_hour == 23 && soon.hours == 3 && std::fabs(soon.floor_share - 1.0f) < 0.01f);
     assert(!preload_lift(14, 1.5f, -1, p).active());   // no peak in the forecast
     assert(!preload_lift(14, 0.2f, 3, p).active());    // below the write threshold
+    // A room that starts charging at 12 for wind peaking at 18 (now 09): the band opens
+    // at 12, so Odin can plan the charge, through 19.
+    Lift ahead = preload_lift(9, 1.3f, 9, p, 0.2f, 3);
+    assert(ahead.active() && ahead.start_hour == 12 && ahead.hours == 8);
+    Lift late = preload_lift(9, 1.3f, 2, p, 1.0f, 5);   // a start past the peak opens at the peak
+    assert(late.active() && late.start_hour == 11 && late.hours == 3);
+  }
+
+  // ---- Cold-room call: lift by need, start at the cheapest hour unless urgent ----
+  {
+    LiftParams p{};
+    // Stue 1.1 K behind (band 0.5) in a house at 22.2 with its floor at 21.5: 0.7 + 0.6.
+    assert(std::fabs(cold_call_lift_c(22.2f, 21.5f, 1.1f, 0.5f, p) - 1.3f) < 1e-3f);
+    // Laura 2.3 K behind in a house 0.9 above its floor: capped at the maximum, as before.
+    assert(std::fabs(cold_call_lift_c(22.4f, 21.5f, 2.3f, 0.5f, p) - p.max_lift_c) < 1e-3f);
+    // A cold house: at least the minimum lift. Unknown temperatures: the maximum.
+    assert(std::fabs(cold_call_lift_c(21.0f, 21.5f, 1.05f, 0.5f, p) - 0.55f) < 1e-3f);
+    assert(std::fabs(cold_call_lift_c(NAN, 21.5f, 1.1f, 0.5f, p) - p.max_lift_c) < 1e-3f);
+    // Lift by forecast and share (22 Nov 2026). Stue Repo 1.4 K behind its 23.0 at 09,
+    // 44.5 % of the house's heat, in a house at 21.9 over a floor of 21.5. The forecast
+    // with the day's sun reaches 24.4 by noon: nothing left to lift for.
+    const float sunny[8] = {21.8f, 22.8f, 23.8f, 24.4f, 24.5f, 24.0f, 23.5f, 22.9f};
+    assert(forecast_shortfall_c(sunny, 8, 6, 23.0f, 0.5f) == 0.0f);
+    assert(share_lift_c(21.9f, 21.5f, 0.0f, 0.445f, p) == 0.0f);
+    // A grey day: it only gets to 21.9, 0.6 K short of 22.5; the lift is the house's 0.4
+    // above its floor plus 0.445 × 0.6, against the full 1.3 K of the rule without a forecast.
+    const float grey[8] = {21.6f, 21.7f, 21.8f, 21.9f, 21.9f, 21.8f, 21.7f, 21.7f};
+    assert(std::fabs(forecast_shortfall_c(grey, 8, 6, 23.0f, 0.5f) - 0.6f) < 1e-4f);
+    assert(std::fabs(share_lift_c(21.9f, 21.5f, 0.6f, 0.445f, p) - (0.4f + 0.445f * 0.6f)) < 1e-4f);
+    assert(std::fabs(cold_call_lift_c(21.9f, 21.5f, 1.4f, 0.5f, p) - 1.3f) < 1e-3f);
+    // Only the window counts; no forecast or no share: unknown, or the whole shortfall.
+    assert(forecast_shortfall_c(sunny, 8, 1, 23.0f, 0.5f) > 0.0f);
+    assert(std::isnan(forecast_shortfall_c(nullptr, 8, 6, 23.0f, 0.5f)));
+    assert(std::isnan(share_lift_c(21.9f, 21.5f, NAN, 0.445f, p)));
+    assert(std::fabs(share_lift_c(21.4f, 21.5f, 0.6f, NAN, p) - 0.6f) < 1e-4f);
+    // A small room a little short: at least the minimum lift, never above the maximum.
+    assert(std::fabs(share_lift_c(21.4f, 21.5f, 0.2f, 0.05f, p) - p.min_lift_c) < 1e-4f);
+    assert(std::fabs(share_lift_c(23.5f, 21.5f, 2.0f, 1.0f, p) - p.max_lift_c) < 1e-4f);
+    float eve[24];
+    for (int k = 0; k < 24; k++) eve[k] = 0.30f;
+    eve[0] = 0.43f; eve[1] = 0.39f; eve[2] = 0.33f;
+    assert(cold_call_start_in_h(eve, 24, 4) == 2 || cold_call_start_in_h(eve, 24, 4) == 3);
+    float flat[24];
+    for (float &f : flat) f = 0.3f;
+    assert(cold_call_start_in_h(flat, 24, 4) == 0);   // nothing to win by waiting
+    eve[3] = NAN;
+    assert(cold_call_start_in_h(eve, 24, 4) == 0);    // an unknown price: start now
+    // Merge with a preload that opens only the top: the floor moves by the call's 1.3 K.
+    Lift call = make_lift(20, 0, 5, 1.3f, p);
+    call.floor_share = 1.0f;
+    Lift pre = preload_lift(20, 1.5f, 1, p, 0.2f);
+    Lift m = merge_lifts(20, call, pre, p);
+    assert(std::fabs(m.lift_c - 1.5f) < 1e-3f && std::fabs(m.lift_c * m.floor_share - 1.3f) < 0.01f);
   }
 
   // ---- Merge: union of windows, larger lift, larger floor share ----
@@ -362,6 +461,45 @@ int main() {
     assert(s.at(23) == 0);
     Lift w = make_lift(22, 0, 4, 0.5f, p);           // 22–01 across midnight
     assert(lift_hours_mask(w) == ((1UL << 22) | (1UL << 23) | 1UL | 2UL));
+  }
+
+  // ---- Room warm-up by hand (25 Nov 2026: Soveværelse aired, 1.9 K behind) ----
+  {
+    LiftParams p{};
+    Warmups ws{};
+    const uint32_t t0 = 1795600000U;
+    RoomWarmup &w = ws.start("v62-z6", false, t0);
+    assert(ws.any() && ws.find("v62-z6") == &w && w.until_ts == t0 + WARMUP_MAX_S);
+    assert(w.hours_left(t0) == 6 && w.hours_left(t0 + 1) == 6 && w.hours_left(t0 + 5 * 3600 + 1) == 1);
+    // Ends back within the band or when the time is up; no reading keeps it running.
+    assert(!w.done(1.9f, 0.5f, t0) && w.done(0.5f, 0.5f, t0) && w.done(1.9f, 0.5f, t0 + WARMUP_MAX_S));
+    assert(!w.done(NAN, 0.5f, t0 + 3600));
+    // «Heat now»: the house at 22.0 over a floor of 21.5, the room 1.9 K behind: 0.5 + 1.4,
+    // capped at 1.5, from this hour over its lag window, whole band, whatever the price.
+    float dear[24];
+    for (int k = 0; k < 24; k++) dear[k] = k < 2 ? 0.40f : 0.30f;
+    float d[WARMUP_N] = {1.9f, NAN, NAN, NAN};
+    uint8_t lead[WARMUP_N] = {2, 0, 0, 0};
+    bool now_mode = false;
+    Lift l = warmup_lift(10, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0, p, &now_mode);
+    assert(l.active() && now_mode && l.start_hour == 10 && l.floor_share == 1.0f);
+    assert(std::fabs(l.lift_c - p.max_lift_c) < 1e-3f && l.hours == lag_end_in_h(2));
+    // «Heat cheaply» waits for cheaper hours as far as its 6 h allow: a 5 h window can
+    // start one hour on, past the first dear hour.
+    ws.start("v62-z6", true, t0);
+    assert(ws.find("v62-z6")->cheap);
+    l = warmup_lift(10, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0, p, &now_mode);
+    assert(l.active() && !now_mode && l.start_hour == 10 + 6 - lag_end_in_h(2));
+    // Never past its time: with one hour left only that hour is lifted, and it starts now.
+    l = warmup_lift(15, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0 + 5 * 3600 + 60, p, &now_mode);
+    assert(l.active() && l.hours == 1 && l.start_hour == 15);
+    // Time up: nothing.
+    assert(!warmup_lift(16, ws, d, lead, 22.0f, 21.5f, 0.5f, dear, 24, t0 + WARMUP_MAX_S, p).active());
+    // Stop, and a full set drops the oldest.
+    assert(ws.stop("v62-z6") && !ws.any() && !ws.stop("v62-z6"));
+    const char *ids[5] = {"a", "b", "c", "d", "e"};
+    for (int i = 0; i < 5; i++) ws.start(ids[i], false, t0 + static_cast<uint32_t>(i));
+    assert(ws.find("a") == nullptr && ws.find("e") != nullptr && ws.find("b") != nullptr);
   }
 
   std::puts("odin_comfort: all assertions passed");
