@@ -555,6 +555,7 @@ class LuneTouchCoordinator : public esphome::Component {
   float get_setup_priority() const override { return esphome::setup_priority::AFTER_WIFI; }
   void setup() override;
   void loop() override;
+  void on_shutdown() override;
   void dump_config() override;
 
   void set_node_stale_after_ms(uint32_t stale_after_ms) {

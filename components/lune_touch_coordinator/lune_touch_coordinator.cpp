@@ -6881,6 +6881,18 @@ float LuneTouchCoordinator::outdoor_now_c_locked_(uint32_t now_ms) const {
   return NAN;
 }
 
+void LuneTouchCoordinator::on_shutdown() {
+  // A planned restart (OTA, fix) stores the day's heat-loss totals and pending learning
+  // first, so it loses nothing instead of up to the hour since the last store.
+  if (take_state_lock_(200)) {
+    if (ua_day_ymd_ != 0)
+      save_ua_day_();
+    give_state_lock_();
+  }
+  if (learning_dirty_)
+    save_registry_();  // takes the state lock itself
+}
+
 bool LuneTouchCoordinator::load_ua_day_() {
   nvs_handle_t handle = 0;
   ua_day_load_err_ = open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle);
