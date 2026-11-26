@@ -974,6 +974,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool save_preload_learning_();
   bool load_ua_day_();
   bool save_ua_day_();
+  esp_err_t ua_day_load_err_{ESP_OK};  ///< NVS result of the last UA day load / store (GET /rooms)
+  esp_err_t ua_day_save_err_{ESP_OK};
   int32_t ua_day_ymd_{0};        ///< Local date of the UA day being accumulated (0: none yet)
   uint32_t ua_day_saved_ms_{0};  ///< Last hourly store of the day's totals
   ForecastDispatchSummary dispatch_forecast_commands_();
@@ -1172,6 +1174,8 @@ class LuneTouchCoordinator : public esphome::Component {
   float room_deficit_locked_(const char *room_id, float *target_c) const;
   void end_room_warmups_();
   void append_room_warmup_json_(char *buffer, size_t capacity, size_t &off, const char *room_id) const;
+  void append_room_ua_day_json_(char *buffer, size_t capacity, size_t &off, size_t room_index) const;
+  float outdoor_now_c_locked_(uint32_t now_ms) const;
   float coldest_deficit_c_{0.0f};
   char coldest_room_id_[32]{};
   /// The planner's room forecasts, for the lift (planner_rooms_): each room's next 24 h on

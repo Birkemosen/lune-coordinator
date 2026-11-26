@@ -645,6 +645,25 @@ class HouseModel {
     uint16_t observed_days{0};
   };
   size_t close_ua_day(UaDayResult *out, size_t capacity);
+  // What the last midnight made of each room's day, and why (GET /rooms ua_day).
+  enum class UaVerdict : uint8_t { NONE, LEARNED, EXCLUDED, SHORT_DAY, NO_HEAT, MILD, NOT_STEADY, OUT_OF_BAND };
+  static const char *ua_verdict_name(UaVerdict v);
+  struct UaDayFigures {
+    float hours{0.0f};
+    float kwh{0.0f};
+    float mean_dt_k{std::numeric_limits<float>::quiet_NaN()};
+    float net_change_k{std::numeric_limits<float>::quiet_NaN()};
+    float ua_est_w_per_k{std::numeric_limits<float>::quiet_NaN()};
+  };
+  struct UaDayClose {
+    UaVerdict verdict{UaVerdict::NONE};
+    UaDayFigures day{};
+  };
+  // The day so far; ua_est_w_per_k is what midnight would learn from it now.
+  UaDayFigures ua_day_figures(size_t room_index) const;
+  UaDayClose ua_last_close(size_t room_index) const {
+    return room_index < MAX_HOUSE_ROOMS ? ua_close_[room_index] : UaDayClose{};
+  }
   // The day's UA totals per room, kept across a restart (Touch stores them hourly):
   // a flash mid-day otherwise left the day short of UA_DAY_MIN_HOURS.
   struct UaDayPersist {
@@ -779,6 +798,7 @@ class HouseModel {
     float last_c{std::numeric_limits<float>::quiet_NaN()};
   };
   UaDay ua_day_[MAX_HOUSE_ROOMS]{};
+  UaDayClose ua_close_[MAX_HOUSE_ROOMS]{};
   float ua_cv_[MAX_HOUSE_ROOMS]{};    // spread of daily estimates (EWMA, relative)
   float ua_trend_[MAX_HOUSE_ROOMS]{};  // daily EWMA; written once it moves ≥ 10 % past the gate
   PairedNode nodes_[MAX_NODES]{};

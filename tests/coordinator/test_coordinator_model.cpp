@@ -1523,6 +1523,9 @@ static void test_daily_ua_learning() {
   run_hours(12.0f);
   HouseModel::UaDayResult out[4];
   expect(model.close_ua_day(out, 4) == 0, "ua day: half a day does not count");
+  expect(model.ua_last_close(0).verdict == HouseModel::UaVerdict::SHORT_DAY &&
+             std::fabs(model.ua_last_close(0).day.hours - 12.0f) < 0.1f,
+         "ua day: the short day says why, with its 12 h");
   const LogicalRoom *living = model.room_by_id("living");
   expect(living != nullptr && living->delivered_kwh_today == 0.0f, "ua day: midnight clears today's kWh");
   run_hours(24.0f);
@@ -1530,6 +1533,9 @@ static void test_daily_ua_learning() {
          "ua day: today's kWh is the room's share (7.2 kWh)");
   const size_t n = model.close_ua_day(out, 4);
   expect(n == 2, "ua day: both rooms learn from a whole day");
+  expect(model.ua_last_close(0).verdict == HouseModel::UaVerdict::LEARNED &&
+             std::fabs(model.ua_last_close(0).day.ua_est_w_per_k - 15.0f) < 0.3f,
+         "ua day: the learned day keeps its estimate");
   const LogicalRoom *bed = model.room_by_id("bed");
   expect(std::fabs(living->ua_learned_w_per_k - 15.0f) < 0.3f, "ua day: living UA = 15 W/K");
   expect(std::fabs(bed->ua_learned_w_per_k - 7.5f) < 0.2f, "ua day: bed UA = 7.5 W/K");
@@ -1544,6 +1550,7 @@ static void test_daily_ua_learning() {
     model.accumulate_ua_day(step_h, 15.0f);
   }
   expect(model.close_ua_day(out, 4) == 0, "ua day: mild day (6 K) does not count");
+  expect(model.ua_last_close(0).verdict == HouseModel::UaVerdict::MILD, "ua day: the mild day says so");
   // With 300 W internal gains the heat pump delivers that much less for the same loss:
   // learning adds each room's area share back (living 2/3 → 200 W / 20 K = +10 W/K).
   HouseModel g;

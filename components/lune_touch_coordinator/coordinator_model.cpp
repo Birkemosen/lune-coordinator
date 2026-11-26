@@ -1248,32 +1248,82 @@ void HouseModel::import_ua_day(const UaDayPersist *in, size_t count) {
   }
 }
 
+const char *HouseModel::ua_verdict_name(UaVerdict v) {
+  switch (v) {
+    case UaVerdict::LEARNED: return "learned";
+    case UaVerdict::EXCLUDED: return "excluded";
+    case UaVerdict::SHORT_DAY: return "short_day";
+    case UaVerdict::NO_HEAT: return "no_heat";
+    case UaVerdict::MILD: return "mild";
+    case UaVerdict::NOT_STEADY: return "not_steady";
+    case UaVerdict::OUT_OF_BAND: return "out_of_band";
+    default: return "none";
+  }
+}
+
+HouseModel::UaDayFigures HouseModel::ua_day_figures(size_t i) const {
+  UaDayFigures f{};
+  if (i >= room_count_ || i >= MAX_HOUSE_ROOMS)
+    return f;
+  const UaDay &day = ua_day_[i];
+  const LogicalRoom &room = rooms_[i];
+  f.hours = day.hours;
+  f.kwh = day.kwh;
+  if (std::isfinite(day.first_c) && std::isfinite(day.last_c))
+    f.net_change_k = day.last_c - day.first_c;
+  if (!(day.hours > 0.0f))
+    return f;
+  f.mean_dt_k = day.dt_kh / day.hours;
+  if (!(f.mean_dt_k > 0.0f))
+    return f;
+  // The room also gets its area share of the internal gains: they are heat it loses too.
+  const float area_all = area_sum_included_m2();
+  const float gains = internal_gains_w_ > 0.0f && area_all > 0.0f && room.total_area_m2 > 0.0f
+                          ? internal_gains_w_ * room.total_area_m2 / area_all
+                          : 0.0f;
+  f.ua_est_w_per_k = (day.kwh * 1000.0f / day.hours + gains) / f.mean_dt_k;
+  return f;
+}
+
 size_t HouseModel::close_ua_day(UaDayResult *out, size_t capacity) {
   size_t n = 0;
   for (size_t i = 0; i < room_count_ && i < MAX_HOUSE_ROOMS; i++) {
     const UaDay day = ua_day_[i];
+    const UaDayFigures fig = ua_day_figures(i);
     ua_day_[i] = UaDay{};
+    UaDayClose &verdict = ua_close_[i];
+    verdict = UaDayClose{};
+    verdict.day = fig;
     LogicalRoom &room = rooms_[i];
     room.delivered_kwh_today = 0.0f;
-    if (!room.enabled || !room.include_in_house_temperature)
+    if (!room.enabled || !room.include_in_house_temperature) {
+      verdict.verdict = UaVerdict::EXCLUDED;
       continue;
-    if (day.hours < physics::UA_DAY_MIN_HOURS || !(day.kwh > 0.05f))
+    }
+    if (day.hours < physics::UA_DAY_MIN_HOURS) {
+      verdict.verdict = UaVerdict::SHORT_DAY;
       continue;
-    const float mean_dt = day.dt_kh / day.hours;
-    if (mean_dt < physics::UA_DAY_MIN_DT_K)
+    }
+    if (!(day.kwh > 0.05f)) {
+      verdict.verdict = UaVerdict::NO_HEAT;
       continue;
-    if (!(std::fabs(day.last_c - day.first_c) <= physics::UA_DAY_MAX_NET_CHANGE_K))
+    }
+    if (!(fig.mean_dt_k >= physics::UA_DAY_MIN_DT_K)) {
+      verdict.verdict = UaVerdict::MILD;
       continue;
-    // The room also gets its area share of the internal gains: they are heat it loses too.
-    const float area_all = area_sum_included_m2();
-    const float gains = internal_gains_w_ > 0.0f && area_all > 0.0f && room.total_area_m2 > 0.0f
-                            ? internal_gains_w_ * room.total_area_m2 / area_all
-                            : 0.0f;
-    const float ua_est = (day.kwh * 1000.0f / day.hours + gains) / mean_dt;
+    }
+    if (!(std::fabs(fig.net_change_k) <= physics::UA_DAY_MAX_NET_CHANGE_K)) {
+      verdict.verdict = UaVerdict::NOT_STEADY;
+      continue;
+    }
+    const float ua_est = fig.ua_est_w_per_k;
     const float prior = room.ua_prior_w_per_k > 0.0f ? room.ua_prior_w_per_k
                                                      : geometry_ua_w_per_k(room.total_area_m2);
-    if (!std::isfinite(ua_est) || !physics::ua_learned_in_band(ua_est, prior))
+    if (!std::isfinite(ua_est) || !physics::ua_learned_in_band(ua_est, prior)) {
+      verdict.verdict = UaVerdict::OUT_OF_BAND;
       continue;
+    }
+    verdict.verdict = UaVerdict::LEARNED;
     const float prev = room.ua_learned_w_per_k;
     const bool first = !(prev > 0.0f) || room.ua_observed_days == 0;
     const float trend_prev = ua_trend_[i] > 0.0f ? ua_trend_[i] : prev;

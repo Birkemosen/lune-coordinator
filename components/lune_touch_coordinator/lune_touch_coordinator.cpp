@@ -5297,8 +5297,13 @@ bool LuneTouchCoordinator::fetch_circulation_pump_() {
         if (odin_plan_.heat_window_active || odin_plan_.preload_timing_bias_enabled)
           odin_plan_.bias_window_delivered_kwh += kwh;
       }
-      if (sample_ok && model_.has_outdoor_temp())
-        model_.accumulate_ua_day(sample_h, model_.outdoor_temp_c());
+      // The model had no outdoor temperature on the device (only tests set it), so the
+      // UA day never counted an hour and heat loss was never learned (2026-11-26).
+      const float outdoor_c = outdoor_now_c_locked_(now_fetch_ms);
+      if (std::isfinite(outdoor_c))
+        model_.set_outdoor_temp_c(outdoor_c);
+      if (sample_ok && std::isfinite(outdoor_c))
+        model_.accumulate_ua_day(sample_h, outdoor_c);
       // T2: at local midnight learn UA from the whole day just ended (§5.2). The
       // first known date only starts a clean day (clears totals kept from before).
       const int64_t epoch_now = current_epoch_s_();
@@ -6860,18 +6865,36 @@ bool LuneTouchCoordinator::load_preload_learning_() {
   return true;
 }
 
+float LuneTouchCoordinator::outdoor_now_c_locked_(uint32_t now_ms) const {
+  // The heat pump's own sensor while fresh (30 min), else this hour's forecast.
+  const bool hp_fresh = heat_source_.hp_telemetry_ms != 0 && now_ms - heat_source_.hp_telemetry_ms < 30UL * 60UL * 1000UL;
+  if (hp_fresh && std::isfinite(heat_source_.hp_outside_c))
+    return heat_source_.hp_outside_c;
+  const int64_t now_s = current_epoch_s_();
+  for (uint8_t i = 0; i < forecast_hours_count_ && now_s > 0; i++) {
+    if (forecast_hours_[i].timestamp_s <= now_s && now_s < forecast_hours_[i].timestamp_s + 3600)
+      return forecast_hours_[i].temp_c;
+  }
+  return NAN;
+}
+
 bool LuneTouchCoordinator::load_ua_day_() {
   nvs_handle_t handle = 0;
-  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  ua_day_load_err_ = open_touch_nvs_(WEATHER_NAMESPACE, NVS_READONLY, &handle);
+  if (ua_day_load_err_ != ESP_OK)
     return false;
   static PersistedUaDay blob;
   blob = PersistedUaDay{};
   size_t len = sizeof(blob);
   const esp_err_t err = nvs_get_blob(handle, "ua_day", &blob, &len);
   nvs_close(handle);
+  ua_day_load_err_ = err;
   if (err != ESP_OK || len != sizeof(blob) || blob.magic != UA_DAY_MAGIC || blob.version != UA_DAY_VERSION ||
-      blob.count > ::lune_touch::MAX_HOUSE_ROOMS)
+      blob.count > ::lune_touch::MAX_HOUSE_ROOMS) {
+    if (err == ESP_OK)
+      ua_day_load_err_ = ESP_ERR_INVALID_SIZE;
     return false;
+  }
   model_.import_ua_day(blob.rooms, blob.count);
   ua_day_ymd_ = blob.ymd;
   return true;
@@ -6883,12 +6906,16 @@ bool LuneTouchCoordinator::save_ua_day_() {
   blob.ymd = ua_day_ymd_;
   blob.count = static_cast<uint16_t>(model_.export_ua_day(blob.rooms, ::lune_touch::MAX_HOUSE_ROOMS));
   nvs_handle_t handle = 0;
-  if (open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+  ua_day_save_err_ = open_touch_nvs_(WEATHER_NAMESPACE, NVS_READWRITE, &handle);
+  if (ua_day_save_err_ != ESP_OK)
     return false;
-  const esp_err_t err = nvs_set_blob(handle, "ua_day", &blob, sizeof(blob));
+  esp_err_t err = nvs_set_blob(handle, "ua_day", &blob, sizeof(blob));
   if (err == ESP_OK)
-    nvs_commit(handle);
+    err = nvs_commit(handle);
   nvs_close(handle);
+  ua_day_save_err_ = err;
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "UA day not stored: %s (%u bytes)", esp_err_to_name(err), static_cast<unsigned>(sizeof(blob)));
   return err == ESP_OK;
 }
 
@@ -13882,6 +13909,27 @@ void LuneTouchCoordinator::append_room_warmup_json_(char *buffer, size_t capacit
            static_cast<unsigned long>(warm->until_ts), stop_at);
 }
 
+void LuneTouchCoordinator::append_room_ua_day_json_(char *buffer, size_t capacity, size_t &off,
+                                                    size_t room_index) const {
+  // Daily heat-loss learning: the day so far, and what the last midnight made of its day.
+  auto figures = [&](const ::lune_touch::HouseModel::UaDayFigures &f) {
+    char dt[16], net[16], ua[16];
+    json_float_token_(dt, sizeof(dt), f.mean_dt_k, 1);
+    json_float_token_(net, sizeof(net), f.net_change_k, 2);
+    json_float_token_(ua, sizeof(ua), f.ua_est_w_per_k, 1);
+    appendf_(buffer, capacity, off,
+             "\"hours\":%.1f,\"kwh\":%.2f,\"mean_dt_k\":%s,\"net_change_k\":%s,\"ua_est_w_per_k\":%s",
+             f.hours, f.kwh, dt, net, ua);
+  };
+  appendf_(buffer, capacity, off, ",\"ua_day\":{");
+  figures(model_.ua_day_figures(room_index));
+  const auto last = model_.ua_last_close(room_index);
+  appendf_(buffer, capacity, off, ",\"last\":{\"verdict\":\"%s\",",
+           ::lune_touch::HouseModel::ua_verdict_name(last.verdict));
+  figures(last.day);
+  appendf_(buffer, capacity, off, "}}");
+}
+
 void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const {
   size_t off = 0;
   if (buffer == nullptr || capacity == 0)
@@ -13953,6 +14001,7 @@ void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const
              room->physics_conflict ? "true" : "false",
              room->ua_effective_w_per_k);
     append_room_warmup_json_(buffer, capacity, off, room->room_id);
+    append_room_ua_day_json_(buffer, capacity, off, room_index);
     appendf_(buffer, capacity, off, "}");
   }
   appendf_(buffer, capacity, off, "],\"unassigned\":[");
@@ -13971,7 +14020,9 @@ void LuneTouchCoordinator::write_rooms_json(char *buffer, size_t capacity) const
              name_esc);
     first_unassigned = false;
   }
-  appendf_(buffer, capacity, off, "]}");
+  // Whether the day's heat-loss totals survive a restart (NVS result of the last load and store).
+  appendf_(buffer, capacity, off, "],\"ua_day_store\":{\"load\":\"%s\",\"save\":\"%s\",\"ymd\":%ld}}",
+           esp_err_to_name(ua_day_load_err_), esp_err_to_name(ua_day_save_err_), static_cast<long>(ua_day_ymd_));
 }
 
 void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const {
