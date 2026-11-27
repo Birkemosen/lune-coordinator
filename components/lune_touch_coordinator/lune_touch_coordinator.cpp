@@ -2474,6 +2474,7 @@ void LuneTouchCoordinator::poll_task_() {
       run_hp_diagnostics_(esphome::millis());
       run_problems_(esphome::millis());
       run_exposure_learning_();
+      run_exposure_sync_(esphome::millis());
       sample_room_history_();   // once a minute (checked inside); saves to flash when an hour closes
 
       if (circulation_due)
@@ -14152,7 +14153,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     const uint8_t active_thermal_lead_h = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
     const ExposureLearnSlot *learn_slot = exposure_slot_(zone->room_id);
     const lune_touch_learn::Learned learn =
-        learn_slot != nullptr ? lune_touch_learn::result(learn_slot->state) : lune_touch_learn::Learned{};
+        learn_slot != nullptr ? lune_touch_learn::result(learn_slot->state, exposure_a_prior_(zone->room_id))
+                              : lune_touch_learn::Learned{};
     char learn_solar[12], learn_wind[12];
     json_float_token_(learn_solar, sizeof(learn_solar), learn.solar_valid ? learn.solar : NAN, 2);
     json_float_token_(learn_wind, sizeof(learn_wind), learn.wind_valid ? learn.wind : NAN, 2);
@@ -18719,7 +18721,7 @@ void LuneTouchCoordinator::effective_exposure_(const char *room_id, float *solar
   const ExposureLearnSlot *slot = exposure_slot_(room_id);
   if (slot == nullptr)
     return;
-  const auto learned = lune_touch_learn::result(slot->state);
+  const auto learned = lune_touch_learn::result(slot->state, exposure_a_prior_(room_id));
   if (solar_gain != nullptr && learned.solar_valid && std::fabs(*solar_gain - 0.3f) < 0.005f)
     *solar_gain = learned.solar;
   // The learned factor is the extra loss at 10 m/s head-on; exposure is on the presets'
@@ -18727,6 +18729,102 @@ void LuneTouchCoordinator::effective_exposure_(const char *room_id, float *solar
   if (wind_exposure != nullptr && learned.wind_valid && std::fabs(*wind_exposure - 0.5f) < 0.005f)
     *wind_exposure = std::min(learned.wind / ::lune_touch_charge::WIND_LOSS_FACTOR,
                               ::lune_touch_charge::WIND_EXPOSURE_MAX);
+}
+
+float LuneTouchCoordinator::exposure_a_prior_(const char *room_id) const {
+  // UA / C over the room's loops, C = slab + structure (V6's c_zone: c_slab + 0.06·area).
+  constexpr float C_STRUCT_KWH_PER_M2_K = 0.06f;
+  if (room_id == nullptr || room_id[0] == '\0')
+    return 0.0f;
+  float ua = 0.0f, c = 0.0f;
+  for (size_t i = 0; i < model_.zone_count(); i++) {
+    const auto *z = model_.zone(i);
+    if (z == nullptr || !z->enabled || std::strcmp(z->room_id, room_id) != 0)
+      continue;
+    const float zua = z->ua_effective_w_per_k > 0.0f ? z->ua_effective_w_per_k : z->ua_prior_w_per_k;
+    const float zc = (z->floor.c_slab_kwh_per_k > 0.0f ? z->floor.c_slab_kwh_per_k : 0.0f) +
+                     C_STRUCT_KWH_PER_M2_K * (z->v6_area_m2 > 0.0f ? z->v6_area_m2 : 0.0f);
+    if (zua > 0.0f && zc > 0.0f) {
+      ua += zua;
+      c += zc;
+    }
+  }
+  return ua > 0.0f && c > 0.05f ? ua / 1000.0f / c : 0.0f;
+}
+
+void LuneTouchCoordinator::run_exposure_sync_(uint32_t now_ms) {
+  // Hourly, and 2 min after boot (V6 data and the learned state are loaded by then).
+  constexpr uint32_t PERIOD_MS = 60UL * 60UL * 1000UL;
+  constexpr uint32_t FIRST_MS = 2UL * 60UL * 1000UL;
+  constexpr float MIN_CHANGE = 0.05f;
+  if (exposure_sync_ms_ == 0 ? now_ms < FIRST_MS : now_ms - exposure_sync_ms_ < PERIOD_MS)
+    return;
+  if (current_epoch_s_() <= 0 || !esphome::network::is_connected() || !take_state_lock_(100))
+    return;
+  exposure_sync_ms_ = now_ms == 0 ? 1 : now_ms;
+  struct Push {
+    ::lune_touch::PairedNode node;
+    uint8_t zone_index;
+    size_t binding;
+    float wind, solar;
+  };
+  static Push *pushes = psram_scratch_<Push>(::lune_touch::MAX_HOUSE_ZONES);
+  size_t count = 0;
+  for (size_t i = 0; pushes != nullptr && i < model_.zone_count() && i < ::lune_touch::MAX_HOUSE_ZONES; i++) {
+    const auto *z = model_.zone(i);
+    if (z == nullptr || !z->enabled || z->unassigned || z->room_id[0] == '\0')
+      continue;
+    const auto *node = model_.node(z->node_index);
+    if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED ||
+        std::strcmp(node->firmware, "mock") == 0)
+      continue;
+    const auto *room = model_.room_by_id(z->room_id);
+    float wind = room != nullptr ? room->wind_exposure : z->wind_exposure;
+    float solar = room != nullptr ? room->solar_gain : z->solar_gain;
+    effective_exposure_(z->room_id, &solar, &wind);
+    const bool sent = exposure_sent_wind_[i] > 0.0f || exposure_sent_solar_[i] > 0.0f;
+    if (sent && std::fabs(wind - exposure_sent_wind_[i]) < MIN_CHANGE &&
+        std::fabs(solar - exposure_sent_solar_[i]) < MIN_CHANGE)
+      continue;
+    pushes[count++] = Push{*node, z->zone_index, i, wind, solar};
+  }
+  give_state_lock_();
+  for (size_t k = 0; k < count; k++) {
+    if (!send_v6_forecast_profile_(pushes[k].node, pushes[k].zone_index, pushes[k].wind, pushes[k].solar))
+      continue;   // older V6 (no Touch auth on the route) or offline: retried next hour
+    // A tiny offset keeps "sent 0 / 0" distinguishable from "never sent".
+    exposure_sent_wind_[pushes[k].binding] = std::max(pushes[k].wind, 1e-4f);
+    exposure_sent_solar_[pushes[k].binding] = std::max(pushes[k].solar, 1e-4f);
+  }
+  if (count > 0)
+    ESP_LOGI(TAG, "Exposure sync: %u loop(s) sent to V6", static_cast<unsigned>(count));
+}
+
+bool LuneTouchCoordinator::send_v6_forecast_profile_(const ::lune_touch::PairedNode &node,
+                                                     uint8_t zone_index, float wind_exposure,
+                                                     float solar_gain) {
+  const char *hosts[2]{};
+  size_t host_count = 0;
+  if (node.hostname[0] != '\0')
+    hosts[host_count++] = node.hostname;
+  if (node.fallback_ip[0] != '\0' &&
+      (host_count == 0 || std::strcmp(node.fallback_ip, hosts[0]) != 0))
+    hosts[host_count++] = node.fallback_ip;
+  char payload[224];
+  std::snprintf(payload, sizeof(payload), "{\"wind_exposure\":%.2f,\"solar_gain\":%.2f}",
+                wind_exposure, solar_gain);
+  append_v6_auth_(payload, sizeof(payload));
+  for (size_t i = 0; i < host_count; i++) {
+    char url[192];
+    char body[256];
+    int status = 0;
+    std::snprintf(url, sizeof(url), "http://%s/api/v1/zones/%u/forecast-profile", hosts[i],
+                  static_cast<unsigned>(zone_index + 1));
+    if (post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_, true))
+      return true;
+    ESP_LOGD(TAG, "V6 forecast profile write failed via %s (%d)", hosts[i], status);
+  }
+  return false;
 }
 
 void LuneTouchCoordinator::run_exposure_learning_() {
@@ -18772,6 +18870,7 @@ void LuneTouchCoordinator::run_exposure_learning_() {
     now_sample.valve = live->has_valve ? live->valve_pct / 100.0f : 0.0f;
     const auto &tel = zone->node_index < ::lune_touch::MAX_NODES ? node_telemetry_[zone->node_index] : node_telemetry_[0];
     now_sample.supply_c = tel.has_flow && std::isfinite(tel.flow_c) && tel.flow_c > 5.0f ? tel.flow_c : shared_supply;
+    now_sample.lag_h = live->floor_lag_h > 0.0f ? live->floor_lag_h : 0.0f;   // V6's floor response
     ExposureLearnSlot *slot = exposure_slot_(zone->room_id, true);
     if (slot == nullptr)
       continue;
@@ -18787,6 +18886,7 @@ void LuneTouchCoordinator::run_exposure_learning_() {
     if (dt_h <= 1.5f) {
       lune_touch_learn::Sample x = slot->start;   // conditions at the start of the hour
       x.dtdt_c_per_h = (now_sample.temp_c - slot->start.temp_c) / dt_h;
+      x.dt_h = dt_h;
       if (lune_touch_learn::update(slot->state, x))
         exposure_learn_dirty_ = true;
     }
@@ -18822,7 +18922,7 @@ void LuneTouchCoordinator::save_exposure_learning_() {
   nvs_handle_t handle;
   if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
-  if (nvs_set_blob(handle, "xlearn", recs, count * sizeof(Rec)) == ESP_OK)
+  if (nvs_set_blob(handle, "xlearn2", recs, count * sizeof(Rec)) == ESP_OK)
     nvs_commit(handle);
   nvs_close(handle);
 }
@@ -18839,7 +18939,9 @@ void LuneTouchCoordinator::load_exposure_learning_() {
   if (open_touch_nvs_(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
   size_t len = ::lune_touch::MAX_HOUSE_ZONES * sizeof(Rec);
-  const esp_err_t err = nvs_get_blob(handle, "xlearn", recs, &len);
+  // "xlearn2": State gained the floor lag and residual variance (2026-11-27); the old
+  // fits read the hour's valve as the heat and are not carried over.
+  const esp_err_t err = nvs_get_blob(handle, "xlearn2", recs, &len);
   nvs_close(handle);
   if (err != ESP_OK || len % sizeof(Rec) != 0)
     return;   // none yet, or a different layout: start learning afresh
