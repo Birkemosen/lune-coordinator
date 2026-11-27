@@ -18772,16 +18772,32 @@ void LuneTouchCoordinator::run_exposure_sync_(uint32_t now_ms) {
   size_t count = 0;
   for (size_t i = 0; pushes != nullptr && i < model_.zone_count() && i < ::lune_touch::MAX_HOUSE_ZONES; i++) {
     const auto *z = model_.zone(i);
-    if (z == nullptr || !z->enabled || z->unassigned || z->room_id[0] == '\0')
+    if (z == nullptr || (z->unassigned && !z->is_group_secondary))
+      continue;
+    // A V6 sync-group secondary (Stue under Stue Repo) has no room of its own: it gets
+    // its group primary's room.
+    const char *room_id = z->room_id;
+    const auto *live = model_.zone_live(i);
+    if (room_id[0] == '\0' && live != nullptr && live->group_primary_zone > 0) {
+      for (size_t j = 0; j < model_.zone_count(); j++) {
+        const auto *p = model_.zone(j);
+        if (p != nullptr && p->node_index == z->node_index &&
+            p->zone_index + 1 == live->group_primary_zone && p->room_id[0] != '\0') {
+          room_id = p->room_id;
+          break;
+        }
+      }
+    }
+    if (room_id[0] == '\0')
       continue;
     const auto *node = model_.node(z->node_index);
     if (node == nullptr || node->trust != ::lune_touch::NodeTrust::TRUSTED ||
         std::strcmp(node->firmware, "mock") == 0)
       continue;
-    const auto *room = model_.room_by_id(z->room_id);
+    const auto *room = model_.room_by_id(room_id);
     float wind = room != nullptr ? room->wind_exposure : z->wind_exposure;
     float solar = room != nullptr ? room->solar_gain : z->solar_gain;
-    effective_exposure_(z->room_id, &solar, &wind);
+    effective_exposure_(room_id, &solar, &wind);
     const bool sent = exposure_sent_wind_[i] > 0.0f || exposure_sent_solar_[i] > 0.0f;
     if (sent && std::fabs(wind - exposure_sent_wind_[i]) < MIN_CHANGE &&
         std::fabs(solar - exposure_sent_solar_[i]) < MIN_CHANGE)
