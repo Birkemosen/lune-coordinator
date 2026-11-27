@@ -687,10 +687,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool display_away_primary_room();
   float display_house_target_c() const;
   float display_house_temperature_c() const;
-  bool display_adjust_house_target(float delta_c);
-  /// Set the house target the user sees (0.5 °C steps): every room moves by the
-  /// difference to the shown target, so room targets stay on half degrees.
-  bool set_house_target(float target_c);
+  // The house target is derived from the rooms' targets (weighted mean; what Odin's
+  // setpoint sync gets) and cannot be set: change a room's target instead.
   uint8_t display_active_page() const;
   bool display_set_active_page(uint8_t page);
   uint8_t display_return_page() const;
@@ -1250,6 +1248,20 @@ class LuneTouchCoordinator : public esphome::Component {
   /// Learned factors replace the room's own only while those are at the defaults
   /// (solar 0.3, wind 0.5): a value someone set by hand always wins.
   void effective_exposure_(const char *room_id, float *solar_gain, float *wind_exposure) const;
+  /// Saves and logs room targets the model took over from a V6 edit.
+  void handle_comfort_adoptions_();
+  uint32_t comfort_adoptions_seen_{0};
+  /// The room's loss rate from physics, UA / C in 1/h (0 = unknown): the floor under the
+  /// fitted a when reading the wind factor (exposure_learning.h).
+  float exposure_a_prior_(const char *room_id) const;
+  /// Touch owns weather exposure: each loop's V6 gets its room's effective wind and sun
+  /// (learned or set here) when it changes, so V6 shows and sizes with the same value.
+  void run_exposure_sync_(uint32_t now_ms);
+  bool send_v6_forecast_profile_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
+                                 float wind_exposure, float solar_gain);
+  float exposure_sent_wind_[::lune_touch::MAX_HOUSE_ZONES]{};
+  float exposure_sent_solar_[::lune_touch::MAX_HOUSE_ZONES]{};
+  uint32_t exposure_sync_ms_{0};
   void load_exposure_learning_();
   void save_exposure_learning_();
   void save_odin_control_();

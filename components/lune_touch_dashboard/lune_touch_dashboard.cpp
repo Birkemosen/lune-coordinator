@@ -1231,15 +1231,9 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     const bool accepted = coordinator_->set_forecast_location(latitude, longitude, source, data_buf_, DATA_BUF_SIZE);
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/strategy") == 0) {
-    // Home thermostat: the house target in half degrees; every room moves by the step.
-    float target = NAN;
-    if (!parse_float_param(api, api.json_body, "house_target_c", &target)) {
-      send_error_(api, 400, "missing_param", "house_target_c is required");
-      return;
-    }
-    const bool accepted = coordinator_->set_house_target(target);
-    snprintf(data_buf_, DATA_BUF_SIZE, accepted ? "{\"result\":\"stored\"}" : "{\"result\":\"rejected\",\"error\":\"house_target_rejected\"}");
-    send_write_result_(api, accepted, 400);
+    // The house target is derived from the rooms' targets (and is what Odin gets); it
+    // cannot be set. Change a room's target instead.
+    send_error_(api, 409, "house_target_derived", "The house target follows the room targets");
   } else if (strcmp(path, "/planner/settings") == 0) {
     // Shadow planner settings; absent fields keep their value. Commands nothing.
     auto ps = coordinator_->get_planner_settings();

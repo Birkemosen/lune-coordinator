@@ -782,6 +782,7 @@
   "hash.service": "service",
   "thermo.aria": "Huset er {t} °C, målet er {g} °C",
   "thermo.house": "Huset nu",
+  "thermo.derived": "Husets mål er rummenes mål, vægtet efter varmetab, og det er dette mål, Odin får. Det kan ikke indstilles her: ret målet i det enkelte rum (eller på V6).",
   "thermo.outsideLabel": "Ude",
   "scopes.aria": "Hus og styringer",
   "thermo.outside": "ude {t}",

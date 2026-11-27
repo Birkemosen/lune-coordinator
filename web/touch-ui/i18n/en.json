@@ -782,6 +782,7 @@
   "hash.service": "service",
   "thermo.aria": "The house is {t} °C, the target is {g} °C",
   "thermo.house": "House now",
+  "thermo.derived": "The house target is the rooms' targets, weighted by heat loss, and it is the target Odin gets. It cannot be set here: change the target in each room (or on V6).",
   "thermo.outsideLabel": "Outside",
   "scopes.aria": "House and controllers",
   "thermo.outside": "outside {t}",

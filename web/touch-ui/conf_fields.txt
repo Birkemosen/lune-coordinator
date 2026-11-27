@@ -67,7 +67,6 @@ heat-source/target_sync_enabled
 circulation/house_balance_enabled
 heat-source/target_url_template
 heat-source/write_url_template
-house-target/house_target
 prices/currency
 prices/enabled
 prices/energy_tax
