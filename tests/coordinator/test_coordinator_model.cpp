@@ -160,14 +160,35 @@ static void test_zone_registry() {
              HouseModel::effective_comfort_setpoint_c(*living.binding) > 21.4f &&
              HouseModel::effective_comfort_setpoint_c(*living.binding) < 21.6f,
          "registry: comfort bias affects effective comfort");
+  // Touch just wrote 22.0 to V6: a poll in flight with V6's old 20.5 is not a V6 edit.
+  model.note_v6_setpoint_written(0, 1, 22.0f, 900);
   expect(model.update_zone_live_by_binding(0, 1, 20.5f, true, 20.5f, true, "idle", true, 1000),
          "registry: V6 applied setpoint is reported as live state");
   living = model.resolve_room("living");
   const auto *living_live = model.zone_live(0);
   expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 22.0f &&
              living.binding->comfort_bias_c == -0.5f && living.binding->priority == 3 &&
-             living_live != nullptr && living_live->has_setpoint && living_live->setpoint_c == 20.5f,
-         "registry: V6 report does not overwrite Touch coordination intent");
+             living_live != nullptr && living_live->has_setpoint && living_live->setpoint_c == 20.5f &&
+             model.comfort_adoptions() == 0,
+         "registry: V6's old value in flight does not undo Touch's write");
+  model.update_zone_live_by_binding(0, 1, 20.5f, true, 22.0f, true, "idle", true, 2000);
+  // Later someone sets 22.5 on V6: the room's target in Touch follows (bias and priority kept).
+  model.update_zone_live_by_binding(0, 1, 20.5f, true, 22.5f, true, "idle", true, 3000);
+  living = model.resolve_room("living");
+  expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 22.5f &&
+             living.binding->comfort_bias_c == -0.5f && living.binding->priority == 3 &&
+             model.room_by_id("living")->comfort_setpoint_c == 22.5f &&
+             model.comfort_adoptions() == 1 && model.last_adopted_setpoint_c() == 22.5f,
+         "registry: a target set on V6 becomes the room's target in Touch");
+  // The deadline passes without V6 echoing a Touch write: V6's value stands.
+  model.note_v6_setpoint_written(0, 1, 23.0f, 4000);
+  model.update_zone_live_by_binding(0, 1, 20.5f, true, 22.5f, true, "idle", true,
+                                    4000 + HouseModel::SETPOINT_ECHO_MS + 1);
+  living = model.resolve_room("living");
+  expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 22.5f,
+         "registry: an unconfirmed Touch write expires");
+  model.update_zone_comfort("living", 22.0f, 3, -0.5f);
+  model.update_zone_live_by_binding(0, 1, 20.5f, true, 22.0f, true, "idle", true, 200000);
   expect(model.update_zone_schedule("living", true, 0x1F, 390, 1290, 20.5f),
          "registry: update schedule");
   living = model.resolve_room("living");
@@ -399,10 +420,11 @@ static void test_persisted_state_roundtrip() {
   model.update_node_name("v6-a", "Ground manifold");
   model.update_node_identity(0, "hv6-aabbccddeeff");
   model.bind_zone("living", "Living", 0, 4);
-  model.update_zone_comfort("living", 21.8f, 2, 0.4f);
   model.update_zone_schedule("living", true, 0x7F, 360, 1320, 21.2f);
-  model.update_zone_live("living", 21.4f, true, 21.0f, true, "heat", true, 1234);
+  model.update_zone_live("living", 21.4f, true, 21.8f, true, "heat", true, 1234);
   feed_ramp(model, "living", 1234, 1234 + 4200000UL, 21.4f, 21.4f + 0.2f * 70.0f / 60.0f, "heat");
+  // Set after the ramp: the ramp's V6 reports (21.5) would otherwise be taken as V6 edits.
+  model.update_zone_comfort("living", 21.8f, 2, 0.4f);
 
   PersistedState state{};
   expect(model.export_state(&state), "persist: export succeeds");

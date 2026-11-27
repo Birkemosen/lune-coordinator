@@ -55,7 +55,7 @@ rg -F 'id="m-home"' "$en" >/dev/null
 rg -F 'id="m-sys"' "$en" >/dev/null
 rg -F 'id="s-house"' "$en" >/dev/null
 rg -F 'class="home-hero"' "$en" >/dev/null
-rg -F 'class="thermo"' "$en" >/dev/null
+rg -F 'class="thermo thermo--readonly"' "$en" >/dev/null
 rg -F 'class="home-tile"' "$en" >/dev/null
 rg -F 'data-bind-heatmap' "$en" >/dev/null
 rg -F 'class="sys-nav"' "$en" >/dev/null
@@ -74,7 +74,9 @@ rg -F 'name="hs_type"' "$en" >/dev/null
 ! rg -F 'modal' "$en" "$binder" >/dev/null
 
 # Forms (save keys; partial save = patch, DESIGN.md 6.1)
-rg -F 'data-save="house-target"' "$en" >/dev/null
+# The house target is derived from the rooms (what Odin gets): read-only, no form.
+! rg -F 'data-save="house-target"' "$en" >/dev/null
+rg -F 'thermo thermo--readonly' "$en" >/dev/null
 rg -F 'data-save="heat_source" data-patch' "$en" >/dev/null
 rg -F 'data-save="weather" data-patch' "$en" >/dev/null
 rg -F 'data-save="rooms" data-patch' "$en" >/dev/null

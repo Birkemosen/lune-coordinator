@@ -2,6 +2,10 @@
 
 ## Ikke udgivet
 
+- Touch' hus: husets mål kan ikke længere indstilles. Det er rummenes mål vægtet efter varmetab (det Odin får), og rummenes mål er synkroniseret med V6. Ny variant `.thermo--readonly`: ring, bue og mærke som før, men intet håndtag, ingen − / +, intet træk (`lune-forms.js`), målet som `output.thermo-target`, og en `.note` om, hvor målet rettes. DESIGN.md 15.10 og AGENTS.md.
+- V6 zone-ark › Indstillinger › Vejr: mens Lune Touch har lease, er vind og sol læseværdier (deaktiverede steppere) med en note om, at Touch ejer dem og sender hvert rums værdi (DESIGN.md: ét felt pr. ting). Vindeksponering går op til 3,4 (Touch' skala: 2,0 ekstra tab ÷ 0,6). `.stepper` får en deaktiveret tilstand: knapperne toner ud, værdien bliver dæmpet men læsbar.
+- V6 zone-ark › Indstillinger › Gulv: læseværdien «Anbefalet maks. flow» (l/min, til fordelerens forindstilling: rummets varmetab med vindeksponering ved −12 °C, 5 K afkøling og 30 % reserve) med den anslåede kredslængde (areal ÷ rørafstand plus tilledninger) i hjælpeteksten. Almindelig `.setting`-række med `data-bind`, ingen ny komponent; én række, så gulvgruppen holder sig under 6.
+- V6 Hjem: «Varme nu» og zonekortene får akser som Touch — temperaturskala på fremløb/retur (`.hchart-panel` med `.hchart-y` i `.trend-wrap`) og klokkeslæt på x-aksen (`.axis.at`, `.zc-x.at`: hver 6. time, ugedag ved midnat, «nu» til højre) i stedet for −24 t / −12 t. `.hchart-panel`, `.hchart-y` og `.axis.at` er flyttet ud af Touch-blokken, så de bygges til begge produkter. DESIGN.md: Zonekort.
 - Touch' Rum-ark › Overblik: «Varm op» (`.sub` med `data-state="warm-idle|warming"`): «Varm nu» og «Varm billigt», og mens rummet varmes op, én linje med tilstand og «Stop opvarmning». Nye tilstande `warm-idle` og `warming` i reglerne for tilstandsafhængige handlinger (6.1b). DESIGN.md 15.10.
 
 ## 2.5.0

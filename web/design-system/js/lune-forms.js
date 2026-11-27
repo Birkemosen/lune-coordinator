@@ -222,7 +222,7 @@ ring.style.setProperty("--v",Math.max(0,Math.min(100,Math.round((v-rl)/(rh-rl)*1
 i.dispatchEvent(new Event("input",{bubbles:true}))}
 document.addEventListener("pointerdown",function(e){
 var ring=e.target.closest&&e.target.closest(".thermo-ring[data-min][data-max]");
-if(!ring||e.target.closest("input,button"))return;
+if(!ring||ring.closest(".thermo--readonly")||e.target.closest("input,button"))return;
 var v=ringValue(ring,e);if(v==null)return;
 e.preventDefault();ring.setPointerCapture(e.pointerId);ringSet(ring,v);
 function mv(ev){var w=ringValue(ring,ev);if(w!=null)ringSet(ring,w)}

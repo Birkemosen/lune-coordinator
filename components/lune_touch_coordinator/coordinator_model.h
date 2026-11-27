@@ -223,6 +223,10 @@ struct ZoneLiveState {
   bool has_setpoint{false};
   bool has_valve{false};
   bool fresh{false};
+  // Runtime-only: a setpoint Touch just wrote to this loop's V6. Until V6 reports it
+  // (or the deadline passes) an older V6 value in flight does not count as a V6 edit.
+  float setpoint_pending_c{0.0f};
+  uint32_t setpoint_pending_until_ms{0};
   // Runtime-only V6 group membership (not persisted; V6 owns grouping).
   uint8_t group_primary_zone{0};  // 1–6; 0 = unknown / treat as self
   bool is_group_primary{true};
@@ -706,6 +710,14 @@ class HouseModel {
                                    float setpoint_c, bool has_setpoint, const char *status,
                                    bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
                                    bool has_valve = false);
+  /// Touch wrote setpoint_c to this loop's V6 (set_zone_comfort): hold V6's older value
+  /// off for SETPOINT_ECHO_MS so the poll in flight does not undo the edit.
+  void note_v6_setpoint_written(size_t node_index, size_t zone_index, float setpoint_c, uint32_t now_ms);
+  /// Count of room targets taken over from a V6 edit, and the latest one (for the event log).
+  uint32_t comfort_adoptions() const { return comfort_adoptions_; }
+  const char *last_adopted_room() const { return last_adopted_room_; }
+  float last_adopted_setpoint_c() const { return last_adopted_setpoint_c_; }
+  static constexpr uint32_t SETPOINT_ECHO_MS = 90000;
   // Apply V6 group membership for a zone binding. Secondary members are detached from rooms.
   bool update_zone_floor_lag(size_t node_index, size_t zone_index, float floor_lag_h);
   bool update_zone_group_membership(size_t node_index, size_t zone_index,
@@ -762,6 +774,12 @@ class HouseModel {
   bool import_state_v14(const PersistedState &state);
 
  private:
+  // Room targets follow V6: a loop's base setpoint set on V6 becomes its room's target
+  // in Touch (the room's primary loop only, so a room over two manifolds cannot flip).
+  void sync_comfort_from_v6_(size_t index, float setpoint_c, bool has_setpoint, uint32_t now_ms);
+  uint32_t comfort_adoptions_{0};
+  char last_adopted_room_[32]{};
+  float last_adopted_setpoint_c_{0.0f};
   uint32_t node_stale_after_ms_{300000};
   HouseWeighting house_weighting_{HouseWeighting::UA};
   float minimum_area_coverage_{0.75f};

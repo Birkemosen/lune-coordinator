@@ -316,7 +316,6 @@ for required in \
   'display_away_primary_room' \
   'display_house_target_c' \
   'display_house_temperature_c' \
-  'display_adjust_house_target' \
   'display_active_page' \
   'display_set_active_page' \
   'display_heat_source_enabled' \

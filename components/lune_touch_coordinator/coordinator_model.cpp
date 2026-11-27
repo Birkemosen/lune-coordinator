@@ -1535,6 +1535,61 @@ uint32_t HouseModel::room_revision(const char *room_id) const {
   return index < room_count_ ? room_revisions_[index] : 0;
 }
 
+void HouseModel::note_v6_setpoint_written(size_t node_index, size_t zone_index, float setpoint_c,
+                                          uint32_t now_ms) {
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    live_[i].setpoint_pending_c = setpoint_c;
+    live_[i].setpoint_pending_until_ms = (now_ms + SETPOINT_ECHO_MS) | 1u;
+  }
+}
+
+void HouseModel::sync_comfort_from_v6_(size_t index, float setpoint_c, bool has_setpoint, uint32_t now_ms) {
+  if (index >= zone_count_ || !has_setpoint || !std::isfinite(setpoint_c) || setpoint_c < 10.0f ||
+      setpoint_c > 35.0f)
+    return;
+  ZoneBinding &zone = zones_[index];
+  ZoneLiveState &live = live_[index];
+  LogicalRoom *room = find_room_(zone.room_id);
+  // Never commissioned in Touch: take V6's value as it is.
+  seed_comfort_from_live_(&zone, room, setpoint_c, has_setpoint);
+  if (room == nullptr || !zone.enabled)
+    return;
+  // Touch's own write in flight: wait until V6 reports it, or the deadline passes.
+  if (live.setpoint_pending_until_ms != 0) {
+    const bool echoed = std::fabs(setpoint_c - live.setpoint_pending_c) < 0.05f;
+    const bool expired = static_cast<int32_t>(now_ms - live.setpoint_pending_until_ms) >= 0;
+    if (!echoed && !expired)
+      return;
+    live.setpoint_pending_until_ms = 0;
+  }
+  if (std::fabs(setpoint_c - zone.comfort_setpoint_c) < 0.05f)
+    return;
+  // Only the room's primary loop speaks for the room.
+  bool primary = false;
+  if (room->primary_loop_id[0] != '\0') {
+    primary = same_text_(room->primary_loop_id, zone.loop_id);
+  } else {
+    for (size_t j = 0; j < zone_count_; j++) {
+      if (zones_[j].enabled && same_text_(zones_[j].room_id, zone.room_id)) {
+        primary = j == index;
+        break;
+      }
+    }
+  }
+  if (!primary)
+    return;
+  room->comfort_setpoint_c = setpoint_c;
+  for (size_t j = 0; j < zone_count_; j++) {
+    if (zones_[j].enabled && same_text_(zones_[j].room_id, zone.room_id))
+      zones_[j].comfort_setpoint_c = setpoint_c;
+  }
+  comfort_adoptions_++;
+  copy_text_(last_adopted_room_, sizeof(last_adopted_room_), room->room_name[0] != '\0' ? room->room_name : room->room_id);
+  last_adopted_setpoint_c_ = setpoint_c;
+}
+
 bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
                                   float setpoint_c, bool has_setpoint, const char *status,
                                   bool fresh, uint32_t now_ms, float valve_pct, bool has_valve) {
@@ -1553,7 +1608,7 @@ bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool
     copy_text_(live_[i].status, sizeof(live_[i].status), status != nullptr && status[0] != '\0' ? status : "unknown");
     live_[i].fresh = fresh;
     live_[i].updated_at_ms = now_ms;
-    seed_comfort_from_live_(&zones_[i], find_room_(zones_[i].room_id), setpoint_c, has_setpoint);
+    sync_comfort_from_v6_(i, setpoint_c, has_setpoint, now_ms);
     record_zone_history_(i, temperature_c, live_[i].status, fresh && has_temperature, now_ms);
     return true;
   }
@@ -1577,7 +1632,7 @@ bool HouseModel::update_zone_live_by_binding(size_t node_index, size_t zone_inde
     copy_text_(live_[i].status, sizeof(live_[i].status), status != nullptr && status[0] != '\0' ? status : "unknown");
     live_[i].fresh = fresh;
     live_[i].updated_at_ms = now_ms;
-    seed_comfort_from_live_(&zones_[i], find_room_(zones_[i].room_id), setpoint_c, has_setpoint);
+    sync_comfort_from_v6_(i, setpoint_c, has_setpoint, now_ms);
     record_zone_history_(i, temperature_c, live_[i].status, fresh && has_temperature, now_ms);
     return true;
   }

@@ -531,7 +531,6 @@
       st.revision += 1;
       return { result: 'stored' };
     }
-    if (path === '/strategy' && body.house_target_c != null) { mockTarget = Number(body.house_target_c); return { result: 'stored' }; }
     if (path === '/weather/settings') { mockSettings.weather.max_boost_c = Number(body.max_boost_c); return { result: 'saved' }; }
     if (path === '/forecast/settings') {
       mockSettings.forecast.latitude = Number(body.latitude);
@@ -1630,11 +1629,8 @@
     if (o.authority) setText('house.authority', o.authority);
     var target = o.house_target_c != null ? o.house_target_c
       : (o.house_comfort_target_c != null ? o.house_comfort_target_c : (o.house_target && o.house_target.value_c));
-    var tgt = qs('#house_target');
-    if (tgt && !editingTarget(tgt) && finite(target)) {
-      putVal(tgt, num(Math.round(Number(target) * 2) / 2));   // half degrees, like the steps
-      if (tgt.form && tgt.form.luneResnap) tgt.form.luneResnap();
-    }
+    // Derived from the rooms (read-only), shown in half degrees as Odin gets it.
+    if (finite(target)) state.houseTargetC = Math.round(Number(target) * 2) / 2;
     renderHome();
   }
 
@@ -1655,13 +1651,11 @@
     return finite(ht) ? Number(ht) : null;
   }
 
-  // The house target is a text field so it shows the page language's decimal sign.
   function parseNum(v) { return Number(String(v == null ? '' : v).trim().replace(',', '.')); }
 
+  // The house target: the rooms' targets weighted by heat loss (Touch computes it).
   function houseTarget() {
-    var tgt = qs('#house_target');
-    var v = tgt ? parseNum(tgt.value) : NaN;
-    return isFinite(v) ? v : null;
+    return finite(state.houseTargetC) ? Number(state.houseTargetC) : null;
   }
 
   // Home: one sentence about the house, the thermostat ring and the four tiles.
@@ -1684,6 +1678,7 @@
     setText('scope.house', deg(ht));
     // Hus-kortet: temperatur, mål og afvigelsen som varmekortets chip; husets ark har målet.
     setText('scope.target', tg == null ? '' : t('scope.target', { t: num(tg) }));
+    setText('house.target', tg == null ? '—' : num(tg));
     setText('house.status', ht == null || tg == null ? '—' : t('sheet.houseStatus', { t: num(ht), g: num(tg) }));
     setText('house.calling', t('house.callingVal', { n: calling }));
     var hd = qs('[data-bind-housedev]');
@@ -4612,10 +4607,7 @@
     var ch = detail.changed || {};
     var submitter = detail.submitter || null;
     try {
-      if (key === 'house-target') {
-        await post('/strategy', { house_target_c: parseNum(data.house_target) });
-        renderHome();
-      } else if (key === 'rooms') {
+      if (key === 'rooms') {
         await saveRoom(form, ch);
       } else if (key === 'heat_source') {
         await saveHeatConnection(form, ch);
@@ -5127,7 +5119,6 @@
 
   document.addEventListener('input', function (e) {
     if (e.target && e.target.closest && e.target.closest('[data-bind-price-sched]')) priceSchedSync();
-    if (e.target && e.target.id === 'house_target') renderHome();
   });
 
   document.addEventListener('change', function (e) {
@@ -5141,7 +5132,6 @@
         paintHeatBadge(state.heat);
       }
     }
-    if (inp.id === 'house_target') renderHome();
     if (inp.id === 'price_zone' || inp.id === 'price_currency') {
       if (inp.id === 'price_currency') {
         // A new currency starts from its default rate (still editable).
@@ -5183,7 +5173,6 @@
     if (f === connForm()) setTimeout(function () {
       syncHsType((f.querySelector('input[name="hs_type"]:checked') || {}).value || 'asgard');
     }, 0);
-    if (f && f.matches && f.matches('form[data-save="house-target"]')) setTimeout(renderHome, 0);
   });
 
   document.addEventListener('lune:save', function (e) { onSave(e.detail || {}); });

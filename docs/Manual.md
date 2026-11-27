@@ -62,11 +62,12 @@ first. Everything that belongs to a sheet is set in that sheet, including its co
   one card per V6 controller with a bar per zone showing the valve opening. A controller card
   opens its sheet; an offline controller says so.
 - **The house now** — a greeting, one line about the situation (and whether the heat pump
-  runs), and the thermostat ring. The ring **sets the target**: drag the handle along the arc,
-  type the number in the middle, or use − / + in the ring's opening. The target moves in steps
-  of 0.5 °C and saves by itself. The dashed orange mark across the arc is the house temperature
-  now; **House now** and **Outside** stand as two small cards to the right of the ring (below it
-  on a phone).
+  runs), and the thermostat ring. The ring **shows** the house target; it cannot be set. The
+  house target is the rooms' targets averaged by heat loss (in steps of 0.5 °C), and it is what
+  Odin gets: change a room's target in its sheet or on V6 instead. A room's target is the same
+  on V6 and in Touch — a change on either side shows on the other. The dashed orange mark
+  across the arc is the house temperature now; **House now** and **Outside** stand as two small
+  cards to the right of the ring (below it on a phone).
 - **Heat, plan and weather** — four tiles that open their sheets:
   - **Heating** — flow over return with ΔT between them, and the last 24 hours (from the heat
     source's own history).

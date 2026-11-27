@@ -2465,6 +2465,7 @@ void LuneTouchCoordinator::poll_task_() {
       // V6 node poll is the critical path and must never wait on weather,
       // Asgard, circulation, or LAN discovery HTTP.
       poll_once_();
+      handle_comfort_adoptions_();
       if (lease_due)
         renew_authority_lease_();
       run_house_balance_(esphome::millis());
@@ -5966,6 +5967,10 @@ bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char
                              as_json ? "application/json" : "application/x-www-form-urlencoded");
   if (authority_key != nullptr && authority_key[0] != '\0')
     esp_http_client_set_header(client, "X-Lune-Authority-Key", authority_key);
+  // V6 gates its local writes (setpoint, commands, settings) on this header, the UI's
+  // CSRF guard; Touch is not a browser, so it sends it on every write. Without it the
+  // room target from Touch, motor reset and BLE sync were refused with 403 (2026-11-27).
+  esp_http_client_set_header(client, "X-Lune-CSRF", "lune-touch");
 
   bool ok = false;
   // esp_http_client_open() is the streaming API: its write_len argument
@@ -9905,6 +9910,9 @@ bool LuneTouchCoordinator::set_zone_comfort(const char *room_id, float comfort_s
       return false;
     }
     const ::lune_touch::PairedNode target_node = *node;
+    // A poll in flight still carries V6's old value: do not take it as a V6 edit.
+    model_.note_v6_setpoint_written(target_node_indexes[i], target_zones[i], comfort_setpoint_c,
+                                    esphome::millis());
     give_state_lock_();
     if (std::strcmp(target_node.firmware, "mock") != 0 &&
         !send_v6_zone_setpoint_(target_node, target_zones[i], comfort_setpoint_c)) {
@@ -13378,16 +13386,26 @@ float LuneTouchCoordinator::display_house_target_c() const {
   return std::isfinite(value) ? std::round(value * 2.0f) / 2.0f : value;
 }
 
-bool LuneTouchCoordinator::set_house_target(float target_c) {
-  if (!std::isfinite(target_c) || target_c < 5.0f || target_c > 30.0f)
-    return false;
-  const float shown = display_house_target_c();
-  if (!std::isfinite(shown))
-    return false;
-  const float delta = std::round(target_c * 2.0f) / 2.0f - shown;
-  if (std::fabs(delta) < 0.01f)
-    return true;
-  return display_adjust_house_target(delta);
+void LuneTouchCoordinator::handle_comfort_adoptions_() {
+  // A room target changed on V6 became the room's target in Touch (HouseModel); keep it.
+  if (!take_state_lock_(50))
+    return;
+  const uint32_t n = model_.comfort_adoptions();
+  if (n == comfort_adoptions_seen_) {
+    give_state_lock_();
+    return;
+  }
+  comfort_adoptions_seen_ = n;
+  char room[32];
+  std::strncpy(room, model_.last_adopted_room(), sizeof(room) - 1);
+  room[sizeof(room) - 1] = '\0';
+  const float sp = model_.last_adopted_setpoint_c();
+  recompute_forecast_decisions_();
+  give_state_lock_();
+  save_registry_();
+  char event[96];
+  snprintf(event, sizeof(event), "room target from V6: %s %.1f C", room, sp);
+  log_event_("info", "zones", event);
 }
 
 float LuneTouchCoordinator::display_house_temperature_c() const {
@@ -13397,40 +13415,6 @@ float LuneTouchCoordinator::display_house_temperature_c() const {
   const float value = strategy.has_physical_temperature ? strategy.physical_temperature_c : NAN;
   give_state_lock_();
   return value;
-}
-
-bool LuneTouchCoordinator::display_adjust_house_target(float delta_c) {
-  if (!std::isfinite(delta_c) || !take_state_lock_(100))
-    return false;
-  struct RoomAdjust {
-    char room_id[32]{};
-    float setpoint_c{0.0f};
-    uint8_t priority{0};
-    float bias_c{0.0f};
-  };
-  RoomAdjust rooms[::lune_touch::MAX_HOUSE_ZONES]{};
-  size_t room_count = 0;
-  for (size_t i = 0; i < model_.zone_count() && room_count < ::lune_touch::MAX_HOUSE_ZONES; i++) {
-    const auto *candidate = model_.zone(i);
-    if (candidate == nullptr || !candidate->enabled || candidate->room_id[0] == '\0')
-      continue;
-    std::strncpy(rooms[room_count].room_id, candidate->room_id, sizeof(rooms[room_count].room_id) - 1);
-    rooms[room_count].setpoint_c = candidate->comfort_setpoint_c + delta_c;
-    rooms[room_count].priority = candidate->priority;
-    rooms[room_count].bias_c = candidate->comfort_bias_c;
-    room_count++;
-  }
-  give_state_lock_();
-  if (room_count == 0)
-    return false;
-  bool any = false;
-  char response[192]{};
-  for (size_t i = 0; i < room_count; i++) {
-    if (set_zone_comfort(rooms[i].room_id, rooms[i].setpoint_c, rooms[i].priority, rooms[i].bias_c,
-                         response, sizeof(response)))
-      any = true;
-  }
-  return any;
 }
 
 uint8_t LuneTouchCoordinator::display_active_page() const {
